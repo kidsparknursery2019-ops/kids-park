@@ -1819,13 +1819,24 @@ function buildReceiptHTML(p) {
 // ============================================================
 // Override init - require login first
 window.addEventListener('DOMContentLoaded', () => {
-  // Initialize default users if not exists
-  if(!localStorage.getItem('kp_users')) {
+  // Set default admin if no local users
+  if (!localStorage.getItem('kp_users')) {
     localStorage.setItem('kp_users', JSON.stringify([
       {username:'admin', password:'admin123', role:'admin', name:'المدير'}
     ]));
   }
-  checkSession();
+  // Load users from Firebase BEFORE showing login screen
+  fetch('https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data/kp_users.json')
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data && Array.isArray(data) && data.length > 0) {
+        localStorage.setItem('kp_users', JSON.stringify(data));
+      }
+    })
+    .catch(function() { /* offline — use local */ })
+    .finally(function() {
+      checkSession();
+    });
 });
 
 // INIT (handled by checkSession above)
