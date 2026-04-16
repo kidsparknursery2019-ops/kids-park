@@ -1277,6 +1277,8 @@ function applyLogin() {
   document.getElementById('login-screen').style.display = 'none';
   const ub = document.getElementById('user-badge');
   ub.style.display = 'flex';
+  const sb = document.getElementById('btn-save-cloud');
+  if (sb) sb.style.display = 'inline-block';
   document.getElementById('ub-name').textContent = currentUser.name || currentUser.username;
   document.getElementById('ub-role').textContent = currentUser.role === 'admin' ? '👑 مدير' : '👤 موظف';
   // Show admin nav only for admin
@@ -1294,6 +1296,8 @@ function doLogout() {
   currentUser = null;
   sessionStorage.removeItem('kp_session');
   document.getElementById('login-screen').style.display = 'flex';
+  const sb2 = document.getElementById('btn-save-cloud');
+  if (sb2) sb2.style.display = 'none';
   document.getElementById('user-badge').style.display = 'none';
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
