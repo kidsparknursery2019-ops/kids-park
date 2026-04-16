@@ -254,6 +254,7 @@ textarea{resize:vertical;min-height:65px}
   </div>
   <div style="display:flex;align-items:center;gap:14px">
   <div class="hdr-time" id="clock"></div>
+  <button id="btn-save-cloud" onclick="pushToFirebase()" style="display:none;padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.5);background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:12px;font-weight:700">☁️ حفظ</button>
   <div id="user-badge" style="display:none;align-items:center;gap:10px;font-size:13px">
     <div><div style="font-weight:700" id="ub-name"></div><div style="font-size:11px;opacity:.7" id="ub-role"></div></div>
     <button onclick="doLogout()" style="padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.4);background:transparent;color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:13px;font-weight:600">خروج</button>
