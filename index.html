@@ -1487,14 +1487,22 @@ function renderDash(){
   students.forEach(s=>{const v=attLog[today+'_'+s.id];if(v==='present')p++;if(v==='absent')a++;});
   document.getElementById('s-present').textContent=p||'—';
   document.getElementById('s-absent').textContent=a||'—';
-  // حساب الإيرادات حسب السنة من سندات القبض
+  // فلتر السنة
   const currentYear = new Date().getFullYear();
   const yfEl = document.getElementById('dash-year-filter');
-  if (yfEl && !yfEl._initialized) { yfEl.value = String(currentYear); yfEl._initialized = true; }
+  // تهيئة تلقائية على السنة الحالية إذا لم يختر المستخدم بعد
+  if (yfEl && yfEl.getAttribute('data-set') !== '1') {
+    yfEl.value = String(currentYear);
+    yfEl.setAttribute('data-set','1');
+  }
   const selectedYear = yfEl && yfEl.value ? parseInt(yfEl.value) : 0;
-  const filteredPay = selectedYear ? payments.filter(p => getDateYear(p.date) === selectedYear) : payments;
+  const filteredPay = selectedYear
+    ? payments.filter(p => getDateYear(p.date) === selectedYear)
+    : payments;
   const thisYearInc = filteredPay.reduce((s,p) => s+p.amt, 0);
-  document.getElementById('s-income').textContent = payments.length ? thisYearInc.toLocaleString() + ' د.إ' : '—';
+  document.getElementById('s-income').textContent = payments.length
+    ? thisYearInc.toLocaleString() + ' د.إ'
+    : '—';
   // recent payments
   if(payments.length === 0) {
     document.getElementById('recent-pay').innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--muted)">جاري تحميل البيانات...</td></tr>';
