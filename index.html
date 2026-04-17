@@ -220,6 +220,35 @@ textarea{resize:vertical;min-height:65px}
 .form-req-name{font-size:15px;font-weight:700;margin-bottom:3px}
 .form-req-meta{font-size:12px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;margin-bottom:2px}
 .form-req-actions{flex-shrink:0;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+
+.ren-grid{display:flex;flex-direction:column;gap:8px}
+.ren-row{display:flex;align-items:center;gap:12px;background:white;border-radius:11px;padding:11px 14px;border:1.5px solid var(--border);transition:all .15s;cursor:pointer}
+.ren-row:hover{border-color:var(--g2);box-shadow:var(--shadow)}
+.ren-row.expired{border-color:#e74c3c;background:#fff8f8}
+.ren-row.urgent{border-color:#e67e22;background:#fffaf5}
+.ren-row.warning{border-color:#f1c40f;background:#fffef0}
+.ren-badge{flex-shrink:0;width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.ren-info{flex:1;min-width:0}
+.ren-name{font-size:14px;font-weight:700;margin-bottom:2px}
+.ren-meta{font-size:12px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
+.ren-days{flex-shrink:0;text-align:center;min-width:60px}
+.ren-days-num{font-size:18px;font-weight:900}
+.ren-days-lbl{font-size:10px;color:var(--muted)}
+.ren-actions{flex-shrink:0;display:flex;gap:6px}
+.notif-btn{position:relative;background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.4);color:white;border-radius:9px;padding:5px 10px;cursor:pointer;font-size:18px;line-height:1;display:none}
+.notif-btn.has-alerts{animation:ren-pulse 2s infinite}
+.notif-badge{position:absolute;top:-6px;right:-6px;background:#e74c3c;color:white;border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:900;display:flex;align-items:center;justify-content:center;border:2px solid white}
+@keyframes ren-pulse{0%,100%{box-shadow:0 0 0 0 rgba(231,76,60,.4)}50%{box-shadow:0 0 0 6px rgba(231,76,60,0)}}
+.notif-panel{position:fixed;top:64px;left:16px;width:340px;max-height:75vh;background:white;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.18);z-index:800;display:none;flex-direction:column;overflow:hidden}
+.notif-panel.open{display:flex}
+.notif-panel-hdr{padding:12px 16px;background:var(--g1);color:white;font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.notif-panel-body{overflow-y:auto;flex:1;padding:8px}
+.notif-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;margin-bottom:4px;cursor:pointer;transition:background .15s}
+.notif-item:hover{background:var(--gp)}
+.notif-item-icon{font-size:18px;flex-shrink:0}
+.notif-item-title{font-size:13px;font-weight:700;line-height:1.3}
+.notif-item-sub{font-size:11px;color:var(--muted);margin-top:1px}
+.notif-item-days{font-size:12px;font-weight:700;flex-shrink:0;margin-right:auto}
 </style>
 </head>
 <body>
@@ -254,6 +283,7 @@ textarea{resize:vertical;min-height:65px}
   </div>
   <div style="display:flex;align-items:center;gap:14px">
   <div class="hdr-time" id="clock"></div>
+  <button id="notif-btn" class="notif-btn" onclick="toggleNotifPanel()" title="التنبيهات">🔔<span class="notif-badge" id="notif-badge-count" style="display:none">0</span></button>
   <button id="btn-save-cloud" onclick="pushToFirebase()" style="display:none;padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.5);background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:12px;font-weight:700">☁️ حفظ</button>
   <div id="user-badge" style="display:none;align-items:center;gap:10px;font-size:13px">
     <div><div style="font-weight:700" id="ub-name"></div><div style="font-size:11px;opacity:.7" id="ub-role"></div></div>
@@ -262,6 +292,13 @@ textarea{resize:vertical;min-height:65px}
 </div>
 </div>
 
+<div class="notif-panel" id="notif-panel">
+  <div class="notif-panel-hdr">
+    <span>🔔 التنبيهات</span>
+    <button onclick="toggleNotifPanel()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;line-height:1">×</button>
+  </div>
+  <div class="notif-panel-body" id="notif-panel-body"></div>
+</div>
 <div class="wrap">
   <nav class="side">
     <div class="nav on"  onclick="go('dash')">     <span class="ni">📊</span><span>لوحة التحكم</span></div>
@@ -274,6 +311,7 @@ textarea{resize:vertical;min-height:65px}
     <div class="nav"     onclick="go('finance')">  <span class="ni">📈</span><span>الإيرادات</span></div>
     <div class="nav"     onclick="go('worksheets')"><span class="ni">🖼️</span><span>أوراق العمل</span></div>
     <div class="nav"     onclick="go('forms')">      <span class="ni">📋</span><span>طلبات التسجيل</span></div>
+    <div class="nav"     onclick="go('renewals')">   <span class="ni">🔔</span><span>التجديدات</span></div>
     <div class="side-sep"></div>
     <div class="nav" id="nav-admin" onclick="go('admin')" style="display:none"><span class="ni">⚙️</span><span>الإعدادات</span></div>
   </nav>
@@ -440,7 +478,40 @@ textarea{resize:vertical;min-height:65px}
 
 
 
-    <div class="pg" id="pg-forms">
+    
+    <div class="pg" id="pg-renewals">
+      <div class="pt">🔔 التجديدات والوثائق الرسمية</div>
+      <div class="sg" style="grid-template-columns:repeat(4,1fr)">
+        <div class="sc r"><div class="sl">منتهية</div><div class="sv" id="ren-expired-count">—</div></div>
+        <div class="sc y"><div class="sl">خلال 30 يوم</div><div class="sv" id="ren-30-count">—</div></div>
+        <div class="sc"><div class="sl">خلال 60 يوم</div><div class="sv" id="ren-60-count">—</div></div>
+        <div class="sc b"><div class="sl">الإجمالي</div><div class="sv" id="ren-total-count">—</div></div>
+      </div>
+      <div class="card">
+        <div class="ct">
+          <div class="btn-group">
+            <select id="ren-filter-cat" onchange="renderRenewals()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
+              <option value="">كل الفئات</option>
+              <option>تراخيص</option><option>عقود</option><option>بطاقات صحية</option>
+              <option>إقامات</option><option>إخطارات</option><option>ضرائب</option>
+              <option>هويات</option><option>بطاقات</option><option>أخرى</option>
+            </select>
+            <select id="ren-filter-status" onchange="renderRenewals()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
+              <option value="">كل الحالات</option>
+              <option value="expired">منتهية</option>
+              <option value="urgent">خلال 30 يوم</option>
+              <option value="warning">خلال 60 يوم</option>
+              <option value="ok">بعيدة</option>
+            </select>
+            <input type="text" id="ren-search" placeholder="🔍 ابحث..." oninput="renderRenewals()" style="max-width:160px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
+          </div>
+          <button class="btn btn-g btn-sm" onclick="openAddRenewal()">＋ إضافة</button>
+        </div>
+        <div class="ren-grid" id="ren-list"></div>
+      </div>
+    </div>
+
+<div class="pg" id="pg-forms">
       <div class="pt">📋 طلبات التسجيل من Google Forms</div>
       <div class="sg" style="grid-template-columns:repeat(3,1fr)">
         <div class="sc y"><div class="sl">طلبات جديدة</div><div class="sv" id="forms-pending-count">—</div></div>
@@ -545,6 +616,32 @@ textarea{resize:vertical;min-height:65px}
 
   </div><!-- /main -->
 </div><!-- /wrap -->
+
+<div class="ov" id="mo-renewal">
+  <div class="mo">
+    <div class="mot" id="mo-renewal-title">تعديل التجديد</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="fl"><label>الاسم / الجهة</label><input id="ren-nm" placeholder="اسم الوثيقة أو العقد"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="fl"><label>تاريخ الانتهاء</label><input type="date" id="ren-dt"></div>
+        <div class="fl"><label>التكلفة المتوقعة (د.إ)</label><input id="ren-cost" placeholder="0" type="number"></div>
+      </div>
+      <div class="fl"><label>الفئة</label>
+        <select id="ren-cat-sel" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:14px">
+          <option>تراخيص</option><option>عقود</option><option>بطاقات صحية</option>
+          <option>إقامات</option><option>إخطارات</option><option>ضرائب</option>
+          <option>هويات</option><option>بطاقات</option><option>أخرى</option>
+        </select>
+      </div>
+      <div class="fl"><label>ملاحظات</label><textarea id="ren-notes-txt" rows="2" placeholder="أي ملاحظات..."></textarea></div>
+    </div>
+    <div class="mof">
+      <button class="btn btn-r btn-sm" id="ren-del-btn" onclick="deleteRenewal()" style="margin-left:auto">🗑 حذف</button>
+      <button class="btn btn-out" onclick="closeAll()">إلغاء</button>
+      <button class="btn btn-g" onclick="saveRenewal()">💾 حفظ</button>
+    </div>
+  </div>
+</div>
 
 <div class="ov" id="mo-form-detail">
   <div class="mo" style="width:640px">
@@ -1321,13 +1418,18 @@ function renderDash(){
     }
   });
   const totalInc = payments.reduce((s,p)=>s+p.amt,0);
-  // Show current year income on dashboard
-  const thisYearInc = incByYear[currentYear] || incByYear[Math.max(...Object.keys(incByYear).map(Number))] || totalInc;
-  document.getElementById('s-income').textContent = thisYearInc.toLocaleString();
+  const years = Object.keys(incByYear).map(Number).sort();
+  const latestYear = years.length ? Math.max(...years) : currentYear;
+  const thisYearInc = incByYear[currentYear] || incByYear[latestYear] || 0;
+  document.getElementById('s-income').textContent = payments.length ? thisYearInc.toLocaleString() + ' د.إ' : '—';
   // recent payments
+  if(payments.length === 0) {
+    document.getElementById('recent-pay').innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--muted)">جاري تحميل البيانات...</td></tr>';
+  } else {
   document.getElementById('recent-pay').innerHTML=[...payments].slice(-6).reverse().map(p=>`
     <tr><td>#${p.id}</td><td>${p.who}</td><td class="fin-pos">${p.amt.toLocaleString()} د.إ</td><td style="font-size:12px">${p.desc}</td><td>${p.date}</td></tr>`).join('');
-  // رسم بياني حسب السنوات من سندات القبض
+ 
+  } // رسم بياني حسب السنوات من سندات القبض
   const chartByYear = {};
   payments.forEach(p => {
     if(!p.date) return;
@@ -1817,10 +1919,15 @@ function applyLogin() {
   if (navAdmin) navAdmin.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
   // Load saved settings
   loadSettings();
-  loadFromFirebase();
+  // Render with local data first (instant)
+  renderDash();
+  setTimeout(updateNotifications, 500);
+  // Then load from Firebase (updates dashboard when done)
+  loadFromFirebase().then(() => {
+    renderDash();
+  });
   setInterval(checkForUpdates, 30000);
   startAutoSync();
-  renderDash();
 }
 
 function doLogout() {
@@ -2240,7 +2347,7 @@ function go(page) {
     dash:renderDash, students:renderStudents, att:renderAtt,
     payments:renderPayments, expenses:renderExpenses,
     receipts:renderReceipts, finance:renderFinance,
-    worksheets:renderWorksheets, forms:renderFormRequests,
+    worksheets:renderWorksheets, forms:renderFormRequests, renewals:renderRenewals,
     admin:()=>{renderAdminUsers();renderAdminClasses();}
   };
   if(renders[page]) renders[page]();
@@ -2389,7 +2496,7 @@ function getAllData() {
   return {
     version: 2,
     savedAt: new Date().toISOString(),
-    students, payments, expenses, attLog, CLASSES, nurserySettings,
+    students, payments, expenses, attLog, CLASSES, nurserySettings, renewals,
     kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
   };
 }
@@ -2433,6 +2540,7 @@ async function loadFromFirebase() {
     if (data.payments)        payments = data.payments;
     if (data.expenses)        expenses = data.expenses;
     if (data.attLog)          attLog   = data.attLog;
+    if (data.renewals && data.renewals.length)  renewals = data.renewals;
     if (data.CLASSES)         Object.assign(CLASSES, data.CLASSES);
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
     if (data.kp_users && data.kp_users.length) {
@@ -2444,6 +2552,10 @@ async function loadFromFirebase() {
     lastSavedAt = data.savedAt || '';
     renderDash();
     showSyncBadge('✅ تم التحميل');
+    // If compiled data is richer than Firebase, auto-push to sync
+    if ((data.students||[]).length < students.length || (data.expenses||[]).length < expenses.length) {
+      setTimeout(pushToFirebase, 2000);
+    }
   } catch(e) {
     showSyncBadge('📴 بدون إنترنت — بيانات محلية');
     console.log('Firebase load failed:', e.message);
@@ -2709,6 +2821,293 @@ function rejectFormRow(ts) {
   localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
   renderFormRequests();
 }
+
+
+// ============================================================
+// RENEWALS — التجديدات والوثائق الرسمية
+// ============================================================
+let renewals = [
+  {id:1,name:'الرخصة التجارية والتعليمية',date:'2026-06-17',cost:'',cat:'تراخيص',notes:''},
+  {id:2,name:'الرخصة التعليمية',date:'2026-08-08',cost:'',cat:'تراخيص',notes:''},
+  {id:3,name:'عقد اشراف طبي',date:'2026-12-30',cost:'',cat:'عقود',notes:''},
+  {id:4,name:'عقد صيانة مبنى',date:'2025-08-24',cost:'',cat:'عقود',notes:''},
+  {id:5,name:'عقد التنظيف الخبراء',date:'2026-08-25',cost:'',cat:'عقود',notes:''},
+  {id:6,name:'شهادة استيفاء الشروط',date:'',cost:'',cat:'أخرى',notes:''},
+  {id:7,name:'عقد الايجار',date:'2026-05-31',cost:'',cat:'عقود',notes:''},
+  {id:8,name:'الامين لمكافحة الحشرات',date:'2026-05-22',cost:'',cat:'أخرى',notes:''},
+  {id:9,name:'بطاقة صحية (نجلاء الحسن)',date:'2026-10-03',cost:'',cat:'بطاقات صحية',notes:''},
+  {id:10,name:'بطاقة صحية (ربا ياسر)',date:'2026-10-14',cost:'',cat:'بطاقات صحية',notes:''},
+  {id:11,name:'بطاقة صحية (شهلاء يوسف)',date:'2026-10-03',cost:'',cat:'بطاقات صحية',notes:''},
+  {id:12,name:'بطاقة صحية (ولاء حمودة )',date:'2026-10-11',cost:'',cat:'بطاقات صحية',notes:''},
+  {id:13,name:'بطاقة صحية (ماريسيل)',date:'2026-05-26',cost:'',cat:'بطاقات صحية',notes:''},
+  {id:14,name:'بطاقة صحية (الاء الحاج)',date:'2026-08-26',cost:'',cat:'بطاقات صحية',notes:''},
+  {id:15,name:'بطاقة صحية (مريم سلوم)',date:'2026-08-09',cost:'',cat:'بطاقات صحية',notes:''},
+  {id:16,name:'بطاقة صحية (إيمي نفاجا)',date:'2026-08-27',cost:'',cat:'بطاقات صحية',notes:''},
+  {id:17,name:'بطاقة صحية (ماريتيل تومالا)',date:'2026-08-01',cost:'',cat:'بطاقات صحية',notes:''},
+  {id:18,name:'بطاقة صحية (سيلاريبيل جيمينيز)',date:'2026-06-04',cost:'',cat:'بطاقات صحية',notes:''},
+  {id:19,name:'بطاقة صحية (سمية صلاح)',date:'2027-02-20',cost:'',cat:'بطاقات صحية',notes:''},
+  {id:20,name:'إقامة سيلاريبيل',date:'2027-01-15',cost:'',cat:'إقامات',notes:''},
+  {id:21,name:'إقامة إيمي',date:'2028-05-04',cost:'',cat:'إقامات',notes:''},
+  {id:22,name:'إقامة إيتل',date:'2026-08-07',cost:'',cat:'إقامات',notes:''},
+  {id:23,name:'إقامة مارسيل',date:'2026-08-27',cost:'',cat:'إقامات',notes:''},
+  {id:24,name:'إقامة هندية',date:'2026-04-19',cost:'',cat:'إقامات',notes:''},
+  {id:25,name:'إخطار حصة المرزوقي',date:'2027-01-24',cost:'',cat:'إخطارات',notes:''},
+  {id:26,name:'إخطار شهلاء يوسف',date:'2026-05-26',cost:'',cat:'إخطارات',notes:''},
+  {id:27,name:'إخطار ربا ياسر',date:'2027-01-16',cost:'',cat:'إخطارات',notes:''},
+  {id:28,name:'إخطار ميس نبيل',date:'2026-12-30',cost:'',cat:'إخطارات',notes:''},
+  {id:29,name:'إخطار ولاء حمودة',date:'2026-05-11',cost:'',cat:'إخطارات',notes:''},
+  {id:30,name:'اخطار ماريسيل',date:'2027-03-15',cost:'',cat:'إخطارات',notes:''},
+  {id:31,name:'إخطار مها جوابرة',date:'2027-03-20',cost:'',cat:'إخطارات',notes:''},
+  {id:32,name:'إخطار سمية صلاح',date:'2026-10-24',cost:'',cat:'إخطارات',notes:''},
+  {id:33,name:'إخطار نجلاء الحسن',date:'2027-01-15',cost:'',cat:'إخطارات',notes:''},
+  {id:34,name:'إخطار مريم سلوم',date:'2026-05-23',cost:'',cat:'إخطارات',notes:''},
+  {id:35,name:'إخطار سيلاريبيل',date:'2026-12-17',cost:'',cat:'إخطارات',notes:''},
+  {id:36,name:'إخطار إيتيل',date:'2026-12-17',cost:'',cat:'إخطارات',notes:''},
+  {id:37,name:'إخطار إيمي نفاجا',date:'2026-05-26',cost:'',cat:'إخطارات',notes:''},
+  {id:38,name:'الضرائب',date:'2025-04-04',cost:'',cat:'ضرائب',notes:''},
+  {id:39,name:'الضرائب',date:'2025-07-06',cost:'',cat:'ضرائب',notes:''},
+  {id:40,name:'الضرائب',date:'2025-09-09',cost:'',cat:'ضرائب',notes:''},
+  {id:41,name:'الضرائب',date:'2025-12-12',cost:'',cat:'ضرائب',notes:''},
+  {id:42,name:'باركينغ السيارة',date:'2026-05-24',cost:'',cat:'عقود',notes:''},
+  {id:43,name:'هوية شهلاء يوسف',date:'2026-10-01',cost:'',cat:'هويات',notes:''},
+  {id:44,name:'بطاقة المنشأة',date:'2029-02-04',cost:'',cat:'بطاقات',notes:''},
+  {id:45,name:'اخطار ولاء الممرضة',date:'2026-05-11',cost:'',cat:'إخطارات',notes:''},
+  {id:46,name:'بطاقة العمل ايمي',date:'2028-03-18',cost:'',cat:'بطاقات',notes:''},
+  {id:47,name:'يطاقة العمل مارسيل',date:'2026-08-18',cost:'',cat:'أخرى',notes:''},
+  {id:48,name:'بطاقة العمل ايتل',date:'2026-07-24',cost:'',cat:'بطاقات',notes:''},
+  {id:49,name:'بطاقة العمل بيل',date:'2026-12-25',cost:'',cat:'بطاقات',notes:''}
+];
+let nextRenId = 50;
+let editingRenId = null;
+
+const CAT_EMOJI = {
+  'تراخيص':'📜','عقود':'📋','بطاقات صحية':'🏥','إقامات':'🪪',
+  'إخطارات':'📄','ضرائب':'🏛','هويات':'🪪','بطاقات':'💳','أخرى':'📌'
+};
+
+function getRenDays(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const d = new Date(dateStr); d.setHours(0,0,0,0);
+  return Math.round((d - today) / 86400000);
+}
+
+function getRenStatus(days) {
+  if (days === null) return 'unknown';
+  if (days < 0)   return 'expired';
+  if (days <= 30) return 'urgent';
+  if (days <= 60) return 'warning';
+  return 'ok';
+}
+
+function getRenStatusLabel(days) {
+  if (days === null) return '—';
+  if (days < 0)   return 'منتهية';
+  if (days <= 30) return days + ' يوم';
+  if (days <= 60) return days + ' يوم';
+  return days + ' يوم';
+}
+
+function renderRenewals() {
+  const filterCat    = (document.getElementById('ren-filter-cat')    || {}).value || '';
+  const filterStatus = (document.getElementById('ren-filter-status') || {}).value || '';
+  const search       = ((document.getElementById('ren-search')       || {}).value || '').toLowerCase();
+
+  let filtered = renewals.map(r => ({ ...r, days: getRenDays(r.date) }));
+  if (filterCat)    filtered = filtered.filter(r => r.cat === filterCat);
+  if (filterStatus) filtered = filtered.filter(r => getRenStatus(r.days) === filterStatus);
+  if (search)       filtered = filtered.filter(r => r.name.toLowerCase().includes(search));
+
+  // Sort: expired first, then by days ascending
+  filtered.sort((a,b) => {
+    const da = a.days === null ? 9999 : a.days;
+    const db = b.days === null ? 9999 : b.days;
+    return da - db;
+  });
+
+  // Stats
+  const all = renewals.map(r => ({ ...r, days: getRenDays(r.date) }));
+  const expired = all.filter(r => r.days !== null && r.days < 0).length;
+  const within30 = all.filter(r => r.days !== null && r.days >= 0 && r.days <= 30).length;
+  const within60 = all.filter(r => r.days !== null && r.days > 30 && r.days <= 60).length;
+  document.getElementById('ren-expired-count').textContent = expired;
+  document.getElementById('ren-30-count').textContent = within30;
+  document.getElementById('ren-60-count').textContent = within60;
+  document.getElementById('ren-total-count').textContent = renewals.length;
+
+  const list = document.getElementById('ren-list');
+  if (!list) return;
+
+  if (!filtered.length) {
+    list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)">لا توجد نتائج</div>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(r => {
+    const status = getRenStatus(r.days);
+    const emoji  = CAT_EMOJI[r.cat] || '📌';
+    const daysLabel = r.days === null ? '—' : (r.days < 0 ? 'منتهية' : r.days + ' يوم');
+    const daysColor = status === 'expired' ? '#e74c3c' : status === 'urgent' ? '#e67e22' : status === 'warning' ? '#f39c12' : 'var(--g2)';
+
+    return '<div class="ren-row ' + status + '" onclick="openEditRenewal(' + r.id + ')">' +
+      '<div class="ren-badge" style="background:' + (status==='expired'?'#fde8e8':status==='urgent'?'#fef0e7':status==='warning'?'#fefce7':'var(--gp)') + '">' + emoji + '</div>' +
+      '<div class="ren-info">' +
+        '<div class="ren-name">' + r.name + '</div>' +
+        '<div class="ren-meta">' +
+          '<span>📅 ' + (r.date || '—') + '</span>' +
+          '<span style="background:var(--gp);padding:1px 7px;border-radius:8px">' + r.cat + '</span>' +
+          (r.cost ? '<span>💰 ' + r.cost + ' د.إ</span>' : '') +
+          (r.notes ? '<span>📝 ' + r.notes + '</span>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="ren-days">' +
+        '<div class="ren-days-num" style="color:' + daysColor + '">' + daysLabel + '</div>' +
+        '<div class="ren-days-lbl">' + (r.days !== null && r.days >= 0 ? 'متبقي' : '') + '</div>' +
+      '</div>' +
+      '<div class="ren-actions" onclick="event.stopPropagation()">' +
+        '<button class="btn btn-out btn-sm" onclick="openEditRenewal(' + r.id + ')">✏️</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  // Update notifications
+  updateNotifications();
+}
+
+function openAddRenewal() {
+  editingRenId = null;
+  document.getElementById('mo-renewal-title').textContent = 'إضافة تجديد جديد';
+  document.getElementById('ren-nm').value = '';
+  document.getElementById('ren-dt').value = '';
+  document.getElementById('ren-cost').value = '';
+  document.getElementById('ren-notes-txt').value = '';
+  document.getElementById('ren-del-btn').style.display = 'none';
+  document.getElementById('mo-renewal').classList.add('on');
+}
+
+function openEditRenewal(id) {
+  const r = renewals.find(x => x.id === id);
+  if (!r) return;
+  editingRenId = id;
+  document.getElementById('mo-renewal-title').textContent = 'تعديل: ' + r.name;
+  document.getElementById('ren-nm').value = r.name;
+  document.getElementById('ren-dt').value = r.date || '';
+  document.getElementById('ren-cost').value = r.cost || '';
+  document.getElementById('ren-cat-sel').value = r.cat || 'أخرى';
+  document.getElementById('ren-notes-txt').value = r.notes || '';
+  document.getElementById('ren-del-btn').style.display = 'inline-flex';
+  document.getElementById('mo-renewal').classList.add('on');
+}
+
+function saveRenewal() {
+  const name  = document.getElementById('ren-nm').value.trim();
+  const date  = document.getElementById('ren-dt').value;
+  const cost  = document.getElementById('ren-cost').value;
+  const cat   = document.getElementById('ren-cat-sel').value;
+  const notes = document.getElementById('ren-notes-txt').value.trim();
+  if (!name) { alert('يرجى إدخال الاسم'); return; }
+
+  if (editingRenId) {
+    const r = renewals.find(x => x.id === editingRenId);
+    if (r) { r.name = name; r.date = date; r.cost = cost; r.cat = cat; r.notes = notes; }
+  } else {
+    renewals.push({ id: nextRenId++, name, date, cost, cat, notes });
+  }
+  autoSave();
+  closeAll();
+  renderRenewals();
+}
+
+function deleteRenewal() {
+  if (!editingRenId) return;
+  const r = renewals.find(x => x.id === editingRenId);
+  if (!r) return;
+  if (!confirm('حذف "' + r.name + '"؟')) return;
+  renewals = renewals.filter(x => x.id !== editingRenId);
+  autoSave();
+  closeAll();
+  renderRenewals();
+}
+
+// ============================================================
+// NOTIFICATIONS — التنبيهات الشاملة
+// ============================================================
+function updateNotifications() {
+  const alerts = [];
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  // Renewals alerts
+  renewals.forEach(r => {
+    const days = getRenDays(r.date);
+    if (days === null) return;
+    if (days < 0) {
+      alerts.push({ type:'renewal', id:r.id, icon:'🔴', title:r.name, sub:'منتهية منذ ' + Math.abs(days) + ' يوم', days, urgent:true });
+    } else if (days <= 60) {
+      alerts.push({ type:'renewal', id:r.id, icon: days<=30?'🟠':'🟡', title:r.name, sub:'تنتهي خلال ' + days + ' يوم', days, urgent:days<=30 });
+    }
+  });
+
+  // Sort by urgency
+  alerts.sort((a,b) => a.days - b.days);
+
+  // Update bell
+  const btn = document.getElementById('notif-btn');
+  const badge = document.getElementById('notif-badge-count');
+  if (btn) {
+    btn.style.display = 'inline-block';
+    if (alerts.length > 0) {
+      btn.classList.add('has-alerts');
+      badge.style.display = 'flex';
+      badge.textContent = alerts.length > 99 ? '99+' : alerts.length;
+    } else {
+      btn.classList.remove('has-alerts');
+      badge.style.display = 'none';
+    }
+  }
+
+  // Update panel
+  const body = document.getElementById('notif-panel-body');
+  if (!body) return;
+  if (!alerts.length) {
+    body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">✅ لا توجد تنبيهات</div>';
+    return;
+  }
+
+  body.innerHTML = alerts.map(a => {
+    const color = a.days < 0 ? '#e74c3c' : a.days <= 30 ? '#e67e22' : '#f39c12';
+    const daysText = a.days < 0 ? 'منتهية' : a.days + ' يوم';
+    return '<div class="notif-item" onclick="goToAlert(\'' + a.type + '\',' + a.id + ')">' +
+      '<div class="notif-item-icon">' + a.icon + '</div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div class="notif-item-title">' + a.title + '</div>' +
+        '<div class="notif-item-sub">' + a.sub + '</div>' +
+      '</div>' +
+      '<div style="font-size:12px;font-weight:700;color:' + color + ';flex-shrink:0">' + daysText + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function goToAlert(type, id) {
+  toggleNotifPanel();
+  if (type === 'renewal') {
+    go('renewals');
+    setTimeout(() => openEditRenewal(id), 300);
+  }
+}
+
+function toggleNotifPanel() {
+  const panel = document.getElementById('notif-panel');
+  if (panel) panel.classList.toggle('open');
+}
+
+// Close panel when clicking outside
+document.addEventListener('click', function(e) {
+  const panel = document.getElementById('notif-panel');
+  const btn   = document.getElementById('notif-btn');
+  if (panel && btn && !panel.contains(e.target) && !btn.contains(e.target)) {
+    panel.classList.remove('open');
+  }
+});
 
 
 renderDash();
