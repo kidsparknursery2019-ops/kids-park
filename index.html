@@ -1488,18 +1488,11 @@ function renderDash(){
   document.getElementById('s-absent').textContent=a||'—';
   // حساب الإيرادات حسب السنة من سندات القبض
   const currentYear = new Date().getFullYear();
-  const incByYear = {};
-  payments.forEach(p => {
-    if(!p.date) return;
-    const y = parseInt(p.date.toString().slice(0,4));
-    if(y >= 2020 && y <= 2030) {
-      incByYear[y] = (incByYear[y]||0) + p.amt;
-    }
-  });
-  const totalInc = payments.reduce((s,p)=>s+p.amt,0);
-  const years = Object.keys(incByYear).map(Number).sort();
-  const latestYear = years.length ? Math.max(...years) : currentYear;
-  const thisYearInc = incByYear[currentYear] || incByYear[latestYear] || 0;
+  const yfEl = document.getElementById('dash-year-filter');
+  if (yfEl && !yfEl._initialized) { yfEl.value = String(currentYear); yfEl._initialized = true; }
+  const selectedYear = yfEl && yfEl.value ? parseInt(yfEl.value) : 0;
+  const filteredPay = selectedYear ? payments.filter(p => getDateYear(p.date) === selectedYear) : payments;
+  const thisYearInc = filteredPay.reduce((s,p) => s+p.amt, 0);
   document.getElementById('s-income').textContent = payments.length ? thisYearInc.toLocaleString() + ' د.إ' : '—';
   // recent payments
   if(payments.length === 0) {
@@ -1708,7 +1701,7 @@ function renderPayments(){
   document.getElementById('pay-total').textContent=total.toLocaleString();
   document.getElementById('pay-count').textContent=f.length;
   document.getElementById('pay-avg').textContent=f.length?Math.round(total/f.length).toLocaleString():'0';
-  document.getElementById('pay-tbody').innerHTML=[...f].reverse().map(p=>`
+  document.getElementById('pay-tbody').innerHTML=f.map(p=>`
     <tr>
       <td><b>#${p.id}</b></td>
       <td>${p.who}</td>
@@ -1848,7 +1841,7 @@ function renderReceipts(){
   });
   const list=document.getElementById('receipts-list');
   if(!f.length){list.innerHTML='<div style="text-align:center;color:var(--muted);padding:30px">لا توجد نتائج</div>';return;}
-  list.innerHTML=[...f].reverse().map(p=>`
+  list.innerHTML=f.map(p=>`
     <div class="rec-card" onclick="openReceiptDetail(${p.id})">
       <div class="rec-card-hd">
         <div class="rec-card-num">📄 سند رقم #${p.id}</div>
@@ -1859,6 +1852,9 @@ function renderReceipts(){
         <span>📅 ${p.date}</span>
         <span>💳 ${p.method}</span>
         <span>🧾 ${p.desc.slice(0,40)}${p.desc.length>40?'...':''}</span>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end" onclick="event.stopPropagation()">
+        <button class="btn btn-out btn-sm" onclick="openEditPay(${p.id})">✏️ تعديل</button>
       </div>
     </div>`).join('');
 }
