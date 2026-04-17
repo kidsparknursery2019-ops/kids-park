@@ -320,7 +320,20 @@ textarea{resize:vertical;min-height:65px}
 
     <!-- DASHBOARD -->
     <div class="pg on" id="pg-dash">
-      <div class="pt">📊 لوحة التحكم</div>
+      <div class="pt">📊 لوحة التحكم
+  <div style="display:flex;align-items:center;gap:8px">
+    <label style="font-size:13px;font-weight:600;opacity:.85">السنة:</label>
+    <select id="dash-year-filter" onchange="renderDash()" style="padding:4px 10px;border-radius:8px;border:1.5px solid rgba(255,255,255,.4);background:rgba(255,255,255,.15);color:white;font-family:Tajawal,sans-serif;font-size:13px;font-weight:700;cursor:pointer">
+      <option value="">الكل</option>
+      <option value="2021">2021</option>
+      <option value="2022">2022</option>
+      <option value="2023">2023</option>
+      <option value="2024">2024</option>
+      <option value="2025">2025</option>
+      <option value="2026">2026</option>
+    </select>
+  </div>
+</div>
       <div class="sg">
         <div class="sc"><div class="sl">إجمالي الطلاب</div><div class="sv" id="s-total">—</div><div class="ss">العام الدراسي 2025-2026</div></div>
         <div class="sc y"><div class="sl">حاضرون اليوم</div><div class="sv" id="s-present">—</div><div class="ss">من إجمالي الطلاب</div></div>
@@ -404,6 +417,16 @@ textarea{resize:vertical;min-height:65px}
           <option value="">كل الأنواع</option>
           <option>قسط شهري</option><option>رسم تسجيل</option><option>مواصلات</option><option>أخرى</option>
         </select>
+        <select id="pay-year" onchange="renderPayments()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
+          <option value="">كل السنوات</option>
+          <option>2021</option><option>2022</option><option>2023</option><option>2024</option><option>2025</option><option>2026</option>
+        </select>
+        <select id="pay-sort" onchange="renderPayments()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
+          <option value="desc">الأحدث أولاً</option>
+          <option value="asc">الأقدم أولاً</option>
+          <option value="amt-desc">الأعلى قيمة</option>
+          <option value="amt-asc">الأقل قيمة</option>
+        </select>
         <button class="btn btn-out btn-sm" onclick="openExport('payments')">⬇ تصدير</button>
       </div>
       <div class="sg" style="grid-template-columns:repeat(3,1fr)">
@@ -450,6 +473,16 @@ textarea{resize:vertical;min-height:65px}
       <div class="pt">📄 سندات القبض</div>
       <div class="sbar">
         <input type="text" id="rec-search" placeholder="🔍 ابحث برقم السند أو اسم ولي الأمر..." oninput="renderReceipts()">
+        <select id="rec-year" onchange="renderReceipts()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
+          <option value="">كل السنوات</option>
+          <option>2021</option><option>2022</option><option>2023</option><option>2024</option><option>2025</option><option>2026</option>
+        </select>
+        <select id="rec-sort" onchange="renderReceipts()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
+          <option value="desc">الأحدث أولاً</option>
+          <option value="asc">الأقدم أولاً</option>
+          <option value="id-desc">رقم السند ↓</option>
+          <option value="id-asc">رقم السند ↑</option>
+        </select>
         <button class="btn btn-out btn-sm" onclick="openExport('receipts')">⬇ تصدير</button>
       </div>
       <div id="receipts-list"></div>
@@ -706,7 +739,7 @@ textarea{resize:vertical;min-height:65px}
 <!-- Add Payment -->
 <div class="ov" id="mo-pay">
   <div class="mo">
-    <div class="mot">💰 تسجيل دفعة جديدة</div>
+    <div class="mot" id="mo-pay-title">💰 تسجيل دفعة جديدة</div>
     <div class="fg">
       <div class="fl fgr"><label>ولي الأمر / الطالب *</label><input id="np-who" placeholder="والد/والدة الطفل..."></div>
       <div class="fl"><label>المبلغ (درهم) *</label><input id="np-amt" type="number" placeholder="0"></div>
@@ -1396,6 +1429,52 @@ setInterval(tick,1000);tick();
 // ============================================================
 // DASHBOARD
 // ============================================================
+
+// ============================================================
+// DATE NORMALIZATION — تطبيع التواريخ المختلطة
+// ============================================================
+function normalizeDate(d) {
+  if (!d) return '';
+  const s = String(d).trim();
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // Try DD-MM-YYYY or DD/MM/YYYY
+  let m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+  if (m) {
+    const [,a,b,y] = m;
+    // Ambiguous: if a > 12 it must be day; if b > 12 it must be day (swap)
+    // Default: DD-MM-YYYY
+    const day = parseInt(a), mon = parseInt(b), yr = parseInt(y);
+    if (day > 12) return y + '-' + String(mon).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+    // Both could be day or month — assume DD/MM/YYYY (more common in UAE)
+    return y + '-' + String(mon).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+  }
+  // Try MM/DD/YYYY (US format) — only if first part > 12 won't work and second <= 12
+  m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})$/);
+  if (m) {
+    const [,a,b,y] = m;
+    const yr = parseInt(y) + (parseInt(y) < 50 ? 2000 : 1900);
+    return yr + '-' + String(parseInt(a)).padStart(2,'0') + '-' + String(parseInt(b)).padStart(2,'0');
+  }
+  // YYYY/MM/DD
+  m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
+  if (m) return m[1] + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
+  return s.slice(0,10);
+}
+
+function getDateYear(d) {
+  const n = normalizeDate(d);
+  return n ? parseInt(n.slice(0,4)) : 0;
+}
+
+function formatDateAr(d) {
+  const n = normalizeDate(d);
+  if (!n) return '—';
+  const [y,m,day] = n.split('-');
+  const months = ['','يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+  return parseInt(day) + ' ' + (months[parseInt(m)]||m) + ' ' + y;
+}
+
 function renderDash(){
   const map={};
   students.forEach(s=>{map[s.cls]=(map[s.cls]||0)+1;});
@@ -1426,14 +1505,14 @@ function renderDash(){
   if(payments.length === 0) {
     document.getElementById('recent-pay').innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--muted)">جاري تحميل البيانات...</td></tr>';
   } else {
-  document.getElementById('recent-pay').innerHTML=[...payments].slice(-6).reverse().map(p=>`
+  document.getElementById('recent-pay').innerHTML=[...filteredPay].slice(-10).reverse().map(p=>`
     <tr><td>#${p.id}</td><td>${p.who}</td><td class="fin-pos">${p.amt.toLocaleString()} د.إ</td><td style="font-size:12px">${p.desc}</td><td>${p.date}</td></tr>`).join('');
  
   } // رسم بياني حسب السنوات من سندات القبض
   const chartByYear = {};
   payments.forEach(p => {
     if(!p.date) return;
-    const y = parseInt(p.date.toString().slice(0,4));
+    const y = getDateYear(p.date);
     if(y >= 2020 && y <= 2030) {
       if(!chartByYear[y]) chartByYear[y] = {inc:0, exp:0};
       chartByYear[y].inc += p.amt;
@@ -1517,13 +1596,14 @@ function editStudent(id){
   document.getElementById('ns-mph').value=s.mph;
   document.getElementById('ns-addr').value=s.addr;
   document.getElementById('ns-note').value=s.note;
+  document.getElementById('ns-sub-end').value=s.sub_end||'';
   document.getElementById('mo-student').classList.add('on');
 }
 
 function saveStudent(){
   const name=document.getElementById('ns-name').value.trim();
   if(!name){alert('اسم الطالب مطلوب');return;}
-  const data={name,dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,addr:document.getElementById('ns-addr').value,note:document.getElementById('ns-note').value};
+  const data={name,dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,addr:document.getElementById('ns-addr').value,note:document.getElementById('ns-note').value,sub_end:(document.getElementById('ns-sub-end')||{}).value||''};
   if(editingStuId){
     const i=students.findIndex(x=>x.id===editingStuId);
     if(i>=0)students[i]={...students[i],...data};
@@ -1607,9 +1687,23 @@ function renderAttLog(){
 // PAYMENTS
 // ============================================================
 function renderPayments(){
-  const q=document.getElementById('pay-search').value.toLowerCase();
-  const type=document.getElementById('pay-type').value;
-  const f=payments.filter(p=>(!q||p.who.toLowerCase().includes(q)||p.desc.toLowerCase().includes(q))&&(!type||p.type===type));
+  const q    = document.getElementById('pay-search').value.toLowerCase();
+  const type = document.getElementById('pay-type').value;
+  const yr   = document.getElementById('pay-year') ? document.getElementById('pay-year').value : '';
+  const sort = document.getElementById('pay-sort') ? document.getElementById('pay-sort').value : 'desc';
+  let f = payments.filter(p =>
+    (!q || p.who.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q)) &&
+    (!type || p.type === type) &&
+    (!yr || getDateYear(p.date) === parseInt(yr))
+  );
+  // Sort
+  f = [...f].sort((a,b) => {
+    if (sort === 'asc')      return normalizeDate(a.date).localeCompare(normalizeDate(b.date));
+    if (sort === 'desc')     return normalizeDate(b.date).localeCompare(normalizeDate(a.date));
+    if (sort === 'amt-desc') return b.amt - a.amt;
+    if (sort === 'amt-asc')  return a.amt - b.amt;
+    return 0;
+  });
   const total=f.reduce((s,p)=>s+p.amt,0);
   document.getElementById('pay-total').textContent=total.toLocaleString();
   document.getElementById('pay-count').textContent=f.length;
@@ -1622,14 +1716,45 @@ function renderPayments(){
       <td style="font-size:12.5px">${p.desc}</td>
       <td><span class="b bgr">${p.type}</span></td>
       <td>${p.method}</td><td>${p.date}</td><td>${p.rcvr}</td>
-      <td><button class="btn btn-out btn-sm" onclick="openReceiptDetail(${p.id})">🧾 سند</button></td>
+      <td style="display:flex;gap:5px"><button class="btn btn-out btn-sm" onclick="openReceiptDetail(${p.id})">🧾 سند</button><button class="btn btn-out btn-sm" onclick="openEditPay(${p.id})">✏️</button></td>
     </tr>`).join('');
 }
 
+let editingPayId = null;
+
 function openAddPay(){
+  editingPayId = null;
   document.getElementById('np-date').value=new Date().toISOString().slice(0,10);
   ['np-who','np-amt','np-desc','np-rcvr','np-note'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('mo-pay-title').textContent = '💰 تسجيل دفعة جديدة';
+  document.getElementById('pay-del-btn').style.display = 'none';
+  document.getElementById('pay-save-btn').textContent = '💾 تسجيل';
   document.getElementById('mo-pay').classList.add('on');
+}
+
+function openEditPay(id){
+  const p = payments.find(x=>x.id===id); if(!p) return;
+  editingPayId = id;
+  document.getElementById('np-who').value   = p.who;
+  document.getElementById('np-amt').value   = p.amt;
+  document.getElementById('np-desc').value  = p.desc;
+  document.getElementById('np-date').value  = normalizeDate(p.date);
+  document.getElementById('np-rcvr').value  = p.rcvr||'';
+  document.getElementById('np-note').value  = p.note||'';
+  document.getElementById('np-type').value  = p.type||'قسط شهري';
+  document.getElementById('np-method').value= p.method||'نقدي';
+  document.getElementById('mo-pay-title').textContent = 'تعديل السند #' + id;
+  document.getElementById('pay-del-btn').style.display = 'inline-flex';
+  document.getElementById('pay-save-btn').textContent = '💾 حفظ التعديل';
+  document.getElementById('mo-pay').classList.add('on');
+}
+
+function deletePayment(){
+  if(!editingPayId) return;
+  const p = payments.find(x=>x.id===editingPayId);
+  if(!p||!confirm('حذف السند #'+p.id+' ('+p.who+')؟')) return;
+  payments = payments.filter(x=>x.id!==editingPayId);
+  autoSave(); closeAll(); renderPayments(); renderDash();
 }
 
 function savePayment(){
@@ -1637,10 +1762,22 @@ function savePayment(){
   const amt=+document.getElementById('np-amt').value;
   const desc=document.getElementById('np-desc').value.trim();
   if(!who||!amt||!desc){alert('يرجى تعبئة الحقول المطلوبة');return;}
-  const p={id:nextPayId++,who,amt,desc,type:document.getElementById('np-type').value,method:document.getElementById('np-method').value,date:document.getElementById('np-date').value,rcvr:document.getElementById('np-rcvr').value,note:document.getElementById('np-note').value};
-  payments.push(p);
-  closeAll();renderPayments();renderDash();
-  autoSave(); alert(`✅ تم تسجيل الدفعة بنجاح (#${p.id})`);
+  if(editingPayId){
+    const p=payments.find(x=>x.id===editingPayId); if(!p) return;
+    p.who=who; p.amt=amt; p.desc=desc;
+    p.type=document.getElementById('np-type').value;
+    p.method=document.getElementById('np-method').value;
+    p.date=document.getElementById('np-date').value;
+    p.rcvr=document.getElementById('np-rcvr').value;
+    p.note=document.getElementById('np-note').value;
+    closeAll();renderPayments();renderReceipts();renderDash();
+    autoSave(); alert('✅ تم تعديل السند #'+editingPayId);
+  } else {
+    const p={id:nextPayId++,who,amt,desc,type:document.getElementById('np-type').value,method:document.getElementById('np-method').value,date:document.getElementById('np-date').value,rcvr:document.getElementById('np-rcvr').value,note:document.getElementById('np-note').value};
+    payments.push(p);
+    closeAll();renderPayments();renderDash();
+    autoSave(); alert('✅ تم تسجيل الدفعة بنجاح (#'+p.id+')');
+  }
 }
 
 // ============================================================
@@ -1695,8 +1832,20 @@ function delExpense(id){
 // RECEIPTS
 // ============================================================
 function renderReceipts(){
-  const q=document.getElementById('rec-search').value.toLowerCase();
-  const f=payments.filter(p=>!q||p.who.toLowerCase().includes(q)||String(p.id).includes(q)||p.desc.toLowerCase().includes(q));
+  const q    = document.getElementById('rec-search').value.toLowerCase();
+  const yr   = document.getElementById('rec-year') ? document.getElementById('rec-year').value : '';
+  const sort = document.getElementById('rec-sort') ? document.getElementById('rec-sort').value : 'desc';
+  let f = payments.filter(p =>
+    (!q || p.who.toLowerCase().includes(q) || String(p.id).includes(q) || p.desc.toLowerCase().includes(q)) &&
+    (!yr || getDateYear(p.date) === parseInt(yr))
+  );
+  f = [...f].sort((a,b) => {
+    if (sort === 'asc')     return normalizeDate(a.date).localeCompare(normalizeDate(b.date));
+    if (sort === 'desc')    return normalizeDate(b.date).localeCompare(normalizeDate(a.date));
+    if (sort === 'id-asc')  return a.id - b.id;
+    if (sort === 'id-desc') return b.id - a.id;
+    return 0;
+  });
   const list=document.getElementById('receipts-list');
   if(!f.length){list.innerHTML='<div style="text-align:center;color:var(--muted);padding:30px">لا توجد نتائج</div>';return;}
   list.innerHTML=[...f].reverse().map(p=>`
@@ -1912,6 +2061,8 @@ function applyLogin() {
   ub.style.display = 'flex';
   const sb = document.getElementById('btn-save-cloud');
   if (sb) sb.style.display = 'inline-block';
+  const nb = document.getElementById('notif-btn');
+  if (nb) nb.style.display = 'inline-block';
   document.getElementById('ub-name').textContent = currentUser.name || currentUser.username;
   document.getElementById('ub-role').textContent = currentUser.role === 'admin' ? '👑 مدير' : '👤 موظف';
   // Show admin nav only for admin
@@ -1936,6 +2087,8 @@ function doLogout() {
   document.getElementById('login-screen').style.display = 'flex';
   const sb2 = document.getElementById('btn-save-cloud');
   if (sb2) sb2.style.display = 'none';
+  const nb2 = document.getElementById('notif-btn');
+  if (nb2) nb2.style.display = 'none';
   document.getElementById('user-badge').style.display = 'none';
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
@@ -3047,6 +3200,20 @@ function updateNotifications() {
     }
   });
 
+  // Student subscription alerts
+  students.forEach(s => {
+    if (!s.sub_end) return;
+    const days = getRenDays(s.sub_end);
+    if (days === null) return;
+    if (days < 0) {
+      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'انتهى اشتراكه منذ ' + Math.abs(days) + ' يوم', days, urgent:true });
+    } else if (days <= 30) {
+      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'ينتهي اشتراكه خلال ' + days + ' يوم', days, urgent:true });
+    } else if (days <= 60) {
+      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'ينتهي اشتراكه خلال ' + days + ' يوم', days, urgent:false });
+    }
+  });
+
   // Sort by urgency
   alerts.sort((a,b) => a.days - b.days);
 
@@ -3092,6 +3259,9 @@ function goToAlert(type, id) {
   if (type === 'renewal') {
     go('renewals');
     setTimeout(() => openEditRenewal(id), 300);
+  } else if (type === 'student') {
+    go('students');
+    setTimeout(() => editStudent(id), 300);
   }
 }
 
