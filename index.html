@@ -755,8 +755,9 @@ textarea{resize:vertical;min-height:65px}
       <div class="fl"><label>ملاحظات</label><input id="np-note" placeholder=""></div>
     </div>
     <div class="mof">
+      <button class="btn btn-r btn-sm" id="pay-del-btn" onclick="deletePayment()" style="display:none;margin-left:auto">🗑 حذف</button>
       <button class="btn btn-out" onclick="closeAll()">إلغاء</button>
-      <button class="btn btn-g" onclick="savePayment()">💾 تسجيل الدفعة</button>
+      <button class="btn btn-g" id="pay-save-btn" onclick="savePayment()">💾 تسجيل الدفعة</button>
     </div>
   </div>
 </div>
