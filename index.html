@@ -1712,23 +1712,29 @@ function viewStudentProfile(id) {
 }
 
 function editStudent(id){
-  const s=students.find(x=>x.id===id); if(!s)return;
-  editingStuId=id;
-  document.getElementById('mo-stu-title').textContent='✏️ تعديل بيانات الطالب';
-  document.getElementById('ns-name').value=s.name;
-  document.getElementById('ns-dob').value=s.dob;
-  document.getElementById('ns-gen').value=s.gen;
-  document.getElementById('ns-nat').value=s.nat;
-  document.getElementById('ns-cls').value=s.cls;
-  document.getElementById('ns-bpl').value=s.bpl;
-  document.getElementById('ns-dad').value=s.dad;
-  document.getElementById('ns-job').value=s.job;
-  document.getElementById('ns-dph').value=s.dph;
-  document.getElementById('ns-mom').value=s.mom;
-  document.getElementById('ns-mph').value=s.mph;
-  document.getElementById('ns-addr').value=s.addr;
-  document.getElementById('ns-note').value=s.note;
-  document.getElementById('ns-sub-end').value=s.sub_end||'';
+  const s = students.find(x => x.id === id);
+  if (!s) { alert('الطالب غير موجود'); return; }
+  editingStuId = id;
+  const setVal = function(elId, val) {
+    const el = document.getElementById(elId);
+    if (el) el.value = val == null ? '' : String(val);
+  };
+  const title = document.getElementById('mo-stu-title');
+  if (title) title.textContent = '✏️ تعديل: ' + (s.name || '');
+  setVal('ns-name',    s.name);
+  setVal('ns-dob',     s.dob);
+  setVal('ns-gen',     s.gen);
+  setVal('ns-nat',     s.nat);
+  setVal('ns-cls',     s.cls || Object.keys(CLASSES)[0]);
+  setVal('ns-bpl',     s.bpl);
+  setVal('ns-dad',     s.dad);
+  setVal('ns-job',     s.job);
+  setVal('ns-dph',     s.dph);
+  setVal('ns-mom',     s.mom);
+  setVal('ns-mph',     s.mph);
+  setVal('ns-addr',    s.addr);
+  setVal('ns-note',    s.note || s.notes);
+  setVal('ns-sub-end', s.sub_end);
   document.getElementById('mo-student').classList.add('on');
 }
 
