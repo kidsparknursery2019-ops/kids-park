@@ -375,7 +375,7 @@ textarea{resize:vertical;min-height:65px}
           <table><thead><tr><th>الفصل</th><th>عدد الطلاب</th><th>المعلمة</th></tr></thead><tbody id="cls-table"></tbody></table>
         </div>
         <div class="card">
-          <div class="ct">الإيرادات والمصروفات (2025)</div>
+          <div class="ct" id="finance-chart-title">الإيرادات والمصروفات عبر السنوات</div>
           <div class="chart-bar-wrap" id="finance-chart"></div>
           <div style="display:flex;gap:16px;font-size:12px;color:var(--muted)"><span>🟩 إيرادات</span><span>🟥 مصروفات</span></div>
         </div>
@@ -737,6 +737,24 @@ textarea{resize:vertical;min-height:65px}
     <div class="pg" id="pg-admin">
       <div class="pt">⚙️ إعدادات النظام <span style="font-size:13px;color:var(--muted);font-weight:400">(للمدير فقط)</span></div>
       <div class="admin-grid">
+        <!-- Backup & Restore Section -->
+        <div class="admin-section" style="grid-column:1/-1;background:linear-gradient(135deg,#e8f5e9,#f1f8e9);border:2px solid #4caf50">
+          <h3 style="color:#2e7d32">💾 النسخ الاحتياطي واستعادة البيانات</h3>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+            <button class="btn btn-g" onclick="downloadBackup()">⬇ تحميل نسخة احتياطية كاملة</button>
+            <button class="btn btn-out" onclick="document.getElementById('restore-file').click()">⬆ استعادة من نسخة احتياطية</button>
+            <input type="file" id="restore-file" accept=".json" style="display:none" onchange="restoreBackup(event)">
+          </div>
+          <div style="margin-top:12px;padding:10px;background:white;border-radius:8px;font-size:12px;color:var(--muted);line-height:1.8">
+            <b style="color:#2e7d32">📋 ما يتم حفظه:</b> جميع الطلاب، السندات، المصاريف، التجديدات، الحضور، الفصول، الإعدادات، طلبات التسجيل، والطلاب المحذوفين.<br>
+            <b style="color:#e67e22">⚠️ ننصح بأخذ نسخة احتياطية يومياً أو قبل أي تغييرات كبيرة.</b><br>
+            <b style="color:#d32f2f">🔒 استعادة النسخة الاحتياطية تستبدل جميع البيانات الحالية - لن يمكن التراجع.</b>
+          </div>
+          <div style="margin-top:10px;padding:8px;background:#fff8e1;border-right:3px solid #f39c12;border-radius:6px;font-size:11px;color:#b8860b">
+            💡 <b>نصيحة:</b> احفظ النسخ الاحتياطية على Google Drive أو Dropbox للحفاظ عليها من فقدان الجهاز.
+          </div>
+        </div>
+
         <div class="admin-section">
           <h3>🌿 شعار الحضانة</h3>
           <div id="logo-preview-wrap" style="margin-bottom:10px">
@@ -1043,6 +1061,34 @@ var nextExpId = 2531;
 var nextRenId = 51;
 
 let deletedStudents = JSON.parse(localStorage.getItem('kp_deleted_students') || '[]');
+// Tombstones: قوائم IDs المحذوفة لمنع استرجاعها من HTML
+let tombstones = JSON.parse(localStorage.getItem('kp_tombstones') || '{"students":[],"payments":[],"expenses":[],"renewals":[]}');
+if (!tombstones.students)  tombstones.students = [];
+if (!tombstones.payments)  tombstones.payments = [];
+if (!tombstones.expenses)  tombstones.expenses = [];
+if (!tombstones.renewals)  tombstones.renewals = [];
+
+function addTombstone(type, id) {
+  if (!tombstones[type]) tombstones[type] = [];
+  if (!tombstones[type].includes(id)) tombstones[type].push(id);
+  localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+}
+
+function applyTombstones() {
+  if (tombstones.students && tombstones.students.length) {
+    students = students.filter(function(s){ return !tombstones.students.includes(s.id); });
+  }
+  if (tombstones.payments && tombstones.payments.length) {
+    payments = payments.filter(function(p){ return !tombstones.payments.includes(p.id); });
+  }
+  if (tombstones.expenses && tombstones.expenses.length) {
+    expenses = expenses.filter(function(e){ return !tombstones.expenses.includes(e.id); });
+  }
+  if (tombstones.renewals && tombstones.renewals.length) {
+    renewals = renewals.filter(function(r){ return !tombstones.renewals.includes(r.id); });
+  }
+}
+
 let students = [
   {id:1,name:'جورج يعقوب',dob:'2022-03-18',gen:'ذكر',nat:'سوريا',cls:'النحل',bpl:'الشارقة',dad:'لطيف يعقوب',job:'مهندس',dph:'0582458845',mom:'لمى الياس',mph:'0521490770',addr:'الشارقة-المجاز 2',note:''},
   {id:2,name:'كارن تكريتي',dob:'2021-06-02',gen:'انثى',nat:'سوريا',cls:'النحل',bpl:'الشارقة',dad:'محمد طارق',job:'موظف بنك',dph:'0555893136',mom:'ربا مندو',mph:'0565382283',addr:'الشارقة-المجاز 3',note:''},
@@ -3752,34 +3798,78 @@ function renderDash(){
     // الإيرادات وآخر المدفوعات
   updateDashIncome();
 
-  // رسم بياني حسب السنوات من سندات القبض
+  // رسم بياني: إذا فلتر السنة مفعّل، اعرض أشهر تلك السنة، وإلا اعرض السنوات
   const chartByYear = {};
-  payments.forEach(p => {
-    if(!p.date) return;
-    const y = getDateYear(p.date);
-    if(y >= 2020 && y <= 2030) {
-      if(!chartByYear[y]) chartByYear[y] = {inc:0, exp:0};
-      chartByYear[y].inc += p.amt;
+  if (dashYear) {
+    // عرض أشهر السنة المحددة
+    for (let m=1; m<=12; m++) {
+      const key = dashYear + '-' + String(m).padStart(2,'0');
+      chartByYear[key] = {inc: 0, exp: 0};
     }
-  });
-  expenses.forEach(e => {
-    const d = e.exp_date||e.date||'';
-    const y = parseInt(d.slice(0,4));
-    if(y >= 2020 && y <= 2030) {
-      if(!chartByYear[y]) chartByYear[y] = {inc:0, exp:0};
-      chartByYear[y].exp += e.amt;
-    }
-  });
+    payments.forEach(function(p) {
+      if (!p.date) return;
+      const y = getDateYear(p.date);
+      if (y !== dashYear) return;
+      const key = String(p.date).slice(0,7);
+      if (chartByYear[key]) chartByYear[key].inc += (p.amt||0);
+    });
+    expenses.forEach(function(e) {
+      const d = e.exp_date || e.date || '';
+      const y = parseInt(String(d).slice(0,4));
+      if (y !== dashYear) return;
+      const key = String(d).slice(0,7);
+      if (chartByYear[key]) chartByYear[key].exp += (e.amt||0);
+    });
+  } else {
+    // عرض كل السنوات
+    payments.forEach(function(p) {
+      if (!p.date) return;
+      const y = getDateYear(p.date);
+      if (y >= 2020 && y <= 2030) {
+        if (!chartByYear[y]) chartByYear[y] = {inc:0, exp:0};
+        chartByYear[y].inc += (p.amt||0);
+      }
+    });
+    expenses.forEach(function(e) {
+      const d = e.exp_date || e.date || '';
+      const y = parseInt(String(d).slice(0,4));
+      if (y >= 2020 && y <= 2030) {
+        if (!chartByYear[y]) chartByYear[y] = {inc:0, exp:0};
+        chartByYear[y].exp += (e.amt||0);
+      }
+    });
+  }
   const chartYears = Object.keys(chartByYear).sort();
-  const maxCV = Math.max(...chartYears.map(y => Math.max(chartByYear[y].inc, chartByYear[y].exp)), 1);
-  document.getElementById('finance-chart').innerHTML = chartYears.map(y => `
-    <div class="chart-bar-col">
-      <div style="display:flex;gap:2px;align-items:flex-end;height:100px">
-        <div class="chart-bar" style="height:${(chartByYear[y].inc/maxCV*100).toFixed(0)}px;width:10px" title="${y} إيرادات: ${chartByYear[y].inc.toLocaleString()}"></div>
-        <div class="chart-bar r" style="height:${(chartByYear[y].exp/maxCV*100).toFixed(0)}px;width:10px" title="${y} مصاريف: ${chartByYear[y].exp.toLocaleString()}"></div>
-      </div>
-      <div style="font-size:9px;text-align:center;color:var(--muted);margin-top:2px">${y}</div>
-    </div>`).join('');
+  // حدّث عنوان الرسم البياني ديناميكياً
+  const chartTitleEl = document.getElementById('finance-chart-title');
+  if (chartTitleEl) {
+    if (dashYear) {
+      chartTitleEl.textContent = 'الإيرادات والمصروفات - سنة ' + dashYear;
+    } else if (chartYears.length > 0) {
+      chartTitleEl.textContent = 'الإيرادات والمصروفات (' + chartYears[0] + ' - ' + chartYears[chartYears.length-1] + ')';
+    } else {
+      chartTitleEl.textContent = 'الإيرادات والمصروفات';
+    }
+  }
+  const maxCV = Math.max.apply(null, chartYears.map(function(y){ return Math.max(chartByYear[y].inc, chartByYear[y].exp); }).concat([1]));
+  const chartEl = document.getElementById('finance-chart');
+  if (chartEl) {
+    if (chartYears.length === 0) {
+      chartEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">لا توجد بيانات مالية</div>';
+    } else {
+      chartEl.innerHTML = chartYears.map(function(y){
+        const incH = (chartByYear[y].inc/maxCV*100).toFixed(0);
+        const expH = (chartByYear[y].exp/maxCV*100).toFixed(0);
+        return '<div class="chart-bar-col">' +
+          '<div style="display:flex;gap:2px;align-items:flex-end;height:100px">' +
+            '<div class="chart-bar" style="height:'+incH+'px;width:10px" title="'+y+' إيرادات: '+chartByYear[y].inc.toLocaleString()+'"></div>' +
+            '<div class="chart-bar r" style="height:'+expH+'px;width:10px" title="'+y+' مصاريف: '+chartByYear[y].exp.toLocaleString()+'"></div>' +
+          '</div>' +
+          '<div style="font-size:9px;text-align:center;color:var(--muted);margin-top:2px">'+y+'</div>' +
+        '</div>';
+      }).join('');
+    }
+  }
 }
 
 // ============================================================
@@ -4021,6 +4111,11 @@ function restoreStudent(id) {
   students.push(restored);
   deletedStudents = deletedStudents.filter(x => x.id !== id);
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
+  // ازل من tombstones
+  if (tombstones.students) {
+    tombstones.students = tombstones.students.filter(function(x){ return x !== id; });
+    localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+  }
   autoSave();
   renderStudents();
   renderDash();
@@ -4036,6 +4131,8 @@ function permanentDeleteStudent(id) {
   if (!confirm('تأكيد أخير: حذف نهائي؟')) return;
   deletedStudents = deletedStudents.filter(x => x.id !== id);
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
+  addTombstone('students', id);
+  autoSave();
   renderDeletedStudents();
 }
 
@@ -4580,8 +4677,10 @@ function deletePayment(){
   if(!editingPayId) return;
   const p = payments.find(x=>x.id===editingPayId);
   if(!p||!confirm('حذف السند #'+p.id+' ('+p.who+')؟')) return;
-  payments = payments.filter(x=>x.id!==editingPayId);
-  autoSave(); closeAll(); renderPayments(); renderDash();
+  const delId = editingPayId;
+  payments = payments.filter(x=>x.id!==delId);
+  addTombstone('payments', delId);
+  autoSave(); closeAll(); renderPayments(); renderReceipts(); renderDash();
 }
 
 function savePayment(){
@@ -4669,7 +4768,9 @@ function saveExpense(){
 
 function delExpense(id){
   if(!confirm('حذف هذا المصروف؟'))return;
-  expenses=expenses.filter(e=>e.id!==id); autoSave(); renderExpenses();
+  expenses=expenses.filter(e=>e.id!==id);
+  addTombstone('expenses', id);
+  autoSave(); renderExpenses(); renderDash();
 }
 
 // ============================================================
@@ -4886,6 +4987,113 @@ const IMPORT_SCHEMAS = {
 
 let importTarget = '';
 let importParsedData = null;
+
+
+// ════════════════════════════════════════════
+// BACKUP & RESTORE
+// ════════════════════════════════════════════
+function downloadBackup() {
+  const backup = {
+    backupDate: new Date().toISOString(),
+    version: '2.0',
+    system: 'حضانة حديقة الأطفال',
+    // جميع البيانات
+    students: students,
+    payments: payments,
+    expenses: expenses,
+    renewals: renewals,
+    attLog: attLog,
+    deletedStudents: (typeof deletedStudents !== 'undefined' ? deletedStudents : []),
+    tombstones: (typeof tombstones !== 'undefined' ? tombstones : {}),
+    CLASSES: CLASSES,
+    nurserySettings: nurserySettings,
+    // بيانات محلية إضافية
+    kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
+    kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]'),
+  };
+
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const today = new Date().toISOString().slice(0,10);
+  a.download = 'backup_حضانة_حديقة_الأطفال_' + today + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+
+  alert('✅ تم تحميل النسخة الاحتياطية بنجاح\n\nاحفظها في مكان آمن (Google Drive/Dropbox)');
+}
+
+function restoreBackup(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  if (!confirm('⚠️ تحذير!\n\nاستعادة النسخة الاحتياطية ستحل محل جميع البيانات الحالية.\n\nهل أنت متأكد؟ (لا يمكن التراجع)')) {
+    event.target.value = '';
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const backup = JSON.parse(e.target.result);
+      if (!backup.version || !backup.students) {
+        alert('❌ الملف ليس نسخة احتياطية صالحة');
+        return;
+      }
+
+      // استعادة البيانات
+      if (backup.students) students = backup.students;
+      if (backup.payments) payments = backup.payments;
+      if (backup.expenses) expenses = backup.expenses;
+      if (backup.renewals) renewals = backup.renewals;
+      if (backup.attLog) attLog = backup.attLog;
+      if (backup.deletedStudents) {
+        deletedStudents = backup.deletedStudents;
+        localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
+      }
+      if (backup.tombstones) {
+        tombstones = backup.tombstones;
+        localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+      }
+      if (backup.CLASSES) Object.assign(CLASSES, backup.CLASSES);
+      if (backup.nurserySettings) Object.assign(nurserySettings, backup.nurserySettings);
+      if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(backup.kp_users));
+      if (backup.kp_form_rows) {
+        localStorage.setItem('kp_form_rows', JSON.stringify(backup.kp_form_rows));
+        syncedFormRows = backup.kp_form_rows;
+      }
+
+      // تحديث المتغيرات
+      if (students.length) nextStuId = Math.max.apply(null, students.map(function(s){return s.id||0;})) + 1;
+      if (payments.length) nextPayId = Math.max.apply(null, payments.map(function(p){return p.id||0;}), 3000) + 1;
+      if (expenses.length) nextExpId = Math.max.apply(null, expenses.map(function(e){return e.id||0;})) + 1;
+      if (renewals.length) nextRenId = Math.max.apply(null, renewals.map(function(r){return r.id||0;})) + 1;
+
+      autoSave();
+      renderDash();
+      renderStudents();
+      renderPayments();
+      renderExpenses();
+      renderReceipts();
+      renderRenewals();
+      if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
+      updateNotifications();
+
+      const date = backup.backupDate ? new Date(backup.backupDate).toLocaleString('ar-AE') : 'غير معروف';
+      alert('✅ تم استعادة النسخة الاحتياطية بنجاح!\n\n' +
+            'تاريخ النسخة: ' + date + '\n' +
+            'الطلاب: ' + (backup.students||[]).length + '\n' +
+            'السندات: ' + (backup.payments||[]).length + '\n' +
+            'المصاريف: ' + (backup.expenses||[]).length);
+    } catch(err) {
+      alert('❌ فشل قراءة الملف: ' + err.message);
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
 
 function openImport(target) {
   importTarget = target;
@@ -5218,6 +5426,8 @@ function applyLogin() {
   const yfInit = document.getElementById('dash-year-filter');
   if (yfInit) yfInit.value = String(dashYear);
 
+  // طبّق tombstones على البيانات المحلية
+  if (typeof applyTombstones === 'function') applyTombstones();
   // عرض البيانات المحلية فوراً
   renderDash();
   setTimeout(updateNotifications, 500);
@@ -5835,6 +6045,7 @@ async function pushToFirebase() {
       renewals:       data.renewals,
       kp_users:       data.kp_users,
       deletedStudents: data.deletedStudents,
+      tombstones:     tombstones,
       newPayments:    (data.payments || []).filter(function(p){ return p.id >= 3000; }),
     };
 
@@ -5910,6 +6121,20 @@ async function loadFromFirebase() {
     if (data.kp_users && data.kp_users.length) {
       localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
     }
+    // استقبل tombstones من Firebase ودمجها
+    if (data.tombstones) {
+      ['students','payments','expenses','renewals'].forEach(function(type){
+        if (!tombstones[type]) tombstones[type] = [];
+        if (data.tombstones[type] && Array.isArray(data.tombstones[type])) {
+          data.tombstones[type].forEach(function(id){
+            if (!tombstones[type].includes(id)) tombstones[type].push(id);
+          });
+        }
+      });
+      localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+    }
+    // طبّق tombstones - احذف السجلات الملغاة
+    applyTombstones();
     if (students.length) nextStuId = Math.max(...students.map(s=>s.id||0)) + 1;
     if (payments.length) nextPayId = Math.max(...payments.map(p=>p.id||0)) + 1;
     if (expenses.length) nextExpId = Math.max(...expenses.map(e=>e.id||0)) + 1;
@@ -6399,7 +6624,9 @@ function deleteRenewal() {
   const r = renewals.find(x => x.id === editingRenId);
   if (!r) return;
   if (!confirm('حذف "' + r.name + '"؟')) return;
-  renewals = renewals.filter(x => x.id !== editingRenId);
+  const delId = editingRenId;
+  renewals = renewals.filter(x => x.id !== delId);
+  addTombstone('renewals', delId);
   autoSave();
   closeAll();
   renderRenewals();
