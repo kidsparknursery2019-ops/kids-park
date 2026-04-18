@@ -320,20 +320,20 @@ textarea{resize:vertical;min-height:65px}
 
     <!-- DASHBOARD -->
     <div class="pg on" id="pg-dash">
-      <div class="pt">📊 لوحة التحكم
-  <div style="display:flex;align-items:center;gap:8px">
-    <label style="font-size:13px;font-weight:600;opacity:.85">السنة:</label>
-    <select id="dash-year-filter" onchange="renderDash()" style="padding:4px 10px;border-radius:8px;border:1.5px solid rgba(255,255,255,.4);background:rgba(255,255,255,.15);color:white;font-family:Tajawal,sans-serif;font-size:13px;font-weight:700;cursor:pointer">
-      <option value="">الكل</option>
-      <option value="2021">2021</option>
-      <option value="2022">2022</option>
-      <option value="2023">2023</option>
-      <option value="2024">2024</option>
-      <option value="2025">2025</option>
-      <option value="2026">2026</option>
-    </select>
-  </div>
-</div>
+      <div class="pt">📊 لوحة التحكم</div>
+      <div style="display:flex;align-items:center;gap:8px;padding:0 0 10px 0">
+        <label style="font-size:13px;font-weight:600;color:var(--g1)">📅 السنة:</label>
+        <select id="dash-year-filter" onchange="dashYearChanged(this.value)" style="padding:6px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px;font-weight:700;cursor:pointer;background:white">
+          <option value="">الكل</option>
+          <option value="2021">2021</option>
+          <option value="2022">2022</option>
+          <option value="2023">2023</option>
+          <option value="2024">2024</option>
+          <option value="2025">2025</option>
+          <option value="2026">2026</option>
+        </select>
+        <span id="dash-year-total" style="font-size:13px;color:var(--g1);font-weight:700"></span>
+      </div>
       <div class="sg">
         <div class="sc"><div class="sl">إجمالي الطلاب</div><div class="sv" id="s-total">—</div><div class="ss">العام الدراسي 2025-2026</div></div>
         <div class="sc y"><div class="sl">حاضرون اليوم</div><div class="sv" id="s-present">—</div><div class="ss">من إجمالي الطلاب</div></div>
@@ -1483,6 +1483,46 @@ function formatDateAr(d) {
   return parseInt(day) + ' ' + (months[parseInt(m)]||m) + ' ' + y;
 }
 
+
+// ── متغير السنة المختارة في الداشبورد ──
+let dashYear = new Date().getFullYear(); // يبدأ بالسنة الحالية
+
+function dashYearChanged(val) {
+  dashYear = val ? parseInt(val) : 0;
+  updateDashIncome();
+}
+
+function updateDashIncome() {
+  // حساب المبلغ
+  let total = 0;
+  const recent = [];
+  payments.forEach(function(p) {
+    const y = getDateYear(p.date);
+    if (!dashYear || y === dashYear) {
+      total += (p.amt || 0);
+      recent.push(p);
+    }
+  });
+
+  // عرض الإجمالي
+  const incEl = document.getElementById('s-income');
+  if (incEl) incEl.textContent = payments.length > 0 ? total.toLocaleString() + ' د.إ' : '—';
+
+  // تحديث الـ label
+  const lbl = document.getElementById('dash-year-total');
+  if (lbl) lbl.textContent = recent.length > 0 ? '(' + recent.length + ' سند)' : '';
+
+  // آخر المدفوعات
+  recent.sort(function(a,b){ return (b.date||'').localeCompare(a.date||''); });
+  const payEl = document.getElementById('recent-pay');
+  if (payEl) payEl.innerHTML = recent.slice(0,10).map(function(p){
+    return '<tr><td><b>#'+p.id+'</b></td><td>'+p.who+'</td>' +
+      '<td class="fin-pos">'+(p.amt||0).toLocaleString()+' د.إ</td>' +
+      '<td style="font-size:12px">'+(p.desc||'')+'</td>' +
+      '<td>'+(p.date||'')+'</td></tr>';
+  }).join('') || '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">لا توجد بيانات'+(dashYear?' في '+dashYear:'')+'</td></tr>';
+}
+
 function renderDash(){
   const map={};
   students.forEach(s=>{map[s.cls]=(map[s.cls]||0)+1;});
@@ -1494,27 +1534,10 @@ function renderDash(){
   students.forEach(s=>{const v=attLog[today+'_'+s.id];if(v==='present')p++;if(v==='absent')a++;});
   document.getElementById('s-present').textContent=p||'—';
   document.getElementById('s-absent').textContent=a||'—';
-  // فلتر السنة - قراءة من المتغير العالمي
-  const yfEl = document.getElementById('dash-year-filter');
-  const rawVal = yfEl ? yfEl.value : '';
-  const selectedYear = rawVal ? parseInt(rawVal) : 0; // 0 = الكل
+    // الإيرادات وآخر المدفوعات
+  updateDashIncome();
 
-  // حساب الإيرادات
-  const filteredPay = selectedYear
-    ? payments.filter(p => getDateYear(p.date) === selectedYear)
-    : [...payments];
-  const totalFiltered = filteredPay.reduce((s,p) => s + (p.amt||0), 0);
-  document.getElementById('s-income').textContent =
-    payments.length > 0 ? totalFiltered.toLocaleString() + ' د.إ' : '—';
-
-  // آخر المدفوعات - مرتبة من الأحدث
-  const recentRows = [...filteredPay]
-    .sort((a,b) => (b.date||'').localeCompare(a.date||''))
-    .slice(0,10);
-  document.getElementById('recent-pay').innerHTML = recentRows.length
-    ? recentRows.map(p => `
-    <tr><td><b>#${p.id}</b></td><td>${p.who}</td><td class="fin-pos">${(p.amt||0).toLocaleString()} د.إ</td><td style="font-size:12px">${p.desc||''}</td><td>${p.date||''}</td></tr>`).join('')
-    : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">لا توجد بيانات للسنة المختارة</td></tr>'; // رسم بياني حسب السنوات من سندات القبض
+  // رسم بياني حسب السنوات من سندات القبض
   const chartByYear = {};
   payments.forEach(p => {
     if(!p.date) return;
@@ -2082,6 +2105,11 @@ function applyLogin() {
   // تهيئة فلتر السنة على السنة الحالية
   const yf = document.getElementById('dash-year-filter');
   if (yf && !yf.value) yf.value = String(new Date().getFullYear());
+
+  // تهيئة السنة الافتراضية
+  dashYear = new Date().getFullYear();
+  const yfInit = document.getElementById('dash-year-filter');
+  if (yfInit) yfInit.value = String(dashYear);
 
   // عرض البيانات المحلية فوراً
   renderDash();
