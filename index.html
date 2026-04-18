@@ -5838,12 +5838,19 @@ async function loadFromFirebase() {
     // ═══════════════════════════════════════════════
     // DEEP MERGE: دمج ذكي يحافظ على التعديلات المحلية
     // ═══════════════════════════════════════════════
+    // الكود يفوز للسجلات الأساسية، Firebase فقط يضيف الجديد
     function mergeById(localArr, fbArr) {
       if (!fbArr || !Array.isArray(fbArr)) return localArr;
-      const merged = {};
-      (localArr || []).forEach(function(item){ if (item && item.id != null) merged[item.id] = item; });
-      fbArr.forEach(function(item){ if (item && item.id != null) merged[item.id] = item; });
-      return Object.values(merged).sort(function(a,b){ return (a.id||0) - (b.id||0); });
+      const localIds = new Set();
+      (localArr || []).forEach(function(item){ if (item && item.id != null) localIds.add(item.id); });
+      const result = [].concat(localArr || []);
+      // أضف من Firebase فقط السجلات اللي مش موجودة في الكود
+      fbArr.forEach(function(item){
+        if (item && item.id != null && !localIds.has(item.id)) {
+          result.push(item);
+        }
+      });
+      return result.sort(function(a,b){ return (a.id||0) - (b.id||0); });
     }
     students  = mergeById(students,  data.students);
     expenses  = mergeById(expenses,  data.expenses);
