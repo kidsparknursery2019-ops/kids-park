@@ -253,6 +253,13 @@ textarea{resize:vertical;min-height:65px}
 .notif-item-title{font-size:13px;font-weight:700;line-height:1.3}
 .notif-item-sub{font-size:11px;color:var(--muted);margin-top:1px}
 .notif-item-days{font-size:12px;font-weight:700;flex-shrink:0;margin-right:auto}
+
+/* Sortable table headers (Excel-style) */
+.tbl th.sortable { cursor:pointer; user-select:none; position:relative; padding-right:18px }
+.tbl th.sortable:hover { background:var(--g1); color:white }
+.tbl th.sortable::after { content:'⇅'; position:absolute; right:4px; opacity:.4; font-size:10px }
+.tbl th.sortable.sort-asc::after { content:'▲'; opacity:1 }
+.tbl th.sortable.sort-desc::after { content:'▼'; opacity:1 }
 </style>
 </head>
 <body>
@@ -380,7 +387,7 @@ textarea{resize:vertical;min-height:65px}
       <div class="card">
         <div class="ct"><span id="stu-count">الطلاب</span></div>
         <div class="tw"><table>
-          <thead><tr><th>#</th><th>اسم الطالب</th><th>تاريخ الميلاد</th><th>الجنس</th><th>الجنسية</th><th>الفصل</th><th>اسم الأب</th><th>هاتف الأب</th><th>هاتف الأم</th><th>العنوان</th><th>إجراءات</th></tr></thead>
+          <thead id="stu-thead"></thead>
           <tbody id="stu-tbody"></tbody>
         </table></div>
       </div>
@@ -428,6 +435,8 @@ textarea{resize:vertical;min-height:65px}
         <select id="pay-sort" onchange="renderPayments()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
           <option value="desc">الأحدث أولاً</option>
           <option value="asc">الأقدم أولاً</option>
+          <option value="id-desc">رقم السند ↓ (الأكبر)</option>
+          <option value="id-asc">رقم السند ↑ (الأصغر)</option>
           <option value="amt-desc">الأعلى قيمة</option>
           <option value="amt-asc">الأقل قيمة</option>
         </select>
@@ -440,7 +449,7 @@ textarea{resize:vertical;min-height:65px}
       </div>
       <div class="card">
         <div class="tw"><table>
-          <thead><tr><th>#سند</th><th>ولي الأمر</th><th>المبلغ</th><th>البيان</th><th>النوع</th><th>طريقة الدفع</th><th>التاريخ</th><th>المستلم</th><th></th></tr></thead>
+          <thead id="pay-thead"></thead>
           <tbody id="pay-tbody"></tbody>
         </table></div>
       </div>
@@ -466,7 +475,7 @@ textarea{resize:vertical;min-height:65px}
       </div>
       <div class="card">
         <div class="tw"><table>
-          <thead><tr><th>#</th><th>البيان / الوصف</th><th>المبلغ</th><th>الفئة</th><th>التاريخ</th><th>طريقة الدفع</th><th>ملاحظات</th><th></th></tr></thead>
+          <thead id="exp-thead"></thead>
           <tbody id="exp-tbody"></tbody>
         </table></div>
       </div>
@@ -775,6 +784,8 @@ textarea{resize:vertical;min-height:65px}
   <div class="mo">
     <div class="mot" id="mo-pay-title">💰 تسجيل دفعة جديدة</div>
     <div class="fg">
+      <div class="fl"><label>🆔 رقم الطالب (اختياري)</label><input id="np-stuid" type="number" placeholder="أدخل رقم الطالب..." oninput="lookupStudentForPay(this.value)" style="border:2px solid var(--g2)"></div>
+      <div class="fl" id="np-stuinfo" style="display:none;background:var(--gp);padding:6px 10px;border-radius:8px;font-size:12px;grid-column:1/-1"></div>
       <div class="fl fgr"><label>ولي الأمر / الطالب *</label><input id="np-who" placeholder="والد/والدة الطفل..."></div>
       <div class="fl"><label>المبلغ (درهم) *</label><input id="np-amt" type="number" placeholder="0"></div>
       <div class="fl"><label>التاريخ</label><input id="np-date" type="date"></div>
@@ -1643,11 +1654,18 @@ function renderStudents(){
   const q=document.getElementById('stu-search').value.toLowerCase();
   const cls=document.getElementById('stu-cls').value;
   const gen=document.getElementById('stu-gen').value;
-  const f=students.filter(s=>(!q||s.name.includes(q)||s.dad.includes(q)||s.mom.includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen));
+  let f=students.filter(s=>(!q||s.name.includes(q)||s.dad.includes(q)||s.mom.includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen));
+  if (tableSortState['stu-table']) f = applyTableSort('stu-table', f);
+  const stuTheadEl = document.getElementById('stu-thead');
+  if (stuTheadEl) stuTheadEl.innerHTML = sortableHead('stu-table', [
+    ['id','#'], ['name','اسم الطالب'], ['dob','تاريخ الميلاد'], ['gen','الجنس'],
+    ['nat','الجنسية'], ['cls','الفصل'], ['dad','اسم الأب'], ['dph','هاتف الأب'],
+    ['mph','هاتف الأم'], ['addr','العنوان'], ['','إجراءات']
+  ]);
   document.getElementById('stu-count').textContent=`الطلاب (${f.length})`;
   document.getElementById('stu-tbody').innerHTML=f.map((s,i)=>`
     <tr>
-      <td>${i+1}</td>
+      <td><b>#${s.id}</b></td>
       <td><b>${s.name}</b></td>
       <td>${formatDate(s.dob)}</td>
       <td><span class="b ${s.gen==='ذكر'?'bb':'bo'}">${s.gen}</span></td>
@@ -1745,6 +1763,19 @@ function viewStudentProfile(id) {
       '⚠️ <b>حساسية:</b> ' + (s.allergyNote||s.allergyType||'يرجى المراجعة') + '</div>' : '') +
     (s.note || s.notes ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📝 ' + (s.note||s.notes) + '</div>' : '') +
     (s.sub_end ? '<div style="background:var(--gp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📅 <b>تاريخ انتهاء الاشتراك:</b> ' + s.sub_end + '</div>' : '') +
+    '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px;border-top:1.5px solid var(--border);padding-top:10px">💰 المدفوعات (' + (function(){
+      const pays = payments.filter(function(p){ return p.stuId === id; });
+      return pays.length + ' سند — إجمالي: ' + pays.reduce(function(s,p){return s+(p.amt||0);},0).toLocaleString() + ' د.إ';
+    })() + ')</div>' +
+    (function(){
+      const pays = payments.filter(function(p){ return p.stuId === id; }).sort(function(a,b){ return (b.date||'').localeCompare(a.date||''); });
+      if (!pays.length) return '<div style="color:var(--muted);font-size:12px;margin-bottom:10px">لا توجد مدفوعات مسجلة لهذا الطالب. يمكن ربط المدفوعات بالطالب عبر رقمه في نموذج تسجيل الدفعة.</div>';
+      return '<div style="max-height:180px;overflow-y:auto;margin-bottom:10px"><table class="tbl"><thead><tr><th>#</th><th>المبلغ</th><th>البيان</th><th>التاريخ</th></tr></thead><tbody>' +
+        pays.map(function(p){
+          return '<tr style="cursor:pointer" onclick="closeAll();setTimeout(function(){openEditPay('+p.id+')},200)"><td><b>#'+p.id+'</b></td><td class="fin-pos">'+(p.amt||0).toLocaleString()+'</td><td style="font-size:12px">'+(p.desc||'')+'</td><td style="font-size:12px">'+(p.date||'')+'</td></tr>';
+        }).join('') +
+      '</tbody></table></div>';
+    })() +
     '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px;border-top:1.5px solid var(--border);padding-top:10px">📎 الوثائق المرفقة</div>' +
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">' + docsHtml + '</div>';
 
@@ -1848,6 +1879,18 @@ function permanentDeleteStudent(id) {
   renderDeletedStudents();
 }
 
+
+function viewDeletedStudent(id) {
+  const s = deletedStudents.find(function(x){ return x.id === id; });
+  if (!s) return;
+  // استخدم نفس modal ملف الطالب، مع تحويل مؤقت
+  const original = students.slice();
+  students.push(s);
+  viewStudentProfile(id);
+  // ارجع students للحالة الأصلية بعد ما الـ modal يفتح
+  setTimeout(function(){ students.length = original.length; }, 100);
+}
+
 function renderDeletedStudents() {
   const el = document.getElementById('deleted-list');
   if (!el) return;
@@ -1871,6 +1914,7 @@ function renderDeletedStudents() {
           '</div>' +
         '</div>' +
         '<div style="display:flex;flex-direction:column;gap:6px">' +
+          '<button class="btn btn-out btn-sm" onclick="viewDeletedStudent(' + s.id + ')">👁 عرض</button>' +
           '<button class="btn btn-g btn-sm" onclick="restoreStudent(' + s.id + ')">♻️ استعادة</button>' +
           '<button class="btn btn-r btn-sm" onclick="permanentDeleteStudent(' + s.id + ')">🗑 حذف نهائي</button>' +
         '</div>' +
@@ -1960,6 +2004,53 @@ function renderAttLog(){
 // ============================================================
 // PAYMENTS
 // ============================================================
+
+// ════════════════════════════════════════════
+// SORTING — فرز الجداول بالنقر على العمود
+// ════════════════════════════════════════════
+const tableSortState = {}; // { tableId: {field, dir} }
+
+function sortTableBy(tableId, field, compareFn) {
+  const cur = tableSortState[tableId];
+  let dir = 'asc';
+  if (cur && cur.field === field) {
+    dir = cur.dir === 'asc' ? 'desc' : 'asc';
+  }
+  tableSortState[tableId] = { field: field, dir: dir };
+  // Re-render the corresponding view
+  const renderMap = {
+    'pay-table':   renderPayments,
+    'exp-table':   renderExpenses,
+    'rec-table':   renderReceipts,
+    'stu-table':   renderStudents,
+    'ren-table':   renderRenewals,
+  };
+  if (renderMap[tableId]) renderMap[tableId]();
+}
+
+function applyTableSort(tableId, items, defaultField, defaultDir) {
+  const state = tableSortState[tableId] || { field: defaultField, dir: defaultDir || 'desc' };
+  const f = state.field, dir = state.dir;
+  const mul = dir === 'asc' ? 1 : -1;
+  return [...items].sort(function(a, b){
+    const va = a[f], vb = b[f];
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * mul;
+    const sa = String(va==null?'':va), sb = String(vb==null?'':vb);
+    return sa.localeCompare(sb) * mul;
+  });
+}
+
+function sortableHead(tableId, fields) {
+  // fields = [['id','#'], ['name','الاسم'], ...]
+  const state = tableSortState[tableId] || {};
+  return '<tr>' + fields.map(function(f){
+    const key = f[0], label = f[1];
+    if (!key) return '<th>' + label + '</th>';
+    const cls = 'sortable' + (state.field === key ? ' sort-' + state.dir : '');
+    return '<th class="' + cls + '" onclick="sortTableBy(\''+tableId+'\', \''+key+'\')">' + label + '</th>';
+  }).join('') + '</tr>';
+}
+
 function renderPayments(){
   const q    = document.getElementById('pay-search').value.toLowerCase();
   const type = document.getElementById('pay-type').value;
@@ -1974,10 +2065,19 @@ function renderPayments(){
   f = [...f].sort((a,b) => {
     if (sort === 'asc')      return normalizeDate(a.date).localeCompare(normalizeDate(b.date));
     if (sort === 'desc')     return normalizeDate(b.date).localeCompare(normalizeDate(a.date));
+    if (sort === 'id-desc')  return b.id - a.id;
+    if (sort === 'id-asc')   return a.id - b.id;
     if (sort === 'amt-desc') return b.amt - a.amt;
     if (sort === 'amt-asc')  return a.amt - b.amt;
     return 0;
   });
+  // Click-to-sort header
+  if (tableSortState['pay-table']) f = applyTableSort('pay-table', f);
+  const theadEl = document.getElementById('pay-thead');
+  if (theadEl) theadEl.innerHTML = sortableHead('pay-table', [
+    ['id','#السند'], ['who','ولي الأمر'], ['amt','المبلغ'], ['desc','البيان'],
+    ['type','النوع'], ['method','طريقة الدفع'], ['date','التاريخ'], ['rcvr','المستلم'], ['','']
+  ]);
   const total=f.reduce((s,p)=>s+p.amt,0);
   document.getElementById('pay-total').textContent=total.toLocaleString();
   document.getElementById('pay-count').textContent=f.length;
@@ -1995,10 +2095,45 @@ function renderPayments(){
 }
 
 
+
+// البحث عن طالب بالرقم وتعبئة ولي الأمر تلقائياً
+function lookupStudentForPay(idVal) {
+  const id = parseInt(idVal);
+  const info = document.getElementById('np-stuinfo');
+  if (!id || isNaN(id)) {
+    if (info) info.style.display = 'none';
+    return;
+  }
+  const s = students.find(function(x){ return x.id === id; });
+  if (!s) {
+    if (info) {
+      info.style.display = 'block';
+      info.innerHTML = '<span style="color:#e74c3c">❌ لا يوجد طالب بالرقم ' + id + '</span>';
+    }
+    return;
+  }
+  // أعرض معلومات الطالب
+  if (info) {
+    info.style.display = 'block';
+    info.innerHTML = '<b>✅ ' + s.name + '</b> — ' + (CLASSES[s.cls] ? CLASSES[s.cls].emoji + ' ' : '') + (s.cls||'') +
+      ' | 👨 ' + (s.dad||'—') + ' | 📱 ' + (s.dph||'—');
+  }
+  // املأ حقل ولي الأمر تلقائياً (إذا فاضي)
+  const whoEl = document.getElementById('np-who');
+  if (whoEl && !whoEl.value) {
+    whoEl.value = 'والد/والدة الطفل ' + s.name;
+  }
+}
+
 function openAddPay(){
   editingPayId = null;
   document.getElementById('np-date').value=new Date().toISOString().slice(0,10);
-  ['np-who','np-amt','np-desc','np-rcvr','np-note'].forEach(id=>document.getElementById(id).value='');
+  ['np-who','np-amt','np-desc','np-rcvr','np-note','np-stuid'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const info = document.getElementById('np-stuinfo');
+  if (info) info.style.display = 'none';
   document.getElementById('mo-pay-title').textContent = '💰 تسجيل دفعة جديدة';
   document.getElementById('pay-del-btn').style.display = 'none';
   document.getElementById('pay-save-btn').textContent = '💾 تسجيل';
@@ -2016,6 +2151,11 @@ function openEditPay(id){
   document.getElementById('np-note').value  = p.note||'';
   document.getElementById('np-type').value  = p.type||'قسط شهري';
   document.getElementById('np-method').value= p.method||'نقدي';
+  const stuidEl = document.getElementById('np-stuid');
+  if (stuidEl) {
+    stuidEl.value = p.stuId || '';
+    if (p.stuId) lookupStudentForPay(p.stuId);
+  }
   document.getElementById('mo-pay-title').textContent = 'تعديل السند #' + id;
   document.getElementById('pay-del-btn').style.display = 'inline-flex';
   document.getElementById('pay-save-btn').textContent = '💾 حفظ التعديل';
@@ -2043,10 +2183,19 @@ function savePayment(){
     p.date=document.getElementById('np-date').value;
     p.rcvr=document.getElementById('np-rcvr').value;
     p.note=document.getElementById('np-note').value;
+    p.stuId = parseInt((document.getElementById('np-stuid')||{}).value) || p.stuId || null;
     closeAll();renderPayments();renderReceipts();renderDash();
     autoSave(); alert('✅ تم تعديل السند #'+editingPayId);
   } else {
-    const p={id:nextPayId++,who,amt,desc,type:document.getElementById('np-type').value,method:document.getElementById('np-method').value,date:document.getElementById('np-date').value,rcvr:document.getElementById('np-rcvr').value,note:document.getElementById('np-note').value};
+    const stuid = parseInt((document.getElementById('np-stuid')||{}).value) || null;
+    const p={id:nextPayId++,who,amt,desc,
+      type:document.getElementById('np-type').value,
+      method:document.getElementById('np-method').value,
+      date:document.getElementById('np-date').value,
+      rcvr:document.getElementById('np-rcvr').value,
+      note:document.getElementById('np-note').value,
+      stuId: stuid
+    };
     payments.push(p);
     closeAll();renderPayments();renderDash();
     autoSave(); alert('✅ تم تسجيل الدفعة بنجاح (#'+p.id+')');
@@ -2059,7 +2208,13 @@ function savePayment(){
 function renderExpenses(){
   const q=document.getElementById('exp-search').value.toLowerCase();
   const cat=document.getElementById('exp-cat').value;
-  const f=expenses.filter(e=>(!q||e.desc.toLowerCase().includes(q))&&(!cat||e.cat===cat));
+  let f=expenses.filter(e=>(!q||e.desc.toLowerCase().includes(q))&&(!cat||e.cat===cat));
+  if (tableSortState['exp-table']) f = applyTableSort('exp-table', f);
+  const expTheadEl = document.getElementById('exp-thead');
+  if (expTheadEl) expTheadEl.innerHTML = sortableHead('exp-table', [
+    ['id','#'], ['desc','البيان / الوصف'], ['amt','المبلغ'], ['cat','الفئة'],
+    ['date','التاريخ'], ['method','طريقة الدفع'], ['note','ملاحظات'], ['','']
+  ]);
   const total=f.reduce((s,e)=>s+e.amt,0);
   document.getElementById('exp-total').textContent=total.toLocaleString();
   document.getElementById('exp-count').textContent=f.length;
