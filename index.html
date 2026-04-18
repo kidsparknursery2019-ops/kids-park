@@ -2708,20 +2708,37 @@ async function pushToFirebase() {
   if (isSyncing) return;
   isSyncing = true;
   try {
+    // نحفظ البيانات الأساسية فقط (بدون payments لأنها كبيرة جداً)
     const data = getAllData();
+    const lightData = {
+      version:        data.version,
+      savedAt:        data.savedAt,
+      students:       data.students,
+      expenses:       data.expenses,
+      attLog:         data.attLog,
+      CLASSES:        data.CLASSES,
+      nurserySettings:data.nurserySettings,
+      renewals:       data.renewals,
+      kp_users:       data.kp_users,
+    };
+
     const res = await fetch(FB_URL + '.json', {
       method: 'PUT',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(data)
+      body: JSON.stringify(lightData)
     });
+
     if (res.ok) {
       lastSavedAt = data.savedAt;
       showSyncBadge('✅ محفوظ');
     } else {
-      showSyncBadge('⚠️ خطأ في الحفظ');
+      const errText = await res.text().catch(()=>'');
+      showSyncBadge('⚠️ خطأ ' + res.status + ': ' + errText.slice(0,50));
+      console.error('Firebase error:', res.status, errText);
     }
   } catch(e) {
-    showSyncBadge('📴 بدون إنترنت — محفوظ محلياً');
+    showSyncBadge('❌ ' + e.message);
+    console.error('pushToFirebase error:', e);
   } finally {
     isSyncing = false;
   }
@@ -2741,7 +2758,7 @@ async function loadFromFirebase() {
     
     // دائماً حمّل البيانات من Firebase (هي المصدر الرئيسي)
     if (data.students)  students  = data.students;
-    if (data.payments)  payments  = data.payments;
+    // payments محفوظة في الكود HTML - لا تحمّل من Firebase
     if (data.expenses)  expenses  = data.expenses;
     if (data.attLog)    attLog    = data.attLog;
     if (data.renewals)  renewals  = data.renewals;
