@@ -370,7 +370,6 @@ textarea{resize:vertical;min-height:65px}
         <input type="text" id="stu-search" placeholder="🔍 ابحث باسم الطالب أو ولي الأمر..." oninput="renderStudents()">
         <select id="stu-cls" onchange="renderStudents()">
           <option value="">كل الفصول</option>
-          <option>النحل</option><option>النجوم</option><option>الزهور</option><option>الفراشات</option><option>النحلات</option>
         </select>
         <select id="stu-gen" onchange="renderStudents()">
           <option value="">الجنسين</option><option value="ذكر">ذكر</option><option value="انثى">أنثى</option>
@@ -735,7 +734,7 @@ textarea{resize:vertical;min-height:65px}
         </select>
       </div>
       <div class="fl"><label>الفصل *</label>
-        <select id="ns-cls"><option>النحل</option><option>النجوم</option><option>الزهور</option><option>الفراشات</option><option>النحلات</option></select>
+        <select id="ns-cls"></select>
       </div>
       <div class="fl"><label>مكان الميلاد</label><input id="ns-bpl" placeholder=""></div>
       <div class="fl"><label>اسم الأب *</label><input id="ns-dad" placeholder=""></div>
@@ -1596,7 +1595,32 @@ function renderDash(){
 // ============================================================
 // STUDENTS
 // ============================================================
+
+// ملء قوائم الفصول ديناميكياً من CLASSES
+function populateClassDropdowns() {
+  const classNames = Object.keys(CLASSES);
+  // nsCls - في نموذج الطالب
+  const nsCls = document.getElementById('ns-cls');
+  if (nsCls) {
+    const current = nsCls.value;
+    nsCls.innerHTML = classNames.map(function(c){
+      return '<option value="' + c + '">' + (CLASSES[c].emoji||'') + ' ' + c + '</option>';
+    }).join('');
+    if (current && classNames.includes(current)) nsCls.value = current;
+  }
+  // stuCls - فلتر صفحة الطلاب
+  const stuCls = document.getElementById('stu-cls');
+  if (stuCls) {
+    const current = stuCls.value;
+    stuCls.innerHTML = '<option value="">كل الفصول</option>' + classNames.map(function(c){
+      return '<option value="' + c + '">' + (CLASSES[c].emoji||'') + ' ' + c + '</option>';
+    }).join('');
+    if (current && (current === '' || classNames.includes(current))) stuCls.value = current;
+  }
+}
+
 function renderStudents(){
+  populateClassDropdowns();
   const q=document.getElementById('stu-search').value.toLowerCase();
   const cls=document.getElementById('stu-cls').value;
   const gen=document.getElementById('stu-gen').value;
@@ -1626,6 +1650,7 @@ function formatDate(d){
 }
 
 function openAddStudent(){
+  populateClassDropdowns();
   editingStuId=null;
   document.getElementById('mo-stu-title').textContent='➕ إضافة طالب جديد';
   ['ns-name','ns-dob','ns-nat','ns-bpl','ns-dad','ns-job','ns-dph','ns-mom','ns-mph','ns-addr','ns-note'].forEach(id=>document.getElementById(id).value='');
@@ -1715,6 +1740,7 @@ function editStudent(id){
   const s = students.find(x => x.id === id);
   if (!s) { alert('الطالب غير موجود'); return; }
   editingStuId = id;
+  populateClassDropdowns();
   const setVal = function(elId, val) {
     const el = document.getElementById(elId);
     if (el) el.value = val == null ? '' : String(val);
@@ -2414,7 +2440,7 @@ function openAddClass() {
   const emoji = prompt('ايموجي الفصل:', '🌟') || '🌟';
   const teacher = prompt('اسم المعلمة:') || '';
   CLASSES_DATA[name] = {teacher, emoji};
-  saveClasses(); renderAdminClasses();
+  saveClasses(); populateClassDropdowns(); renderAdminClasses();
   alert(`✅ تم إضافة فصل ${name}`);
 }
 
@@ -2430,13 +2456,19 @@ function editClass(name) {
   } else {
     CLASSES_DATA[name] = {teacher: newTeacher||'', emoji: newEmoji};
   }
-  saveClasses(); renderAdminClasses();
+  saveClasses(); populateClassDropdowns(); renderAdminClasses();
 }
 
 function deleteClass(name) {
-  if(!confirm(`حذف فصل "${name}"؟ سيتأثر الطلاب المسجلين فيه.`)) return;
-  delete CLASSES_DATA[name];
-  saveClasses(); renderAdminClasses();
+  if (!confirm('حذف فصل "' + name + '"؟ سيتأثر الطلاب المسجلين فيه.')) return;
+  delete CLASSES[name];
+  CLASSES_DATA = CLASSES;
+  localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
+  autoSave();
+  populateClassDropdowns();
+  renderAdminClasses();
+  renderStudents();
+  renderDash();
 }
 
 // ============================================================
