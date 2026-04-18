@@ -2,8 +2,12 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
+<!-- v20260418-0450 -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -650,6 +654,19 @@ textarea{resize:vertical;min-height:65px}
   </div><!-- /main -->
 </div><!-- /wrap -->
 
+
+<!-- Student Profile Modal -->
+<div class="ov" id="mo-stu-profile">
+  <div class="mo" style="width:700px;max-width:95vw">
+    <div class="mot">👶 ملف الطالب الكامل</div>
+    <div id="mo-stu-profile-body" style="max-height:65vh;overflow-y:auto"></div>
+    <div class="mof">
+      <button class="btn btn-out" onclick="closeAll()">إغلاق</button>
+      <button class="btn btn-g" id="mo-stu-profile-edit">✏️ تعديل البيانات</button>
+    </div>
+  </div>
+</div>
+
 <div class="ov" id="mo-renewal">
   <div class="mo">
     <div class="mot" id="mo-renewal-title">تعديل التجديد</div>
@@ -846,11 +863,14 @@ const NATIONALITIES_SHORT = {
   'أثيوبيا':'🇪🇹','الأردن':'🇯🇴',
 };
 
-let attLog = {};
-let nextStuId = 200;
-let nextPayId = 3000;
-let nextExpId = 600;
-let nextRenId = 51;
+var attLog = {};
+var editingStuId = null;
+var editingPayId = null;
+var editingRenId = null;
+var nextStuId = 200;
+var nextPayId = 3000;
+var nextExpId = 600;
+var nextRenId = 51;
 
 let students = [
   {id:1,name:'جورج يعقوب',dob:'2022-03-18',gen:'ذكر',nat:'سوريا',cls:'النحل',bpl:'الشارقة',dad:'لطيف يعقوب',job:'مهندس',dph:'0582458845',mom:'لمى الياس',mph:'0521490770',addr:'الشارقة-المجاز 2',note:''},
@@ -1593,7 +1613,7 @@ function renderStudents(){
       <td>${s.dad}</td><td dir="ltr">${s.dph}</td><td dir="ltr">${s.mph}</td>
       <td style="font-size:12px">${s.addr}</td>
       <td>
-        <button class="btn btn-out btn-sm" onclick="editStudent(${s.id})">✏️</button>
+        <button class="btn btn-out btn-sm" onclick="viewStudentProfile(${s.id})" title="عرض الملف الكامل">👁</button><button class="btn btn-out btn-sm" onclick="editStudent(${s.id})" title="تعديل">✏️</button>
         <button class="btn btn-r btn-sm" onclick="delStudent(${s.id})">🗑</button>
       </td>
     </tr>`).join('');
@@ -1612,6 +1632,83 @@ function openAddStudent(){
   document.getElementById('ns-gen').value='ذكر';
   document.getElementById('ns-cls').value='النحل';
   document.getElementById('mo-student').classList.add('on');
+}
+
+
+function viewStudentProfile(id) {
+  const s = students.find(x => x.id === id);
+  if (!s) return;
+
+  const docs = [
+    ['صورة الطفل', s.imgChildPhoto],
+    ['الهوية الإماراتية', s.imgEmiratesId],
+    ['جواز السفر', s.imgPassport],
+    ['شهادة الميلاد', s.imgBirthCert],
+    ['شهادة التطعيم', s.imgVaccination],
+    ['إقامة الطفل', s.imgResidency],
+    ['هوية ولي الأمر', s.imgGuardianId],
+    ['جواز ولي الأمر', s.imgGuardianPass],
+  ].filter(function(d){ return d[1]; });
+
+  const docsHtml = docs.length ? docs.map(function(d){
+    const url = d[1];
+    const imgUrl = typeof driveImgUrl === 'function' ? driveImgUrl(url) : url;
+    return '<div style="text-align:center">' +
+      '<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">' + d[0] + '</div>' +
+      '<a href="' + url + '" target="_blank">' +
+        '<img src="' + imgUrl + '" style="width:100%;max-height:180px;object-fit:cover;border-radius:8px;border:1.5px solid var(--border)" ' +
+          'onerror="this.outerHTML=\'<a href=' + url + ' target=_blank style=font-size:11px;color:var(--b2)>فتح الملف</a>\'">' +
+      '</a></div>';
+  }).join('') : '<p style="color:var(--muted);font-size:13px">لا توجد وثائق مرفقة</p>';
+
+  document.getElementById('mo-stu-profile-body').innerHTML =
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">' +
+      '<div class="fl"><label>الاسم</label><div style="font-size:15px;font-weight:700">' + s.name + '</div></div>' +
+      '<div class="fl"><label>الفصل</label><div>' + (CLASSES[s.cls]?CLASSES[s.cls].emoji+' ':'') + (s.cls||'—') + '</div></div>' +
+      '<div class="fl"><label>تاريخ الميلاد</label><div>' + (s.dob||'—') + '</div></div>' +
+      '<div class="fl"><label>الجنس</label><div>' + (s.gen||'—') + '</div></div>' +
+      '<div class="fl"><label>الجنسية</label><div>' + (s.nat||'—') + '</div></div>' +
+      '<div class="fl"><label>مكان الميلاد</label><div>' + (s.bpl||'—') + '</div></div>' +
+      '<div class="fl"><label>رقم الهوية</label><div dir="ltr">' + (s.emiratesId||'—') + '</div></div>' +
+      '<div class="fl"><label>رقم الجواز</label><div dir="ltr">' + (s.passport||'—') + '</div></div>' +
+      '<div class="fl"><label>الديانة</label><div>' + (s.religion||'—') + '</div></div>' +
+      '<div class="fl"><label>اللغة الأم</label><div>' + (s.motherTongue||'—') + '</div></div>' +
+      '<div class="fl" style="grid-column:1/-1"><label>العنوان</label><div>' + (s.addr||'—') + '</div></div>' +
+    '</div>' +
+    '<div style="font-weight:700;color:var(--g1);margin-bottom:6px;border-top:1.5px solid var(--border);padding-top:10px">👨 بيانات الأب</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:13px">' +
+      '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + (s.dad||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + (s.dph||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">المهنة</label><div>' + (s.job||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الإيميل</label><div dir="ltr">' + (s.dadEmail||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الجنسية</label><div>' + (s.dadNat||'—') + '</div></div>' +
+    '</div>' +
+    '<div style="font-weight:700;color:var(--g1);margin-bottom:6px">👩 بيانات الأم</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:13px">' +
+      '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + (s.mom||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + (s.mph||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">المهنة</label><div>' + (s.momJob||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الجنسية</label><div>' + (s.momNat||'—') + '</div></div>' +
+    '</div>' +
+    (s.emergName ? '<div style="font-weight:700;color:var(--g1);margin-bottom:6px">🚨 جهة اتصال للطوارئ</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;font-size:13px">' +
+        '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + s.emergName + '</div></div>' +
+        '<div><label style="font-size:11px;color:var(--muted)">صلة القرابة</label><div>' + (s.emergRel||'—') + '</div></div>' +
+        '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + (s.emergMob||'—') + '</div></div>' +
+      '</div>' : '') +
+    (s.allergy === 'نعم' || String(s.allergy||'').toLowerCase().includes('yes') ?
+      '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">' +
+      '⚠️ <b>حساسية:</b> ' + (s.allergyNote||s.allergyType||'يرجى المراجعة') + '</div>' : '') +
+    (s.note || s.notes ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📝 ' + (s.note||s.notes) + '</div>' : '') +
+    (s.sub_end ? '<div style="background:var(--gp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📅 <b>تاريخ انتهاء الاشتراك:</b> ' + s.sub_end + '</div>' : '') +
+    '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px;border-top:1.5px solid var(--border);padding-top:10px">📎 الوثائق المرفقة</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">' + docsHtml + '</div>';
+
+  document.getElementById('mo-stu-profile-edit').onclick = function() {
+    document.getElementById('mo-stu-profile').classList.remove('on');
+    setTimeout(function(){ editStudent(id); }, 200);
+  };
+  document.getElementById('mo-stu-profile').classList.add('on');
 }
 
 function editStudent(id){
@@ -1755,7 +1852,6 @@ function renderPayments(){
     </tr>`).join('');
 }
 
-let editingPayId = null;
 
 function openAddPay(){
   editingPayId = null;
@@ -2052,7 +2148,7 @@ function doPrintExport(){
 // UTILS
 // ============================================================
 function closeAll(){document.querySelectorAll('.ov').forEach(o=>o.classList.remove('on'));}
-document.querySelectorAll('.ov').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)closeAll();}));
+// إزالة الإغلاق التلقائي عند الضغط خارج النافذة - لحماية البيانات
 
 
 // ============================================================
@@ -3020,16 +3116,33 @@ function quickApprove(ts) {
 }
 
 function doApprove(r) {
+  // احفظ كل البيانات الأصلية مع الطالب
   students.push({
     id: nextStuId++, name: r.name, dob: r.dob, gen: r.gen, nat: r.nat,
     cls: r.cls || Object.keys(CLASSES)[0], bpl: '',
     dad: r.dadFull, job: r.dadJob, dph: r.dadMob,
     mom: r.momFull, mph: r.momMob, addr: r.addr,
-    notes: [r.notes, r.allergyNote ? '⚠️ حساسية: ' + r.allergyNote : ''].filter(Boolean).join(' | '),
+    note: [r.notes, r.allergyNote ? '⚠️ حساسية: ' + r.allergyNote : ''].filter(Boolean).join(' | '),
+    // بيانات إضافية من النموذج
     emiratesId: r.emiratesId, passport: r.passport,
-    imgChildPhoto: r.imgChildPhoto, imgEmiratesId: r.imgEmiratesId,
-    imgVaccination: r.imgVaccination, imgPassport: r.imgPassport,
-    imgBirthCert: r.imgBirthCert, imgGuardianId: r.imgGuardianId,
+    religion: r.religion, motherTongue: r.motherTongue,
+    dadNat: r.dadNat, dadEmail: r.dadEmail,
+    momNat: r.momNat, momJob: r.momJob,
+    emergName: r.emergName, emergRel: r.emergRel, emergMob: r.emergMob,
+    allergy: r.allergy, allergyNote: r.allergyNote, allergyType: r.allergyType,
+    photoConsent: r.photoConsent, contagious: r.contagious, surgical: r.surgical,
+    // الصور والوثائق
+    imgChildPhoto:   r.imgChildPhoto,
+    imgEmiratesId:   r.imgEmiratesId,
+    imgVaccination:  r.imgVaccination,
+    imgPassport:     r.imgPassport,
+    imgResidency:    r.imgResidency,
+    imgGuardianId:   r.imgGuardianId,
+    imgGuardianPass: r.imgGuardianPass,
+    imgBirthCert:    r.imgBirthCert,
+    // تاريخ القبول
+    approvedAt: new Date().toISOString(),
+    formTimestamp: r.timestamp,
   });
   r.status = 'approved';
   localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
@@ -3101,7 +3214,6 @@ let renewals = [
   {id:49,name:'بطاقة العمل بيل',date:'2026-12-25',cost:'',cat:'بطاقات',notes:''}
 ];
 
-let editingRenId = null;
 
 const CAT_EMOJI = {
   'تراخيص':'📜','عقود':'📋','بطاقات صحية':'🏥','إقامات':'🪪',
