@@ -1497,25 +1497,29 @@ function renderDash(){
   // فلتر السنة
   const currentYear = new Date().getFullYear();
   const yfEl = document.getElementById('dash-year-filter');
+  // تأكد من وجود قيمة دائماً
   if (yfEl && !yfEl.value) yfEl.value = String(currentYear);
   const selectedYear = (yfEl && yfEl.value) ? parseInt(yfEl.value) : currentYear;
 
-  // حساب الإيرادات
+  // حساب الإيرادات - الفلتر
   const filteredPay = payments.filter(p => {
-    if (!selectedYear) return true;
     const y = getDateYear(p.date);
     return y === selectedYear;
   });
   const totalFiltered = filteredPay.reduce((s,p) => s + (p.amt||0), 0);
-  document.getElementById('s-income').textContent = totalFiltered > 0
-    ? totalFiltered.toLocaleString() + ' د.إ'
-    : payments.length > 0 ? '0 د.إ' : '—';
+  const label = selectedYear ? String(selectedYear) : 'الكل';
+  document.getElementById('s-income').textContent =
+    filteredPay.length > 0
+      ? totalFiltered.toLocaleString() + ' د.إ'
+      : payments.length > 0
+        ? '0 د.إ (لا مدفوعات في ' + label + ')'
+        : '—';
 
   // آخر المدفوعات
-  const recentRows = filteredPay.length > 0
-    ? [...filteredPay].sort((a,b) => (b.date||'').localeCompare(a.date||'')).slice(0,10)
-    : [...payments].sort((a,b) => (b.date||'').localeCompare(a.date||'')).slice(0,10);
-
+  const srcPay = filteredPay.length > 0 ? filteredPay : payments;
+  const recentRows = [...srcPay]
+    .sort((a,b) => (b.date||'').localeCompare(a.date||''))
+    .slice(0,10);
   document.getElementById('recent-pay').innerHTML = recentRows.length
     ? recentRows.map(p => `
     <tr><td><b>#${p.id}</b></td><td>${p.who}</td><td class="fin-pos">${(p.amt||0).toLocaleString()} د.إ</td><td style="font-size:12px">${p.desc||''}</td><td>${p.date||''}</td></tr>`).join('')
@@ -2084,12 +2088,17 @@ function applyLogin() {
   if (navAdmin) navAdmin.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
   // Load saved settings
   loadSettings();
+  // تهيئة فلتر السنة قبل أول render
+  const yf = document.getElementById('dash-year-filter');
+  if (yf) yf.value = String(new Date().getFullYear());
+
   // Render with local data first (instant)
   renderDash();
   setTimeout(updateNotifications, 500);
   // Then load from Firebase (updates dashboard when done)
   loadFromFirebase().then(() => {
     renderDash();
+    updateNotifications();
   });
   setInterval(checkForUpdates, 30000);
   startAutoSync();
