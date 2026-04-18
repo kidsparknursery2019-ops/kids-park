@@ -1494,36 +1494,27 @@ function renderDash(){
   students.forEach(s=>{const v=attLog[today+'_'+s.id];if(v==='present')p++;if(v==='absent')a++;});
   document.getElementById('s-present').textContent=p||'—';
   document.getElementById('s-absent').textContent=a||'—';
-  // فلتر السنة
-  const currentYear = new Date().getFullYear();
+  // فلتر السنة - قراءة من المتغير العالمي
   const yfEl = document.getElementById('dash-year-filter');
-  // تأكد من وجود قيمة دائماً
-  if (yfEl && !yfEl.value) yfEl.value = String(currentYear);
-  const selectedYear = (yfEl && yfEl.value) ? parseInt(yfEl.value) : currentYear;
+  const rawVal = yfEl ? yfEl.value : '';
+  const selectedYear = rawVal ? parseInt(rawVal) : 0; // 0 = الكل
 
-  // حساب الإيرادات - الفلتر
-  const filteredPay = payments.filter(p => {
-    const y = getDateYear(p.date);
-    return y === selectedYear;
-  });
+  // حساب الإيرادات
+  const filteredPay = selectedYear
+    ? payments.filter(p => getDateYear(p.date) === selectedYear)
+    : [...payments];
   const totalFiltered = filteredPay.reduce((s,p) => s + (p.amt||0), 0);
-  const label = selectedYear ? String(selectedYear) : 'الكل';
   document.getElementById('s-income').textContent =
-    filteredPay.length > 0
-      ? totalFiltered.toLocaleString() + ' د.إ'
-      : payments.length > 0
-        ? '0 د.إ (لا مدفوعات في ' + label + ')'
-        : '—';
+    payments.length > 0 ? totalFiltered.toLocaleString() + ' د.إ' : '—';
 
-  // آخر المدفوعات
-  const srcPay = filteredPay.length > 0 ? filteredPay : payments;
-  const recentRows = [...srcPay]
+  // آخر المدفوعات - مرتبة من الأحدث
+  const recentRows = [...filteredPay]
     .sort((a,b) => (b.date||'').localeCompare(a.date||''))
     .slice(0,10);
   document.getElementById('recent-pay').innerHTML = recentRows.length
     ? recentRows.map(p => `
     <tr><td><b>#${p.id}</b></td><td>${p.who}</td><td class="fin-pos">${(p.amt||0).toLocaleString()} د.إ</td><td style="font-size:12px">${p.desc||''}</td><td>${p.date||''}</td></tr>`).join('')
-    : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">لا توجد بيانات</td></tr>'; // رسم بياني حسب السنوات من سندات القبض
+    : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">لا توجد بيانات للسنة المختارة</td></tr>'; // رسم بياني حسب السنوات من سندات القبض
   const chartByYear = {};
   payments.forEach(p => {
     if(!p.date) return;
@@ -2088,15 +2079,18 @@ function applyLogin() {
   if (navAdmin) navAdmin.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
   // Load saved settings
   loadSettings();
-  // تهيئة فلتر السنة قبل أول render
+  // تهيئة فلتر السنة على السنة الحالية
   const yf = document.getElementById('dash-year-filter');
-  if (yf) yf.value = String(new Date().getFullYear());
+  if (yf && !yf.value) yf.value = String(new Date().getFullYear());
 
-  // Render with local data first (instant)
+  // عرض البيانات المحلية فوراً
   renderDash();
   setTimeout(updateNotifications, 500);
-  // Then load from Firebase (updates dashboard when done)
+  // تحميل من Firebase وتحديث عند الانتهاء
   loadFromFirebase().then(() => {
+    // إعادة تهيئة الفلتر بعد التحميل
+    const yf2 = document.getElementById('dash-year-filter');
+    if (yf2 && !yf2.value) yf2.value = String(new Date().getFullYear());
     renderDash();
     updateNotifications();
   });
