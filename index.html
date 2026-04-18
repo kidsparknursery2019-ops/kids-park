@@ -382,7 +382,7 @@ textarea{resize:vertical;min-height:65px}
         <select id="stu-gen" onchange="renderStudents()">
           <option value="">الجنسين</option><option value="ذكر">ذكر</option><option value="انثى">أنثى</option>
         </select>
-        <button class="btn btn-out btn-sm" onclick="openExport('students')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('students')" title="استيراد من Excel">⬆ استيراد</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('students')">⬇ تصدير</button>
       </div>
       <div class="card">
         <div class="ct"><span id="stu-count">الطلاب</span></div>
@@ -399,7 +399,7 @@ textarea{resize:vertical;min-height:65px}
       <div class="sbar">
         <input type="date" id="att-date" onchange="renderAttGrid()">
         <div class="ftabs" id="cls-tabs"></div>
-        <button class="btn btn-out btn-sm" onclick="openExport('attendance')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('attendance')" title="استيراد من Excel">⬆ استيراد</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('attendance')">⬇ تصدير</button>
       </div>
       <div class="card">
         <div class="ct">
@@ -440,7 +440,7 @@ textarea{resize:vertical;min-height:65px}
           <option value="amt-desc">الأعلى قيمة</option>
           <option value="amt-asc">الأقل قيمة</option>
         </select>
-        <button class="btn btn-out btn-sm" onclick="openExport('payments')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('payments')" title="استيراد من Excel">⬆ استيراد</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('payments')">⬇ تصدير</button>
       </div>
       <div class="sg" style="grid-template-columns:repeat(3,1fr)">
         <div class="sc"><div class="sl">إجمالي المحصّل</div><div class="sv fin-pos" id="pay-total">0</div><div class="ss">درهم</div></div>
@@ -466,7 +466,7 @@ textarea{resize:vertical;min-height:65px}
           <option value="">كل الفئات</option>
           <option>رواتب</option><option>كهرباء وإنترنت</option><option>قرطاسية ومستلزمات</option><option>صيانة</option><option>مواصلات</option><option>فعاليات</option><option>أخرى</option>
         </select>
-        <button class="btn btn-out btn-sm" onclick="openExport('expenses')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('expenses')" title="استيراد من Excel">⬆ استيراد</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('expenses')">⬇ تصدير</button>
       </div>
       <div class="sg" style="grid-template-columns:repeat(3,1fr)">
         <div class="sc r"><div class="sl">إجمالي المصاريف</div><div class="sv fin-neg" id="exp-total">0</div><div class="ss">درهم</div></div>
@@ -496,7 +496,7 @@ textarea{resize:vertical;min-height:65px}
           <option value="id-desc">رقم السند ↓</option>
           <option value="id-asc">رقم السند ↑</option>
         </select>
-        <button class="btn btn-out btn-sm" onclick="openExport('receipts')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('receipts')" title="استيراد من Excel">⬆ استيراد</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('receipts')">⬇ تصدير</button>
       </div>
       <div id="receipts-list"></div>
     </div>
@@ -568,7 +568,7 @@ textarea{resize:vertical;min-height:65px}
             </select>
             <input type="text" id="ren-search" placeholder="🔍 ابحث..." oninput="renderRenewals()" style="max-width:160px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
           </div>
-          <button class="btn btn-out btn-sm" onclick="openExport('renewals')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('renewals')">⬆ استيراد</button><button class="btn btn-g btn-sm" onclick="openAddRenewal()">＋ إضافة</button>
+          <button class="btn btn-g btn-sm" onclick="openAddRenewal()">＋ إضافة</button>
         </div>
         <div class="ren-grid" id="ren-list"></div>
       </div>
@@ -2384,309 +2384,6 @@ function renderFinance(){
 let exportTarget = '';
 let exportFmt = 'xlsx';
 
-
-// ════════════════════════════════════════════
-// IMPORT FROM EXCEL — استيراد البيانات
-// ════════════════════════════════════════════
-
-// تعريف مخطط كل نوع بيانات
-const IMPORT_SCHEMAS = {
-  students: {
-    title: 'الطلاب',
-    required: ['الاسم','الفصل'],
-    columns: [
-      { key: 'name',    label: 'الاسم',           required: true,  sample: 'أحمد محمد' },
-      { key: 'dob',     label: 'تاريخ الميلاد',    sample: '2022-03-15', note: 'بصيغة YYYY-MM-DD' },
-      { key: 'gen',     label: 'الجنس',           sample: 'ذكر', note: 'ذكر أو انثى' },
-      { key: 'nat',     label: 'الجنسية',          sample: 'الإمارات' },
-      { key: 'cls',     label: 'الفصل',           required: true, sample: 'النحل', note: 'يجب أن يكون فصلاً موجوداً' },
-      { key: 'bpl',     label: 'مكان الميلاد',     sample: 'دبي' },
-      { key: 'dad',     label: 'اسم الأب',         sample: 'محمد خالد' },
-      { key: 'job',     label: 'عمل الأب',         sample: 'مهندس' },
-      { key: 'dph',     label: 'هاتف الأب',        sample: '0501234567' },
-      { key: 'mom',     label: 'اسم الأم',         sample: 'سارة علي' },
-      { key: 'mph',     label: 'هاتف الأم',        sample: '0509876543' },
-      { key: 'addr',    label: 'العنوان',         sample: 'الشارقة - المجاز' },
-      { key: 'sub_end', label: 'تاريخ انتهاء الاشتراك', sample: '2026-08-31' },
-      { key: 'note',    label: 'ملاحظات',         sample: '' },
-    ]
-  },
-  payments: {
-    title: 'المدفوعات / سندات القبض',
-    required: ['ولي الأمر','المبلغ','البيان'],
-    columns: [
-      { key: 'stuId',  label: 'رقم الطالب',       sample: '1', note: 'اختياري — لربط السند بطالب' },
-      { key: 'who',    label: 'ولي الأمر',         required: true, sample: 'والد الطفل أحمد' },
-      { key: 'amt',    label: 'المبلغ',            required: true, sample: '1500', note: 'رقم فقط' },
-      { key: 'desc',   label: 'البيان',            required: true, sample: 'قسط شهر سبتمبر' },
-      { key: 'type',   label: 'نوع الدفع',         sample: 'قسط شهري', note: 'قسط شهري / رسم تسجيل / مواصلات / أخرى' },
-      { key: 'method', label: 'طريقة الدفع',       sample: 'نقدي', note: 'نقدي / تحويل بنكي / شيك' },
-      { key: 'date',   label: 'التاريخ',           sample: '2026-04-15' },
-      { key: 'rcvr',   label: 'المستلم',           sample: 'الإدارة' },
-      { key: 'note',   label: 'ملاحظات',          sample: '' },
-    ]
-  },
-  receipts: {
-    title: 'سندات القبض',
-    required: ['ولي الأمر','المبلغ','البيان'],
-    columns: [
-      { key: 'stuId',  label: 'رقم الطالب',       sample: '1' },
-      { key: 'who',    label: 'ولي الأمر',         required: true, sample: 'والد الطفل أحمد' },
-      { key: 'amt',    label: 'المبلغ',            required: true, sample: '1500' },
-      { key: 'desc',   label: 'البيان',            required: true, sample: 'قسط شهر سبتمبر' },
-      { key: 'method', label: 'طريقة الدفع',       sample: 'نقدي' },
-      { key: 'date',   label: 'التاريخ',           sample: '2026-04-15' },
-      { key: 'rcvr',   label: 'المستلم',           sample: 'الإدارة' },
-      { key: 'note',   label: 'ملاحظات',          sample: '' },
-    ]
-  },
-  expenses: {
-    title: 'المصاريف',
-    required: ['البيان','المبلغ'],
-    columns: [
-      { key: 'desc',   label: 'البيان',            required: true, sample: 'فاتورة كهرباء' },
-      { key: 'amt',    label: 'المبلغ',            required: true, sample: '850' },
-      { key: 'cat',    label: 'الفئة',             sample: 'فواتير', note: 'فواتير / رواتب / مواد / صيانة / أخرى' },
-      { key: 'method', label: 'طريقة الدفع',       sample: 'نقدي' },
-      { key: 'date',   label: 'التاريخ',           sample: '2026-04-15' },
-      { key: 'note',   label: 'ملاحظات',          sample: '' },
-    ]
-  },
-  renewals: {
-    title: 'التجديدات',
-    required: ['الاسم / الجهة'],
-    columns: [
-      { key: 'name',  label: 'الاسم / الجهة',      required: true, sample: 'الرخصة التجارية' },
-      { key: 'date',  label: 'تاريخ الانتهاء',     sample: '2026-06-30' },
-      { key: 'cat',   label: 'الفئة',              sample: 'تراخيص', note: 'تراخيص / عقود / بطاقات صحية / إقامات / إخطارات / ضرائب / هويات / بطاقات / أخرى' },
-      { key: 'cost',  label: 'التكلفة',            sample: '5000' },
-      { key: 'notes', label: 'ملاحظات',           sample: '' },
-    ]
-  },
-  attendance: {
-    title: 'الحضور',
-    required: ['التاريخ','رقم الطالب','الحالة'],
-    columns: [
-      { key: 'date',   label: 'التاريخ',            required: true, sample: '2026-04-15', note: 'YYYY-MM-DD' },
-      { key: 'stuId',  label: 'رقم الطالب',         required: true, sample: '1' },
-      { key: 'status', label: 'الحالة',             required: true, sample: 'حاضر', note: 'حاضر / غائب / متأخر' },
-    ]
-  },
-};
-
-let importTarget = '';
-let importParsedData = null;
-
-function openImport(target) {
-  importTarget = target;
-  importParsedData = null;
-  const schema = IMPORT_SCHEMAS[target];
-  if (!schema) { alert('نوع البيانات غير مدعوم'); return; }
-
-  document.getElementById('mo-import-title').textContent = '⬆ استيراد ' + schema.title;
-  document.getElementById('import-file').value = '';
-  document.getElementById('import-preview').style.display = 'none';
-  document.getElementById('import-preview').innerHTML = '';
-  document.getElementById('import-confirm-btn').style.display = 'none';
-
-  // عرض مخطط الأعمدة
-  const schemaHtml = '<b>الأعمدة المطلوبة (بنفس الترتيب):</b><br>' +
-    '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">' +
-    schema.columns.map(function(c, i){
-      const star = c.required ? '<span style="color:#e74c3c">*</span>' : '';
-      return '<span style="background:white;padding:3px 8px;border-radius:6px;border:1px solid var(--border)">' +
-        (i+1) + '. ' + c.label + star + '</span>';
-    }).join('') + '</div>' +
-    '<div style="margin-top:8px;font-size:11px;color:var(--muted)">' +
-    '🔴 <span style="color:#e74c3c">*</span> = حقل إلزامي. باقي الحقول اختيارية يمكن تركها فارغة.</div>';
-
-  document.getElementById('mo-import-schema').innerHTML = schemaHtml;
-
-  // ربط handler الرفع
-  const fileInput = document.getElementById('import-file');
-  fileInput.onchange = handleImportFile;
-
-  document.getElementById('mo-import').classList.add('on');
-}
-
-function downloadImportTemplate() {
-  const schema = IMPORT_SCHEMAS[importTarget];
-  if (!schema) return;
-  const headers = schema.columns.map(function(c){ return c.label + (c.required?' *':''); });
-  const notes = schema.columns.map(function(c){ return c.note || ''; });
-  const ws = XLSX.utils.aoa_to_sheet([headers, notes]);
-  // تنسيق صف الملاحظات بلون مختلف (اختياري)
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, schema.title);
-  XLSX.writeFile(wb, 'قالب_' + schema.title + '.xlsx');
-}
-
-function downloadImportSample() {
-  const schema = IMPORT_SCHEMAS[importTarget];
-  if (!schema) return;
-  const headers = schema.columns.map(function(c){ return c.label + (c.required?' *':''); });
-  const sample1 = schema.columns.map(function(c){ return c.sample || ''; });
-  const sample2 = schema.columns.map(function(c){ return c.sample ? (c.sample + ' (مثال 2)') : ''; });
-  const ws = XLSX.utils.aoa_to_sheet([headers, sample1, sample2]);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, schema.title);
-  XLSX.writeFile(wb, 'مثال_' + schema.title + '.xlsx');
-}
-
-function handleImportFile(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(ev) {
-    try {
-      const data = new Uint8Array(ev.target.result);
-      const wb = XLSX.read(data, { type: 'array' });
-      const firstSheet = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
-      if (!rows.length) { alert('الملف فارغ'); return; }
-
-      const schema = IMPORT_SCHEMAS[importTarget];
-      // تخطي صف العناوين (وصف ملاحظات إن وجد)
-      let dataRows = rows.slice(1).filter(function(r){
-        return r.some(function(c){ return String(c).trim(); });
-      });
-
-      // تحويل للأعمدة المعرّفة في الـ schema
-      const parsed = dataRows.map(function(row){
-        const obj = {};
-        schema.columns.forEach(function(col, i){
-          obj[col.key] = String(row[i] == null ? '' : row[i]).trim();
-        });
-        return obj;
-      });
-
-      // التحقق من الحقول الإلزامية
-      const errors = [];
-      parsed.forEach(function(item, i){
-        schema.columns.forEach(function(col){
-          if (col.required && !item[col.key]) {
-            errors.push('الصف ' + (i+2) + ': حقل "' + col.label + '" إلزامي');
-          }
-        });
-      });
-
-      importParsedData = parsed;
-
-      // عرض معاينة
-      const preview = document.getElementById('import-preview');
-      preview.style.display = 'block';
-      let html = '<div style="font-weight:700;margin-bottom:6px">معاينة: ' + parsed.length + ' صف</div>';
-      if (errors.length) {
-        html += '<div style="background:#fee;color:#c33;padding:8px;border-radius:6px;font-size:12px;margin-bottom:8px">' +
-          '⚠️ <b>تحذيرات (' + errors.length + '):</b><br>' + errors.slice(0,5).join('<br>') +
-          (errors.length>5 ? '<br>...و ' + (errors.length-5) + ' أخرى' : '') + '</div>';
-      }
-      html += '<table class="tbl" style="font-size:11px"><thead><tr>' +
-        schema.columns.map(function(c){ return '<th>'+c.label+'</th>'; }).join('') + '</tr></thead><tbody>' +
-        parsed.slice(0,5).map(function(item){
-          return '<tr>' + schema.columns.map(function(c){
-            return '<td>' + (item[c.key]||'—') + '</td>';
-          }).join('') + '</tr>';
-        }).join('') + '</tbody></table>';
-      if (parsed.length > 5) html += '<div style="font-size:11px;color:var(--muted);margin-top:4px">... و ' + (parsed.length-5) + ' صفوف أخرى</div>';
-      preview.innerHTML = html;
-
-      document.getElementById('import-confirm-btn').style.display = 'inline-block';
-      document.getElementById('import-confirm-btn').textContent = '✅ استيراد ' + parsed.length + ' سجل';
-    } catch(err) {
-      alert('خطأ في قراءة الملف: ' + err.message);
-    }
-  };
-  reader.readAsArrayBuffer(file);
-}
-
-function doImport() {
-  if (!importParsedData || !importParsedData.length) {
-    alert('لا توجد بيانات للاستيراد');
-    return;
-  }
-  if (!confirm('استيراد ' + importParsedData.length + ' سجل؟')) return;
-
-  let added = 0;
-
-  if (importTarget === 'students') {
-    importParsedData.forEach(function(item){
-      if (!item.name || !item.cls) return;
-      students.push({
-        id: nextStuId++,
-        name: item.name, dob: item.dob, gen: item.gen || 'ذكر',
-        nat: item.nat, cls: item.cls, bpl: item.bpl,
-        dad: item.dad, job: item.job, dph: item.dph,
-        mom: item.mom, mph: item.mph, addr: item.addr,
-        note: item.note, sub_end: item.sub_end
-      });
-      added++;
-    });
-    renderStudents();
-
-  } else if (importTarget === 'payments' || importTarget === 'receipts') {
-    importParsedData.forEach(function(item){
-      if (!item.who || !item.amt || !item.desc) return;
-      payments.push({
-        id: nextPayId++,
-        stuId: parseInt(item.stuId) || null,
-        who: item.who, amt: +item.amt, desc: item.desc,
-        type: item.type || 'قسط شهري',
-        method: item.method || 'نقدي',
-        date: item.date, rcvr: item.rcvr, note: item.note
-      });
-      added++;
-    });
-    renderPayments();
-    renderReceipts();
-
-  } else if (importTarget === 'expenses') {
-    importParsedData.forEach(function(item){
-      if (!item.desc || !item.amt) return;
-      expenses.push({
-        id: nextExpId++,
-        desc: item.desc, amt: +item.amt,
-        cat: item.cat || 'أخرى',
-        method: item.method || 'نقدي',
-        date: item.date, note: item.note
-      });
-      added++;
-    });
-    renderExpenses();
-
-  } else if (importTarget === 'renewals') {
-    importParsedData.forEach(function(item){
-      if (!item.name) return;
-      renewals.push({
-        id: nextRenId++,
-        name: item.name, date: item.date,
-        cat: item.cat || 'أخرى',
-        cost: item.cost, notes: item.notes
-      });
-      added++;
-    });
-    renderRenewals();
-
-  } else if (importTarget === 'attendance') {
-    importParsedData.forEach(function(item){
-      if (!item.date || !item.stuId || !item.status) return;
-      const status = item.status === 'حاضر' ? 'present' :
-                     item.status === 'غائب' ? 'absent' :
-                     item.status === 'متأخر' ? 'late' : '';
-      if (!status) return;
-      attLog[item.date + '_' + parseInt(item.stuId)] = status;
-      added++;
-    });
-  }
-
-  autoSave();
-  renderDash();
-  closeAll();
-  alert('✅ تم استيراد ' + added + ' سجل بنجاح');
-  importParsedData = null;
-}
-
-
 function openExport(target){
   exportTarget=target; exportFmt='xlsx';
   document.querySelectorAll('.export-opt').forEach(o=>o.classList.remove('on'));
@@ -2796,35 +2493,7 @@ function doPrintExport(){
     d.rows.forEach(r=>{html+=`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`;});
     html+='</tbody>';
   }
-  html+='</table>
-<!-- Import Modal -->
-<div class="ov" id="mo-import">
-  <div class="mo" style="width:600px;max-width:95vw">
-    <div class="mot" id="mo-import-title">⬆ استيراد البيانات من Excel</div>
-    <div style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.6">
-      <b>📋 خطوات الاستيراد:</b><br>
-      1️⃣ حمّل <b>القالب الفارغ</b> للتأكد من ترتيب الأعمدة المطلوب<br>
-      2️⃣ املأ البيانات في Excel حسب ترتيب الأعمدة<br>
-      3️⃣ ارفع الملف (xlsx أو csv) واستورد
-    </div>
-    <div id="mo-import-schema" style="background:var(--gp);padding:10px;border-radius:8px;margin-bottom:12px;font-size:12.5px"></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-      <button class="btn btn-out btn-sm" onclick="downloadImportTemplate()">📥 تحميل قالب فارغ</button>
-      <button class="btn btn-out btn-sm" onclick="downloadImportSample()">📄 تحميل مثال مع بيانات</button>
-    </div>
-    <div class="fl">
-      <label>اختر ملف Excel للاستيراد:</label>
-      <input type="file" id="import-file" accept=".xlsx,.xls,.csv" style="padding:8px;border:2px dashed var(--g2);border-radius:8px;width:100%;background:white">
-    </div>
-    <div id="import-preview" style="margin-top:12px;max-height:200px;overflow:auto;display:none;background:white;border:1.5px solid var(--border);border-radius:8px;padding:10px"></div>
-    <div class="mof">
-      <button class="btn btn-out" onclick="closeAll()">إلغاء</button>
-      <button class="btn btn-g" id="import-confirm-btn" onclick="doImport()" style="display:none">✅ استيراد البيانات</button>
-    </div>
-  </div>
-</div>
-
-</body></html>';
+  html+='</table></body></html>';
   const w=window.open('','_blank');
   w.document.write(html);
   w.document.close();
@@ -3304,35 +2973,7 @@ function printAllWorksheets() {
 </div>`;
   });
 
-  printHtml += `
-<!-- Import Modal -->
-<div class="ov" id="mo-import">
-  <div class="mo" style="width:600px;max-width:95vw">
-    <div class="mot" id="mo-import-title">⬆ استيراد البيانات من Excel</div>
-    <div style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.6">
-      <b>📋 خطوات الاستيراد:</b><br>
-      1️⃣ حمّل <b>القالب الفارغ</b> للتأكد من ترتيب الأعمدة المطلوب<br>
-      2️⃣ املأ البيانات في Excel حسب ترتيب الأعمدة<br>
-      3️⃣ ارفع الملف (xlsx أو csv) واستورد
-    </div>
-    <div id="mo-import-schema" style="background:var(--gp);padding:10px;border-radius:8px;margin-bottom:12px;font-size:12.5px"></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-      <button class="btn btn-out btn-sm" onclick="downloadImportTemplate()">📥 تحميل قالب فارغ</button>
-      <button class="btn btn-out btn-sm" onclick="downloadImportSample()">📄 تحميل مثال مع بيانات</button>
-    </div>
-    <div class="fl">
-      <label>اختر ملف Excel للاستيراد:</label>
-      <input type="file" id="import-file" accept=".xlsx,.xls,.csv" style="padding:8px;border:2px dashed var(--g2);border-radius:8px;width:100%;background:white">
-    </div>
-    <div id="import-preview" style="margin-top:12px;max-height:200px;overflow:auto;display:none;background:white;border:1.5px solid var(--border);border-radius:8px;padding:10px"></div>
-    <div class="mof">
-      <button class="btn btn-out" onclick="closeAll()">إلغاء</button>
-      <button class="btn btn-g" id="import-confirm-btn" onclick="doImport()" style="display:none">✅ استيراد البيانات</button>
-    </div>
-  </div>
-</div>
-
-</body></html>`;
+  printHtml += `</body></html>`;
 
   const win = window.open('', '_blank');
   if(!win) { alert('يرجى السماح بالنوافذ المنبثقة في المتصفح'); return; }
@@ -4185,33 +3826,5 @@ document.addEventListener('click', function(e) {
 
 // renderDash is called by applyLogin after login
 </script>
-
-<!-- Import Modal -->
-<div class="ov" id="mo-import">
-  <div class="mo" style="width:600px;max-width:95vw">
-    <div class="mot" id="mo-import-title">⬆ استيراد البيانات من Excel</div>
-    <div style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.6">
-      <b>📋 خطوات الاستيراد:</b><br>
-      1️⃣ حمّل <b>القالب الفارغ</b> للتأكد من ترتيب الأعمدة المطلوب<br>
-      2️⃣ املأ البيانات في Excel حسب ترتيب الأعمدة<br>
-      3️⃣ ارفع الملف (xlsx أو csv) واستورد
-    </div>
-    <div id="mo-import-schema" style="background:var(--gp);padding:10px;border-radius:8px;margin-bottom:12px;font-size:12.5px"></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-      <button class="btn btn-out btn-sm" onclick="downloadImportTemplate()">📥 تحميل قالب فارغ</button>
-      <button class="btn btn-out btn-sm" onclick="downloadImportSample()">📄 تحميل مثال مع بيانات</button>
-    </div>
-    <div class="fl">
-      <label>اختر ملف Excel للاستيراد:</label>
-      <input type="file" id="import-file" accept=".xlsx,.xls,.csv" style="padding:8px;border:2px dashed var(--g2);border-radius:8px;width:100%;background:white">
-    </div>
-    <div id="import-preview" style="margin-top:12px;max-height:200px;overflow:auto;display:none;background:white;border:1.5px solid var(--border);border-radius:8px;padding:10px"></div>
-    <div class="mof">
-      <button class="btn btn-out" onclick="closeAll()">إلغاء</button>
-      <button class="btn btn-g" id="import-confirm-btn" onclick="doImport()" style="display:none">✅ استيراد البيانات</button>
-    </div>
-  </div>
-</div>
-
 </body>
 </html>
