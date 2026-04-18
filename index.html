@@ -3696,6 +3696,7 @@ let dashYear = new Date().getFullYear(); // يبدأ بالسنة الحالية
 function dashYearChanged(val) {
   dashYear = val ? parseInt(val) : 0;
   updateDashIncome();
+  renderDash();  // إعادة رسم الرسم البياني والإحصائيات
 }
 
 function updateDashIncome() {
