@@ -846,6 +846,12 @@ const NATIONALITIES_SHORT = {
   'أثيوبيا':'🇪🇹','الأردن':'🇯🇴',
 };
 
+let attLog = {};
+let nextStuId = 200;
+let nextPayId = 3000;
+let nextExpId = 600;
+let nextRenId = 51;
+
 let students = [
   {id:1,name:'جورج يعقوب',dob:'2022-03-18',gen:'ذكر',nat:'سوريا',cls:'النحل',bpl:'الشارقة',dad:'لطيف يعقوب',job:'مهندس',dph:'0582458845',mom:'لمى الياس',mph:'0521490770',addr:'الشارقة-المجاز 2',note:''},
   {id:2,name:'كارن تكريتي',dob:'2021-06-02',gen:'انثى',nat:'سوريا',cls:'النحل',bpl:'الشارقة',dad:'محمد طارق',job:'موظف بنك',dph:'0555893136',mom:'ربا مندو',mph:'0565382283',addr:'الشارقة-المجاز 3',note:''},
@@ -3094,7 +3100,7 @@ let renewals = [
   {id:48,name:'بطاقة العمل ايتل',date:'2026-07-24',cost:'',cat:'بطاقات',notes:''},
   {id:49,name:'بطاقة العمل بيل',date:'2026-12-25',cost:'',cat:'بطاقات',notes:''}
 ];
-let nextRenId = 50;
+
 let editingRenId = null;
 
 const CAT_EMOJI = {
