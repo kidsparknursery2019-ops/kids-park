@@ -346,13 +346,11 @@ textarea{resize:vertical;min-height:65px}
         </select>
         <span id="dash-year-total" style="font-size:13px;color:var(--g1);font-weight:700"></span>
       </div>
-      <div class="sg" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+      <div class="sg">
         <div class="sc"><div class="sl">إجمالي الطلاب</div><div class="sv" id="s-total">—</div><div class="ss">العام الدراسي 2025-2026</div></div>
         <div class="sc y"><div class="sl">حاضرون اليوم</div><div class="sv" id="s-present">—</div><div class="ss">من إجمالي الطلاب</div></div>
         <div class="sc r"><div class="sl">غائبون اليوم</div><div class="sv" id="s-absent">—</div><div class="ss">سجّل الحضور أولاً</div></div>
-        <div class="sc b"><div class="sl">💰 إجمالي المحصّل</div><div class="sv" id="s-income">—</div><div class="ss" id="s-income-count">درهم إماراتي</div></div>
-        <div class="sc" style="background:linear-gradient(135deg,#fff8f0,#ffefdc);border-color:#e67e22"><div class="sl">🧾 إجمالي المصاريف</div><div class="sv" id="s-expenses" style="color:#e67e22">—</div><div class="ss" id="s-expenses-count">درهم إماراتي</div></div>
-        <div class="sc" style="background:linear-gradient(135deg,#f0fff5,#dcffea);border-color:#27ae60"><div class="sl">📊 الصافي</div><div class="sv" id="s-net" style="color:#27ae60">—</div><div class="ss">إيرادات - مصاريف</div></div>
+        <div class="sc b"><div class="sl">إجمالي المحصّل</div><div class="sv" id="s-income">—</div><div class="ss">درهم إماراتي</div></div>
       </div>
       <div class="ct2">
         <div class="card">
@@ -1550,53 +1548,24 @@ function dashYearChanged(val) {
 }
 
 function updateDashIncome() {
-  // حساب الإيرادات
-  let totalInc = 0, expCount = 0, totalExp = 0;
+  // حساب المبلغ
+  let total = 0;
   const recent = [];
   payments.forEach(function(p) {
     const y = getDateYear(p.date);
     if (!dashYear || y === dashYear) {
-      totalInc += (p.amt || 0);
+      total += (p.amt || 0);
       recent.push(p);
     }
   });
 
-  // حساب المصاريف
-  expenses.forEach(function(e) {
-    const y = getDateYear(e.exp_date || e.date);
-    if (!dashYear || y === dashYear) {
-      totalExp += (e.amt || 0);
-      expCount++;
-    }
-  });
-
-  const net = totalInc - totalExp;
-
-  // عرض الإيرادات
+  // عرض الإجمالي
   const incEl = document.getElementById('s-income');
-  if (incEl) incEl.textContent = payments.length > 0 ? totalInc.toLocaleString() + ' د.إ' : '—';
-  const incCount = document.getElementById('s-income-count');
-  if (incCount) incCount.textContent = recent.length + ' سند';
-
-  // عرض المصاريف
-  const expEl = document.getElementById('s-expenses');
-  if (expEl) expEl.textContent = expenses.length > 0 ? totalExp.toLocaleString() + ' د.إ' : '—';
-  const expCountEl = document.getElementById('s-expenses-count');
-  if (expCountEl) expCountEl.textContent = expCount + ' مصروف';
-
-  // عرض الصافي
-  const netEl = document.getElementById('s-net');
-  if (netEl) {
-    netEl.textContent = (net === 0 && expenses.length === 0 && payments.length === 0)
-      ? '—'
-      : net.toLocaleString() + ' د.إ';
-    netEl.style.color = net >= 0 ? '#27ae60' : '#e74c3c';
-  }
+  if (incEl) incEl.textContent = payments.length > 0 ? total.toLocaleString() + ' د.إ' : '—';
 
   // تحديث الـ label
   const lbl = document.getElementById('dash-year-total');
-  if (lbl) lbl.textContent = (dashYear ? 'سنة ' + dashYear : 'جميع السنوات') +
-    ' — ' + recent.length + ' سند، ' + expCount + ' مصروف';
+  if (lbl) lbl.textContent = recent.length > 0 ? '(' + recent.length + ' سند)' : '';
 
   // آخر المدفوعات
   recent.sort(function(a,b){ return (b.date||'').localeCompare(a.date||''); });
