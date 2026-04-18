@@ -263,6 +263,17 @@ textarea{resize:vertical;min-height:65px}
 
 @media print { .no-print { display: none !important; } }
 .no-print { display: block; }
+
+/* Print styles for financial reports */
+@media print {
+  .sidebar, .hdr, .no-print { display: none !important; }
+  body { background: white !important; padding: 0 !important; }
+  .wrap { padding: 10px !important; }
+  .pg { display: block !important; }
+  .pg:not(#pg-finreport) { display: none !important; }
+  .card { page-break-inside: avoid; box-shadow: none !important; border: 1.5px solid #ccc !important; }
+  .sc { box-shadow: none !important; border: 1px solid #ddd !important; }
+}
 </style>
 </head>
 <body>
@@ -535,59 +546,100 @@ textarea{resize:vertical;min-height:65px}
 
     <!-- FINANCIAL REPORT PAGE -->
     <div class="pg" id="pg-finreport">
-      <div class="pt">📈 التقارير المالية — الواردات والصادرات</div>
-      
-      <div class="card">
-        <div class="ct">🗓 حدد الفترة الزمنية</div>
+      <div class="pt">
+        📈 التقارير المالية
+        <button class="btn btn-out btn-sm no-print" onclick="window.print()">🖨 طباعة التقرير</button>
+      </div>
+
+      <!-- Filters card - hidden when printing -->
+      <div class="card no-print">
+        <div class="ct">🗓 تحديد الفترة الزمنية</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:10px 0">
           <div class="fl" style="flex:1;min-width:140px">
             <label>من تاريخ</label>
-            <input type="date" id="fr-from" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px">
+            <input type="date" id="fr-from" onchange="generateFinReport()" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px">
           </div>
           <div class="fl" style="flex:1;min-width:140px">
             <label>إلى تاريخ</label>
-            <input type="date" id="fr-to" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px">
+            <input type="date" id="fr-to" onchange="generateFinReport()" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px">
           </div>
-          <button class="btn btn-g" onclick="generateFinReport()">🔍 عرض التقرير</button>
+          <button class="btn btn-g" onclick="generateFinReport()">🔍 عرض</button>
           <button class="btn btn-out btn-sm" onclick="frQuickSet('month')">هذا الشهر</button>
+          <button class="btn btn-out btn-sm" onclick="frQuickSet('quarter')">3 أشهر</button>
           <button class="btn btn-out btn-sm" onclick="frQuickSet('year')">هذه السنة</button>
           <button class="btn btn-out btn-sm" onclick="frQuickSet('all')">الكل</button>
+          <button class="btn btn-out btn-sm" onclick="exportFinReport()">⬇ تصدير Excel</button>
         </div>
       </div>
 
-      <div id="fr-results" style="display:none">
-        <div class="sg" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
-          <div class="sc b"><div class="sl">💰 الواردات</div><div class="sv" id="fr-inc" style="color:#27ae60">—</div><div class="ss" id="fr-inc-sub">0 سند</div></div>
-          <div class="sc r"><div class="sl">🧾 الصادرات</div><div class="sv" id="fr-exp" style="color:#e67e22">—</div><div class="ss" id="fr-exp-sub">0 مصروف</div></div>
-          <div class="sc y"><div class="sl">📊 الصافي</div><div class="sv" id="fr-net">—</div><div class="ss">واردات - صادرات</div></div>
+      <div id="fr-results">
+        <!-- Report Header (shown in print) -->
+        <div id="fr-header" style="text-align:center;padding:20px;background:linear-gradient(135deg,#1e6b3f,#2d8f56);color:white;border-radius:14px 14px 0 0;margin-bottom:0">
+          <div style="font-size:22px;font-weight:900;margin-bottom:4px">📊 التقرير المالي</div>
+          <div style="font-size:14px;opacity:.95" id="fr-header-period">—</div>
+          <div style="font-size:12px;opacity:.8;margin-top:4px" id="fr-header-date">—</div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="sg" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-top:0;border-radius:0;border-top:none">
+          <div class="sc b"><div class="sl">💰 إجمالي الواردات</div><div class="sv" id="fr-inc" style="color:#27ae60">—</div><div class="ss" id="fr-inc-sub">0 سند</div></div>
+          <div class="sc r"><div class="sl">🧾 إجمالي الصادرات</div><div class="sv" id="fr-exp" style="color:#e67e22">—</div><div class="ss" id="fr-exp-sub">0 مصروف</div></div>
+          <div class="sc y"><div class="sl">📊 الصافي</div><div class="sv" id="fr-net">—</div><div class="ss" id="fr-net-sub">واردات - صادرات</div></div>
           <div class="sc"><div class="sl">📅 عدد الأيام</div><div class="sv" id="fr-days">—</div><div class="ss">خلال الفترة</div></div>
         </div>
 
-        <div class="card">
-          <div class="ct">
-            <span>📊 تفصيل التقرير</span>
-            <button class="btn btn-g btn-sm" onclick="exportFinReport()">⬇ تصدير إلى Excel</button>
-          </div>
-          <div style="overflow-x:auto">
+        <!-- Summary by Category -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px" id="fr-categories-wrap">
+          <div class="card">
+            <div class="ct">💰 الواردات حسب النوع</div>
             <table class="tbl" style="font-size:13px">
-              <thead>
-                <tr>
-                  <th>النوع</th>
-                  <th>التاريخ</th>
-                  <th>البيان</th>
-                  <th>ولي الأمر / الفئة</th>
-                  <th>المبلغ</th>
-                </tr>
-              </thead>
+              <thead><tr><th>النوع</th><th>العدد</th><th>المبلغ</th><th>%</th></tr></thead>
+              <tbody id="fr-inc-cats"></tbody>
+            </table>
+          </div>
+          <div class="card">
+            <div class="ct">🧾 الصادرات حسب الفئة</div>
+            <table class="tbl" style="font-size:13px">
+              <thead><tr><th>الفئة</th><th>العدد</th><th>المبلغ</th><th>%</th></tr></thead>
+              <tbody id="fr-exp-cats"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Monthly breakdown -->
+        <div class="card" style="margin-top:14px">
+          <div class="ct">📅 التوزيع الشهري</div>
+          <table class="tbl" style="font-size:13px">
+            <thead><tr><th>الشهر</th><th>الواردات</th><th>الصادرات</th><th>الصافي</th></tr></thead>
+            <tbody id="fr-monthly"></tbody>
+          </table>
+        </div>
+
+        <!-- Full detail table -->
+        <div class="card" style="margin-top:14px">
+          <div class="ct">
+            <span>📋 التفصيل الكامل</span>
+            <label style="font-size:13px;font-weight:normal" class="no-print">
+              <input type="checkbox" id="fr-show-detail" onchange="toggleFrDetail()" checked> عرض كل الحركات
+            </label>
+          </div>
+          <div id="fr-detail-wrap" style="overflow-x:auto">
+            <table class="tbl" style="font-size:13px">
+              <thead><tr><th>#</th><th>النوع</th><th>التاريخ</th><th>البيان</th><th>الجهة / الفئة</th><th>المبلغ</th></tr></thead>
               <tbody id="fr-tbody"></tbody>
               <tfoot id="fr-tfoot"></tfoot>
             </table>
           </div>
         </div>
+
+        <!-- Footer (print only) -->
+        <div id="fr-footer" style="text-align:center;padding:14px;margin-top:14px;font-size:12px;color:var(--muted);border-top:1.5px solid var(--border)">
+          حضانة حديقة الأطفال — تقرير مالي تم إنشاؤه في <span id="fr-gen-time"></span>
+        </div>
       </div>
     </div>
 
-    <!-- DELETED STUDENTS PAGE -->
+    <!-- DELETED STUDENTS PAGE -->    <!-- DELETED STUDENTS PAGE -->
     <div class="pg" id="pg-deleted">
       <div class="pt">🗑 سجل الطلاب المحذوفين</div>
       <div class="sg" style="grid-template-columns:repeat(2,1fr)">
@@ -2010,11 +2062,10 @@ function renderFinReport() {
   const fromEl = document.getElementById('fr-from');
   const toEl = document.getElementById('fr-to');
   if (fromEl && !fromEl.value) {
-    // default: first of current month
-    const d = new Date();
-    fromEl.value = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-01';
+    fromEl.value = new Date().getFullYear() + '-01-01';
   }
   if (toEl && !toEl.value) toEl.value = today;
+  generateFinReport();
 }
 
 function frQuickSet(range) {
@@ -2038,16 +2089,16 @@ function frQuickSet(range) {
 function generateFinReport() {
   const from = document.getElementById('fr-from').value;
   const to = document.getElementById('fr-to').value;
-  if (!from || !to) { alert('يرجى تحديد الفترة الزمنية'); return; }
+  if (!from || !to) return;
   if (from > to) { alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية'); return; }
 
-  // Filter payments and expenses
+  // Filter
   const filtPay = payments.filter(function(p){
-    const d = normalizeDate(p.date);
+    const d = String(p.date||'').slice(0,10);
     return d && d >= from && d <= to;
   });
   const filtExp = expenses.filter(function(e){
-    const d = normalizeDate(e.exp_date || e.date);
+    const d = String(e.exp_date || e.date || '').slice(0,10);
     return d && d >= from && d <= to;
   });
 
@@ -2056,68 +2107,198 @@ function generateFinReport() {
   const net = totalInc - totalExp;
   const days = Math.round((new Date(to) - new Date(from)) / 86400000) + 1;
 
-  // Stats
+  // Header
+  const fromAr = formatDateAr ? formatDateAr(from) : from;
+  const toAr = formatDateAr ? formatDateAr(to) : to;
+  const hp = document.getElementById('fr-header-period');
+  if (hp) hp.textContent = 'الفترة: من ' + from + ' إلى ' + to + ' (' + days + ' يوم)';
+  const hd = document.getElementById('fr-header-date');
+  if (hd) hd.textContent = 'تم إنشاء التقرير في: ' + new Date().toLocaleString('ar-AE');
+  const ft = document.getElementById('fr-gen-time');
+  if (ft) ft.textContent = new Date().toLocaleString('ar-AE');
+
+  // Main stats
   document.getElementById('fr-inc').textContent = totalInc.toLocaleString() + ' د.إ';
   document.getElementById('fr-inc-sub').textContent = filtPay.length + ' سند';
   document.getElementById('fr-exp').textContent = totalExp.toLocaleString() + ' د.إ';
   document.getElementById('fr-exp-sub').textContent = filtExp.length + ' مصروف';
   document.getElementById('fr-net').textContent = net.toLocaleString() + ' د.إ';
   document.getElementById('fr-net').style.color = net >= 0 ? '#27ae60' : '#e74c3c';
+  const ns = document.getElementById('fr-net-sub');
+  if (ns) ns.textContent = net >= 0 ? '🟢 فائض' : '🔴 عجز';
   document.getElementById('fr-days').textContent = days;
 
-  // Build rows - sorted by date
-  const allRows = [];
+  // Income by type
+  const incByType = {};
   filtPay.forEach(function(p){
-    allRows.push({ type: 'وارد', date: normalizeDate(p.date), desc: p.desc || '', who: p.who || '', amt: p.amt || 0, sign: 1 });
+    const t = p.type || 'غير محدد';
+    if (!incByType[t]) incByType[t] = { count: 0, amt: 0 };
+    incByType[t].count++;
+    incByType[t].amt += (p.amt || 0);
+  });
+  const incCatsEl = document.getElementById('fr-inc-cats');
+  if (incCatsEl) {
+    const entries = Object.entries(incByType).sort(function(a,b){ return b[1].amt - a[1].amt; });
+    incCatsEl.innerHTML = entries.length
+      ? entries.map(function(e){
+          const pct = totalInc > 0 ? ((e[1].amt/totalInc)*100).toFixed(1) : '0';
+          return '<tr><td>' + e[0] + '</td><td>' + e[1].count + '</td>' +
+            '<td style="color:#27ae60;font-weight:700">' + e[1].amt.toLocaleString() + ' د.إ</td>' +
+            '<td>' + pct + '%</td></tr>';
+        }).join('') +
+        '<tr style="background:var(--gp);font-weight:700"><td>الإجمالي</td><td>' + filtPay.length + '</td>' +
+        '<td>' + totalInc.toLocaleString() + ' د.إ</td><td>100%</td></tr>'
+      : '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">لا توجد واردات</td></tr>';
+  }
+
+  // Expenses by category
+  const expByCat = {};
+  filtExp.forEach(function(e){
+    const c = e.cat || 'غير محدد';
+    if (!expByCat[c]) expByCat[c] = { count: 0, amt: 0 };
+    expByCat[c].count++;
+    expByCat[c].amt += (e.amt || 0);
+  });
+  const expCatsEl = document.getElementById('fr-exp-cats');
+  if (expCatsEl) {
+    const entries = Object.entries(expByCat).sort(function(a,b){ return b[1].amt - a[1].amt; });
+    expCatsEl.innerHTML = entries.length
+      ? entries.map(function(e){
+          const pct = totalExp > 0 ? ((e[1].amt/totalExp)*100).toFixed(1) : '0';
+          return '<tr><td>' + e[0] + '</td><td>' + e[1].count + '</td>' +
+            '<td style="color:#e67e22;font-weight:700">' + e[1].amt.toLocaleString() + ' د.إ</td>' +
+            '<td>' + pct + '%</td></tr>';
+        }).join('') +
+        '<tr style="background:var(--gp);font-weight:700"><td>الإجمالي</td><td>' + filtExp.length + '</td>' +
+        '<td>' + totalExp.toLocaleString() + ' د.إ</td><td>100%</td></tr>'
+      : '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">لا توجد صادرات</td></tr>';
+  }
+
+  // Monthly breakdown
+  const monthly = {};
+  filtPay.forEach(function(p){
+    const m = String(p.date||'').slice(0,7);
+    if (!monthly[m]) monthly[m] = { inc: 0, exp: 0 };
+    monthly[m].inc += (p.amt || 0);
   });
   filtExp.forEach(function(e){
-    allRows.push({ type: 'صادر', date: normalizeDate(e.exp_date || e.date), desc: e.desc || '', who: e.cat || '', amt: e.amt || 0, sign: -1 });
+    const m = String(e.exp_date || e.date || '').slice(0,7);
+    if (!monthly[m]) monthly[m] = { inc: 0, exp: 0 };
+    monthly[m].exp += (e.amt || 0);
+  });
+  const monthsEl = document.getElementById('fr-monthly');
+  if (monthsEl) {
+    const months = Object.keys(monthly).filter(function(m){return m;}).sort();
+    monthsEl.innerHTML = months.length
+      ? months.map(function(m){
+          const n = monthly[m].inc - monthly[m].exp;
+          const clr = n >= 0 ? '#27ae60' : '#e74c3c';
+          return '<tr><td><b>' + m + '</b></td>' +
+            '<td style="color:#27ae60">+' + monthly[m].inc.toLocaleString() + '</td>' +
+            '<td style="color:#e67e22">-' + monthly[m].exp.toLocaleString() + '</td>' +
+            '<td style="color:' + clr + ';font-weight:700">' + n.toLocaleString() + ' د.إ</td></tr>';
+        }).join('') +
+        '<tr style="background:var(--gp);font-weight:700"><td>الإجمالي</td>' +
+        '<td style="color:#27ae60">+' + totalInc.toLocaleString() + '</td>' +
+        '<td style="color:#e67e22">-' + totalExp.toLocaleString() + '</td>' +
+        '<td style="color:' + (net>=0?'#27ae60':'#e74c3c') + '">' + net.toLocaleString() + ' د.إ</td></tr>'
+      : '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">لا توجد بيانات</td></tr>';
+  }
+
+  // Detail table
+  const allRows = [];
+  filtPay.forEach(function(p){
+    allRows.push({ type: 'وارد', date: String(p.date||'').slice(0,10), desc: p.desc || '', who: p.who || '', amt: p.amt || 0, sign: 1 });
+  });
+  filtExp.forEach(function(e){
+    allRows.push({ type: 'صادر', date: String(e.exp_date || e.date || '').slice(0,10), desc: e.desc || '', who: e.cat || '', amt: e.amt || 0, sign: -1 });
   });
   allRows.sort(function(a,b){ return a.date.localeCompare(b.date); });
 
-  // Render table
   const tbody = document.getElementById('fr-tbody');
-  tbody.innerHTML = allRows.length
-    ? allRows.map(function(r){
-      const clr = r.sign > 0 ? '#27ae60' : '#e67e22';
-      return '<tr>' +
-        '<td><span style="color:'+clr+';font-weight:700">'+(r.sign>0?'🟢 ':'🟠 ')+r.type+'</span></td>' +
-        '<td>'+r.date+'</td>' +
-        '<td style="font-size:12px">'+r.desc+'</td>' +
-        '<td style="font-size:12px">'+r.who+'</td>' +
-        '<td style="color:'+clr+';font-weight:700">'+(r.sign>0?'+':'-')+r.amt.toLocaleString()+' د.إ</td>' +
+  if (tbody) {
+    tbody.innerHTML = allRows.length
+      ? allRows.map(function(r, i){
+        const clr = r.sign > 0 ? '#27ae60' : '#e67e22';
+        const icon = r.sign > 0 ? '🟢' : '🟠';
+        return '<tr>' +
+          '<td>' + (i+1) + '</td>' +
+          '<td><span style="color:'+clr+';font-weight:700">'+icon+' '+r.type+'</span></td>' +
+          '<td>'+r.date+'</td>' +
+          '<td style="font-size:12px">'+r.desc+'</td>' +
+          '<td style="font-size:12px">'+r.who+'</td>' +
+          '<td style="color:'+clr+';font-weight:700">'+(r.sign>0?'+':'-')+r.amt.toLocaleString()+' د.إ</td>' +
+        '</tr>';
+      }).join('')
+      : '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--muted)">لا توجد حركات في الفترة المحددة</td></tr>';
+  }
+
+  const tfoot = document.getElementById('fr-tfoot');
+  if (tfoot) {
+    tfoot.innerHTML =
+      '<tr style="background:var(--gp);font-weight:700;font-size:14px">' +
+        '<td colspan="5" style="text-align:left">الإجمالي</td>' +
+        '<td><span style="color:#27ae60">+' + totalInc.toLocaleString() + '</span> / <span style="color:#e67e22">-' + totalExp.toLocaleString() + '</span></td>' +
+      '</tr>' +
+      '<tr style="background:linear-gradient(135deg,#f0fff5,#dcffea);font-weight:900;font-size:15px">' +
+        '<td colspan="5" style="text-align:left">📊 الصافي النهائي</td>' +
+        '<td style="color:'+(net>=0?'#27ae60':'#e74c3c')+'">' + net.toLocaleString() + ' د.إ</td>' +
       '</tr>';
-    }).join('')
-    : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">لا توجد بيانات في الفترة المحددة</td></tr>';
+  }
 
-  // Footer with totals
-  document.getElementById('fr-tfoot').innerHTML =
-    '<tr style="background:var(--gp);font-weight:700">' +
-      '<td colspan="4" style="text-align:left">الإجماليات</td>' +
-      '<td><span style="color:#27ae60">+'+totalInc.toLocaleString()+'</span> / <span style="color:#e67e22">-'+totalExp.toLocaleString()+'</span></td>' +
-    '</tr>' +
-    '<tr style="background:linear-gradient(135deg,#f0fff5,#dcffea);font-weight:700;font-size:14px">' +
-      '<td colspan="4" style="text-align:left">الصافي</td>' +
-      '<td style="color:'+(net>=0?'#27ae60':'#e74c3c')+'">'+net.toLocaleString()+' د.إ</td>' +
-    '</tr>';
+  lastFinReportData = { from: from, to: to, rows: allRows, totalInc: totalInc, totalExp: totalExp, net: net, incByType: incByType, expByCat: expByCat, monthly: monthly };
+}
 
-  document.getElementById('fr-results').style.display = 'block';
-  lastFinReportData = { from: from, to: to, rows: allRows, totalInc: totalInc, totalExp: totalExp, net: net };
+function toggleFrDetail() {
+  const cb = document.getElementById('fr-show-detail');
+  const wrap = document.getElementById('fr-detail-wrap');
+  if (cb && wrap) wrap.style.display = cb.checked ? 'block' : 'none';
 }
 
 function exportFinReport() {
   if (!lastFinReportData) { alert('قم بإنشاء التقرير أولاً'); return; }
   const d = lastFinReportData;
-  const headers = ['النوع', 'التاريخ', 'البيان', 'ولي الأمر/الفئة', 'المبلغ (د.إ)'];
-  const rows = d.rows.map(function(r){ return [r.type, r.date, r.desc, r.who, r.sign * r.amt]; });
-  // Summary rows
-  rows.push([]);
-  rows.push(['', '', '', 'إجمالي الواردات', d.totalInc]);
-  rows.push(['', '', '', 'إجمالي الصادرات', d.totalExp]);
-  rows.push(['', '', '', 'الصافي', d.net]);
-  const ws = XLSX.utils.aoa_to_sheet([headers].concat(rows));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'تقرير مالي');
+
+  // Sheet 1: Summary
+  const summary = [
+    ['التقرير المالي'],
+    ['الفترة', 'من ' + d.from + ' إلى ' + d.to],
+    ['عدد الأيام', Math.round((new Date(d.to) - new Date(d.from)) / 86400000) + 1],
+    [],
+    ['إجمالي الواردات', d.totalInc],
+    ['إجمالي الصادرات', d.totalExp],
+    ['الصافي', d.net],
+    [],
+    ['الواردات حسب النوع'],
+    ['النوع', 'العدد', 'المبلغ', 'النسبة'],
+  ];
+  Object.entries(d.incByType).sort(function(a,b){return b[1].amt-a[1].amt;}).forEach(function(e){
+    const pct = d.totalInc > 0 ? ((e[1].amt/d.totalInc)*100).toFixed(1) + '%' : '0%';
+    summary.push([e[0], e[1].count, e[1].amt, pct]);
+  });
+  summary.push([]);
+  summary.push(['الصادرات حسب الفئة']);
+  summary.push(['الفئة', 'العدد', 'المبلغ', 'النسبة']);
+  Object.entries(d.expByCat).sort(function(a,b){return b[1].amt-a[1].amt;}).forEach(function(e){
+    const pct = d.totalExp > 0 ? ((e[1].amt/d.totalExp)*100).toFixed(1) + '%' : '0%';
+    summary.push([e[0], e[1].count, e[1].amt, pct]);
+  });
+  summary.push([]);
+  summary.push(['التوزيع الشهري']);
+  summary.push(['الشهر', 'الواردات', 'الصادرات', 'الصافي']);
+  Object.keys(d.monthly).filter(function(m){return m;}).sort().forEach(function(m){
+    summary.push([m, d.monthly[m].inc, d.monthly[m].exp, d.monthly[m].inc - d.monthly[m].exp]);
+  });
+  const ws1 = XLSX.utils.aoa_to_sheet(summary);
+  XLSX.utils.book_append_sheet(wb, ws1, 'الملخص');
+
+  // Sheet 2: Full detail
+  const headers = ['#', 'النوع', 'التاريخ', 'البيان', 'الجهة/الفئة', 'المبلغ'];
+  const rows = d.rows.map(function(r, i){ return [i+1, r.type, r.date, r.desc, r.who, r.sign * r.amt]; });
+  const ws2 = XLSX.utils.aoa_to_sheet([headers].concat(rows));
+  XLSX.utils.book_append_sheet(wb, ws2, 'التفصيل');
+
   XLSX.writeFile(wb, 'تقرير_مالي_' + d.from + '_الى_' + d.to + '.xlsx');
 }
 
