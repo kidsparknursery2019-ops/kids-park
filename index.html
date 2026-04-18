@@ -2734,17 +2734,17 @@ async function loadFromFirebase() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
-    // فقط نحدث إذا Firebase عنده بيانات أكثر أو مساوية للمدمجة
-    if (data.students && data.students.length >= students.length)
-      students = data.students;
-    if (data.payments && data.payments.length >= payments.length)
-      payments = data.payments;
-    if (data.expenses && data.expenses.length >= expenses.length)
-      expenses = data.expenses;
-    if (data.attLog && Object.keys(data.attLog).length > 0)
-      attLog = data.attLog;
-    if (data.renewals && data.renewals.length >= renewals.length)
-      renewals = data.renewals;
+    // تحميل البيانات - Firebase يأخذ الأولوية إذا كان أحدث
+    const fbTime = data.savedAt || '';
+    const localTime = lastSavedAt || '';
+    const fbNewer = fbTime > localTime;
+    
+    // دائماً حمّل البيانات من Firebase (هي المصدر الرئيسي)
+    if (data.students)  students  = data.students;
+    if (data.payments)  payments  = data.payments;
+    if (data.expenses)  expenses  = data.expenses;
+    if (data.attLog)    attLog    = data.attLog;
+    if (data.renewals)  renewals  = data.renewals;
     if (data.CLASSES)         Object.assign(CLASSES, data.CLASSES);
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
     if (data.kp_users && data.kp_users.length) {
@@ -2754,17 +2754,8 @@ async function loadFromFirebase() {
     if (payments.length) nextPayId = Math.max(...payments.map(p=>p.id||0)) + 1;
     if (expenses.length) nextExpId = Math.max(...expenses.map(e=>e.id||0)) + 1;
     lastSavedAt = data.savedAt || '';
-    // لو Firebase عنده بيانات أقل من المدمجة، ارفع البيانات الجديدة تلقائياً
-    const compiled_pay = 2031;
-    if (!data.payments || data.payments.length < compiled_pay) {
-      setTimeout(pushToFirebase, 3000);
-    }
     renderDash();
     showSyncBadge('✅ تم التحميل');
-    // If compiled data is richer than Firebase, auto-push to sync
-    if ((data.students||[]).length < students.length || (data.expenses||[]).length < expenses.length) {
-      setTimeout(pushToFirebase, 2000);
-    }
   } catch(e) {
     showSyncBadge('📴 بدون إنترنت — بيانات محلية');
     console.log('Firebase load failed:', e.message);
