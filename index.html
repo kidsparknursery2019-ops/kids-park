@@ -260,6 +260,9 @@ textarea{resize:vertical;min-height:65px}
 .tbl th.sortable::after { content:'⇅'; position:absolute; right:4px; opacity:.4; font-size:10px }
 .tbl th.sortable.sort-asc::after { content:'▲'; opacity:1 }
 .tbl th.sortable.sort-desc::after { content:'▼'; opacity:1 }
+
+@media print { .no-print { display: none !important; } }
+.no-print { display: block; }
 </style>
 </head>
 <body>
@@ -323,6 +326,7 @@ textarea{resize:vertical;min-height:65px}
     <div class="nav"     onclick="go('worksheets')"><span class="ni">🖼️</span><span>أوراق العمل</span></div>
     <div class="nav"     onclick="go('forms')">      <span class="ni">📋</span><span>طلبات التسجيل</span></div>
     <div class="nav"     onclick="go('renewals')">   <span class="ni">🔔</span><span>التجديدات</span></div>
+    <div class="nav"     onclick="go('finreport')"> <span class="ni">📈</span><span>التقارير المالية</span></div>
     <div class="nav" id="nav-deleted" onclick="go('deleted')">    <span class="ni">🗑</span><span>المحذوفون</span></div>
     <div class="side-sep"></div>
     <div class="nav" id="nav-admin" onclick="go('admin')" style="display:none"><span class="ni">⚙️</span><span>الإعدادات</span></div>
@@ -346,11 +350,13 @@ textarea{resize:vertical;min-height:65px}
         </select>
         <span id="dash-year-total" style="font-size:13px;color:var(--g1);font-weight:700"></span>
       </div>
-      <div class="sg">
+      <div class="sg" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
         <div class="sc"><div class="sl">إجمالي الطلاب</div><div class="sv" id="s-total">—</div><div class="ss">العام الدراسي 2025-2026</div></div>
         <div class="sc y"><div class="sl">حاضرون اليوم</div><div class="sv" id="s-present">—</div><div class="ss">من إجمالي الطلاب</div></div>
         <div class="sc r"><div class="sl">غائبون اليوم</div><div class="sv" id="s-absent">—</div><div class="ss">سجّل الحضور أولاً</div></div>
-        <div class="sc b"><div class="sl">إجمالي المحصّل</div><div class="sv" id="s-income">—</div><div class="ss">درهم إماراتي</div></div>
+        <div class="sc b"><div class="sl">💰 الإيرادات</div><div class="sv" id="s-income">—</div><div class="ss" id="s-income-count">درهم إماراتي</div></div>
+        <div class="sc" style="background:linear-gradient(135deg,#fff8f0,#ffefdc);border-color:#e67e22"><div class="sl">🧾 المصاريف</div><div class="sv" id="s-expenses" style="color:#e67e22">—</div><div class="ss" id="s-expenses-count">درهم إماراتي</div></div>
+        <div class="sc" style="background:linear-gradient(135deg,#f0fff5,#dcffea);border-color:#27ae60"><div class="sl">📊 الصافي</div><div class="sv" id="s-net" style="color:#27ae60">—</div><div class="ss">إيرادات - مصاريف</div></div>
       </div>
       <div class="ct2">
         <div class="card">
@@ -382,7 +388,7 @@ textarea{resize:vertical;min-height:65px}
         <select id="stu-gen" onchange="renderStudents()">
           <option value="">الجنسين</option><option value="ذكر">ذكر</option><option value="انثى">أنثى</option>
         </select>
-        <button class="btn btn-out btn-sm" onclick="openExport('students')">⬇ تصدير</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('students')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('students')" title="استيراد من Excel">⬆ استيراد</button>
       </div>
       <div class="card">
         <div class="ct"><span id="stu-count">الطلاب</span></div>
@@ -399,7 +405,7 @@ textarea{resize:vertical;min-height:65px}
       <div class="sbar">
         <input type="date" id="att-date" onchange="renderAttGrid()">
         <div class="ftabs" id="cls-tabs"></div>
-        <button class="btn btn-out btn-sm" onclick="openExport('attendance')">⬇ تصدير</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('attendance')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('attendance')" title="استيراد من Excel">⬆ استيراد</button>
       </div>
       <div class="card">
         <div class="ct">
@@ -440,7 +446,7 @@ textarea{resize:vertical;min-height:65px}
           <option value="amt-desc">الأعلى قيمة</option>
           <option value="amt-asc">الأقل قيمة</option>
         </select>
-        <button class="btn btn-out btn-sm" onclick="openExport('payments')">⬇ تصدير</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('payments')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('payments')" title="استيراد من Excel">⬆ استيراد</button>
       </div>
       <div class="sg" style="grid-template-columns:repeat(3,1fr)">
         <div class="sc"><div class="sl">إجمالي المحصّل</div><div class="sv fin-pos" id="pay-total">0</div><div class="ss">درهم</div></div>
@@ -466,7 +472,7 @@ textarea{resize:vertical;min-height:65px}
           <option value="">كل الفئات</option>
           <option>رواتب</option><option>كهرباء وإنترنت</option><option>قرطاسية ومستلزمات</option><option>صيانة</option><option>مواصلات</option><option>فعاليات</option><option>أخرى</option>
         </select>
-        <button class="btn btn-out btn-sm" onclick="openExport('expenses')">⬇ تصدير</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('expenses')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('expenses')" title="استيراد من Excel">⬆ استيراد</button>
       </div>
       <div class="sg" style="grid-template-columns:repeat(3,1fr)">
         <div class="sc r"><div class="sl">إجمالي المصاريف</div><div class="sv fin-neg" id="exp-total">0</div><div class="ss">درهم</div></div>
@@ -496,7 +502,7 @@ textarea{resize:vertical;min-height:65px}
           <option value="id-desc">رقم السند ↓</option>
           <option value="id-asc">رقم السند ↑</option>
         </select>
-        <button class="btn btn-out btn-sm" onclick="openExport('receipts')">⬇ تصدير</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('receipts')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('receipts')" title="استيراد من Excel">⬆ استيراد</button>
       </div>
       <div id="receipts-list"></div>
     </div>
@@ -525,6 +531,61 @@ textarea{resize:vertical;min-height:65px}
 
 
     
+
+
+    <!-- FINANCIAL REPORT PAGE -->
+    <div class="pg" id="pg-finreport">
+      <div class="pt">📈 التقارير المالية — الواردات والصادرات</div>
+      
+      <div class="card">
+        <div class="ct">🗓 حدد الفترة الزمنية</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:10px 0">
+          <div class="fl" style="flex:1;min-width:140px">
+            <label>من تاريخ</label>
+            <input type="date" id="fr-from" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px">
+          </div>
+          <div class="fl" style="flex:1;min-width:140px">
+            <label>إلى تاريخ</label>
+            <input type="date" id="fr-to" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px">
+          </div>
+          <button class="btn btn-g" onclick="generateFinReport()">🔍 عرض التقرير</button>
+          <button class="btn btn-out btn-sm" onclick="frQuickSet('month')">هذا الشهر</button>
+          <button class="btn btn-out btn-sm" onclick="frQuickSet('year')">هذه السنة</button>
+          <button class="btn btn-out btn-sm" onclick="frQuickSet('all')">الكل</button>
+        </div>
+      </div>
+
+      <div id="fr-results" style="display:none">
+        <div class="sg" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+          <div class="sc b"><div class="sl">💰 الواردات</div><div class="sv" id="fr-inc" style="color:#27ae60">—</div><div class="ss" id="fr-inc-sub">0 سند</div></div>
+          <div class="sc r"><div class="sl">🧾 الصادرات</div><div class="sv" id="fr-exp" style="color:#e67e22">—</div><div class="ss" id="fr-exp-sub">0 مصروف</div></div>
+          <div class="sc y"><div class="sl">📊 الصافي</div><div class="sv" id="fr-net">—</div><div class="ss">واردات - صادرات</div></div>
+          <div class="sc"><div class="sl">📅 عدد الأيام</div><div class="sv" id="fr-days">—</div><div class="ss">خلال الفترة</div></div>
+        </div>
+
+        <div class="card">
+          <div class="ct">
+            <span>📊 تفصيل التقرير</span>
+            <button class="btn btn-g btn-sm" onclick="exportFinReport()">⬇ تصدير إلى Excel</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="tbl" style="font-size:13px">
+              <thead>
+                <tr>
+                  <th>النوع</th>
+                  <th>التاريخ</th>
+                  <th>البيان</th>
+                  <th>ولي الأمر / الفئة</th>
+                  <th>المبلغ</th>
+                </tr>
+              </thead>
+              <tbody id="fr-tbody"></tbody>
+              <tfoot id="fr-tfoot"></tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- DELETED STUDENTS PAGE -->
     <div class="pg" id="pg-deleted">
@@ -568,7 +629,7 @@ textarea{resize:vertical;min-height:65px}
             </select>
             <input type="text" id="ren-search" placeholder="🔍 ابحث..." oninput="renderRenewals()" style="max-width:160px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
           </div>
-          <button class="btn btn-g btn-sm" onclick="openAddRenewal()">＋ إضافة</button>
+          <button class="btn btn-out btn-sm" onclick="openExport('renewals')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('renewals')">⬆ استيراد</button><button class="btn btn-g btn-sm" onclick="openAddRenewal()">＋ إضافة</button>
         </div>
         <div class="ren-grid" id="ren-list"></div>
       </div>
@@ -682,6 +743,34 @@ textarea{resize:vertical;min-height:65px}
 
 
 <!-- Student Profile Modal -->
+
+<!-- Import Modal -->
+<div class="ov" id="mo-import">
+  <div class="mo" style="width:600px;max-width:95vw">
+    <div class="mot" id="mo-import-title">⬆ استيراد البيانات من Excel</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.6">
+      <b>📋 خطوات الاستيراد:</b><br>
+      1️⃣ حمّل <b>القالب الفارغ</b> للتأكد من ترتيب الأعمدة<br>
+      2️⃣ املأ البيانات في Excel<br>
+      3️⃣ ارفع الملف (xlsx أو csv) واستورد
+    </div>
+    <div id="mo-import-schema" style="background:var(--gp);padding:10px;border-radius:8px;margin-bottom:12px;font-size:12.5px"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn btn-out btn-sm" onclick="downloadImportTemplate()">📥 قالب فارغ</button>
+      <button class="btn btn-out btn-sm" onclick="downloadImportSample()">📄 مثال مع بيانات</button>
+    </div>
+    <div class="fl">
+      <label>اختر ملف Excel للاستيراد:</label>
+      <input type="file" id="import-file" accept=".xlsx,.xls,.csv" style="padding:8px;border:2px dashed var(--g2);border-radius:8px;width:100%;background:white">
+    </div>
+    <div id="import-preview" style="margin-top:12px;max-height:200px;overflow:auto;display:none;background:white;border:1.5px solid var(--border);border-radius:8px;padding:10px"></div>
+    <div class="mof">
+      <button class="btn btn-out" onclick="closeAll()">إلغاء</button>
+      <button class="btn btn-g" id="import-confirm-btn" onclick="doImport()" style="display:none">✅ استيراد</button>
+    </div>
+  </div>
+</div>
+
 <div class="ov" id="mo-stu-profile">
   <div class="mo" style="width:700px;max-width:95vw">
     <div class="mot">👶 ملف الطالب الكامل</div>
@@ -797,7 +886,8 @@ textarea{resize:vertical;min-height:65px}
         <select id="np-method"><option>نقدي</option><option>تحويل بنكي</option><option>شيك</option></select>
       </div>
       <div class="fl"><label>المستلم</label><input id="np-rcvr" placeholder="ربا / الإدارة..."></div>
-      <div class="fl"><label>ملاحظات</label><input id="np-note" placeholder=""></div>
+      <div class="fl"><label>ملاحظات (تُطبع)</label><input id="np-note" placeholder=""></div>
+      <div class="fl fgr"><label>🔒 ملاحظات داخلية (لا تُطبع - للموظفين فقط)</label><textarea id="np-internal" rows="2" placeholder="ملاحظات خاصة لا تظهر في السند المطبوع..." style="background:#fff8e1"></textarea></div>
     </div>
     <div class="mof">
       <button class="btn btn-r btn-sm" id="pay-del-btn" onclick="deletePayment()" style="display:none;margin-left:auto">🗑 حذف</button>
@@ -1548,24 +1638,42 @@ function dashYearChanged(val) {
 }
 
 function updateDashIncome() {
-  // حساب المبلغ
-  let total = 0;
+  let totalInc = 0, totalExp = 0, expCount = 0;
   const recent = [];
   payments.forEach(function(p) {
     const y = getDateYear(p.date);
     if (!dashYear || y === dashYear) {
-      total += (p.amt || 0);
+      totalInc += (p.amt || 0);
       recent.push(p);
     }
   });
+  expenses.forEach(function(e) {
+    const y = getDateYear(e.exp_date || e.date);
+    if (!dashYear || y === dashYear) {
+      totalExp += (e.amt || 0);
+      expCount++;
+    }
+  });
+  const net = totalInc - totalExp;
 
-  // عرض الإجمالي
   const incEl = document.getElementById('s-income');
-  if (incEl) incEl.textContent = payments.length > 0 ? total.toLocaleString() + ' د.إ' : '—';
+  if (incEl) incEl.textContent = payments.length > 0 ? totalInc.toLocaleString() + ' د.إ' : '—';
+  const incCountEl = document.getElementById('s-income-count');
+  if (incCountEl) incCountEl.textContent = recent.length + ' سند';
 
-  // تحديث الـ label
+  const expEl = document.getElementById('s-expenses');
+  if (expEl) expEl.textContent = expenses.length > 0 ? totalExp.toLocaleString() + ' د.إ' : '—';
+  const expCountEl = document.getElementById('s-expenses-count');
+  if (expCountEl) expCountEl.textContent = expCount + ' مصروف';
+
+  const netEl = document.getElementById('s-net');
+  if (netEl) {
+    netEl.textContent = (payments.length === 0 && expenses.length === 0) ? '—' : net.toLocaleString() + ' د.إ';
+    netEl.style.color = net >= 0 ? '#27ae60' : '#e74c3c';
+  }
+
   const lbl = document.getElementById('dash-year-total');
-  if (lbl) lbl.textContent = recent.length > 0 ? '(' + recent.length + ' سند)' : '';
+  if (lbl) lbl.textContent = (dashYear ? 'سنة ' + dashYear : 'جميع السنوات') + ' — ' + recent.length + ' سند، ' + expCount + ' مصروف';
 
   // آخر المدفوعات
   recent.sort(function(a,b){ return (b.date||'').localeCompare(a.date||''); });
@@ -1666,7 +1774,7 @@ function renderStudents(){
   document.getElementById('stu-tbody').innerHTML=f.map((s,i)=>`
     <tr>
       <td><b>#${s.id}</b></td>
-      <td><b>${s.name}</b></td>
+      <td><b>${s.name}</b>${(s.note||s.notes) ? '<div style="font-size:11px;color:#e67e22;margin-top:2px;font-weight:600">📝 '+(s.note||s.notes)+'</div>' : ''}</td>
       <td>${formatDate(s.dob)}</td>
       <td><span class="b ${s.gen==='ذكر'?'bb':'bo'}">${s.gen}</span></td>
       <td>${(NATIONALITIES_SHORT[s.nat]||'')+'  '+s.nat}</td>
@@ -1890,6 +1998,129 @@ function viewDeletedStudent(id) {
   // ارجع students للحالة الأصلية بعد ما الـ modal يفتح
   setTimeout(function(){ students.length = original.length; }, 100);
 }
+
+
+// ════════════════════════════════════════════
+// FINANCIAL REPORTS
+// ════════════════════════════════════════════
+let lastFinReportData = null;
+
+function renderFinReport() {
+  const today = new Date().toISOString().slice(0,10);
+  const fromEl = document.getElementById('fr-from');
+  const toEl = document.getElementById('fr-to');
+  if (fromEl && !fromEl.value) {
+    // default: first of current month
+    const d = new Date();
+    fromEl.value = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-01';
+  }
+  if (toEl && !toEl.value) toEl.value = today;
+}
+
+function frQuickSet(range) {
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0,10);
+  const fromEl = document.getElementById('fr-from');
+  const toEl = document.getElementById('fr-to');
+  if (range === 'month') {
+    fromEl.value = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-01';
+    toEl.value = todayStr;
+  } else if (range === 'year') {
+    fromEl.value = today.getFullYear() + '-01-01';
+    toEl.value = todayStr;
+  } else if (range === 'all') {
+    fromEl.value = '2020-01-01';
+    toEl.value = todayStr;
+  }
+  generateFinReport();
+}
+
+function generateFinReport() {
+  const from = document.getElementById('fr-from').value;
+  const to = document.getElementById('fr-to').value;
+  if (!from || !to) { alert('يرجى تحديد الفترة الزمنية'); return; }
+  if (from > to) { alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية'); return; }
+
+  // Filter payments and expenses
+  const filtPay = payments.filter(function(p){
+    const d = normalizeDate(p.date);
+    return d && d >= from && d <= to;
+  });
+  const filtExp = expenses.filter(function(e){
+    const d = normalizeDate(e.exp_date || e.date);
+    return d && d >= from && d <= to;
+  });
+
+  const totalInc = filtPay.reduce(function(s,p){ return s+(p.amt||0); }, 0);
+  const totalExp = filtExp.reduce(function(s,e){ return s+(e.amt||0); }, 0);
+  const net = totalInc - totalExp;
+  const days = Math.round((new Date(to) - new Date(from)) / 86400000) + 1;
+
+  // Stats
+  document.getElementById('fr-inc').textContent = totalInc.toLocaleString() + ' د.إ';
+  document.getElementById('fr-inc-sub').textContent = filtPay.length + ' سند';
+  document.getElementById('fr-exp').textContent = totalExp.toLocaleString() + ' د.إ';
+  document.getElementById('fr-exp-sub').textContent = filtExp.length + ' مصروف';
+  document.getElementById('fr-net').textContent = net.toLocaleString() + ' د.إ';
+  document.getElementById('fr-net').style.color = net >= 0 ? '#27ae60' : '#e74c3c';
+  document.getElementById('fr-days').textContent = days;
+
+  // Build rows - sorted by date
+  const allRows = [];
+  filtPay.forEach(function(p){
+    allRows.push({ type: 'وارد', date: normalizeDate(p.date), desc: p.desc || '', who: p.who || '', amt: p.amt || 0, sign: 1 });
+  });
+  filtExp.forEach(function(e){
+    allRows.push({ type: 'صادر', date: normalizeDate(e.exp_date || e.date), desc: e.desc || '', who: e.cat || '', amt: e.amt || 0, sign: -1 });
+  });
+  allRows.sort(function(a,b){ return a.date.localeCompare(b.date); });
+
+  // Render table
+  const tbody = document.getElementById('fr-tbody');
+  tbody.innerHTML = allRows.length
+    ? allRows.map(function(r){
+      const clr = r.sign > 0 ? '#27ae60' : '#e67e22';
+      return '<tr>' +
+        '<td><span style="color:'+clr+';font-weight:700">'+(r.sign>0?'🟢 ':'🟠 ')+r.type+'</span></td>' +
+        '<td>'+r.date+'</td>' +
+        '<td style="font-size:12px">'+r.desc+'</td>' +
+        '<td style="font-size:12px">'+r.who+'</td>' +
+        '<td style="color:'+clr+';font-weight:700">'+(r.sign>0?'+':'-')+r.amt.toLocaleString()+' د.إ</td>' +
+      '</tr>';
+    }).join('')
+    : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">لا توجد بيانات في الفترة المحددة</td></tr>';
+
+  // Footer with totals
+  document.getElementById('fr-tfoot').innerHTML =
+    '<tr style="background:var(--gp);font-weight:700">' +
+      '<td colspan="4" style="text-align:left">الإجماليات</td>' +
+      '<td><span style="color:#27ae60">+'+totalInc.toLocaleString()+'</span> / <span style="color:#e67e22">-'+totalExp.toLocaleString()+'</span></td>' +
+    '</tr>' +
+    '<tr style="background:linear-gradient(135deg,#f0fff5,#dcffea);font-weight:700;font-size:14px">' +
+      '<td colspan="4" style="text-align:left">الصافي</td>' +
+      '<td style="color:'+(net>=0?'#27ae60':'#e74c3c')+'">'+net.toLocaleString()+' د.إ</td>' +
+    '</tr>';
+
+  document.getElementById('fr-results').style.display = 'block';
+  lastFinReportData = { from: from, to: to, rows: allRows, totalInc: totalInc, totalExp: totalExp, net: net };
+}
+
+function exportFinReport() {
+  if (!lastFinReportData) { alert('قم بإنشاء التقرير أولاً'); return; }
+  const d = lastFinReportData;
+  const headers = ['النوع', 'التاريخ', 'البيان', 'ولي الأمر/الفئة', 'المبلغ (د.إ)'];
+  const rows = d.rows.map(function(r){ return [r.type, r.date, r.desc, r.who, r.sign * r.amt]; });
+  // Summary rows
+  rows.push([]);
+  rows.push(['', '', '', 'إجمالي الواردات', d.totalInc]);
+  rows.push(['', '', '', 'إجمالي الصادرات', d.totalExp]);
+  rows.push(['', '', '', 'الصافي', d.net]);
+  const ws = XLSX.utils.aoa_to_sheet([headers].concat(rows));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'تقرير مالي');
+  XLSX.writeFile(wb, 'تقرير_مالي_' + d.from + '_الى_' + d.to + '.xlsx');
+}
+
 
 function renderDeletedStudents() {
   const el = document.getElementById('deleted-list');
@@ -2128,7 +2359,7 @@ function lookupStudentForPay(idVal) {
 function openAddPay(){
   editingPayId = null;
   document.getElementById('np-date').value=new Date().toISOString().slice(0,10);
-  ['np-who','np-amt','np-desc','np-rcvr','np-note','np-stuid'].forEach(id=>{
+  ['np-who','np-amt','np-desc','np-rcvr','np-note','np-stuid','np-internal'].forEach(id=>{
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -2151,6 +2382,8 @@ function openEditPay(id){
   document.getElementById('np-note').value  = p.note||'';
   document.getElementById('np-type').value  = p.type||'قسط شهري';
   document.getElementById('np-method').value= p.method||'نقدي';
+  const intEl = document.getElementById('np-internal');
+  if (intEl) intEl.value = p.internalNote || '';
   const stuidEl = document.getElementById('np-stuid');
   if (stuidEl) {
     stuidEl.value = p.stuId || '';
@@ -2183,6 +2416,7 @@ function savePayment(){
     p.date=document.getElementById('np-date').value;
     p.rcvr=document.getElementById('np-rcvr').value;
     p.note=document.getElementById('np-note').value;
+    p.internalNote=(document.getElementById('np-internal')||{}).value||'';
     p.stuId = parseInt((document.getElementById('np-stuid')||{}).value) || p.stuId || null;
     closeAll();renderPayments();renderReceipts();renderDash();
     autoSave(); alert('✅ تم تعديل السند #'+editingPayId);
@@ -2194,6 +2428,7 @@ function savePayment(){
       date:document.getElementById('np-date').value,
       rcvr:document.getElementById('np-rcvr').value,
       note:document.getElementById('np-note').value,
+      internalNote:(document.getElementById('np-internal')||{}).value||'',
       stuId: stuid
     };
     payments.push(p);
@@ -2288,6 +2523,7 @@ function renderReceipts(){
         <span>💳 ${p.method}</span>
         <span>🧾 ${p.desc.slice(0,40)}${p.desc.length>40?'...':''}</span>
       </div>
+      ${p.internalNote ? '<div class="no-print" style="margin-top:6px;padding:6px 10px;background:#fff8e1;border-right:3px solid #f39c12;border-radius:6px;font-size:11px;color:#b8860b"><b>🔒 داخلي:</b> '+p.internalNote+'</div>' : ''}
       <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end" onclick="event.stopPropagation()">
         <button class="btn btn-out btn-sm" onclick="openEditPay(${p.id})">✏️ تعديل</button>
       </div>
@@ -2383,6 +2619,238 @@ function renderFinance(){
 
 let exportTarget = '';
 let exportFmt = 'xlsx';
+
+
+// ════════════════════════════════════════════
+// IMPORT FROM EXCEL
+// ════════════════════════════════════════════
+const IMPORT_SCHEMAS = {
+  students: {
+    title: 'الطلاب',
+    columns: [
+      { key: 'name',    label: 'الاسم',           required: true,  sample: 'أحمد محمد' },
+      { key: 'dob',     label: 'تاريخ الميلاد',    sample: '2022-03-15', note: 'YYYY-MM-DD' },
+      { key: 'gen',     label: 'الجنس',           sample: 'ذكر', note: 'ذكر أو انثى' },
+      { key: 'nat',     label: 'الجنسية',          sample: 'الإمارات' },
+      { key: 'cls',     label: 'الفصل',           required: true, sample: 'النحل', note: 'يجب أن يكون فصل موجود' },
+      { key: 'bpl',     label: 'مكان الميلاد',     sample: 'دبي' },
+      { key: 'dad',     label: 'اسم الأب',         sample: 'محمد خالد' },
+      { key: 'job',     label: 'عمل الأب',         sample: 'مهندس' },
+      { key: 'dph',     label: 'هاتف الأب',        sample: '0501234567' },
+      { key: 'mom',     label: 'اسم الأم',         sample: 'سارة علي' },
+      { key: 'mph',     label: 'هاتف الأم',        sample: '0509876543' },
+      { key: 'addr',    label: 'العنوان',         sample: 'الشارقة' },
+      { key: 'sub_end', label: 'انتهاء الاشتراك',  sample: '2026-08-31' },
+      { key: 'note',    label: 'ملاحظات',         sample: '' },
+    ]
+  },
+  payments: {
+    title: 'المدفوعات',
+    columns: [
+      { key: 'stuId',  label: 'رقم الطالب',       sample: '1', note: 'اختياري' },
+      { key: 'who',    label: 'ولي الأمر',         required: true, sample: 'والد أحمد' },
+      { key: 'amt',    label: 'المبلغ',            required: true, sample: '1500' },
+      { key: 'desc',   label: 'البيان',            required: true, sample: 'قسط شهر سبتمبر' },
+      { key: 'type',   label: 'نوع الدفع',         sample: 'قسط شهري' },
+      { key: 'method', label: 'طريقة الدفع',       sample: 'نقدي' },
+      { key: 'date',   label: 'التاريخ',           sample: '2026-04-15' },
+      { key: 'rcvr',   label: 'المستلم',           sample: 'الإدارة' },
+      { key: 'note',   label: 'ملاحظات (عامة)',   sample: '' },
+      { key: 'internalNote', label: 'ملاحظات داخلية', sample: '', note: 'لا تُطبع' },
+    ]
+  },
+  receipts: {
+    title: 'سندات القبض',
+    columns: [
+      { key: 'stuId',  label: 'رقم الطالب',       sample: '1' },
+      { key: 'who',    label: 'ولي الأمر',         required: true, sample: 'والد أحمد' },
+      { key: 'amt',    label: 'المبلغ',            required: true, sample: '1500' },
+      { key: 'desc',   label: 'البيان',            required: true, sample: 'قسط شهر سبتمبر' },
+      { key: 'method', label: 'طريقة الدفع',       sample: 'نقدي' },
+      { key: 'date',   label: 'التاريخ',           sample: '2026-04-15' },
+      { key: 'rcvr',   label: 'المستلم',           sample: 'الإدارة' },
+      { key: 'note',   label: 'ملاحظات',          sample: '' },
+    ]
+  },
+  expenses: {
+    title: 'المصاريف',
+    columns: [
+      { key: 'desc',   label: 'البيان',            required: true, sample: 'فاتورة كهرباء' },
+      { key: 'amt',    label: 'المبلغ',            required: true, sample: '850' },
+      { key: 'cat',    label: 'الفئة',             sample: 'فواتير' },
+      { key: 'method', label: 'طريقة الدفع',       sample: 'نقدي' },
+      { key: 'date',   label: 'التاريخ',           sample: '2026-04-15' },
+      { key: 'note',   label: 'ملاحظات',          sample: '' },
+    ]
+  },
+  renewals: {
+    title: 'التجديدات',
+    columns: [
+      { key: 'name',  label: 'الاسم / الجهة',      required: true, sample: 'الرخصة التجارية' },
+      { key: 'date',  label: 'تاريخ الانتهاء',     sample: '2026-06-30' },
+      { key: 'cat',   label: 'الفئة',              sample: 'تراخيص' },
+      { key: 'cost',  label: 'التكلفة',            sample: '5000' },
+      { key: 'notes', label: 'ملاحظات',           sample: '' },
+    ]
+  },
+  attendance: {
+    title: 'الحضور',
+    columns: [
+      { key: 'date',   label: 'التاريخ',            required: true, sample: '2026-04-15' },
+      { key: 'stuId',  label: 'رقم الطالب',         required: true, sample: '1' },
+      { key: 'status', label: 'الحالة',             required: true, sample: 'حاضر' },
+    ]
+  },
+};
+
+let importTarget = '';
+let importParsedData = null;
+
+function openImport(target) {
+  importTarget = target;
+  importParsedData = null;
+  const schema = IMPORT_SCHEMAS[target];
+  if (!schema) { alert('نوع البيانات غير مدعوم'); return; }
+  document.getElementById('mo-import-title').textContent = '⬆ استيراد ' + schema.title;
+  document.getElementById('import-file').value = '';
+  document.getElementById('import-preview').style.display = 'none';
+  document.getElementById('import-confirm-btn').style.display = 'none';
+  const schemaHtml = '<b>الأعمدة (بنفس الترتيب):</b><br>' +
+    '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">' +
+    schema.columns.map(function(c, i){
+      const star = c.required ? '<span style="color:#e74c3c">*</span>' : '';
+      return '<span style="background:white;padding:3px 8px;border-radius:6px;border:1px solid var(--border)">' + (i+1) + '. ' + c.label + star + '</span>';
+    }).join('') + '</div>' +
+    '<div style="margin-top:8px;font-size:11px;color:var(--muted)">🔴 <span style="color:#e74c3c">*</span> = حقل إلزامي.</div>';
+  document.getElementById('mo-import-schema').innerHTML = schemaHtml;
+  const fileInput = document.getElementById('import-file');
+  fileInput.onchange = handleImportFile;
+  document.getElementById('mo-import').classList.add('on');
+}
+
+function downloadImportTemplate() {
+  const schema = IMPORT_SCHEMAS[importTarget];
+  if (!schema) return;
+  const headers = schema.columns.map(function(c){ return c.label + (c.required?' *':''); });
+  const notes = schema.columns.map(function(c){ return c.note || ''; });
+  const ws = XLSX.utils.aoa_to_sheet([headers, notes]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, schema.title);
+  XLSX.writeFile(wb, 'قالب_' + schema.title + '.xlsx');
+}
+
+function downloadImportSample() {
+  const schema = IMPORT_SCHEMAS[importTarget];
+  if (!schema) return;
+  const headers = schema.columns.map(function(c){ return c.label + (c.required?' *':''); });
+  const s1 = schema.columns.map(function(c){ return c.sample || ''; });
+  const ws = XLSX.utils.aoa_to_sheet([headers, s1]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, schema.title);
+  XLSX.writeFile(wb, 'مثال_' + schema.title + '.xlsx');
+}
+
+function handleImportFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const data = new Uint8Array(ev.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+      const firstSheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+      if (!rows.length) { alert('الملف فارغ'); return; }
+      const schema = IMPORT_SCHEMAS[importTarget];
+      let dataRows = rows.slice(1).filter(function(r){
+        return r.some(function(c){ return String(c).trim(); });
+      });
+      const parsed = dataRows.map(function(row){
+        const obj = {};
+        schema.columns.forEach(function(col, i){
+          obj[col.key] = String(row[i] == null ? '' : row[i]).trim();
+        });
+        return obj;
+      });
+      const errors = [];
+      parsed.forEach(function(item, i){
+        schema.columns.forEach(function(col){
+          if (col.required && !item[col.key]) {
+            errors.push('الصف ' + (i+2) + ': حقل "' + col.label + '" إلزامي');
+          }
+        });
+      });
+      importParsedData = parsed;
+      const preview = document.getElementById('import-preview');
+      preview.style.display = 'block';
+      let h = '<div style="font-weight:700;margin-bottom:6px">معاينة: ' + parsed.length + ' صف</div>';
+      if (errors.length) {
+        h += '<div style="background:#fee;color:#c33;padding:8px;border-radius:6px;font-size:12px;margin-bottom:8px">⚠️ تحذيرات: ' + errors.length + '<br>' + errors.slice(0,3).join('<br>') + '</div>';
+      }
+      h += '<table class="tbl" style="font-size:11px"><thead><tr>' +
+        schema.columns.map(function(c){ return '<th>'+c.label+'</th>'; }).join('') + '</tr></thead><tbody>' +
+        parsed.slice(0,5).map(function(item){
+          return '<tr>' + schema.columns.map(function(c){ return '<td>' + (item[c.key]||'—') + '</td>'; }).join('') + '</tr>';
+        }).join('') + '</tbody></table>';
+      if (parsed.length > 5) h += '<div style="font-size:11px;color:var(--muted);margin-top:4px">... و ' + (parsed.length-5) + ' صفوف أخرى</div>';
+      preview.innerHTML = h;
+      document.getElementById('import-confirm-btn').style.display = 'inline-block';
+      document.getElementById('import-confirm-btn').textContent = '✅ استيراد ' + parsed.length + ' سجل';
+    } catch(err) {
+      alert('خطأ في قراءة الملف: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function doImport() {
+  if (!importParsedData || !importParsedData.length) { alert('لا توجد بيانات'); return; }
+  if (!confirm('استيراد ' + importParsedData.length + ' سجل؟')) return;
+  let added = 0;
+  if (importTarget === 'students') {
+    importParsedData.forEach(function(item){
+      if (!item.name || !item.cls) return;
+      students.push({ id: nextStuId++, name:item.name, dob:item.dob, gen:item.gen||'ذكر', nat:item.nat, cls:item.cls, bpl:item.bpl, dad:item.dad, job:item.job, dph:item.dph, mom:item.mom, mph:item.mph, addr:item.addr, note:item.note, sub_end:item.sub_end });
+      added++;
+    });
+    renderStudents();
+  } else if (importTarget === 'payments' || importTarget === 'receipts') {
+    importParsedData.forEach(function(item){
+      if (!item.who || !item.amt || !item.desc) return;
+      payments.push({ id: nextPayId++, stuId: parseInt(item.stuId)||null, who:item.who, amt:+item.amt, desc:item.desc, type:item.type||'قسط شهري', method:item.method||'نقدي', date:item.date, rcvr:item.rcvr, note:item.note, internalNote:item.internalNote||'' });
+      added++;
+    });
+    renderPayments(); renderReceipts();
+  } else if (importTarget === 'expenses') {
+    importParsedData.forEach(function(item){
+      if (!item.desc || !item.amt) return;
+      expenses.push({ id: nextExpId++, desc:item.desc, amt:+item.amt, cat:item.cat||'أخرى', method:item.method||'نقدي', date:item.date, exp_date:item.date, note:item.note });
+      added++;
+    });
+    renderExpenses();
+  } else if (importTarget === 'renewals') {
+    importParsedData.forEach(function(item){
+      if (!item.name) return;
+      renewals.push({ id: nextRenId++, name:item.name, date:item.date, cat:item.cat||'أخرى', cost:item.cost, notes:item.notes });
+      added++;
+    });
+    renderRenewals();
+  } else if (importTarget === 'attendance') {
+    importParsedData.forEach(function(item){
+      if (!item.date || !item.stuId || !item.status) return;
+      const status = item.status === 'حاضر' ? 'present' : item.status === 'غائب' ? 'absent' : item.status === 'متأخر' ? 'late' : '';
+      if (!status) return;
+      attLog[item.date + '_' + parseInt(item.stuId)] = status;
+      added++;
+    });
+  }
+  autoSave();
+  renderDash();
+  closeAll();
+  alert('✅ تم استيراد ' + added + ' سجل بنجاح');
+  importParsedData = null;
+}
+
 
 function openExport(target){
   exportTarget=target; exportFmt='xlsx';
@@ -3009,7 +3477,7 @@ function go(page) {
     dash:renderDash, students:renderStudents, att:renderAtt,
     payments:renderPayments, expenses:renderExpenses,
     receipts:renderReceipts, finance:renderFinance,
-    worksheets:renderWorksheets, forms:renderFormRequests, renewals:renderRenewals, deleted:renderDeletedStudents,
+    worksheets:renderWorksheets, forms:renderFormRequests, renewals:renderRenewals, deleted:renderDeletedStudents, finreport:renderFinReport,
     admin:()=>{renderAdminUsers();renderAdminClasses();}
   };
   if(renders[page]) renders[page]();
