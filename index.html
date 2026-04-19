@@ -741,11 +741,18 @@ textarea{resize:vertical;min-height:65px}
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
             <button class="btn btn-g" onclick="downloadBackup()">⬇ تحميل نسخة احتياطية كاملة</button>
             <button class="btn btn-out" onclick="document.getElementById('restore-file').click()">⬆ استعادة من نسخة احتياطية</button>
+            <button class="btn btn-out" onclick="performAutoBackup(false)" style="background:#e3f2fd;border-color:#2196f3">📥 نسخة فورية الآن</button>
+            <button class="btn btn-out" onclick="toggleAutoBackup()" style="background:#fff3cd;border-color:#f39c12">⚙️ تفعيل/إيقاف التلقائي</button>
             <input type="file" id="restore-file" accept=".json" style="display:none" onchange="restoreBackup(event)">
           </div>
           <div style="margin-top:12px;padding:10px;background:white;border-radius:8px;font-size:12px;color:var(--muted);line-height:1.8">
             <b style="color:#2e7d32">📋 ما يتم حفظه:</b> جميع الطلاب، السندات، المصاريف، التجديدات، الحضور، الفصول، الإعدادات، طلبات التسجيل، والطلاب المحذوفين.<br>
-            <b style="color:#e67e22">⚠️ ننصح بأخذ نسخة احتياطية يومياً.</b>
+            <b style="color:#2196f3">🔄 النسخ التلقائي:</b> عند فتح السيستم أول مرة كل يوم، تُحمّل نسخة احتياطية تلقائياً إلى مجلد التنزيلات. اسم الملف يتضمن التاريخ والوقت (لا يحذف القديم).<br>
+            <b style="color:#e67e22">💡 نصيحة:</b> انسخ ملفات النسخ الاحتياطية من مجلد Downloads إلى مجلد آمن بشكل دوري (مثل C:\\Backups).
+          </div>
+          <div id="auto-backup-status" style="margin-top:10px;padding:10px;background:white;border-radius:8px;font-size:12px">
+          </div>
+          <div style="display:none">
           </div>
         </div>
 
@@ -2036,7 +2043,7 @@ function renderStudents(){
       <td>${s.dad}</td><td dir="ltr">${s.dph}</td><td dir="ltr">${s.mph}</td>
       <td style="font-size:12px">${s.addr}</td>
       <td>
-        <button class="btn btn-out btn-sm" onclick="viewStudentProfile(${s.id})" title="عرض الملف الكامل">👁</button><button class="btn btn-out btn-sm" onclick="editStudent(${s.id})" title="تعديل">✏️</button><button class="btn btn-y btn-sm" onclick="quickEditStudentHealth(${s.id})" title="تعديل الحالة الصحية">⚕️</button><button class="btn btn-r btn-sm" onclick="clearStudentHealth(${s.id})" title="حذف الحالة الصحية الحالية">✖</button>
+        <button class="btn btn-out btn-sm" onclick="viewStudentProfile(${s.id})" title="عرض الملف الكامل">👁</button><button class="btn btn-out btn-sm" onclick="editStudent(${s.id})" title="تعديل">✏️</button><button class="btn btn-y btn-sm" onclick="quickEditStudentHealth(${s.id})" title="تعديل الحالة الصحية">⚕️</button>
         <button class="btn btn-r btn-sm" onclick="delStudent(${s.id})">🗑</button>
       </td>
     </tr>`}).join('');
@@ -3383,7 +3390,8 @@ async function shareCurrentReceipt() {
     '📅 *التاريخ:* ' + (p.date || '—') + '\n' +
     '💳 *طريقة الدفع:* ' + (p.method || '—') + '\n' +
     '✍️ *المستلم:* ' + (p.rcvr || '—') + '\n' +
-    '━━━━━━━━━━━━━━';
+    '━━━━━━━━━━━━━━\n' +
+    'شكراً لكم 🌸';
 
   let phone = '';
   if (p.stuId) {
@@ -3391,93 +3399,60 @@ async function shareCurrentReceipt() {
     if (s) phone = normalizePhoneForWA(s.dph || s.mph || '');
   }
 
-  // أظهر رسالة انتظار
-  const badge = document.createElement('div');
-  badge.textContent = '⏳ جاري تجهيز صورة السند...';
-  badge.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1e6b3f;color:white;padding:12px 24px;border-radius:10px;z-index:99999;font-weight:700';
-  document.body.appendChild(badge);
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   try {
-    // ابني السند في div منفصل خارج شاشة العرض
-    const renderDiv = document.createElement('div');
-    renderDiv.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;background:white;padding:24px;font-family:Tajawal,Arial,sans-serif';
-    renderDiv.innerHTML = buildReceiptHTML(p);
-    document.body.appendChild(renderDiv);
+    const area = document.getElementById('receipt-print-area');
+    area.innerHTML = buildReceiptHTML(p);
+    const oldStyle = area.style.cssText;
+    area.style.cssText = 'position:fixed;left:0;top:0;width:800px;background:white;padding:20px;z-index:-1;opacity:0.01';
 
-    // انتظر قليلاً حتى يرسم المتصفح
-    await new Promise(function(r){ setTimeout(r, 100); });
-
-    const canvas = await html2canvas(renderDiv, {
+    const canvas = await html2canvas(area, {
       scale: 2,
       backgroundColor: '#ffffff',
       logging: false,
-      useCORS: true,
-      allowTaint: true
+      useCORS: true
     });
 
-    document.body.removeChild(renderDiv);
-    badge.remove();
+    area.style.cssText = oldStyle;
 
-    const blob = await new Promise(function(resolve){ canvas.toBlob(resolve, 'image/png'); });
-    if (!blob) { alert('فشل تحويل السند لصورة'); return; }
+    canvas.toBlob(async function(blob) {
+      if (!blob) { fallbackShareText(phone, msg); return; }
 
-    const fileName = 'سند_قبض_' + p.id + '.png';
-    const file = new File([blob], fileName, { type: 'image/png' });
+      const fileName = 'سند_قبض_' + p.id + '.png';
+      const file = new File([blob], fileName, { type: 'image/png' });
 
-    // جرّب Web Share API أولاً (موبايل)
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({
-          files: [file],
-          text: msg
-        });
-        return; // نجح - خلص
-      } catch(err) {
-        if (err.name === 'AbortError') return;
-        console.log('Web share failed, falling back:', err);
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: 'سند قبض #' + p.id,
+            text: msg
+          });
+          return;
+        } catch(err) {
+          if (err.name === 'AbortError') return;
+          console.log('Share failed, falling back:', err);
+        }
       }
-    }
 
-    // Fallback للكمبيوتر: نزّل الصورة + افتح WhatsApp Web
-    // حمّل الصورة أولاً
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
 
-    // انسخ الرسالة للحافظة كـ bonus
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      try { await navigator.clipboard.writeText(msg); } catch(e) {}
-    }
-
-    // افتح WhatsApp Web
-    const waUrl = phone
-      ? 'https://web.whatsapp.com/send?phone=' + phone + '&text=' + encodeURIComponent(msg)
-      : 'https://web.whatsapp.com/';
-    window.open(waUrl, '_blank');
-
-    // أعط المستخدم تعليمات واضحة
-    setTimeout(function(){
-      alert('✅ تم تحميل صورة السند بنجاح!\n\n' +
-            '📎 خطوات المشاركة على واتساب ويب:\n' +
-            '1️⃣ افتح المحادثة المطلوبة\n' +
-            '2️⃣ اضغط على 📎 (مشبك الإرفاق)\n' +
-            '3️⃣ اختر "الصور" وأرفق الملف المحمّل\n' +
-            '4️⃣ النص جاهز في الحافظة - الصقه (Ctrl+V)');
-    }, 200);
-
+      setTimeout(function(){
+        fallbackShareText(phone, msg + '\n\n📎 تم تحميل صورة السند - يرجى إرفاقها في المحادثة');
+      }, 500);
+    }, 'image/png');
   } catch(err) {
-    badge.remove();
     console.error('Share error:', err);
-    alert('حدث خطأ: ' + err.message);
+    fallbackShareText(phone, msg);
   }
 }
 
-// Fallback: فتح WhatsApp Web برسالة نصية فقط
 function fallbackShareText(phone, msg) {
   const encoded = encodeURIComponent(msg);
   let url;
@@ -3489,18 +3464,13 @@ function fallbackShareText(phone, msg) {
   window.open(url, '_blank');
 }
 
-// تنسيق رقم الهاتف لـ WhatsApp (إزالة المسافات والرموز + التأكد من الرمز الدولي)
 function normalizePhoneForWA(phone) {
   if (!phone) return '';
   let p = String(phone).replace(/[\s\-\(\)]/g, '').trim();
   if (!p) return '';
-  // إزالة +
   if (p.startsWith('+')) p = p.slice(1);
-  // إزالة 00 البادئة
   if (p.startsWith('00')) p = p.slice(2);
-  // لو يبدأ بـ 0 (محلي إمارات) أضف 971
   if (p.startsWith('0')) p = '971' + p.slice(1);
-  // لو 9 أرقام بدون رمز دولة (إمارات) أضف 971
   if (p.length === 9 && p.startsWith('5')) p = '971' + p;
   return p;
 }
@@ -3657,6 +3627,98 @@ let importParsedData = null;
 
 
 // BACKUP & RESTORE
+
+// ========================================
+// النسخ الاحتياطي التلقائي اليومي
+// ========================================
+function performAutoBackup(silent) {
+  try {
+    const backup = {
+      backupDate: new Date().toISOString(),
+      version: '2.0',
+      system: 'حضانة حديقة الأطفال',
+      students: students,
+      payments: payments,
+      expenses: expenses,
+      renewals: renewals,
+      attLog: attLog,
+      deletedStudents: (typeof deletedStudents !== 'undefined' ? deletedStudents : []),
+      tombstones: (typeof tombstones !== 'undefined' ? tombstones : {}),
+      CLASSES: CLASSES,
+      nurserySettings: nurserySettings,
+      kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
+      kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]'),
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    // اسم الملف مع تاريخ ووقت اليوم (لا يحذف القديم)
+    const now = new Date();
+    const Y = now.getFullYear();
+    const M = String(now.getMonth()+1).padStart(2,'0');
+    const D = String(now.getDate()).padStart(2,'0');
+    const h = String(now.getHours()).padStart(2,'0');
+    const m = String(now.getMinutes()).padStart(2,'0');
+    a.download = 'backup_حضانة_' + Y + '-' + M + '-' + D + '_' + h + m + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+
+    // سجّل تاريخ آخر نسخة احتياطية
+    const todayKey = Y + '-' + M + '-' + D;
+    localStorage.setItem('kp_last_auto_backup', todayKey);
+    localStorage.setItem('kp_last_auto_backup_time', now.toISOString());
+
+    if (!silent) {
+      showSyncBadge('💾 تم حفظ النسخة الاحتياطية اليومية');
+    }
+    return true;
+  } catch(e) {
+    console.error('Auto backup error:', e);
+    return false;
+  }
+}
+
+function checkAndRunDailyBackup() {
+  // تحقق هل تم أخذ نسخة احتياطية اليوم
+  const enabled = localStorage.getItem('kp_auto_backup_enabled');
+  if (enabled === 'false') return; // معطّل من المستخدم
+
+  const now = new Date();
+  const todayKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+  const lastBackup = localStorage.getItem('kp_last_auto_backup');
+
+  if (lastBackup === todayKey) return; // اليوم تم أخذ نسخة
+
+  // لم تُؤخذ نسخة اليوم - خذها تلقائياً بدون سؤال
+  setTimeout(function(){
+    performAutoBackup(false);
+  }, 3000); // بعد 3 ثواني من الدخول
+}
+
+function toggleAutoBackup() {
+  const current = localStorage.getItem('kp_auto_backup_enabled');
+  const newVal = current === 'false' ? 'true' : 'false';
+  localStorage.setItem('kp_auto_backup_enabled', newVal);
+  updateAutoBackupUI();
+  alert(newVal === 'true' ? '✅ تم تفعيل النسخ الاحتياطي اليومي' : '⛔ تم إيقاف النسخ الاحتياطي اليومي');
+}
+
+function updateAutoBackupUI() {
+  const el = document.getElementById('auto-backup-status');
+  if (!el) return;
+  const enabled = localStorage.getItem('kp_auto_backup_enabled') !== 'false';
+  const lastBackup = localStorage.getItem('kp_last_auto_backup_time');
+  const lastDate = lastBackup ? new Date(lastBackup).toLocaleString('ar-AE') : 'لم تُؤخذ بعد';
+
+  el.innerHTML =
+    '<div style="margin-bottom:8px"><b>الحالة:</b> ' + (enabled ? '<span style="color:#27ae60">✅ مفعّل</span>' : '<span style="color:#e74c3c">⛔ معطّل</span>') + '</div>' +
+    '<div style="margin-bottom:8px;font-size:12px;color:#666"><b>آخر نسخة:</b> ' + lastDate + '</div>';
+}
+
+
 function downloadBackup() {
   const backup = {
     backupDate: new Date().toISOString(),
@@ -5530,6 +5592,10 @@ document.addEventListener('click', function(e) {
   if (results && search && !search.contains(e.target) && !results.contains(e.target)) {
     results.style.display = 'none';
   }
+
+  // تحقق من النسخ الاحتياطي اليومي
+  setTimeout(checkAndRunDailyBackup, 2000);
+  updateAutoBackupUI();
 });
 
 </script>
