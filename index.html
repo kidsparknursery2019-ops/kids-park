@@ -1100,15 +1100,18 @@ function getStudentHealthNotes(student) {
     };
   });
 
+  const overrideHealth = String(student.healthOverride || '').trim();
   const manualHealth = String(student.health || student.healthStatus || '').trim();
-  if (manualHealth) {
+  const effectiveManualHealth = overrideHealth || manualHealth;
+  if (student.healthDeleted || overrideHealth) linked = [];
+  if (effectiveManualHealth) {
     linked.unshift({
-      source: 'manual',
+      source: overrideHealth ? 'override' : 'manual',
       childName: student.name || '',
       phone: student.dph || student.mph || '',
-      condition: manualHealth,
+      condition: effectiveManualHealth,
       actions: '',
-      status: manualHealth
+      status: effectiveManualHealth
     });
   }
   return linked;
@@ -2032,7 +2035,7 @@ function renderStudents(){
       <td>${s.dad}</td><td dir="ltr">${s.dph}</td><td dir="ltr">${s.mph}</td>
       <td style="font-size:12px">${s.addr}</td>
       <td>
-        <button class="btn btn-out btn-sm" onclick="viewStudentProfile(${s.id})" title="عرض الملف الكامل">👁</button><button class="btn btn-out btn-sm" onclick="editStudent(${s.id})" title="تعديل">✏️</button><button class="btn btn-y btn-sm" onclick="quickEditStudentHealth(${s.id})" title="تعديل الحالة الصحية">⚕️</button>
+        <button class="btn btn-out btn-sm" onclick="viewStudentProfile(${s.id})" title="عرض الملف الكامل">👁</button><button class="btn btn-out btn-sm" onclick="editStudent(${s.id})" title="تعديل">✏️</button><button class="btn btn-y btn-sm" onclick="quickEditStudentHealth(${s.id})" title="تعديل الحالة الصحية">⚕️</button><button class="btn btn-r btn-sm" onclick="clearStudentHealth(${s.id})" title="حذف الحالة الصحية الحالية">✖</button>
         <button class="btn btn-r btn-sm" onclick="delStudent(${s.id})">🗑</button>
       </td>
     </tr>`}).join('');
@@ -2186,6 +2189,41 @@ function getPaymentMatchInfo(payment){
   }
   PAYMENT_MATCH_CACHE.set(paymentKey, result);
   return result;
+}
+
+
+function approveAllSuggestedPaymentMatches(options){
+  options = options || {};
+  let approved = 0;
+  payments.forEach(function(p){
+    if (!p || p.stuId) return;
+    const info = getPaymentMatchInfo(p);
+    if (info && info.student && (info.status === 'suggested' || info.status === 'suggested-strong')) {
+      p.stuId = info.student.id;
+      approved++;
+    }
+  });
+  if (approved > 0) {
+    resetPaymentMatchCache();
+    autoSave();
+    if (!options.skipRender) {
+      if (typeof renderPayments === 'function') renderPayments();
+      if (typeof renderReceipts === 'function') renderReceipts();
+      if (typeof renderDash === 'function') renderDash();
+    }
+  }
+  if (!options.silent && approved > 0) {
+    alert('✅ تم اعتماد ' + approved + ' عملية ربط بين السندات وملفات الطلاب');
+  }
+  return approved;
+}
+
+function runOneTimeBulkMatchApproval(){
+  const stampKey = 'kp_bulk_match_approval_v1';
+  if (localStorage.getItem(stampKey) === 'done') return 0;
+  const approved = approveAllSuggestedPaymentMatches({silent:true, skipRender:true});
+  if (approved > 0) localStorage.setItem(stampKey, 'done');
+  return approved;
 }
 
 function approvePaymentMatch(paymentId, studentId){
@@ -2526,7 +2564,7 @@ function viewStudentProfile(id) {
     const quickWrap = document.createElement('div');
     quickWrap.id = 'mo-stu-health-quick';
     quickWrap.style.marginTop = '12px';
-    quickWrap.innerHTML = '<button class="btn btn-y btn-sm" onclick="quickEditStudentHealth(' + id + ')">⚕️ تعديل الحالة الصحية</button>';
+    quickWrap.innerHTML = '<div class="btn-group"><button class="btn btn-y btn-sm" onclick="quickEditStudentHealth(' + id + ')">⚕️ تعديل الحالة الصحية</button><button class="btn btn-r btn-sm" onclick="clearStudentHealth(' + id + ')">✖ حذف الحالة الصحية</button></div>';
     profileBody.appendChild(quickWrap);
   }
   document.getElementById('mo-stu-profile').classList.add('on');
@@ -2535,16 +2573,44 @@ function viewStudentProfile(id) {
 function quickEditStudentHealth(id){
   const s = students.find(function(x){ return x.id === id; });
   if (!s) return;
-  const current = String(s.health || s.healthStatus || '');
+  const current = String(getStudentHealthSummary(s) || s.healthOverride || s.health || s.healthStatus || '');
   const next = prompt('عدّلي الحالة الصحية / الحساسية للطالب:\n' + (s.name || ''), current);
   if (next === null) return;
-  s.health = String(next).trim();
+  const value = String(next).trim();
+  if (!value) {
+    return clearStudentHealth(id);
+  }
+  s.health = value;
+  s.healthStatus = value;
+  s.healthOverride = value;
+  s.healthDeleted = false;
   resetPaymentMatchCache();
   autoSave();
   renderStudents();
   if(typeof renderPayments==='function') renderPayments();
   if(typeof renderReceipts==='function') renderReceipts();
   alert('✅ تم تحديث الحالة الصحية للطالب: ' + s.name);
+}
+
+function clearStudentHealth(id){
+  const s = students.find(function(x){ return x.id === id; });
+  if (!s) return;
+  const current = String(getStudentHealthSummary(s) || s.healthOverride || s.health || s.healthStatus || '');
+  if (!current) {
+    alert('لا توجد حالة صحية مسجلة لهذا الطالب.');
+    return;
+  }
+  if (!confirm('هل تريدين حذف الحالة الصحية الحالية للطالب "' + (s.name || '') + '"؟')) return;
+  s.health = '';
+  s.healthStatus = '';
+  s.healthOverride = '';
+  s.healthDeleted = true;
+  resetPaymentMatchCache();
+  autoSave();
+  renderStudents();
+  if(typeof renderPayments==='function') renderPayments();
+  if(typeof renderReceipts==='function') renderReceipts();
+  alert('🗑️ تم حذف الحالة الصحية الحالية للطالب: ' + s.name);
 }
 
 function editStudent(id){
@@ -2570,7 +2636,7 @@ function editStudent(id){
   setVal('ns-mom',     s.mom);
   setVal('ns-mph',     s.mph);
   setVal('ns-addr',    s.addr);
-  setVal('ns-health',  s.health || s.healthStatus);
+  setVal('ns-health',  getStudentHealthSummary(s) || s.healthOverride || s.health || s.healthStatus);
   setVal('ns-note',    s.note || s.notes);
   setVal('ns-sub-end', s.sub_end);
   document.getElementById('mo-student').classList.add('on');
@@ -2579,7 +2645,8 @@ function editStudent(id){
 function saveStudent(){
   const name=document.getElementById('ns-name').value.trim();
   if(!name){alert('اسم الطالب مطلوب');return;}
-  const data={name,dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,addr:document.getElementById('ns-addr').value,health:document.getElementById('ns-health').value.trim(),note:document.getElementById('ns-note').value,sub_end:(document.getElementById('ns-sub-end')||{}).value||''};
+  const manualHealthValue = document.getElementById('ns-health').value.trim();
+  const data={name,dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,addr:document.getElementById('ns-addr').value,health:manualHealthValue,healthOverride:manualHealthValue,healthDeleted:false,note:document.getElementById('ns-note').value,sub_end:(document.getElementById('ns-sub-end')||{}).value||''};
   if(editingStuId){
     const i=students.findIndex(x=>x.id===editingStuId);
     if(i>=0)students[i]={...students[i],...data};
@@ -3561,7 +3628,7 @@ function doImport() {
   if (importTarget === 'students') {
     importParsedData.forEach(function(item){
       if (!item.name || !item.cls) return;
-      students.push({ id: nextStuId++, name:item.name, dob:item.dob, gen:item.gen||'ذكر', nat:item.nat, cls:item.cls, bpl:item.bpl, dad:item.dad, job:item.job, dph:item.dph, mom:item.mom, mph:item.mph, addr:item.addr, health:item.health||item.healthStatus||'', note:item.note, sub_end:item.sub_end });
+      students.push({ id: nextStuId++, name:item.name, dob:item.dob, gen:item.gen||'ذكر', nat:item.nat, cls:item.cls, bpl:item.bpl, dad:item.dad, job:item.job, dph:item.dph, mom:item.mom, mph:item.mph, addr:item.addr, health:item.health||item.healthStatus||'', healthOverride:item.healthOverride||'', healthDeleted:!!item.healthDeleted, note:item.note, sub_end:item.sub_end });
       added++;
     });
     renderStudents();
@@ -3790,16 +3857,25 @@ function applyLogin() {
   if (yfInit) yfInit.value = String(dashYear);
 
   if (typeof applyTombstones === 'function') applyTombstones();
+  // اعتماد جماعي لمطابقات السندات المقترحة الحالية (مرة واحدة فقط)
+  let bulkApprovedNow = runOneTimeBulkMatchApproval();
   // عرض البيانات المحلية فوراً
   renderDash();
+  if (bulkApprovedNow > 0) {
+    setTimeout(function(){ alert('✅ تم اعتماد ' + bulkApprovedNow + ' عملية ربط بين السندات وملفات الطلاب'); }, 300);
+  }
   setTimeout(updateNotifications, 500);
   // تحميل من Firebase وتحديث عند الانتهاء
   loadFromFirebase().then(() => {
+    const approvedAfterSync = runOneTimeBulkMatchApproval();
     // إعادة تهيئة الفلتر بعد التحميل
     const yf2 = document.getElementById('dash-year-filter');
     if (yf2 && !yf2.value) yf2.value = String(new Date().getFullYear());
     renderDash();
     updateNotifications();
+    if (approvedAfterSync > 0) {
+      setTimeout(function(){ alert('✅ تم اعتماد ' + approvedAfterSync + ' عملية ربط إضافية بعد مزامنة البيانات'); }, 500);
+    }
   });
   setInterval(checkForUpdates, 5000);
   startAutoSync();
