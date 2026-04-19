@@ -3372,7 +3372,6 @@ async function shareCurrentReceipt() {
   const p = payments.find(function(x){ return x.id === currentReceiptId; });
   if (!p) { alert('لم يتم العثور على السند'); return; }
 
-  // تحضير رسالة نصية
   const nurseryName = (nurserySettings && nurserySettings.name) ? nurserySettings.name : 'حضانة حديقة الأطفال';
   const msg =
     '🌿 *' + nurseryName + '*' + '\n' +
@@ -3384,74 +3383,97 @@ async function shareCurrentReceipt() {
     '📅 *التاريخ:* ' + (p.date || '—') + '\n' +
     '💳 *طريقة الدفع:* ' + (p.method || '—') + '\n' +
     '✍️ *المستلم:* ' + (p.rcvr || '—') + '\n' +
-    '━━━━━━━━━━━━━━\n' +
-    'شكراً لكم 🌸';
+    '━━━━━━━━━━━━━━';
 
-  // حاول إيجاد رقم الهاتف من الطالب المرتبط
   let phone = '';
   if (p.stuId) {
     const s = students.find(function(x){ return x.id === p.stuId; });
     if (s) phone = normalizePhoneForWA(s.dph || s.mph || '');
   }
 
-  // على الموبايل: استخدم Web Share API لمشاركة الصورة
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  // أظهر رسالة انتظار
+  const badge = document.createElement('div');
+  badge.textContent = '⏳ جاري تجهيز صورة السند...';
+  badge.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1e6b3f;color:white;padding:12px 24px;border-radius:10px;z-index:99999;font-weight:700';
+  document.body.appendChild(badge);
 
   try {
-    // حوّل السند لصورة
-    const area = document.getElementById('receipt-print-area');
-    area.innerHTML = buildReceiptHTML(p);
-    // أظهر المنطقة مؤقتاً لـ html2canvas
-    const oldStyle = area.style.cssText;
-    area.style.cssText = 'position:fixed;left:0;top:0;width:800px;background:white;padding:20px;z-index:-1;opacity:0.01';
+    // ابني السند في div منفصل خارج شاشة العرض
+    const renderDiv = document.createElement('div');
+    renderDiv.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;background:white;padding:24px;font-family:Tajawal,Arial,sans-serif';
+    renderDiv.innerHTML = buildReceiptHTML(p);
+    document.body.appendChild(renderDiv);
 
-    const canvas = await html2canvas(area, {
+    // انتظر قليلاً حتى يرسم المتصفح
+    await new Promise(function(r){ setTimeout(r, 100); });
+
+    const canvas = await html2canvas(renderDiv, {
       scale: 2,
       backgroundColor: '#ffffff',
       logging: false,
-      useCORS: true
+      useCORS: true,
+      allowTaint: true
     });
 
-    // أرجع الـ style
-    area.style.cssText = oldStyle;
+    document.body.removeChild(renderDiv);
+    badge.remove();
 
-    canvas.toBlob(async function(blob) {
-      if (!blob) { fallbackShareText(phone, msg); return; }
+    const blob = await new Promise(function(resolve){ canvas.toBlob(resolve, 'image/png'); });
+    if (!blob) { alert('فشل تحويل السند لصورة'); return; }
 
-      const fileName = 'سند_قبض_' + p.id + '.png';
-      const file = new File([blob], fileName, { type: 'image/png' });
+    const fileName = 'سند_قبض_' + p.id + '.png';
+    const file = new File([blob], fileName, { type: 'image/png' });
 
-      // Web Share API (موبايل بشكل ممتاز، وبعض المتصفحات على الكمبيوتر)
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: 'سند قبض #' + p.id,
-            text: msg
-          });
-          return;
-        } catch(err) {
-          if (err.name === 'AbortError') return; // المستخدم ألغى
-          console.log('Share failed, falling back:', err);
-        }
+    // جرّب Web Share API أولاً (موبايل)
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          text: msg
+        });
+        return; // نجح - خلص
+      } catch(err) {
+        if (err.name === 'AbortError') return;
+        console.log('Web share failed, falling back:', err);
       }
+    }
 
-      // Fallback: نزّل الصورة + افتح WhatsApp Web
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
+    // Fallback للكمبيوتر: نزّل الصورة + افتح WhatsApp Web
+    // حمّل الصورة أولاً
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 
-      // أعطِ المستخدم وقت لحفظ الصورة ثم افتح WhatsApp
-      setTimeout(function(){
-        fallbackShareText(phone, msg + '\n\n📎 تم تحميل صورة السند - يرجى إرفاقها في المحادثة');
-      }, 500);
-    }, 'image/png');
+    // انسخ الرسالة للحافظة كـ bonus
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try { await navigator.clipboard.writeText(msg); } catch(e) {}
+    }
+
+    // افتح WhatsApp Web
+    const waUrl = phone
+      ? 'https://web.whatsapp.com/send?phone=' + phone + '&text=' + encodeURIComponent(msg)
+      : 'https://web.whatsapp.com/';
+    window.open(waUrl, '_blank');
+
+    // أعط المستخدم تعليمات واضحة
+    setTimeout(function(){
+      alert('✅ تم تحميل صورة السند بنجاح!\n\n' +
+            '📎 خطوات المشاركة على واتساب ويب:\n' +
+            '1️⃣ افتح المحادثة المطلوبة\n' +
+            '2️⃣ اضغط على 📎 (مشبك الإرفاق)\n' +
+            '3️⃣ اختر "الصور" وأرفق الملف المحمّل\n' +
+            '4️⃣ النص جاهز في الحافظة - الصقه (Ctrl+V)');
+    }, 200);
+
   } catch(err) {
+    badge.remove();
     console.error('Share error:', err);
-    fallbackShareText(phone, msg);
+    alert('حدث خطأ: ' + err.message);
   }
 }
 
