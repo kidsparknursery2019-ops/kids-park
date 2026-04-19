@@ -2226,6 +2226,10 @@ function permanentDeleteStudent(id) {
   if (!confirm('تأكيد أخير: حذف نهائي؟')) return;
   deletedStudents = deletedStudents.filter(x => x.id !== id);
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
+  // تأكد من إضافة tombstone (في حال ما كان موجود)
+  addTombstone('students', id);
+  // ✅ ارفع التغيير لـ Firebase ليصل للأجهزة الأخرى
+  autoSave();
   renderDeletedStudents();
 }
 
