@@ -2043,6 +2043,121 @@ function formatDate(d){
   return d;
 }
 
+
+function normalizeArabicName(str){
+  return String(str||'')
+    .toLowerCase()
+    .replace(/[\u064B-\u065F\u0670]/g,'')
+    .replace(/[إأآٱا]/g,'ا')
+    .replace(/ة/g,'ه')
+    .replace(/ى/g,'ي')
+    .replace(/ؤ/g,'و')
+    .replace(/ئ/g,'ي')
+    .replace(/\b(father|mother|of|child|kid|parent)\b/gi,' ')
+    .replace(/\b(والد|والده|والدة|والد\/والدة|الطفل|الطفلة|الطالب|الطالبة|ابو|ام|ابن|بنت|للطفل|للطفلة)\b/g,' ')
+    .replace(/[^\u0621-\u063A\u0641-\u064Aa-z0-9\s]/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function extractChildNameFromPayerName(who){
+  return normalizeArabicName(who);
+}
+
+function getNameTokens(str){
+  return normalizeArabicName(str).split(' ').filter(Boolean);
+}
+
+function scorePaymentStudentMatch(payment, student){
+  const payName = extractChildNameFromPayerName(payment.who);
+  const stuName = normalizeArabicName(student.name);
+  if (!payName || !stuName) return 0;
+  if (payName === stuName) return 100;
+  const payTokens = getNameTokens(payName);
+  const stuTokens = getNameTokens(stuName);
+  if (!payTokens.length || !stuTokens.length) return 0;
+  let common = 0;
+  stuTokens.forEach(function(t){ if (payTokens.includes(t)) common++; });
+  let score = 0;
+  const overlap = common / Math.max(stuTokens.length, payTokens.length);
+  score += overlap * 70;
+  const orderedPrefix = stuTokens.every(function(tok, i){ return payTokens[i] === tok; });
+  if (orderedPrefix) score += 18;
+  if (payName.includes(stuName) || stuName.includes(payName)) score += 15;
+  if (stuTokens[0] && payTokens[0] === stuTokens[0]) score += 12;
+  if (stuTokens[1] && payTokens[1] === stuTokens[1]) score += 8;
+  const dad = normalizeArabicName(student.dad||'');
+  const mom = normalizeArabicName(student.mom||'');
+  const whoNorm = normalizeArabicName(payment.who||'');
+  if (dad && whoNorm.includes(dad)) score += 18;
+  if (mom && whoNorm.includes(mom)) score += 18;
+  if (common === 1 && stuTokens.length >= 2) score -= 18;
+  if (common === 0) score = 0;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function getPaymentMatchInfo(payment){
+  if (!payment) return {status:'none', label:'—', score:0};
+  if (payment.stuId) {
+    const linked = students.find(function(s){ return s.id === payment.stuId; });
+    if (linked) return {status:'confirmed', student:linked, label:'✅ #' + linked.id + ' ' + linked.name, score:100};
+  }
+  const ranked = students.map(function(s){
+    return { student:s, score: scorePaymentStudentMatch(payment, s) };
+  }).filter(function(x){ return x.score >= 55; }).sort(function(a,b){ return b.score - a.score; });
+  if (!ranked.length) return {status:'none', label:'—', score:0};
+  const top = ranked[0];
+  const second = ranked[1];
+  const gap = second ? (top.score - second.score) : top.score;
+  const isStrong = top.score >= 82 && gap >= 8;
+  const isReview = top.score >= 68 && gap >= 6;
+  if (isStrong || isReview) {
+    return { status: isStrong ? 'suggested-strong' : 'suggested', student: top.student, score: top.score, gap: gap, alternatives: ranked.slice(0,3), label: (isStrong ? '🟢 مرشح قوي' : '🟡 مرشح') + ' — #' + top.student.id + ' ' + top.student.name };
+  }
+  return {status:'none', label:'—', score: top.score};
+}
+
+function approvePaymentMatch(paymentId, studentId){
+  const p = payments.find(function(x){ return x.id === paymentId; });
+  if (!p) return;
+  let sid = parseInt(studentId);
+  if (!sid) {
+    const info = getPaymentMatchInfo(p);
+    sid = info.student ? info.student.id : null;
+  }
+  const s = students.find(function(x){ return x.id === sid; });
+  if (!s) { alert('لم يتم العثور على طالب صالح لهذا الربط'); return; }
+  p.stuId = s.id;
+  autoSave();
+  renderPayments();
+  if (typeof renderReceipts === 'function') renderReceipts();
+  renderDash();
+  alert('✅ تم اعتماد ربط السند #' + p.id + ' مع ملف الطالب: ' + s.name);
+}
+
+function unlinkPaymentMatch(paymentId){
+  const p = payments.find(function(x){ return x.id === paymentId; });
+  if (!p || !p.stuId) return;
+  if (!confirm('فك ربط السند #' + p.id + ' من ملف الطالب؟')) return;
+  p.stuId = null;
+  autoSave();
+  renderPayments();
+  if (typeof renderReceipts === 'function') renderReceipts();
+  renderDash();
+}
+
+function paymentMatchBadgeHTML(payment){
+  const info = getPaymentMatchInfo(payment);
+  if (info.status === 'confirmed') return '<div style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;background:#eaf6ef;color:#1e6b3f;border-radius:999px;font-size:11px;font-weight:800">✅ #' + info.student.id + ' ' + info.student.name + '</div>';
+  if (info.status === 'suggested' || info.status === 'suggested-strong') {
+    const bg = info.status === 'suggested-strong' ? '#e8f8f1' : '#fff8e1';
+    const color = info.status === 'suggested-strong' ? '#13795b' : '#9a6700';
+    const icon = info.status === 'suggested-strong' ? '🟢' : '🟡';
+    return '<div style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;background:' + bg + ';color:' + color + ';border-radius:999px;font-size:11px;font-weight:800">' + icon + ' #' + info.student.id + ' ' + info.student.name + ' (' + info.score + '%)</div>';
+  }
+  return '<span style="color:#999">—</span>';
+}
+
 function openAddStudent(){
   populateClassDropdowns();
   editingStuId=null;
@@ -2619,7 +2734,6 @@ function renderPayments(){
     (!type || p.type === type) &&
     (!yr || getDateYear(p.date) === parseInt(yr))
   );
-  // Sort
   f = [...f].sort((a,b) => {
     if (sort === 'asc')      return normalizeDate(a.date).localeCompare(normalizeDate(b.date));
     if (sort === 'desc')     return normalizeDate(b.date).localeCompare(normalizeDate(a.date));
@@ -2629,30 +2743,38 @@ function renderPayments(){
     if (sort === 'amt-asc')  return a.amt - b.amt;
     return 0;
   });
-  // Click-to-sort header
   if (tableSortState['pay-table']) f = applyTableSort('pay-table', f);
   const theadEl = document.getElementById('pay-thead');
   if (theadEl) theadEl.innerHTML = sortableHead('pay-table', [
     ['id','#السند'], ['who','ولي الأمر'], ['amt','المبلغ'], ['desc','البيان'],
-    ['internalNote','ملاحظات داخلية'], ['type','النوع'], ['method','طريقة الدفع'], ['date','التاريخ'], ['rcvr','المستلم'], ['','']
+    ['studentMatch','ربط الطالب'], ['internalNote','ملاحظات داخلية'], ['type','النوع'], ['method','طريقة الدفع'], ['date','التاريخ'], ['rcvr','المستلم'], ['','']
   ]);
   const total=f.reduce((s,p)=>s+p.amt,0);
   document.getElementById('pay-total').textContent=total.toLocaleString();
   document.getElementById('pay-count').textContent=f.length;
   document.getElementById('pay-avg').textContent=f.length?Math.round(total/f.length).toLocaleString():'0';
-  document.getElementById('pay-tbody').innerHTML=f.map(p=>`
+  document.getElementById('pay-tbody').innerHTML=f.map(function(p){
+    const match = getPaymentMatchInfo(p);
+    let matchCell = paymentMatchBadgeHTML(p);
+    if (match.status === 'suggested' || match.status === 'suggested-strong') {
+      matchCell += '<div style="margin-top:5px"><button class="btn btn-g btn-sm" onclick="approvePaymentMatch(' + p.id + ',' + match.student.id + ')">اعتماد</button></div>';
+    } else if (match.status === 'confirmed') {
+      matchCell += '<div style="margin-top:5px"><button class="btn btn-out btn-sm" onclick="unlinkPaymentMatch(' + p.id + ')">فك الربط</button></div>';
+    }
+    return `
     <tr>
       <td><b>#${p.id}</b></td>
       <td>${p.who}</td>
       <td class="fin-pos"><b>${p.amt.toLocaleString()} د.إ</b></td>
       <td style="font-size:12.5px">${p.desc}</td>
+      <td style="font-size:12px">${matchCell}</td>
       <td style="font-size:12px">${(p.internalNote || p.internal || p.internal_note) ? `<div style="padding:3px 8px;background:#fff8e1;border-right:3px solid #f39c12;border-radius:5px;color:#b8860b;font-weight:600">🔒 ${p.internalNote || p.internal || p.internal_note}</div>` : '<span style="color:#999">—</span>'}</td>
       <td><span class="b bgr">${p.type}</span></td>
       <td>${p.method}</td><td>${p.date}</td><td>${p.rcvr}</td>
       <td style="display:flex;gap:5px"><button class="btn btn-out btn-sm" onclick="openReceiptDetail(${p.id})">🧾 سند</button><button class="btn btn-out btn-sm" onclick="openEditPay(${p.id})">✏️</button></td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
-
 
 
 // البحث عن طالب بالرقم وتعبئة ولي الأمر تلقائياً
@@ -2974,7 +3096,15 @@ function renderReceipts(){
   });
   const list=document.getElementById('receipts-list');
   if(!f.length){list.innerHTML='<div style="text-align:center;color:var(--muted);padding:30px">لا توجد نتائج</div>';return;}
-  list.innerHTML=f.map(p=>`
+  list.innerHTML=f.map(function(p){
+    const match = getPaymentMatchInfo(p);
+    let actionHtml = '';
+    if (match.status === 'suggested' || match.status === 'suggested-strong') {
+      actionHtml = '<button class="btn btn-g btn-sm" onclick="approvePaymentMatch(' + p.id + ',' + match.student.id + ')">✅ اعتماد الربط</button>';
+    } else if (match.status === 'confirmed') {
+      actionHtml = '<button class="btn btn-out btn-sm" onclick="unlinkPaymentMatch(' + p.id + ')">فك الربط</button>';
+    }
+    return `
     <div class="rec-card" onclick="openReceiptDetail(${p.id})">
       <div class="rec-card-hd">
         <div class="rec-card-num">📄 سند رقم #${p.id}</div>
@@ -2986,18 +3116,26 @@ function renderReceipts(){
         <span>💳 ${p.method}</span>
         <span>🧾 ${p.desc.slice(0,40)}${p.desc.length>40?'...':''}</span>
       </div>
+      <div style="margin-top:10px">${paymentMatchBadgeHTML(p)}</div>
       <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end" onclick="event.stopPropagation()">
+        ${actionHtml}
         <button class="btn btn-out btn-sm" onclick="openEditPay(${p.id})">✏️ تعديل</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
-
-let currentReceiptId = null;
 
 function openReceiptDetail(id){
   const p=payments.find(x=>x.id===id); if(!p)return;
   currentReceiptId=id;
-  document.getElementById('mo-receipt-body').innerHTML=buildReceiptHTML(p);
+  const info = getPaymentMatchInfo(p);
+  let matchBox = '';
+  if (info.status === 'confirmed') {
+    matchBox = '<div style="margin-bottom:12px;padding:10px 12px;border-radius:10px;background:#eaf6ef;color:#1e6b3f;font-weight:700">✅ هذا السند مربوط بملف الطالب: #' + info.student.id + ' ' + info.student.name + '<button class="btn btn-out btn-sm" style="float:left" onclick="event.stopPropagation();unlinkPaymentMatch(' + p.id + ');openReceiptDetail(' + p.id + ')">فك الربط</button></div>';
+  } else if (info.status === 'suggested' || info.status === 'suggested-strong') {
+    matchBox = '<div style="margin-bottom:12px;padding:10px 12px;border-radius:10px;background:' + (info.status==='suggested-strong' ? '#e8f8f1' : '#fff8e1') + ';color:' + (info.status==='suggested-strong' ? '#13795b' : '#9a6700') + ';font-weight:700">' + (info.status==='suggested-strong' ? '🟢' : '🟡') + ' يوجد تطابق مقترح مع ملف الطالب: #' + info.student.id + ' ' + info.student.name + ' (' + info.score + '%)<button class="btn btn-g btn-sm" style="float:left" onclick="event.stopPropagation();approvePaymentMatch(' + p.id + ',' + info.student.id + ');openReceiptDetail(' + p.id + ')">اعتماد الربط</button></div>';
+  }
+  document.getElementById('mo-receipt-body').innerHTML=matchBox + buildReceiptHTML(p);
   document.getElementById('mo-receipt').classList.add('on');
 }
 
