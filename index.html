@@ -4690,12 +4690,18 @@ async function loadFromFirebase() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
-    // Firebase يحمل كل البيانات كاملة
-    if (data.students && Array.isArray(data.students)) students = data.students;
+    const localStudentsCount = Array.isArray(students) ? students.length : 0;
+    const remoteStudentsCount = Array.isArray(data.students) ? data.students.length : 0;
+    const localPaymentsCount = Array.isArray(payments) ? payments.length : 0;
+    const remotePaymentsCount = Array.isArray(data.payments) ? data.payments.length : 0;
+    const shouldProtectLocalStudents = localStudentsCount > 0 && remoteStudentsCount === 0;
+    const shouldProtectLocalPayments = localPaymentsCount > 0 && remotePaymentsCount === 0;
+    // حماية: لا تستبدل البيانات المحلية ببيانات سحابية فارغة
+    if (Array.isArray(data.students) && !shouldProtectLocalStudents) students = data.students;
     resetPaymentMatchCache();
-    if (data.payments && Array.isArray(data.payments)) payments = data.payments;
-    if (data.expenses && Array.isArray(data.expenses)) expenses = data.expenses;
-    if (data.renewals && Array.isArray(data.renewals)) renewals = data.renewals;
+    if (Array.isArray(data.payments) && !shouldProtectLocalPayments) payments = data.payments;
+    if (Array.isArray(data.expenses)) expenses = data.expenses;
+    if (Array.isArray(data.renewals)) renewals = data.renewals;
     if (data.attLog) { Object.keys(data.attLog).forEach(function(k){ attLog[k] = data.attLog[k]; }); }
     if (data.deletedStudents && typeof deletedStudents !== 'undefined') {
       deletedStudents = data.deletedStudents;
@@ -4720,7 +4726,14 @@ async function loadFromFirebase() {
     refreshNextIds();
     lastSavedAt = data.savedAt || '';
     renderDash();
-    showSyncBadge('✅ تم التحميل');
+    if (shouldProtectLocalStudents || shouldProtectLocalPayments) {
+      const warnings = [];
+      if (shouldProtectLocalStudents) warnings.push('الطلاب المحليين محفوظين');
+      if (shouldProtectLocalPayments) warnings.push('السندات المحلية محفوظة');
+      showSyncBadge('🛡️ ' + warnings.join(' + '));
+    } else {
+      showSyncBadge('✅ تم التحميل');
+    }
   } catch(e) {
     showSyncBadge('📴 بدون إنترنت — بيانات محلية');
     console.log('Firebase load failed:', e.message);
