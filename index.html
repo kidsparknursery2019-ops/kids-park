@@ -2112,6 +2112,11 @@ function restoreStudent(id) {
   students.push(restored);
   deletedStudents = deletedStudents.filter(x => x.id !== id);
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
+  // ضروري: شيل من tombstones عشان ما يرجع يختفي بعد المزامنة
+  if (tombstones && tombstones.students) {
+    tombstones.students = tombstones.students.filter(function(x){ return x !== id; });
+    localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+  }
   autoSave();
   renderStudents();
   renderDash();
@@ -3947,10 +3952,13 @@ async function loadFromFirebase() {
       localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
     }
     if (data.tombstones && typeof tombstones !== 'undefined') {
+      // Firebase هو المرجع - استبدل tombstones بالكامل
+      // لأن restoreStudent على أي جهاز يحذف من Firebase
       ['students','payments','expenses','renewals'].forEach(function(type){
-        if (!tombstones[type]) tombstones[type] = [];
         if (data.tombstones[type] && Array.isArray(data.tombstones[type])) {
-          data.tombstones[type].forEach(function(id){ if (!tombstones[type].includes(id)) tombstones[type].push(id); });
+          tombstones[type] = data.tombstones[type].slice();
+        } else {
+          tombstones[type] = [];
         }
       });
       localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
