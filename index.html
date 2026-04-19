@@ -2188,7 +2188,7 @@ function getPaymentMatchInfo(payment){
   return result;
 }
 
-function approvePaymentMatchfunction approvePaymentMatch(paymentId, studentId){
+function approvePaymentMatch(paymentId, studentId){
   const p = payments.find(function(x){ return x.id === paymentId; });
   if (!p) return;
   let sid = parseInt(studentId);
@@ -2536,8 +2536,7 @@ function quickEditStudentHealth(id){
   const s = students.find(function(x){ return x.id === id; });
   if (!s) return;
   const current = String(s.health || s.healthStatus || '');
-  const next = prompt('عدّلي الحالة الصحية / الحساسية للطالب:
-' + (s.name || ''), current);
+  const next = prompt('عدّلي الحالة الصحية / الحساسية للطالب:\n' + (s.name || ''), current);
   if (next === null) return;
   s.health = String(next).trim();
   resetPaymentMatchCache();
