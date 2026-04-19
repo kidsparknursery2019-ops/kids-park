@@ -1961,6 +1961,87 @@ function openAddStudent(){
 }
 
 
+
+function printStudentPayments(studentId) {
+  const s = students.find(function(x){ return x.id === studentId; });
+  if (!s) return;
+  const pays = payments.filter(function(p){ return p.stuId === studentId; })
+    .sort(function(a,b){ return (b.date||'').localeCompare(a.date||''); });
+
+  const total = pays.reduce(function(sum, p){ return sum + (p.amt||0); }, 0);
+  const today = new Date().toLocaleDateString('ar-AE');
+
+  // اسم الحضانة من الإعدادات
+  const nurseryName = (typeof nurserySettings !== 'undefined' && nurserySettings.name) ? nurserySettings.name : 'حضانة حديقة الأطفال';
+
+  const w = window.open('', '_blank', 'width=900,height=700');
+  if (!w) { alert('يرجى السماح بالنوافذ المنبثقة'); return; }
+
+  let rowsHtml = '';
+  if (!pays.length) {
+    rowsHtml = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#888">لا توجد مدفوعات مسجلة</td></tr>';
+  } else {
+    rowsHtml = pays.map(function(p, i){
+      return '<tr>' +
+        '<td>' + (i+1) + '</td>' +
+        '<td><b>#' + p.id + '</b></td>' +
+        '<td>' + (p.date || '—') + '</td>' +
+        '<td>' + (p.desc || '—') + '</td>' +
+        '<td>' + (p.method || '—') + '</td>' +
+        '<td style="font-weight:700;color:#27ae60">' + (p.amt||0).toLocaleString() + ' د.إ</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  w.document.write(
+    '<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8">' +
+    '<title>كشف مدفوعات - ' + s.name + '</title>' +
+    '<style>' +
+      'body{font-family:"Tajawal",Arial,sans-serif;padding:20px;color:#333;direction:rtl}' +
+      '.header{text-align:center;border-bottom:3px double #1e6b3f;padding-bottom:14px;margin-bottom:20px}' +
+      '.header h1{color:#1e6b3f;margin:0 0 5px}' +
+      '.header .sub{color:#888;font-size:13px}' +
+      '.info{background:#f0f9f4;padding:14px;border-radius:10px;margin-bottom:18px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:14px}' +
+      '.info b{color:#1e6b3f}' +
+      'table{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:13px}' +
+      'th{background:#1e6b3f;color:white;padding:10px;text-align:right;font-weight:700}' +
+      'td{padding:8px 10px;border-bottom:1px solid #eee;text-align:right}' +
+      'tr:nth-child(even) td{background:#fafafa}' +
+      '.total{background:linear-gradient(135deg,#e8f5e9,#c8e6c9);padding:14px;border-radius:10px;text-align:left;font-size:18px;font-weight:900;color:#1e6b3f;margin-top:14px}' +
+      '.footer{text-align:center;color:#888;font-size:11px;margin-top:30px;padding-top:14px;border-top:1px solid #ddd}' +
+      '@media print{body{padding:10px} .no-print{display:none}}' +
+      '.actions{text-align:center;margin:20px 0}' +
+      '.btn{padding:10px 20px;background:#1e6b3f;color:white;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:14px;margin:0 5px}' +
+    '</style></head><body>' +
+    '<div class="header">' +
+      '<h1>📋 كشف المدفوعات</h1>' +
+      '<div class="sub">' + nurseryName + '</div>' +
+    '</div>' +
+    '<div class="info">' +
+      '<div><b>اسم الطالب:</b> ' + s.name + '</div>' +
+      '<div><b>رقم الطالب:</b> #' + s.id + '</div>' +
+      '<div><b>الفصل:</b> ' + (s.cls || '—') + '</div>' +
+      '<div><b>اسم الأب:</b> ' + (s.dad || '—') + '</div>' +
+      '<div><b>هاتف الأب:</b> <span dir="ltr">' + (s.dph || '—') + '</span></div>' +
+      '<div><b>تاريخ الكشف:</b> ' + today + '</div>' +
+    '</div>' +
+    '<table>' +
+      '<thead><tr>' +
+        '<th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th>' +
+      '</tr></thead>' +
+      '<tbody>' + rowsHtml + '</tbody>' +
+    '</table>' +
+    '<div class="total">إجمالي المدفوعات: ' + total.toLocaleString() + ' د.إ (' + pays.length + ' سند)</div>' +
+    '<div class="footer">تم إنشاء هذا الكشف في: ' + new Date().toLocaleString('ar-AE') + '</div>' +
+    '<div class="actions no-print">' +
+      '<button class="btn" onclick="window.print()">🖨 طباعة</button>' +
+      '<button class="btn" onclick="window.close()" style="background:#888">إغلاق</button>' +
+    '</div>' +
+    '</body></html>'
+  );
+  w.document.close();
+}
+
 function viewStudentProfile(id) {
   const s = students.find(x => x.id === id);
   if (!s) return;
@@ -2030,7 +2111,7 @@ function viewStudentProfile(id) {
     '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px;border-top:1.5px solid var(--border);padding-top:10px">💰 المدفوعات (' + (function(){
       const pays = payments.filter(function(p){ return p.stuId === id; });
       return pays.length + ' سند — إجمالي: ' + pays.reduce(function(s,p){return s+(p.amt||0);},0).toLocaleString() + ' د.إ';
-    })() + ')</div>' +
+    })() + ')<button class="btn btn-out btn-sm no-print" onclick="printStudentPayments(' + id + ')" style="float:left;margin-top:-3px">🖨 طباعة كشف المدفوعات</button></div>' +
     (function(){
       const pays = payments.filter(function(p){ return p.stuId === id; }).sort(function(a,b){ return (b.date||'').localeCompare(a.date||''); });
       if (!pays.length) return '<div style="color:var(--muted);font-size:12px;margin-bottom:10px">لا توجد مدفوعات مسجلة لهذا الطالب. يمكن ربط المدفوعات بالطالب عبر رقمه في نموذج تسجيل الدفعة.</div>';
@@ -4056,6 +4137,7 @@ async function checkForUpdates() {
       if (typeof renderExpenses === 'function') renderExpenses();
       if (typeof renderReceipts === 'function') renderReceipts();
       if (typeof renderRenewals === 'function') renderRenewals();
+      if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
       if (typeof updateNotifications === 'function') updateNotifications();
       showSyncBadge('🔄 تم تحديث البيانات تلقائياً');
     }
