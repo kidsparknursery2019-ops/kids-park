@@ -1145,6 +1145,7 @@ function refreshNextIds(){
 }
 
 let deletedStudents = JSON.parse(localStorage.getItem('kp_deleted_students') || '[]');
+setTimeout(function(){ try{ resetPaymentMatchCache(); }catch(e){} }, 0);
 let tombstones = JSON.parse(localStorage.getItem('kp_tombstones') || '{"students":[],"payments":[],"expenses":[],"renewals":[]}');
 if (!tombstones.students) tombstones.students = [];
 if (!tombstones.payments) tombstones.payments = [];
@@ -2031,7 +2032,7 @@ function renderStudents(){
       <td>${s.dad}</td><td dir="ltr">${s.dph}</td><td dir="ltr">${s.mph}</td>
       <td style="font-size:12px">${s.addr}</td>
       <td>
-        <button class="btn btn-out btn-sm" onclick="viewStudentProfile(${s.id})" title="عرض الملف الكامل">👁</button><button class="btn btn-out btn-sm" onclick="editStudent(${s.id})" title="تعديل">✏️</button>
+        <button class="btn btn-out btn-sm" onclick="viewStudentProfile(${s.id})" title="عرض الملف الكامل">👁</button><button class="btn btn-out btn-sm" onclick="editStudent(${s.id})" title="تعديل">✏️</button><button class="btn btn-y btn-sm" onclick="quickEditStudentHealth(${s.id})" title="تعديل الحالة الصحية">⚕️</button>
         <button class="btn btn-r btn-sm" onclick="delStudent(${s.id})">🗑</button>
       </td>
     </tr>`}).join('');
@@ -2044,28 +2045,61 @@ function formatDate(d){
 }
 
 
+const PAYMENT_MATCH_CACHE = new Map();
+let PAYMENT_MATCH_CACHE_STAMP = '';
+
 function normalizeArabicName(str){
   return String(str||'')
     .toLowerCase()
-    .replace(/[\u064B-\u065F\u0670]/g,'')
+    .replace(/[ً-ٰٟ]/g,'')
     .replace(/[إأآٱا]/g,'ا')
     .replace(/ة/g,'ه')
     .replace(/ى/g,'ي')
     .replace(/ؤ/g,'و')
     .replace(/ئ/g,'ي')
     .replace(/\b(father|mother|of|child|kid|parent)\b/gi,' ')
-    .replace(/\b(والد|والده|والدة|والد\/والدة|الطفل|الطفلة|الطالب|الطالبة|ابو|ام|ابن|بنت|للطفل|للطفلة)\b/g,' ')
-    .replace(/[^\u0621-\u063A\u0641-\u064Aa-z0-9\s]/g,' ')
+    .replace(/\b(والد|والده|والدة|والد\/والدة|الطفل|الطفلة|الطالب|الطالبة|ابو|ابو الطفل|ام|ام الطفل|ابن|بنت|للطفل|للطفلة|خاص|رسوم|قسط|شهر|عن|لصالح)\b/g,' ')
+    .replace(/[0-9]+/g,' ')
+    .replace(/[^ء-غف-يa-z\s]/g,' ')
     .replace(/\s+/g,' ')
     .trim();
 }
 
 function extractChildNameFromPayerName(who){
-  return normalizeArabicName(who);
+  let s = String(who||'');
+  s = s.replace(/[\-–—_]+/g,' ');
+  s = s.replace(/\((.*?)\)/g,' $1 ');
+  s = s.replace(/\b(والد(?:ة)? الطفل|والد(?:ة)? الطفله|والد(?:ة)?|الطفل|الطفله|الطالب|الطالبه|ابو الطفل|ام الطفل|ابو|ام|ابن|بنت|للطفل|للطفله|رسوم|قسط|شهر|عن|خاص|لصالح)\b/gi,' ');
+  return normalizeArabicName(s);
 }
 
 function getNameTokens(str){
   return normalizeArabicName(str).split(' ').filter(Boolean);
+}
+
+function getStudentsMatchStamp(){
+  return String(students.length) + '|' + students.map(function(s){
+    return [s.id||'', normalizeArabicName(s.name||''), normalizeArabicName(s.dad||''), normalizeArabicName(s.mom||'')].join('~');
+  }).join('|');
+}
+
+function resetPaymentMatchCache(){
+  PAYMENT_MATCH_CACHE.clear();
+  PAYMENT_MATCH_CACHE_STAMP = getStudentsMatchStamp();
+}
+
+function tokenIntersectionCount(a, b){
+  let c = 0;
+  a.forEach(function(t){ if (b.includes(t)) c++; });
+  return c;
+}
+
+function isOrderedSubset(needle, haystack){
+  let j = 0;
+  for (let i = 0; i < haystack.length && j < needle.length; i++) {
+    if (haystack[i] === needle[j]) j++;
+  }
+  return j === needle.length;
 }
 
 function scorePaymentStudentMatch(payment, student){
@@ -2073,51 +2107,88 @@ function scorePaymentStudentMatch(payment, student){
   const stuName = normalizeArabicName(student.name);
   if (!payName || !stuName) return 0;
   if (payName === stuName) return 100;
+
   const payTokens = getNameTokens(payName);
   const stuTokens = getNameTokens(stuName);
   if (!payTokens.length || !stuTokens.length) return 0;
-  let common = 0;
-  stuTokens.forEach(function(t){ if (payTokens.includes(t)) common++; });
+
+  const common = tokenIntersectionCount(stuTokens, payTokens);
+  if (!common) return 0;
+
   let score = 0;
-  const overlap = common / Math.max(stuTokens.length, payTokens.length);
-  score += overlap * 70;
-  const orderedPrefix = stuTokens.every(function(tok, i){ return payTokens[i] === tok; });
-  if (orderedPrefix) score += 18;
-  if (payName.includes(stuName) || stuName.includes(payName)) score += 15;
-  if (stuTokens[0] && payTokens[0] === stuTokens[0]) score += 12;
-  if (stuTokens[1] && payTokens[1] === stuTokens[1]) score += 8;
-  const dad = normalizeArabicName(student.dad||'');
-  const mom = normalizeArabicName(student.mom||'');
+  const overlapStudent = common / stuTokens.length;
+  const overlapPayer = common / payTokens.length;
+  score += overlapStudent * 52;
+  score += overlapPayer * 18;
+
+  if (isOrderedSubset(stuTokens, payTokens)) score += 16;
+  if (payName.includes(stuName) || stuName.includes(payName)) score += 12;
+  if (stuTokens[0] && payTokens[0] === stuTokens[0]) score += 10;
+  if (stuTokens.length >= 2 && payTokens.length >= 2 && stuTokens[1] === payTokens[1]) score += 6;
+  if (stuTokens.length >= 3 && payTokens.slice(0,3).join(' ') === stuTokens.slice(0,3).join(' ')) score += 8;
+  if (stuTokens.length >= 2 && common >= 2 && overlapStudent >= 0.66) score += 8;
+  if (stuTokens.length === 1 && common === 1) score += 6;
+
+  const dadTokens = getNameTokens(student.dad||'');
+  const momTokens = getNameTokens(student.mom||'');
   const whoNorm = normalizeArabicName(payment.who||'');
-  if (dad && whoNorm.includes(dad)) score += 18;
-  if (mom && whoNorm.includes(mom)) score += 18;
-  if (common === 1 && stuTokens.length >= 2) score -= 18;
-  if (common === 0) score = 0;
+  const whoTokens = getNameTokens(whoNorm);
+  const dadCommon = dadTokens.length ? tokenIntersectionCount(dadTokens, whoTokens) : 0;
+  const momCommon = momTokens.length ? tokenIntersectionCount(momTokens, whoTokens) : 0;
+  if (dadCommon >= 2 || (dadTokens.length === 1 && dadCommon === 1)) score += 10;
+  if (momCommon >= 2 || (momTokens.length === 1 && momCommon === 1)) score += 10;
+  if ((dadTokens.length && whoNorm.includes(dadTokens.join(' '))) || (momTokens.length && whoNorm.includes(momTokens.join(' ')))) score += 6;
+
+  if (common === 1 && stuTokens.length >= 3) score -= 20;
+  if (common === 1 && stuTokens.length === 2) score -= 12;
+  if (overlapStudent < 0.5 && common < 2) score -= 10;
+
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
 function getPaymentMatchInfo(payment){
   if (!payment) return {status:'none', label:'—', score:0};
+  if (!PAYMENT_MATCH_CACHE_STAMP) resetPaymentMatchCache();
+
+  const paymentKey = [payment.id||'', payment.stuId||'', normalizeArabicName(payment.who||''), normalizeArabicName(payment.desc||'')].join('|');
+  const cached = PAYMENT_MATCH_CACHE.get(paymentKey);
+  if (cached) return cached;
+
+  let result;
   if (payment.stuId) {
     const linked = students.find(function(s){ return s.id === payment.stuId; });
-    if (linked) return {status:'confirmed', student:linked, label:'✅ #' + linked.id + ' ' + linked.name, score:100};
+    if (linked) {
+      result = {status:'confirmed', student:linked, label:'✅ #' + linked.id + ' ' + linked.name, score:100};
+      PAYMENT_MATCH_CACHE.set(paymentKey, result);
+      return result;
+    }
   }
+
   const ranked = students.map(function(s){
     return { student:s, score: scorePaymentStudentMatch(payment, s) };
-  }).filter(function(x){ return x.score >= 55; }).sort(function(a,b){ return b.score - a.score; });
-  if (!ranked.length) return {status:'none', label:'—', score:0};
+  }).filter(function(x){ return x.score >= 60; }).sort(function(a,b){ return b.score - a.score; });
+
+  if (!ranked.length) {
+    result = {status:'none', label:'—', score:0};
+    PAYMENT_MATCH_CACHE.set(paymentKey, result);
+    return result;
+  }
+
   const top = ranked[0];
   const second = ranked[1];
   const gap = second ? (top.score - second.score) : top.score;
-  const isStrong = top.score >= 82 && gap >= 8;
-  const isReview = top.score >= 68 && gap >= 6;
+  const isStrong = top.score >= 84 && gap >= 7;
+  const isReview = top.score >= 72 && gap >= 4;
   if (isStrong || isReview) {
-    return { status: isStrong ? 'suggested-strong' : 'suggested', student: top.student, score: top.score, gap: gap, alternatives: ranked.slice(0,3), label: (isStrong ? '🟢 مرشح قوي' : '🟡 مرشح') + ' — #' + top.student.id + ' ' + top.student.name };
+    result = { status: isStrong ? 'suggested-strong' : 'suggested', student: top.student, score: top.score, gap: gap, alternatives: ranked.slice(0,3), label: (isStrong ? '🟢 مرشح قوي' : '🟡 مرشح') + ' — #' + top.student.id + ' ' + top.student.name };
+  } else {
+    result = {status:'none', label:'—', score: top.score};
   }
-  return {status:'none', label:'—', score: top.score};
+  PAYMENT_MATCH_CACHE.set(paymentKey, result);
+  return result;
 }
 
-function approvePaymentMatch(paymentId, studentId){
+function approvePaymentMatchfunction approvePaymentMatch(paymentId, studentId){
   const p = payments.find(function(x){ return x.id === paymentId; });
   if (!p) return;
   let sid = parseInt(studentId);
@@ -2128,6 +2199,7 @@ function approvePaymentMatch(paymentId, studentId){
   const s = students.find(function(x){ return x.id === sid; });
   if (!s) { alert('لم يتم العثور على طالب صالح لهذا الربط'); return; }
   p.stuId = s.id;
+  resetPaymentMatchCache();
   autoSave();
   renderPayments();
   if (typeof renderReceipts === 'function') renderReceipts();
@@ -2140,6 +2212,7 @@ function unlinkPaymentMatch(paymentId){
   if (!p || !p.stuId) return;
   if (!confirm('فك ربط السند #' + p.id + ' من ملف الطالب؟')) return;
   p.stuId = null;
+  resetPaymentMatchCache();
   autoSave();
   renderPayments();
   if (typeof renderReceipts === 'function') renderReceipts();
@@ -2446,7 +2519,33 @@ function viewStudentProfile(id) {
     document.getElementById('mo-stu-profile').classList.remove('on');
     setTimeout(function(){ editStudent(id); }, 200);
   };
+  const profileBody = document.getElementById('mo-stu-profile-body');
+  if (profileBody) {
+    const oldQuick = document.getElementById('mo-stu-health-quick');
+    if (oldQuick) oldQuick.remove();
+    const quickWrap = document.createElement('div');
+    quickWrap.id = 'mo-stu-health-quick';
+    quickWrap.style.marginTop = '12px';
+    quickWrap.innerHTML = '<button class="btn btn-y btn-sm" onclick="quickEditStudentHealth(' + id + ')">⚕️ تعديل الحالة الصحية</button>';
+    profileBody.appendChild(quickWrap);
+  }
   document.getElementById('mo-stu-profile').classList.add('on');
+}
+
+function quickEditStudentHealth(id){
+  const s = students.find(function(x){ return x.id === id; });
+  if (!s) return;
+  const current = String(s.health || s.healthStatus || '');
+  const next = prompt('عدّلي الحالة الصحية / الحساسية للطالب:
+' + (s.name || ''), current);
+  if (next === null) return;
+  s.health = String(next).trim();
+  resetPaymentMatchCache();
+  autoSave();
+  renderStudents();
+  if(typeof renderPayments==='function') renderPayments();
+  if(typeof renderReceipts==='function') renderReceipts();
+  alert('✅ تم تحديث الحالة الصحية للطالب: ' + s.name);
 }
 
 function editStudent(id){
@@ -2488,7 +2587,9 @@ function saveStudent(){
   } else {
     students.push({id:nextStuId++,...data});
   }
+  resetPaymentMatchCache();
   closeAll();renderStudents();renderDash();
+  if(typeof renderPayments==='function') renderPayments(); if(typeof renderReceipts==='function') renderReceipts();
   autoSave(); alert(`✅ تم ${editingStuId?'تعديل':'إضافة'} الطالب "${name}" بنجاح`);
 }
 
@@ -2506,6 +2607,7 @@ function delStudent(id){
   deletedStudents.unshift(deletedCopy);
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
   students = students.filter(x => x.id !== id);
+  resetPaymentMatchCache();
   autoSave();
   renderStudents();
   renderDash();
@@ -3346,6 +3448,7 @@ function restoreBackup(event) {
       const backup = JSON.parse(e.target.result);
       if (!backup.version || !backup.students) { alert('❌ الملف ليس نسخة احتياطية صالحة'); return; }
       if (backup.students) students = backup.students;
+      resetPaymentMatchCache();
       if (backup.payments) payments = backup.payments;
       if (backup.expenses) expenses = backup.expenses;
       if (backup.renewals) renewals = backup.renewals;
@@ -3469,6 +3572,7 @@ function doImport() {
       payments.push({ id: nextPayId++, stuId: parseInt(item.stuId)||null, who:item.who, amt:+item.amt, desc:item.desc, type:item.type||'قسط شهري', method:item.method||'نقدي', date:item.date, rcvr:item.rcvr, note:item.note, internalNote:item.internalNote||'' });
       added++;
     });
+    resetPaymentMatchCache();
     renderPayments(); if(typeof renderReceipts==='function') renderReceipts();
   } else if (importTarget === 'expenses') {
     importParsedData.forEach(function(item){
@@ -4513,6 +4617,7 @@ async function loadFromFirebase() {
     if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
     // Firebase يحمل كل البيانات كاملة
     if (data.students && Array.isArray(data.students)) students = data.students;
+    resetPaymentMatchCache();
     if (data.payments && Array.isArray(data.payments)) payments = data.payments;
     if (data.expenses && Array.isArray(data.expenses)) expenses = data.expenses;
     if (data.renewals && Array.isArray(data.renewals)) renewals = data.renewals;
