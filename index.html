@@ -9,6 +9,7 @@
 <title>حضانة حديقة الأطفال</title>
 <!-- v20260418-0450 -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
 // إغلاق dropdown البحث عند النقر خارجه
 document.addEventListener('click', function(e) {
@@ -999,7 +1000,7 @@ textarea{resize:vertical;min-height:65px}
     <div id="mo-receipt-body"></div>
     <div class="mof">
       <button class="btn btn-out" onclick="closeAll()">إغلاق</button>
-      <button class="btn btn-g" onclick="printCurrentReceipt()">🖨 طباعة السند</button>
+      <button class="btn btn-g" onclick="printCurrentReceipt()">🖨 طباعة السند</button><button class="btn btn-y" onclick="shareCurrentReceipt()" style="background:#25D366;color:white;border-color:#128C7E">📱 مشاركة واتساب</button>
     </div>
   </div>
 </div>
@@ -1083,7 +1084,7 @@ function getStudentHealthNotes(student) {
     .map(normalizePhone)
     .filter(Boolean);
   const used = {};
-  const linked = STUDENT_HEALTH_NOTES.filter(function(item){
+  let linked = STUDENT_HEALTH_NOTES.filter(function(item){
     const key = normalizePhone(item.phone);
     if (!key || used[key]) return false;
     if (phones.indexOf(key) === -1) return false;
@@ -3364,6 +3365,123 @@ function amtToWords(n){
 }
 
 // buildReceiptHTML() overridden below
+
+
+// مشاركة السند عبر WhatsApp
+async function shareCurrentReceipt() {
+  const p = payments.find(function(x){ return x.id === currentReceiptId; });
+  if (!p) { alert('لم يتم العثور على السند'); return; }
+
+  // تحضير رسالة نصية
+  const nurseryName = (nurserySettings && nurserySettings.name) ? nurserySettings.name : 'حضانة حديقة الأطفال';
+  const msg =
+    '🌿 *' + nurseryName + '*' + '\n' +
+    '📋 *سند قبض رقم:* #' + p.id + '\n' +
+    '━━━━━━━━━━━━━━\n' +
+    '👤 *المستلم من:* ' + (p.who || '—') + '\n' +
+    '💰 *المبلغ:* ' + (p.amt || 0).toLocaleString() + ' د.إ\n' +
+    '📝 *البيان:* ' + (p.desc || '—') + '\n' +
+    '📅 *التاريخ:* ' + (p.date || '—') + '\n' +
+    '💳 *طريقة الدفع:* ' + (p.method || '—') + '\n' +
+    '✍️ *المستلم:* ' + (p.rcvr || '—') + '\n' +
+    '━━━━━━━━━━━━━━\n' +
+    'شكراً لكم 🌸';
+
+  // حاول إيجاد رقم الهاتف من الطالب المرتبط
+  let phone = '';
+  if (p.stuId) {
+    const s = students.find(function(x){ return x.id === p.stuId; });
+    if (s) phone = normalizePhoneForWA(s.dph || s.mph || '');
+  }
+
+  // على الموبايل: استخدم Web Share API لمشاركة الصورة
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  try {
+    // حوّل السند لصورة
+    const area = document.getElementById('receipt-print-area');
+    area.innerHTML = buildReceiptHTML(p);
+    // أظهر المنطقة مؤقتاً لـ html2canvas
+    const oldStyle = area.style.cssText;
+    area.style.cssText = 'position:fixed;left:0;top:0;width:800px;background:white;padding:20px;z-index:-1;opacity:0.01';
+
+    const canvas = await html2canvas(area, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      logging: false,
+      useCORS: true
+    });
+
+    // أرجع الـ style
+    area.style.cssText = oldStyle;
+
+    canvas.toBlob(async function(blob) {
+      if (!blob) { fallbackShareText(phone, msg); return; }
+
+      const fileName = 'سند_قبض_' + p.id + '.png';
+      const file = new File([blob], fileName, { type: 'image/png' });
+
+      // Web Share API (موبايل بشكل ممتاز، وبعض المتصفحات على الكمبيوتر)
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: 'سند قبض #' + p.id,
+            text: msg
+          });
+          return;
+        } catch(err) {
+          if (err.name === 'AbortError') return; // المستخدم ألغى
+          console.log('Share failed, falling back:', err);
+        }
+      }
+
+      // Fallback: نزّل الصورة + افتح WhatsApp Web
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      // أعطِ المستخدم وقت لحفظ الصورة ثم افتح WhatsApp
+      setTimeout(function(){
+        fallbackShareText(phone, msg + '\n\n📎 تم تحميل صورة السند - يرجى إرفاقها في المحادثة');
+      }, 500);
+    }, 'image/png');
+  } catch(err) {
+    console.error('Share error:', err);
+    fallbackShareText(phone, msg);
+  }
+}
+
+// Fallback: فتح WhatsApp Web برسالة نصية فقط
+function fallbackShareText(phone, msg) {
+  const encoded = encodeURIComponent(msg);
+  let url;
+  if (phone) {
+    url = 'https://wa.me/' + phone + '?text=' + encoded;
+  } else {
+    url = 'https://wa.me/?text=' + encoded;
+  }
+  window.open(url, '_blank');
+}
+
+// تنسيق رقم الهاتف لـ WhatsApp (إزالة المسافات والرموز + التأكد من الرمز الدولي)
+function normalizePhoneForWA(phone) {
+  if (!phone) return '';
+  let p = String(phone).replace(/[\s\-\(\)]/g, '').trim();
+  if (!p) return '';
+  // إزالة +
+  if (p.startsWith('+')) p = p.slice(1);
+  // إزالة 00 البادئة
+  if (p.startsWith('00')) p = p.slice(2);
+  // لو يبدأ بـ 0 (محلي إمارات) أضف 971
+  if (p.startsWith('0')) p = '971' + p.slice(1);
+  // لو 9 أرقام بدون رمز دولة (إمارات) أضف 971
+  if (p.length === 9 && p.startsWith('5')) p = '971' + p;
+  return p;
+}
 
 function printCurrentReceipt(){
   const p=payments.find(x=>x.id===currentReceiptId); if(!p)return;
