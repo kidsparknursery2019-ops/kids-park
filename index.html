@@ -468,7 +468,7 @@ textarea{resize:vertical;min-height:65px}
           <option value="amt-desc">الأعلى قيمة</option>
           <option value="amt-asc">الأقل قيمة</option>
         </select>
-        <button class="btn btn-out btn-sm" onclick="openExport('payments')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('payments')" title="استيراد من Excel">⬆ استيراد</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('payments')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('payments')" title="استيراد من Excel">⬆ استيراد</button><button class="btn btn-b btn-sm" onclick="approveAllSuggestedPaymentMatches()" title="اعتماد كل الروابط المقترحة الحالية">🔗 اعتماد ربط السندات دفعة واحدة</button>
       </div>
       <div class="sg" style="grid-template-columns:repeat(3,1fr)">
         <div class="sc"><div class="sl">إجمالي المحصّل</div><div class="sv fin-pos" id="pay-total">0</div><div class="ss">درهم</div></div>
@@ -2570,6 +2570,38 @@ function viewStudentProfile(id) {
   document.getElementById('mo-stu-profile').classList.add('on');
 }
 
+function backupStudentsSnapshot(reason){
+  try {
+    localStorage.setItem('kp_students_backup_before_health_action', JSON.stringify({
+      reason: reason || '',
+      at: new Date().toISOString(),
+      students: Array.isArray(students) ? students : []
+    }));
+  } catch(e) {}
+}
+
+function restoreStudentsSnapshotIfNeeded(beforeCount){
+  if (!Array.isArray(students) || (beforeCount > 0 && students.length < beforeCount)) {
+    try {
+      const raw = localStorage.getItem('kp_students_backup_before_health_action');
+      if (raw) {
+        const snap = JSON.parse(raw);
+        if (snap && Array.isArray(snap.students) && snap.students.length >= beforeCount) {
+          students = snap.students;
+          resetPaymentMatchCache();
+          renderStudents();
+          if(typeof renderPayments==='function') renderPayments();
+          if(typeof renderReceipts==='function') renderReceipts();
+          autoSave();
+          alert('⚠️ تم اكتشاف خلل غير متوقع أثناء تعديل الحالة الصحية، لذلك تم استرجاع قائمة الطلاب تلقائيًا لحماية البيانات.');
+          return true;
+        }
+      }
+    } catch(e) {}
+  }
+  return false;
+}
+
 function quickEditStudentHealth(id){
   const s = students.find(function(x){ return x.id === id; });
   if (!s) return;
@@ -2580,16 +2612,21 @@ function quickEditStudentHealth(id){
   if (!value) {
     return clearStudentHealth(id);
   }
-  s.health = value;
-  s.healthStatus = value;
-  s.healthOverride = value;
-  s.healthDeleted = false;
+  const beforeCount = Array.isArray(students) ? students.length : 0;
+  backupStudentsSnapshot('edit_health');
+  const target = students.find(function(x){ return x.id === id; });
+  if (!target) return;
+  target.health = value;
+  target.healthStatus = value;
+  target.healthOverride = value;
+  target.healthDeleted = false;
+  if (restoreStudentsSnapshotIfNeeded(beforeCount)) return;
   resetPaymentMatchCache();
   autoSave();
   renderStudents();
   if(typeof renderPayments==='function') renderPayments();
   if(typeof renderReceipts==='function') renderReceipts();
-  alert('✅ تم تحديث الحالة الصحية للطالب: ' + s.name);
+  alert('✅ تم تحديث الحالة الصحية للطالب: ' + target.name);
 }
 
 function clearStudentHealth(id){
@@ -2601,16 +2638,21 @@ function clearStudentHealth(id){
     return;
   }
   if (!confirm('هل تريدين حذف الحالة الصحية الحالية للطالب "' + (s.name || '') + '"؟')) return;
-  s.health = '';
-  s.healthStatus = '';
-  s.healthOverride = '';
-  s.healthDeleted = true;
+  const beforeCount = Array.isArray(students) ? students.length : 0;
+  backupStudentsSnapshot('delete_health');
+  const target = students.find(function(x){ return x.id === id; });
+  if (!target) return;
+  target.health = '';
+  target.healthStatus = '';
+  target.healthOverride = '';
+  target.healthDeleted = true;
+  if (restoreStudentsSnapshotIfNeeded(beforeCount)) return;
   resetPaymentMatchCache();
   autoSave();
   renderStudents();
   if(typeof renderPayments==='function') renderPayments();
   if(typeof renderReceipts==='function') renderReceipts();
-  alert('🗑️ تم حذف الحالة الصحية الحالية للطالب: ' + s.name);
+  alert('🗑️ تم حذف الحالة الصحية الحالية للطالب: ' + target.name);
 }
 
 function editStudent(id){
