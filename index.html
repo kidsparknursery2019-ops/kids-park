@@ -840,6 +840,7 @@ textarea{resize:vertical;min-height:65px}
     <div id="mo-stu-profile-body" style="max-height:65vh;overflow-y:auto"></div>
     <div class="mof">
       <button class="btn btn-out" onclick="closeAll()">إغلاق</button>
+      <button class="btn btn-b" id="mo-stu-profile-print">🖨 طباعة الملف الكامل</button>
       <button class="btn btn-g" id="mo-stu-profile-edit">✏️ تعديل البيانات</button>
     </div>
   </div>
@@ -922,6 +923,7 @@ textarea{resize:vertical;min-height:65px}
       <div class="fl"><label>اسم الأم</label><input id="ns-mom" placeholder=""></div>
       <div class="fl"><label>هاتف الأم</label><input id="ns-mph" placeholder="05xxxxxxxx" type="tel"></div>
       <div class="fl fgr"><label>العنوان</label><input id="ns-addr" placeholder="الشارقة - المجاز..."></div>
+      <div class="fl fgr"><label>الحالة الصحية / الحساسية</label><textarea id="ns-health" rows="2" placeholder="مثال: حساسية ألبان، ربو، ملاحظات صحية خاصة..."></textarea></div>
       <div class="fl fgr"><label>ملاحظات</label><textarea id="ns-note" rows="2"></textarea></div>
     </div>
     <div class="mof">
@@ -946,6 +948,7 @@ textarea{resize:vertical;min-height:65px}
       <div class="fl fgr"><label>ولي الأمر / الطالب *</label><input id="np-who" placeholder="والد/والدة الطفل..."></div>
       <div class="fl"><label>المبلغ (درهم) *</label><input id="np-amt" type="number" placeholder="0"></div>
       <div class="fl"><label>التاريخ</label><input id="np-date" type="date"></div>
+      <div class="fl"><label>رقم الإيصال</label><input id="np-id" type="number" placeholder="تلقائي" disabled></div>
       <div class="fl fgr"><label>البيان *</label><input id="np-desc" placeholder="قسط شهر + رسم تسجيل..."></div>
       <div class="fl"><label>نوع الدفع</label>
         <select id="np-type"><option>قسط شهري</option><option>رسم تسجيل</option><option>مواصلات</option><option>أخرى</option></select>
@@ -968,7 +971,7 @@ textarea{resize:vertical;min-height:65px}
 <!-- Add Expense -->
 <div class="ov" id="mo-exp">
   <div class="mo">
-    <div class="mot">🧾 إضافة مصروف جديد</div>
+    <div class="mot" id="mo-exp-title">🧾 إضافة مصروف جديد</div>
     <div class="fg">
       <div class="fl fgr"><label>البيان / الوصف *</label><input id="ne-desc" placeholder="راتب / كهرباء / قرطاسية..."></div>
       <div class="fl"><label>المبلغ (درهم) *</label><input id="ne-amt" type="number" placeholder="0"></div>
@@ -982,8 +985,9 @@ textarea{resize:vertical;min-height:65px}
       <div class="fl fgr"><label>ملاحظات</label><input id="ne-note" placeholder=""></div>
     </div>
     <div class="mof">
+      <button class="btn btn-r btn-sm" id="exp-del-btn" onclick="delExpense()" style="display:none;margin-left:auto">🗑 حذف</button>
       <button class="btn btn-out" onclick="closeAll()">إلغاء</button>
-      <button class="btn btn-r" onclick="saveExpense()">💾 حفظ المصروف</button>
+      <button class="btn btn-r" id="exp-save-btn" onclick="saveExpense()">💾 حفظ المصروف</button>
     </div>
   </div>
 </div>
@@ -1052,11 +1056,93 @@ const NATIONALITIES_SHORT = {
 var attLog = {};
 var editingStuId = null;
 var editingPayId = null;
+var editingExpId = null;
 var editingRenId = null;
+
+const STUDENT_HEALTH_NOTES = [
+  { phone: '054575719', childName: 'محمد قويدر', condition: 'نقص خميرة / انحلال دم', actions: 'عدم تناول اي نوع بقوليات (فول تحديدا)' },
+  { phone: '0585079821', childName: 'نايلة بلهامرا', condition: 'لا تعطى خافض حرارة على مسؤولية الام', actions: 'التواصل مع الأهل في حالة حدوث اي طارئ' },
+  { phone: '0585927227', childName: 'يوسف غالب', condition: 'حساسية البان', actions: 'الام تضع طعام خاص وعدم مشاركة الاطفال' },
+  { phone: '0526418011', childName: 'يوسف ملوح', condition: 'عدم اعطاء اي علاج (لايوجد سبب)', actions: 'التواصل مع الاهل في حال حدوث اي شيء' },
+  { phone: '056260204', childName: 'محمد احمد خالد', condition: 'حساسية عطور وروائح', actions: 'في حال حدوث ضيق تنفس تهوية كافية والتواصل مع الام' },
+  { phone: '0505351188', childName: 'دانا نصره', condition: 'حساسية كيوي', actions: '' },
+  { phone: '0568408777', childName: 'محمد البيطار', condition: 'نزيف من الأنف', actions: '' },
+  { phone: '0529488463', childName: 'بلال الشافعي', condition: 'حساسية من الاكل الحار يصاحبها حكة واحمرار', actions: 'فقط الطعام الذي تحضره الام' },
+  { phone: '0586611394', childName: 'سيلا قصاص', condition: 'حساسية واكزيما أيدي', actions: 'عدم التعرض لمواد مخرشة وكحول ومعقمات' },
+  { phone: '0504913201', childName: 'بيان بنمحمد', condition: 'مشكلة قلبية', actions: 'الانتباه من اي مجهود' },
+  { phone: '0566797386', childName: 'تسنيم اللكن', condition: 'حساسية عطور', actions: '' },
+  { phone: '0545267747', childName: 'محمد ربيع', condition: 'ربو', actions: 'اخذ بخاخ والانتباه من اي عطور' },
+  { phone: '0502605009', childName: 'تيم الزامل', condition: 'حساسية عطور', actions: 'تهوية جيدة' }
+];
+function normalizePhone(phone) {
+  return String(phone || '').replace(/\D+/g, '').replace(/^00971/, '0').replace(/^971/, '0');
+}
+function getStudentHealthNotes(student) {
+  if (!student) return [];
+  const phones = [student.dph, student.mph, student.phone, student.mobile]
+    .map(normalizePhone)
+    .filter(Boolean);
+  const used = {};
+  const linked = STUDENT_HEALTH_NOTES.filter(function(item){
+    const key = normalizePhone(item.phone);
+    if (!key || used[key]) return false;
+    if (phones.indexOf(key) === -1) return false;
+    used[key] = true;
+    return true;
+  }).map(function(item){
+    return {
+      source: 'linked',
+      childName: item.childName || '',
+      phone: item.phone || '',
+      condition: item.condition || '',
+      actions: item.actions || '',
+      status: item.condition || item.actions || ''
+    };
+  });
+
+  const manualHealth = String(student.health || student.healthStatus || '').trim();
+  if (manualHealth) {
+    linked.unshift({
+      source: 'manual',
+      childName: student.name || '',
+      phone: student.dph || student.mph || '',
+      condition: manualHealth,
+      actions: '',
+      status: manualHealth
+    });
+  }
+  return linked;
+}
+function getStudentHealthSummary(student) {
+  const items = getStudentHealthNotes(student);
+  const seen = {};
+  return items.map(function(item){ return String(item.status || item.condition || '').trim(); })
+    .filter(function(v){
+      if (!v || seen[v]) return false;
+      seen[v] = true;
+      return true;
+    })
+    .join('، ');
+}
+
 var nextStuId = 200;
-var nextPayId = 3000;
+var nextPayId = 1;
 var nextExpId = 600;
 var nextRenId = 51;
+
+function refreshNextIds(){
+  if (Array.isArray(students) && students.length) nextStuId = Math.max.apply(null, students.map(function(s){ return s.id || 0; }).concat([199])) + 1;
+  else nextStuId = 200;
+
+  if (Array.isArray(payments) && payments.length) nextPayId = Math.max.apply(null, payments.map(function(p){ return p.id || 0; }).concat([0])) + 1;
+  else nextPayId = 1;
+
+  if (Array.isArray(expenses) && expenses.length) nextExpId = Math.max.apply(null, expenses.map(function(e){ return e.id || 0; }).concat([599])) + 1;
+  else nextExpId = 600;
+
+  if (Array.isArray(renewals) && renewals.length) nextRenId = Math.max.apply(null, renewals.map(function(r){ return r.id || 0; }).concat([50])) + 1;
+  else nextRenId = 51;
+}
 
 let deletedStudents = JSON.parse(localStorage.getItem('kp_deleted_students') || '[]');
 let tombstones = JSON.parse(localStorage.getItem('kp_tombstones') || '{"students":[],"payments":[],"expenses":[],"renewals":[]}');
@@ -1918,19 +2004,26 @@ function renderStudents(){
   const q=document.getElementById('stu-search').value.toLowerCase();
   const cls=document.getElementById('stu-cls').value;
   const gen=document.getElementById('stu-gen').value;
-  let f=students.filter(s=>(!q||s.name.includes(q)||s.dad.includes(q)||s.mom.includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen));
+  let f=students.filter(s=>(!q||s.name.includes(q)||s.dad.includes(q)||s.mom.includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen)).map(function(s){
+    const healthItems = getStudentHealthNotes(s);
+    return Object.assign({}, s, { healthSummary: getStudentHealthSummary(s) });
+  });
   if (tableSortState['stu-table']) f = applyTableSort('stu-table', f);
   const stuTheadEl = document.getElementById('stu-thead');
   if (stuTheadEl) stuTheadEl.innerHTML = sortableHead('stu-table', [
-    ['id','#'], ['name','اسم الطالب'], ['dob','تاريخ الميلاد'], ['gen','الجنس'],
+    ['id','#'], ['name','اسم الطالب'], ['healthSummary','الحالة الصحية'], ['dob','تاريخ الميلاد'], ['gen','الجنس'],
     ['nat','الجنسية'], ['cls','الفصل'], ['dad','اسم الأب'], ['dph','هاتف الأب'],
     ['mph','هاتف الأم'], ['addr','العنوان'], ['','إجراءات']
   ]);
   document.getElementById('stu-count').textContent=`الطلاب (${f.length})`;
-  document.getElementById('stu-tbody').innerHTML=f.map((s,i)=>`
+  document.getElementById('stu-tbody').innerHTML=f.map((s,i)=>{
+    const healthItems = getStudentHealthNotes(s);
+    const healthSummary = getStudentHealthSummary(s) || '—';
+    return `
     <tr>
       <td><b>#${s.id}</b></td>
       <td><b>${s.name}</b>${(s.note||s.notes) ? `<div style="font-size:11px;color:#e67e22;margin-top:2px;font-weight:600">📝 ${s.note||s.notes}</div>` : ''}</td>
+      <td style="font-size:12px">${healthSummary !== '—' ? `<span class="b br">⚕️ ${healthSummary}</span>` : '—'}</td>
       <td>${formatDate(s.dob)}</td>
       <td><span class="b ${s.gen==='ذكر'?'bb':'bo'}">${s.gen}</span></td>
       <td>${(NATIONALITIES_SHORT[s.nat]||'')+'  '+s.nat}</td>
@@ -1941,7 +2034,7 @@ function renderStudents(){
         <button class="btn btn-out btn-sm" onclick="viewStudentProfile(${s.id})" title="عرض الملف الكامل">👁</button><button class="btn btn-out btn-sm" onclick="editStudent(${s.id})" title="تعديل">✏️</button>
         <button class="btn btn-r btn-sm" onclick="delStudent(${s.id})">🗑</button>
       </td>
-    </tr>`).join('');
+    </tr>`}).join('');
 }
 
 function formatDate(d){
@@ -1954,7 +2047,7 @@ function openAddStudent(){
   populateClassDropdowns();
   editingStuId=null;
   document.getElementById('mo-stu-title').textContent='➕ إضافة طالب جديد';
-  ['ns-name','ns-dob','ns-nat','ns-bpl','ns-dad','ns-job','ns-dph','ns-mom','ns-mph','ns-addr','ns-note'].forEach(id=>document.getElementById(id).value='');
+  ['ns-name','ns-dob','ns-nat','ns-bpl','ns-dad','ns-job','ns-dph','ns-mom','ns-mph','ns-addr','ns-health','ns-note'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('ns-gen').value='ذكر';
   document.getElementById('ns-cls').value='النحل';
   document.getElementById('mo-student').classList.add('on');
@@ -2042,6 +2135,114 @@ function printStudentPayments(studentId) {
   w.document.close();
 }
 
+function printStudentFullFile(studentId) {
+  const s = students.find(function(x){ return x.id === studentId; });
+  if (!s) return;
+
+  const pays = payments
+    .filter(function(p){ return p.stuId === studentId; })
+    .sort(function(a,b){ return normalizeDate(b.date||'').localeCompare(normalizeDate(a.date||'')); });
+
+  const docs = [
+    ['صورة الطفل', s.imgChildPhoto],
+    ['الهوية الإماراتية', s.imgEmiratesId],
+    ['جواز السفر', s.imgPassport],
+    ['شهادة الميلاد', s.imgBirthCert],
+    ['شهادة التطعيم', s.imgVaccination],
+    ['إقامة الطفل', s.imgResidency],
+    ['هوية ولي الأمر', s.imgGuardianId],
+    ['جواز ولي الأمر', s.imgGuardianPass],
+  ].filter(function(d){ return d[1]; });
+
+  const healthNotes = getStudentHealthNotes(s);
+  const healthHtml = healthNotes.length ?
+    '<div class="health-box">' +
+      healthNotes.map(function(item){
+        return '<div class="health-card">' +
+          '<div class="health-row"><b>مصدر البيان:</b> ' + (item.source === 'manual' ? 'إدخال يدوي في ملف الطالب' : 'ملف الحساسية المرتبط') + '</div>' +
+          '<div class="health-row"><b>الاسم:</b> ' + (item.childName || s.name || '—') + '</div>' +
+          '<div class="health-row"><b>رقم الهاتف:</b> <span dir="ltr">' + (item.phone || '—') + '</span></div>' +
+          '<div class="health-row"><b>الوضع الصحي والتوصيات:</b> ' + (item.condition || '—') + '</div>' +
+          '<div class="health-row"><b>الإجراءات المتبعة:</b> ' + (item.actions || '—') + '</div>' +
+        '</div>';
+      }).join('') +
+    '</div>'
+    : '<div class="health-empty">لا توجد بيانات صحية أو حساسية مسجلة لهذا الطالب.</div>';
+
+  const total = pays.reduce(function(sum, p){ return sum + (+p.amt || 0); }, 0);
+  const w = window.open('', '_blank', 'width=1100,height=900');
+  if (!w) { alert('يرجى السماح بالنوافذ المنبثقة'); return; }
+
+  const docCards = docs.length ? docs.map(function(d){
+    const rawUrl = d[1] || '';
+    const safeUrl = String(rawUrl).replace(/"/g, '&quot;');
+    const imgUrl = typeof driveImgUrl === 'function' ? driveImgUrl(rawUrl) : rawUrl;
+    const safeImgUrl = String(imgUrl).replace(/"/g, '&quot;');
+    const title = String(d[0] || 'مرفق');
+    return '' +
+      '<div class="doc-card">' +
+        '<div class="doc-title">' + title + '</div>' +
+        '<img src="' + safeImgUrl + '" alt="' + title + '" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';">' +
+        '<div class="doc-fallback" style="display:none">' +
+          '<div style="font-size:42px;margin-bottom:10px">📎</div>' +
+          '<div style="margin-bottom:10px">لا يمكن معاينة هذا المرفق داخل الصفحة</div>' +
+          '<a href="' + safeUrl + '" target="_blank">فتح الملف المرفق</a>' +
+        '</div>' +
+      '</div>';
+  }).join('') : '<div style="color:#777">لا توجد مرفقات</div>';
+
+  const payRows = pays.length ? pays.map(function(p, i){
+    return '<tr>' +
+      '<td>'+(i+1)+'</td>' +
+      '<td><b>#'+(p.id||'')+'</b></td>' +
+      '<td>'+(p.date||'—')+'</td>' +
+      '<td>'+(p.desc||'—')+'</td>' +
+      '<td>'+(p.method||'—')+'</td>' +
+      '<td>'+(+p.amt||0).toLocaleString()+' د.إ</td>' +
+      '<td>'+((p.note||'') || '—')+'</td>' +
+    '</tr>';
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:#777;padding:24px">لا توجد مدفوعات مسجلة</td></tr>';
+
+  w.document.write('<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>ملف الطالب - '+(s.name||'')+'</title><style>'+
+    'body{font-family:"Tajawal",Arial,sans-serif;padding:18px;color:#222;direction:rtl}'+
+    '.hdr{border-bottom:3px double #1e6b3f;margin-bottom:18px;padding-bottom:12px;text-align:center}'+
+    '.hdr h1{margin:0;color:#1e6b3f;font-size:26px}.hdr .sub{color:#666;font-size:13px;margin-top:4px}'+
+    '.sec{margin:18px 0}.sec h2{margin:0 0 10px;color:#1e6b3f;font-size:18px;border-right:5px solid #1e6b3f;padding-right:10px}'+
+    '.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.item{background:#f8fbf8;border:1px solid #dbe9db;border-radius:10px;padding:10px}.item b{color:#1e6b3f}'+
+    '.docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}'+
+    '.doc-card{border:1px solid #ddd;border-radius:12px;overflow:hidden;background:#fff;page-break-inside:avoid}'+
+    '.doc-title{padding:8px 10px;background:#f0f9f4;font-weight:700}'+
+    '.doc-card img{width:100%;max-height:360px;object-fit:contain;background:#fff;display:block}'+
+    '.doc-fallback{min-height:220px;padding:22px;align-items:center;justify-content:center;flex-direction:column;text-align:center;color:#666}'+
+    '.doc-fallback a{color:#1a5fa8;font-weight:700;text-decoration:none}'+
+    '.health-box{display:grid;grid-template-columns:1fr;gap:10px}'+
+    '.health-card{background:#fff8e8;border:1px solid #f1d28b;border-radius:12px;padding:12px}'+
+    '.health-row{margin-bottom:8px;line-height:1.8}.health-row:last-child{margin-bottom:0}.health-row b{color:#9a6400}.health-empty{background:#fafafa;border:1px dashed #ccc;border-radius:10px;padding:16px;color:#777}'+
+    'table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1e6b3f;color:#fff;padding:10px;text-align:right}td{padding:8px 10px;border-bottom:1px solid #eee}tr:nth-child(even) td{background:#fafafa}'+
+    '.sum{margin-top:12px;background:#eaf6ef;border-radius:10px;padding:12px;font-weight:700;color:#1e6b3f}.actions{margin:22px 0;text-align:center}.btn{padding:10px 18px;border:none;border-radius:8px;background:#1e6b3f;color:#fff;font-family:inherit;font-size:14px;cursor:pointer;margin:0 5px}.btn.gray{background:#777}'+
+    '@media print{.actions{display:none} body{padding:10px}.sec,.doc-card,table,.health-card{page-break-inside:avoid}}'+
+  '</style></head><body>'+
+    '<div class="hdr"><h1>👶 ملف الطالب الكامل</h1><div class="sub">'+((nurserySettings&&nurserySettings.name)||'حضانة حديقة الأطفال')+'</div></div>'+
+    '<div class="sec"><h2>البيانات الأساسية</h2><div class="grid">'+
+      '<div class="item"><b>اسم الطالب:</b> '+(s.name||'—')+'</div>'+
+      '<div class="item"><b>رقم الطالب:</b> #'+(s.id||'—')+'</div>'+
+      '<div class="item"><b>الفصل:</b> '+(s.cls||'—')+'</div>'+
+      '<div class="item"><b>تاريخ الميلاد:</b> '+(s.dob||'—')+'</div>'+
+      '<div class="item"><b>اسم الأب:</b> '+(s.dad||'—')+'</div>'+
+      '<div class="item"><b>هاتف الأب:</b> '+(s.dph||'—')+'</div>'+
+      '<div class="item"><b>اسم الأم:</b> '+(s.mom||'—')+'</div>'+
+      '<div class="item"><b>هاتف الأم:</b> '+(s.mph||'—')+'</div>'+
+      '<div class="item" style="grid-column:1/-1"><b>العنوان:</b> '+(s.addr||'—')+'</div>'+
+      '<div class="item" style="grid-column:1/-1"><b>ملاحظات:</b> '+(s.note||s.notes||'—')+'</div>'+
+    '</div></div>'+
+    '<div class="sec"><h2>الحالة الصحية والتوصيات</h2>'+healthHtml+'</div>'+
+    '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+total.toLocaleString()+' د.إ — عدد السندات: '+pays.length+'</div></div>'+
+    '<div class="sec"><h2>المرفقات والوثائق</h2><div class="docs">'+docCards+'</div></div>'+
+    '<div class="actions"><button class="btn" onclick="window.print()">🖨 طباعة</button><button class="btn gray" onclick="window.close()">إغلاق</button></div>'+
+  '</body></html>');
+  w.document.close();
+}
+
 function viewStudentProfile(id) {
   const s = students.find(x => x.id === id);
   if (!s) return;
@@ -2103,9 +2304,10 @@ function viewStudentProfile(id) {
         '<div><label style="font-size:11px;color:var(--muted)">صلة القرابة</label><div>' + (s.emergRel||'—') + '</div></div>' +
         '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + (s.emergMob||'—') + '</div></div>' +
       '</div>' : '') +
+    ((getStudentHealthSummary(s)) ? '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">⚕️ <b>الحالة الصحية / الحساسية:</b> ' + getStudentHealthSummary(s) + '</div>' : '') +
     (s.allergy === 'نعم' || String(s.allergy||'').toLowerCase().includes('yes') ?
       '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">' +
-      '⚠️ <b>حساسية:</b> ' + (s.allergyNote||s.allergyType||'يرجى المراجعة') + '</div>' : '') +
+      '⚠️ <b>حساسية إضافية:</b> ' + (s.allergyNote||s.allergyType||'يرجى المراجعة') + '</div>' : '') +
     (s.note || s.notes ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📝 ' + (s.note||s.notes) + '</div>' : '') +
     (s.sub_end ? '<div style="background:var(--gp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📅 <b>تاريخ انتهاء الاشتراك:</b> ' + s.sub_end + '</div>' : '') +
     '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px;border-top:1.5px solid var(--border);padding-top:10px">💰 المدفوعات (' + (function(){
@@ -2124,6 +2326,7 @@ function viewStudentProfile(id) {
     '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px;border-top:1.5px solid var(--border);padding-top:10px">📎 الوثائق المرفقة</div>' +
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">' + docsHtml + '</div>';
 
+  document.getElementById('mo-stu-profile-print').onclick = function() { printStudentFullFile(id); };
   document.getElementById('mo-stu-profile-edit').onclick = function() {
     document.getElementById('mo-stu-profile').classList.remove('on');
     setTimeout(function(){ editStudent(id); }, 200);
@@ -2154,6 +2357,7 @@ function editStudent(id){
   setVal('ns-mom',     s.mom);
   setVal('ns-mph',     s.mph);
   setVal('ns-addr',    s.addr);
+  setVal('ns-health',  s.health || s.healthStatus);
   setVal('ns-note',    s.note || s.notes);
   setVal('ns-sub-end', s.sub_end);
   document.getElementById('mo-student').classList.add('on');
@@ -2162,7 +2366,7 @@ function editStudent(id){
 function saveStudent(){
   const name=document.getElementById('ns-name').value.trim();
   if(!name){alert('اسم الطالب مطلوب');return;}
-  const data={name,dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,addr:document.getElementById('ns-addr').value,note:document.getElementById('ns-note').value,sub_end:(document.getElementById('ns-sub-end')||{}).value||''};
+  const data={name,dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,addr:document.getElementById('ns-addr').value,health:document.getElementById('ns-health').value.trim(),note:document.getElementById('ns-note').value,sub_end:(document.getElementById('ns-sub-end')||{}).value||''};
   if(editingStuId){
     const i=students.findIndex(x=>x.id===editingStuId);
     if(i>=0)students[i]={...students[i],...data};
@@ -2411,7 +2615,7 @@ function renderPayments(){
   const yr   = document.getElementById('pay-year') ? document.getElementById('pay-year').value : '';
   const sort = document.getElementById('pay-sort') ? document.getElementById('pay-sort').value : 'desc';
   let f = payments.filter(p =>
-    (!q || p.who.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q)) &&
+    (!q || p.who.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q) || String((p.internalNote || p.internal || p.internal_note || '')).toLowerCase().includes(q) || String(p.id).includes(q)) &&
     (!type || p.type === type) &&
     (!yr || getDateYear(p.date) === parseInt(yr))
   );
@@ -2430,7 +2634,7 @@ function renderPayments(){
   const theadEl = document.getElementById('pay-thead');
   if (theadEl) theadEl.innerHTML = sortableHead('pay-table', [
     ['id','#السند'], ['who','ولي الأمر'], ['amt','المبلغ'], ['desc','البيان'],
-    ['type','النوع'], ['method','طريقة الدفع'], ['date','التاريخ'], ['rcvr','المستلم'], ['','']
+    ['internalNote','ملاحظات داخلية'], ['type','النوع'], ['method','طريقة الدفع'], ['date','التاريخ'], ['rcvr','المستلم'], ['','']
   ]);
   const total=f.reduce((s,p)=>s+p.amt,0);
   document.getElementById('pay-total').textContent=total.toLocaleString();
@@ -2441,7 +2645,8 @@ function renderPayments(){
       <td><b>#${p.id}</b></td>
       <td>${p.who}</td>
       <td class="fin-pos"><b>${p.amt.toLocaleString()} د.إ</b></td>
-      <td style="font-size:12.5px">${p.desc}${p.internalNote ? `<div class="no-print" style="margin-top:3px;padding:3px 8px;background:#fff8e1;border-right:3px solid #f39c12;border-radius:5px;font-size:11px;color:#b8860b;font-weight:600">🔒 ${p.internalNote}</div>` : ""}</td>
+      <td style="font-size:12.5px">${p.desc}</td>
+      <td style="font-size:12px">${(p.internalNote || p.internal || p.internal_note) ? `<div style="padding:3px 8px;background:#fff8e1;border-right:3px solid #f39c12;border-radius:5px;color:#b8860b;font-weight:600">🔒 ${p.internalNote || p.internal || p.internal_note}</div>` : '<span style="color:#999">—</span>'}</td>
       <td><span class="b bgr">${p.type}</span></td>
       <td>${p.method}</td><td>${p.date}</td><td>${p.rcvr}</td>
       <td style="display:flex;gap:5px"><button class="btn btn-out btn-sm" onclick="openReceiptDetail(${p.id})">🧾 سند</button><button class="btn btn-out btn-sm" onclick="openEditPay(${p.id})">✏️</button></td>
@@ -2529,12 +2734,14 @@ function lookupStudentForPay(idVal) {
 function openAddPay(){
   editingPayId = null;
   document.getElementById('np-date').value=new Date().toISOString().slice(0,10);
-  ['np-who','np-amt','np-desc','np-rcvr','np-note','np-stuid'].forEach(id=>{
+  ['np-who','np-amt','np-desc','np-rcvr','np-note','np-stuid','np-id'].forEach(id=>{
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
   const info = document.getElementById('np-stuinfo');
   if (info) info.style.display = 'none';
+  document.getElementById('np-id').value = nextPayId;
+  document.getElementById('np-id').disabled = !(currentUser && currentUser.role === 'admin');
   document.getElementById('mo-pay-title').textContent = '💰 تسجيل دفعة جديدة';
   document.getElementById('pay-del-btn').style.display = 'none';
   document.getElementById('pay-save-btn').textContent = '💾 تسجيل';
@@ -2547,13 +2754,15 @@ function openEditPay(id){
   document.getElementById('np-who').value   = p.who;
   document.getElementById('np-amt').value   = p.amt;
   document.getElementById('np-desc').value  = p.desc;
+  document.getElementById('np-id').value    = p.id;
+  document.getElementById('np-id').disabled = !(currentUser && currentUser.role === 'admin');
   document.getElementById('np-date').value  = normalizeDate(p.date);
   document.getElementById('np-rcvr').value  = p.rcvr||'';
   document.getElementById('np-note').value  = p.note||'';
   document.getElementById('np-type').value  = p.type||'قسط شهري';
   document.getElementById('np-method').value= p.method||'نقدي';
   const intEl = document.getElementById('np-internal');
-  if (intEl) intEl.value = p.internalNote || '';
+  if (intEl) intEl.value = p.internalNote || p.internal || p.internal_note || '';
   const stuidEl = document.getElementById('np-stuid');
   const searchEl = document.getElementById('np-stusearch');
   if (stuidEl) stuidEl.value = p.stuId || '';
@@ -2581,34 +2790,73 @@ function deletePayment(){
 }
 
 function savePayment(){
-  const who=document.getElementById('np-who').value.trim();
-  const amt=+document.getElementById('np-amt').value;
-  const desc=document.getElementById('np-desc').value.trim();
-  if(!who||!amt||!desc){alert('يرجى تعبئة الحقول المطلوبة');return;}
+  const who = document.getElementById('np-who').value.trim();
+  const amt = +document.getElementById('np-amt').value;
+  const desc = document.getElementById('np-desc').value.trim();
+  const idInput = document.getElementById('np-id');
+  const internalValue = (document.getElementById('np-internal') || {}).value || '';
+  if(!who || !amt || !desc){ alert('يرجى تعبئة الحقول المطلوبة'); return; }
+
   if(editingPayId){
-    const p=payments.find(x=>x.id===editingPayId); if(!p) return;
-    p.who=who; p.amt=amt; p.desc=desc;
-    p.type=document.getElementById('np-type').value;
-    p.method=document.getElementById('np-method').value;
-    p.date=document.getElementById('np-date').value;
-    p.rcvr=document.getElementById('np-rcvr').value;
-    p.note=document.getElementById('np-note').value;
-    p.stuId = parseInt((document.getElementById('np-stuid')||{}).value) || p.stuId || null;
-    closeAll();renderPayments();renderReceipts();renderDash();
-    autoSave(); alert('✅ تم تعديل السند #'+editingPayId);
+    const p = payments.find(function(x){ return x.id === editingPayId; });
+    if(!p) return;
+    const oldId = p.id;
+    p.who = who;
+    p.amt = amt;
+    p.desc = desc;
+    p.type = document.getElementById('np-type').value;
+    p.method = document.getElementById('np-method').value;
+    p.date = document.getElementById('np-date').value;
+    p.rcvr = document.getElementById('np-rcvr').value;
+    p.note = document.getElementById('np-note').value;
+    p.internalNote = internalValue;
+    p.stuId = parseInt((document.getElementById('np-stuid')||{}).value) || null;
+
+    if (currentUser && currentUser.role === 'admin') {
+      const requestedId = parseInt(idInput && idInput.value);
+      if (requestedId && requestedId !== oldId) {
+        if (payments.some(function(x){ return x.id === requestedId && x !== p; })) { alert('رقم الإيصال مستخدم مسبقاً'); return; }
+        p.id = requestedId;
+      }
+    }
+
+    refreshNextIds();
+    closeAll();
+    renderPayments();
+    renderReceipts();
+    renderDash();
+    autoSave();
+    alert('✅ تم تعديل السند #' + p.id);
   } else {
+    let newId = nextPayId;
+    if (currentUser && currentUser.role === 'admin') {
+      const requestedId = parseInt(idInput && idInput.value);
+      if (requestedId) newId = requestedId;
+    }
+    if (payments.some(function(x){ return x.id === newId; })) { alert('رقم الإيصال مستخدم مسبقاً'); return; }
+
     const stuid = parseInt((document.getElementById('np-stuid')||{}).value) || null;
-    const p={id:nextPayId++,who,amt,desc,
-      type:document.getElementById('np-type').value,
-      method:document.getElementById('np-method').value,
-      date:document.getElementById('np-date').value,
-      rcvr:document.getElementById('np-rcvr').value,
-      note:document.getElementById('np-note').value,
+    const p = {
+      id: newId,
+      who: who,
+      amt: amt,
+      desc: desc,
+      type: document.getElementById('np-type').value,
+      method: document.getElementById('np-method').value,
+      date: document.getElementById('np-date').value,
+      rcvr: document.getElementById('np-rcvr').value,
+      note: document.getElementById('np-note').value,
+      internalNote: internalValue,
       stuId: stuid
     };
     payments.push(p);
-    closeAll();renderPayments();renderDash();
-    autoSave(); alert('✅ تم تسجيل الدفعة بنجاح (#'+p.id+')');
+    refreshNextIds();
+    closeAll();
+    renderPayments();
+    renderReceipts();
+    renderDash();
+    autoSave();
+    alert('✅ تم تسجيل الدفعة بنجاح (#' + p.id + ')');
   }
 }
 
@@ -2642,13 +2890,34 @@ function renderExpenses(){
       <td>${e.date}</td>
       <td>${e.method}</td>
       <td style="font-size:12px">${e.note}</td>
-      <td><button class="btn btn-r btn-sm" onclick="delExpense(${e.id})">🗑</button></td>
+      <td style="display:flex;gap:5px"><button class="btn btn-out btn-sm" onclick="openEditExp(${e.id})">✏️</button><button class="btn btn-r btn-sm" onclick="delExpense(${e.id})">🗑</button></td>
     </tr>`).join('');
 }
 
 function openAddExp(){
+  editingExpId = null;
   document.getElementById('ne-date').value=new Date().toISOString().slice(0,10);
   ['ne-desc','ne-amt','ne-note'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('ne-cat').value = 'رواتب';
+  document.getElementById('ne-method').value = 'نقدي';
+  document.getElementById('mo-exp-title').textContent = '🧾 إضافة مصروف جديد';
+  document.getElementById('exp-del-btn').style.display = 'none';
+  document.getElementById('exp-save-btn').textContent = '💾 حفظ المصروف';
+  document.getElementById('mo-exp').classList.add('on');
+}
+
+function openEditExp(id){
+  const e = expenses.find(x=>x.id===id); if(!e) return;
+  editingExpId = id;
+  document.getElementById('ne-desc').value = e.desc||'';
+  document.getElementById('ne-amt').value = e.amt||'';
+  document.getElementById('ne-date').value = normalizeDate(e.exp_date || e.date);
+  document.getElementById('ne-cat').value = e.cat||'أخرى';
+  document.getElementById('ne-method').value = e.method||'نقدي';
+  document.getElementById('ne-note').value = e.note||'';
+  document.getElementById('mo-exp-title').textContent = '✏️ تعديل المصروف #' + id;
+  document.getElementById('exp-del-btn').style.display = 'inline-flex';
+  document.getElementById('exp-save-btn').textContent = '💾 حفظ التعديل';
   document.getElementById('mo-exp').classList.add('on');
 }
 
@@ -2656,18 +2925,35 @@ function saveExpense(){
   const desc=document.getElementById('ne-desc').value.trim();
   const amt=+document.getElementById('ne-amt').value;
   if(!desc||!amt){alert('يرجى تعبئة الحقول المطلوبة');return;}
-  expenses.push({id:nextExpId++,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:document.getElementById('ne-date').value,note:document.getElementById('ne-note').value});
-  closeAll();renderExpenses();
-  autoSave(); alert('✅ تم حفظ المصروف بنجاح');
+  if (editingExpId) {
+    const e = expenses.find(x=>x.id===editingExpId); if(!e) return;
+    e.desc = desc;
+    e.amt = amt;
+    e.cat = document.getElementById('ne-cat').value;
+    e.method = document.getElementById('ne-method').value;
+    e.date = document.getElementById('ne-date').value;
+    e.note = document.getElementById('ne-note').value;
+    closeAll();renderExpenses();renderDash();
+    autoSave(); alert('✅ تم تعديل المصروف بنجاح');
+  } else {
+    expenses.push({id:nextExpId++,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:document.getElementById('ne-date').value,note:document.getElementById('ne-note').value});
+    closeAll();renderExpenses();renderDash();
+    autoSave(); alert('✅ تم حفظ المصروف بنجاح');
+  }
 }
 
 function delExpense(id){
+  const delId = id || editingExpId;
+  if(!delId) return;
   if(!confirm('حذف هذا المصروف؟'))return;
-  expenses=expenses.filter(e=>e.id!==id);
-  addTombstone('expenses', id);
+  expenses=expenses.filter(e=>e.id!==delId);
+  addTombstone('expenses', delId);
+  closeAll();
   autoSave(); renderExpenses(); renderDash();
 }
 
+// ============================================================
+// RECEIPTS
 // ============================================================
 // RECEIPTS
 // ============================================================
@@ -2815,6 +3101,7 @@ const IMPORT_SCHEMAS = {
       { key: 'mph', label: 'هاتف الأم', sample: '0509876543' },
       { key: 'addr', label: 'العنوان', sample: 'الشارقة' },
       { key: 'sub_end', label: 'انتهاء الاشتراك', sample: '2026-08-31' },
+      { key: 'health', label: 'الحالة الصحية', sample: '' },
       { key: 'note', label: 'ملاحظات', sample: '' },
     ]
   },
@@ -2931,10 +3218,7 @@ function restoreBackup(event) {
       if (backup.nurserySettings) Object.assign(nurserySettings, backup.nurserySettings);
       if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(backup.kp_users));
       if (backup.kp_form_rows) { localStorage.setItem('kp_form_rows', JSON.stringify(backup.kp_form_rows)); syncedFormRows = backup.kp_form_rows; }
-      if (students.length) nextStuId = Math.max.apply(null, students.map(function(s){return s.id||0;})) + 1;
-      if (payments.length) nextPayId = Math.max.apply(null, payments.map(function(p){return p.id||0;}).concat([3000])) + 1;
-      if (expenses.length) nextExpId = Math.max.apply(null, expenses.map(function(e){return e.id||0;})) + 1;
-      if (renewals.length) nextRenId = Math.max.apply(null, renewals.map(function(r){return r.id||0;})) + 1;
+      refreshNextIds();
       autoSave();
       renderDash();
       if (typeof renderStudents === 'function') renderStudents();
@@ -3037,7 +3321,7 @@ function doImport() {
   if (importTarget === 'students') {
     importParsedData.forEach(function(item){
       if (!item.name || !item.cls) return;
-      students.push({ id: nextStuId++, name:item.name, dob:item.dob, gen:item.gen||'ذكر', nat:item.nat, cls:item.cls, bpl:item.bpl, dad:item.dad, job:item.job, dph:item.dph, mom:item.mom, mph:item.mph, addr:item.addr, note:item.note, sub_end:item.sub_end });
+      students.push({ id: nextStuId++, name:item.name, dob:item.dob, gen:item.gen||'ذكر', nat:item.nat, cls:item.cls, bpl:item.bpl, dad:item.dad, job:item.job, dph:item.dph, mom:item.mom, mph:item.mph, addr:item.addr, health:item.health||item.healthStatus||'', note:item.note, sub_end:item.sub_end });
       added++;
     });
     renderStudents();
@@ -3116,8 +3400,8 @@ function doExport(){
 
   const dataMap = {
     students: {
-      cols: ['#','اسم الطالب','تاريخ الميلاد','الجنس','الجنسية','الفصل','اسم الأب','عمل الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان','انتهاء الاشتراك','ملاحظات'],
-      rows: students.map(function(s,i){ return [i+1, s.name||'', s.dob||'', s.gen||'', s.nat||'', s.cls||'', s.dad||'', s.job||'', s.dph||'', s.mom||'', s.mph||'', s.addr||'', s.sub_end||'', s.note||s.notes||'']; })
+      cols: ['#','اسم الطالب','الحالة الصحية','تاريخ الميلاد','الجنس','الجنسية','الفصل','اسم الأب','عمل الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان','انتهاء الاشتراك','ملاحظات'],
+      rows: students.map(function(s,i){ return [i+1, s.name||'', getStudentHealthSummary(s)||s.health||'', s.dob||'', s.gen||'', s.nat||'', s.cls||'', s.dad||'', s.job||'', s.dph||'', s.mom||'', s.mph||'', s.addr||'', s.sub_end||'', s.note||s.notes||'']; })
     },
     payments: {
       cols: ['#السند','ولي الأمر','المبلغ (د.إ)','البيان','النوع','طريقة الدفع','التاريخ','المستلم','ملاحظات'],
@@ -3181,7 +3465,7 @@ function doPrintExport(){
   let html=`<html dir="rtl"><head><meta charset="UTF-8"><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet"><style>body{font-family:'Tajawal',sans-serif;font-size:12px}table{width:100%;border-collapse:collapse}th{background:#eaf6ef;color:#1e6b3f;padding:7px;border:1px solid #d2e5d2}td{padding:6px;border:1px solid #eee}.title{font-size:18px;font-weight:900;margin-bottom:10px;color:#1e6b3f}</style></head><body>
   <div class="title">حضانة حديقة الأطفال — ${names[exportTarget]||exportTarget}</div>
   <div style="font-size:11px;color:#666;margin-bottom:10px">تاريخ التصدير: ${new Date().toLocaleDateString('ar-AE')}</div><table>`;
-  const dataMap={students:{cols:['#','الاسم','الميلاد','الجنس','الجنسية','الفصل','الأب','هاتف الأب','هاتف الأم','العنوان'],rows:students.map((s,i)=>[i+1,s.name,formatDate(s.dob),s.gen,s.nat,s.cls,s.dad,s.dph,s.mph,s.addr])},payments:{cols:['#','ولي الأمر','المبلغ','البيان','النوع','الطريقة','التاريخ','المستلم'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.type,p.method,p.date,p.rcvr])},expenses:{cols:['#','البيان','المبلغ','الفئة','التاريخ'],rows:expenses.map(e=>[e.id,e.desc,e.amt+' د.إ',e.cat,e.date])},finance:{cols:['الشهر','الإيرادات','المصاريف','الصافي'],rows:finData.map(d=>[d.month,d.inc.toLocaleString(),d.exp.toLocaleString(),(d.inc-d.exp).toLocaleString()])},attendance:{cols:['التاريخ','الفصل','الطالب','الحالة'],rows:Object.entries(attLog).filter(([,v])=>v).map(([k,v])=>{const[date,idStr]=k.split('_');const s=students.find(x=>x.id===+idStr);return s?[date,s.cls,s.name,v==='present'?'حاضر':v==='absent'?'غائب':'متأخر']:null;}).filter(Boolean)},receipts:{cols:['#','ولي الأمر','المبلغ','البيان','التاريخ'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.date])}};
+  const dataMap={students:{cols:['#','الاسم','الحالة الصحية','الميلاد','الجنس','الجنسية','الفصل','الأب','هاتف الأب','هاتف الأم','العنوان'],rows:students.map((s,i)=>[i+1,s.name,getStudentHealthSummary(s)||'',formatDate(s.dob),s.gen,s.nat,s.cls,s.dad,s.dph,s.mph,s.addr])},payments:{cols:['#','ولي الأمر','المبلغ','البيان','النوع','الطريقة','التاريخ','المستلم'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.type,p.method,p.date,p.rcvr])},expenses:{cols:['#','البيان','المبلغ','الفئة','التاريخ'],rows:expenses.map(e=>[e.id,e.desc,e.amt+' د.إ',e.cat,e.date])},finance:{cols:['الشهر','الإيرادات','المصاريف','الصافي'],rows:finData.map(d=>[d.month,d.inc.toLocaleString(),d.exp.toLocaleString(),(d.inc-d.exp).toLocaleString()])},attendance:{cols:['التاريخ','الفصل','الطالب','الحالة'],rows:Object.entries(attLog).filter(([,v])=>v).map(([k,v])=>{const[date,idStr]=k.split('_');const s=students.find(x=>x.id===+idStr);return s?[date,s.cls,s.name,v==='present'?'حاضر':v==='absent'?'غائب':'متأخر']:null;}).filter(Boolean)},receipts:{cols:['#','ولي الأمر','المبلغ','البيان','التاريخ'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.date])}};
   const d=dataMap[exportTarget];
   if(d){
     html+=`<thead><tr>${d.cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
@@ -3742,11 +4026,11 @@ function buildReceiptHTML(p) {
         </td>
         <td style="border:1px solid #000;padding:6px 10px;text-align:left">
           <div style="font-size:10px;color:#777">Amount المبلغ:</div>
-          <div style="font-weight:900;font-size:16px">${p.amt.toLocaleString()}</div>
+          <div style="font-weight:900;font-size:16px">${(+p.amt||0).toLocaleString()}</div>
         </td>
         <td style="border:1px solid #000;padding:6px 10px">
           <div style="font-size:10px;color:#777">طريقة الدفع</div>
-          <div style="font-weight:700">${p.method}</div>
+          <div style="font-weight:700">${p.method||''}</div>
         </td>
       </tr>
     </table>
@@ -3756,21 +4040,21 @@ function buildReceiptHTML(p) {
           <div style="font-size:11px;color:#555;font-weight:700">استلمنا من السيد</div>
           <div style="font-size:10px;color:#888;font-style:italic">We have received from</div>
         </td>
-        <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:14px;font-weight:600">${p.who}</td>
+        <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:14px;font-weight:600">${p.who||''}</td>
       </tr>
       <tr>
         <td style="border:1px solid #000;padding:6px 10px;text-align:right;background:#f9f9f9">
           <div style="font-size:11px;color:#555;font-weight:700">مبلغ وقدره</div>
           <div style="font-size:10px;color:#888;font-style:italic">Amount of</div>
         </td>
-        <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:13px;font-weight:600">${p.amtWords||amtToWords(p.amt)}</td>
+        <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:13px;font-weight:600">${p.amtWords||amtToWords(+p.amt||0)}</td>
       </tr>
       <tr>
         <td style="border:1px solid #000;padding:6px 10px;text-align:right;background:#f9f9f9">
           <div style="font-size:11px;color:#555;font-weight:700">وذلك مقابل</div>
           <div style="font-size:10px;color:#888;font-style:italic">and this is for</div>
         </td>
-        <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:13px;font-weight:600">${p.desc}</td>
+        <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:13px;font-weight:600">${p.desc||''}</td>
       </tr>
     </table>
     <table style="width:100%;border-collapse:collapse;border:1px solid #000;margin-bottom:6px">
@@ -3782,7 +4066,7 @@ function buildReceiptHTML(p) {
         <div style="font-weight:900;font-size:13px">المستلم &nbsp; Recipient</div>
         <div style="border-bottom:2px solid #000;width:160px;padding-bottom:2px;margin-top:4px">${p.rcvr||''}</div>
       </div>
-      <div style="text-align:left"><span style="font-weight:900">Date: &nbsp;</span>${p.date}&nbsp;&nbsp;&nbsp;<span style="font-weight:900">:التاريخ</span></div>
+      <div style="text-align:left"><span style="font-weight:900">Date: &nbsp;</span>${p.date||''}&nbsp;&nbsp;&nbsp;<span style="font-weight:900">:التاريخ</span></div>
     </div>
     <table style="width:100%;border-collapse:collapse;border:2px solid #000">
       <tr>
@@ -3796,18 +4080,17 @@ function buildReceiptHTML(p) {
         </td>
       </tr>
       <tr>
-        <td style="border:1px solid #000;padding:7px 10px" colspan="2">
-          <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
-            <div><b>Address:</b> ${nurserySettings.addr_en}</div>
-            <div style="text-align:right"><b>:العنوان</b> ${nurserySettings.addr_ar}</div>
-          </div>
+        <td style="border:1px solid #000;padding:10px;text-align:center" colspan="2">
+          <div style="font-weight:900;margin-bottom:5px">العنوان | Address</div>
+          <div style="font-size:12px;line-height:1.8;text-align:center">${nurserySettings.addr_ar||''}</div>
+          <div style="font-size:12px;line-height:1.8;text-align:center" dir="ltr">${nurserySettings.addr_en||''}</div>
         </td>
       </tr>
       <tr>
-        <td style="border:1px solid #000;padding:7px 10px" colspan="2">
-          <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
-            <div><b>Mobile:</b> ${nurserySettings.phone} &nbsp; <b>E-Mail:</b> ${nurserySettings.email}</div>
-            <div><b>:موبايل</b> &nbsp; <b>:البريد الإلكتروني</b></div>
+        <td style="border:1px solid #000;padding:10px;text-align:center" colspan="2">
+          <div style="font-size:12px;line-height:2;text-align:center">
+            <div><b>الموبايل | Mobile:</b> <span dir="ltr">${nurserySettings.phone||''}</span></div>
+            <div><b>البريد الإلكتروني | E-Mail:</b> <span dir="ltr">${nurserySettings.email||''}</span></div>
           </div>
         </td>
       </tr>
@@ -3827,6 +4110,7 @@ window.addEventListener('DOMContentLoaded', () => {
     ]));
   }
   // Load users from Firebase BEFORE showing login screen
+  refreshNextIds();
   fetch('https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data/kp_users.json')
     .then(function(res) { return res.json(); })
     .then(function(data) {
@@ -4115,10 +4399,7 @@ async function loadFromFirebase() {
     if (data.CLASSES)         Object.assign(CLASSES, data.CLASSES);
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
     if (data.kp_users && data.kp_users.length) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
-    if (students.length) nextStuId = Math.max.apply(null, students.map(function(s){return s.id||0;})) + 1;
-    if (payments.length) nextPayId = Math.max.apply(null, payments.map(function(p){return p.id||0;}).concat([3000])) + 1;
-    if (expenses.length) nextExpId = Math.max.apply(null, expenses.map(function(e){return e.id||0;})) + 1;
-    if (renewals.length) nextRenId = Math.max.apply(null, renewals.map(function(r){return r.id||0;})) + 1;
+    refreshNextIds();
     lastSavedAt = data.savedAt || '';
     renderDash();
     showSyncBadge('✅ تم التحميل');
