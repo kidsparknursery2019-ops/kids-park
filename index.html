@@ -277,12 +277,7 @@ textarea{resize:vertical;min-height:65px}
 @media print {
   .sidebar, .hdr, .no-print { display: none !important; }
   body { background: white !important; padding: 0 !important; }
-  .pg { display: none !important; }
-  #pg-finreport { display: block !important; }
-  #pg-finreport #fr-results,
-  #pg-finreport .card,
-  #pg-finreport table,
-  #pg-finreport .tw { display: block !important; visibility: visible !important; }
+  .pg:not(#pg-finreport) { display: none !important; }
   .card { page-break-inside: avoid; box-shadow: none !important; border: 1.5px solid #ccc !important; }
 }
 </style>
@@ -4351,11 +4346,13 @@ function applyLogin() {
   if (yfInit) yfInit.value = String(dashYear);
 
   if (typeof applyTombstones === 'function') applyTombstones();
-  // لا تقم بأي اعتماد/حفظ قبل تحميل بيانات Firebase أولاً
-  // حتى لا يتم دفع بيانات محلية ناقصة إلى السحابة عند أول تسجيل دخول من جهاز جديد
-  let bulkApprovedNow = 0;
-  // عرض البيانات المحلية فوراً فقط
+  // اعتماد جماعي لمطابقات السندات المقترحة الحالية (مرة واحدة فقط)
+  let bulkApprovedNow = runOneTimeBulkMatchApproval();
+  // عرض البيانات المحلية فوراً
   renderDash();
+  if (bulkApprovedNow > 0) {
+    setTimeout(function(){ alert('✅ تم اعتماد ' + bulkApprovedNow + ' عملية ربط بين السندات وملفات الطلاب'); }, 300);
+  }
   setTimeout(updateNotifications, 500);
   // تحميل من Firebase وتحديث عند الانتهاء
   loadFromFirebase().then(() => {
@@ -4957,8 +4954,6 @@ const FB_LOGO_URL = FB_URL + '/branding/logoDataUrl';
 let isSyncing = false;
 let syncTimeout = null;
 let lastSavedAt = '';
-let cloudReadyForSave = false;
-let pendingCloudSave = false;
 
 function getAllData() {
   const cleanSettings = Object.assign({}, nurserySettings);
@@ -4974,10 +4969,6 @@ function getAllData() {
 }
 
 function autoSave() {
-  if (!cloudReadyForSave) {
-    pendingCloudSave = true;
-    return;
-  }
   clearTimeout(syncTimeout);
   syncTimeout = setTimeout(pushToFirebase, 10);
 }
@@ -5287,7 +5278,6 @@ async function loadFromFirebase() {
     updateLogoDisplay();
     refreshNextIds();
     lastSavedAt = data.savedAt || '';
-    cloudReadyForSave = true;
     renderDash();
     if (shouldProtectLocalStudents || shouldProtectLocalPayments) {
       const warnings = [];
@@ -5297,10 +5287,6 @@ async function loadFromFirebase() {
     } else {
       showSyncBadge('✅ تم التحميل');
     }
-    if (pendingCloudSave) {
-      pendingCloudSave = false;
-      autoSave();
-    }
   } catch(e) {
     const msg = (e && e.message) ? e.message : 'unknown';
     if (msg.indexOf('null') >= 0 || msg.indexOf('undefined') >= 0) {
@@ -5309,7 +5295,6 @@ async function loadFromFirebase() {
       showSyncBadge('📴 بدون إنترنت — بيانات محلية');
     }
     console.log('Firebase load failed:', msg);
-    cloudReadyForSave = true;
     sanitizeCoreData();
     try { refreshNextIds(); renderDash(); if (typeof renderStudents==='function') renderStudents(); if (typeof renderPayments==='function') renderPayments(); if (typeof renderExpenses==='function') renderExpenses(); if (typeof renderReceipts==='function') renderReceipts(); if (typeof renderAtt==='function') renderAtt(); } catch(_) {}
   }
@@ -5404,15 +5389,15 @@ async function syncFromGoogleSheets() {
       var name = (firstName + ' ' + lastName).trim();
       if (!name) return;
       var gv = g(4);
+      var gvNorm = (gv || '').toLowerCase();
       syncedFormRows.push({
         timestamp: ts, name: name,
         dob: g(3),
-        gen: ((gv || '').toLowerCase().includes('male') || gv.includes('ذكر')) ? 'ذكر'
-             : (((gv || '').toLowerCase().includes('female') || gv.includes('أنثى') || gv.includes('انثى')) ? 'انثى' : ''),
+        gen: (gv.includes('ذكر') || gvNorm.startsWith('male')) ? 'ذكر' : ((gv.includes('أنثى') || gv.includes('انثى') || gvNorm.startsWith('female')) ? 'انثى' : ''),
         emiratesId: g(5), nat: g(6), passport: g(7), religion: g(8),
         addr: g(11),
-        dadFull: g(12), dadMob: g(15), dadJob: g(16), dadEmail: g(18),
-        momFull: g(21), momMob: g(24), momJob: g(25),
+        dadFull: g(21), dadMob: g(15), dadJob: g(16), dadEmail: g(18),
+        momFull: g(12), momMob: g(24), momJob: g(25),
         emergName: g(30), emergRel: g(31), emergMob: g(32),
         notes: g(35), allergy: g(41), allergyNote: g(42), allergyType: g(43),
         imgEmiratesId:   g(44),
