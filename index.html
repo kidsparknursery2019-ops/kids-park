@@ -1184,6 +1184,21 @@ if (!tombstones.payments) tombstones.payments = [];
 if (!tombstones.expenses) tombstones.expenses = [];
 if (!tombstones.renewals) tombstones.renewals = [];
 
+
+function sanitizeEntityArray(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.filter(function(item){
+    return item && typeof item === 'object' && !Array.isArray(item);
+  });
+}
+
+function sanitizeCoreData() {
+  students = sanitizeEntityArray(students);
+  payments = sanitizeEntityArray(payments);
+  expenses = sanitizeEntityArray(expenses);
+  renewals = sanitizeEntityArray(renewals);
+}
+
 function addTombstone(type, id) {
   if (!tombstones[type]) tombstones[type] = [];
   if (!tombstones[type].includes(id)) tombstones[type].push(id);
@@ -1890,6 +1905,7 @@ function updateDashIncome() {
 }
 
 function renderDash(){
+  sanitizeCoreData();
   const map={};
   students.forEach(s=>{map[s.cls]=(map[s.cls]||0)+1;});
   document.getElementById('cls-table').innerHTML=Object.keys(CLASSES).map(c=>`
@@ -2998,6 +3014,7 @@ function renderDeletedStudents() {
 let currentClsTab = Object.keys(CLASSES)[0] || '';
 
 function renderAtt(){
+  sanitizeCoreData();
   const today = new Date().toISOString().slice(0,10);
   const dateEl = document.getElementById('att-date');
   if (dateEl && !dateEl.value) dateEl.value = today;
@@ -3026,9 +3043,10 @@ function renderAtt(){
 }
 
 function renderAttGrid(){
+  sanitizeCoreData();
   const date=document.getElementById('att-date').value;
   const cls=currentClsTab;
-  const list=students.filter(s=>s.cls===cls);
+  const list=students.filter(function(s){ return s && s.cls===cls; });
   let p=0,a=0,l=0;
   document.getElementById('att-grid').innerHTML=list.map(s=>{
     const st=attLog[date+'_'+s.id]||'';
@@ -3054,7 +3072,7 @@ function setAtt(date,id,status){
 
 function markAll(status){
   const date=document.getElementById('att-date').value;
-  students.filter(s=>s.cls===currentClsTab).forEach(s=>{attLog[date+'_'+s.id]=status;});
+  students.filter(function(s){ return s && s.cls===currentClsTab; }).forEach(function(s){ attLog[date+'_'+s.id]=status; });
   renderAttGrid();renderAttLog();renderDash();
 }
 
@@ -3121,15 +3139,20 @@ function sortableHead(tableId, fields) {
 }
 
 function renderPayments(){
+  sanitizeCoreData();
   const q    = document.getElementById('pay-search').value.toLowerCase();
   const type = document.getElementById('pay-type').value;
   const yr   = document.getElementById('pay-year') ? document.getElementById('pay-year').value : '';
   const sort = document.getElementById('pay-sort') ? document.getElementById('pay-sort').value : 'desc';
-  let f = payments.filter(p =>
-    (!q || p.who.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q) || String((p.internalNote || p.internal || p.internal_note || '')).toLowerCase().includes(q) || String(p.id).includes(q)) &&
-    (!type || p.type === type) &&
-    (!yr || getDateYear(p.date) === parseInt(yr))
-  );
+  let f = payments.filter(function(p){
+    if (!p) return false;
+    const who = String(p.who || '').toLowerCase();
+    const desc = String(p.desc || '').toLowerCase();
+    const internalTxt = String((p.internalNote || p.internal || p.internal_note || '')).toLowerCase();
+    return (!q || who.includes(q) || desc.includes(q) || internalTxt.includes(q) || String(p.id || '').includes(q)) &&
+      (!type || p.type === type) &&
+      (!yr || getDateYear(p.date) === parseInt(yr));
+  });
   f = [...f].sort((a,b) => {
     if (sort === 'asc')      return normalizeDate(a.date).localeCompare(normalizeDate(b.date));
     if (sort === 'desc')     return normalizeDate(b.date).localeCompare(normalizeDate(a.date));
@@ -3392,6 +3415,7 @@ function savePayment(){
 // EXPENSES
 // ============================================================
 function renderExpenses(){
+  sanitizeCoreData();
   const q=document.getElementById('exp-search').value.toLowerCase();
   const cat=document.getElementById('exp-cat').value;
   let f=expenses.filter(e=>(!q||e.desc.toLowerCase().includes(q))&&(!cat||e.cat===cat));
@@ -3486,6 +3510,7 @@ function delExpense(id){
 // RECEIPTS
 // ============================================================
 function renderReceipts(){
+  sanitizeCoreData();
   const q    = document.getElementById('rec-search').value.toLowerCase();
   const yr   = document.getElementById('rec-year') ? document.getElementById('rec-year').value : '';
   const sort = document.getElementById('rec-sort') ? document.getElementById('rec-sort').value : 'desc';
@@ -4915,7 +4940,7 @@ window.addEventListener('DOMContentLoaded', () => {
 // FIREBASE REST API — بدون SDK، يشتغل من أي مكان
 // ============================================================
 const FB_URL = 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data';
-const FB_LOGO_URL = 'https://kids-park-nursery-default-rtdb.firebaseio.com/kp_logo';
+const FB_LOGO_URL = FB_URL + '/branding/logoDataUrl';
 let isSyncing = false;
 let syncTimeout = null;
 let lastSavedAt = '';
@@ -4955,7 +4980,7 @@ async function saveLogoToFirebase() {
 
 async function loadLogoFromFirebase() {
   try {
-    const res = await fetch(FB_LOGO_URL + '.json', { cache: 'no-store', mode: 'cors' });
+    const res = await fetch(FB_LOGO_URL + '.json', { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const remoteLogo = await res.json();
     if (typeof remoteLogo === 'string' && remoteLogo) {
@@ -5190,37 +5215,32 @@ async function pushToFirebase() {
 
 async function loadFromFirebase() {
   showSyncBadge('⏳ جاري التحميل...');
-  let data = null;
   try {
-    const res = await fetch(FB_URL + '.json', { cache: 'no-store', mode: 'cors' });
+    const res = await fetch(FB_URL + '.json', { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    data = await res.json();
-  } catch (e) {
-    showSyncBadge('📴 تعذر الوصول إلى Firebase — استخدام البيانات المحلية');
-    console.log('Firebase fetch failed:', e.message);
-    return false;
-  }
-
-  try {
-    if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return false; }
+    const data = await res.json();
+    if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
     const localStudentsCount = Array.isArray(students) ? students.length : 0;
     const remoteStudentsCount = Array.isArray(data.students) ? data.students.length : 0;
     const localPaymentsCount = Array.isArray(payments) ? payments.length : 0;
     const remotePaymentsCount = Array.isArray(data.payments) ? data.payments.length : 0;
     const shouldProtectLocalStudents = localStudentsCount > 0 && remoteStudentsCount === 0;
     const shouldProtectLocalPayments = localPaymentsCount > 0 && remotePaymentsCount === 0;
-
-    if (Array.isArray(data.students) && !shouldProtectLocalStudents) students = data.students;
-    if (typeof resetPaymentMatchCache === 'function') resetPaymentMatchCache();
-    if (Array.isArray(data.payments) && !shouldProtectLocalPayments) payments = data.payments;
-    if (Array.isArray(data.expenses)) expenses = data.expenses;
-    if (Array.isArray(data.renewals)) renewals = data.renewals;
+    // حماية: لا تستبدل البيانات المحلية ببيانات سحابية فارغة
+    if (Array.isArray(data.students) && !shouldProtectLocalStudents) students = sanitizeEntityArray(data.students);
+    resetPaymentMatchCache();
+    if (Array.isArray(data.payments) && !shouldProtectLocalPayments) payments = sanitizeEntityArray(data.payments);
+    if (Array.isArray(data.expenses)) expenses = sanitizeEntityArray(data.expenses);
+    if (Array.isArray(data.renewals)) renewals = sanitizeEntityArray(data.renewals);
+    sanitizeCoreData();
     if (data.attLog) { Object.keys(data.attLog).forEach(function(k){ attLog[k] = data.attLog[k]; }); }
     if (data.deletedStudents && typeof deletedStudents !== 'undefined') {
       deletedStudents = data.deletedStudents;
       localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
     }
     if (data.tombstones && typeof tombstones !== 'undefined') {
+      // Firebase هو المرجع - استبدل tombstones بالكامل
+      // لأن restoreStudent على أي جهاز يحذف من Firebase
       ['students','payments','expenses','renewals'].forEach(function(type){
         if (data.tombstones[type] && Array.isArray(data.tombstones[type])) {
           tombstones[type] = data.tombstones[type].slice();
@@ -5229,22 +5249,21 @@ async function loadFromFirebase() {
         }
       });
       localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
-      if (typeof applyTombstones === 'function') applyTombstones();
+      applyTombstones();
     }
     if (data.CLASSES)         Object.assign(CLASSES, data.CLASSES);
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
     if (data.kp_users && data.kp_users.length) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
-
+    await loadLogoFromFirebase();
+    if (!logoDataUrl && nurserySettings.logoDataUrl) {
+      logoDataUrl = nurserySettings.logoDataUrl;
+      localStorage.setItem('kp_logo', logoDataUrl);
+    }
     localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
-    if (typeof updateLogoDisplay === 'function') updateLogoDisplay();
-    if (typeof refreshNextIds === 'function') refreshNextIds();
+    updateLogoDisplay();
+    refreshNextIds();
     lastSavedAt = data.savedAt || '';
-    if (typeof renderDash === 'function') renderDash();
-
-    setTimeout(function(){
-      loadLogoFromFirebase().catch(function(){});
-    }, 0);
-
+    renderDash();
     if (shouldProtectLocalStudents || shouldProtectLocalPayments) {
       const warnings = [];
       if (shouldProtectLocalStudents) warnings.push('الطلاب المحليين محفوظين');
@@ -5253,11 +5272,16 @@ async function loadFromFirebase() {
     } else {
       showSyncBadge('✅ تم التحميل');
     }
-    return true;
   } catch(e) {
-    showSyncBadge('⚠️ تم جلب بيانات Firebase لكن حصل خطأ داخلي: ' + e.message);
-    console.error('Firebase merge/render failed:', e);
-    return false;
+    const msg = (e && e.message) ? e.message : 'unknown';
+    if (msg.indexOf('null') >= 0 || msg.indexOf('undefined') >= 0) {
+      showSyncBadge('⚠️ تم إصلاح بيانات غير سليمة محلياً');
+    } else {
+      showSyncBadge('📴 بدون إنترنت — بيانات محلية');
+    }
+    console.log('Firebase load failed:', msg);
+    sanitizeCoreData();
+    try { refreshNextIds(); renderDash(); if (typeof renderStudents==='function') renderStudents(); if (typeof renderPayments==='function') renderPayments(); if (typeof renderExpenses==='function') renderExpenses(); if (typeof renderReceipts==='function') renderReceipts(); if (typeof renderAtt==='function') renderAtt(); } catch(_) {}
   }
 }
 
