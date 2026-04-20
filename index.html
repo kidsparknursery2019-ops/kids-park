@@ -277,7 +277,12 @@ textarea{resize:vertical;min-height:65px}
 @media print {
   .sidebar, .hdr, .no-print { display: none !important; }
   body { background: white !important; padding: 0 !important; }
-  .pg:not(#pg-finreport) { display: none !important; }
+  .pg { display: none !important; }
+  #pg-finreport { display: block !important; }
+  #pg-finreport #fr-results,
+  #pg-finreport .card,
+  #pg-finreport table,
+  #pg-finreport .tw { display: block !important; visibility: visible !important; }
   .card { page-break-inside: avoid; box-shadow: none !important; border: 1.5px solid #ccc !important; }
 }
 </style>
@@ -4346,13 +4351,11 @@ function applyLogin() {
   if (yfInit) yfInit.value = String(dashYear);
 
   if (typeof applyTombstones === 'function') applyTombstones();
-  // اعتماد جماعي لمطابقات السندات المقترحة الحالية (مرة واحدة فقط)
-  let bulkApprovedNow = runOneTimeBulkMatchApproval();
-  // عرض البيانات المحلية فوراً
+  // لا تقم بأي اعتماد/حفظ قبل تحميل بيانات Firebase أولاً
+  // حتى لا يتم دفع بيانات محلية ناقصة إلى السحابة عند أول تسجيل دخول من جهاز جديد
+  let bulkApprovedNow = 0;
+  // عرض البيانات المحلية فوراً فقط
   renderDash();
-  if (bulkApprovedNow > 0) {
-    setTimeout(function(){ alert('✅ تم اعتماد ' + bulkApprovedNow + ' عملية ربط بين السندات وملفات الطلاب'); }, 300);
-  }
   setTimeout(updateNotifications, 500);
   // تحميل من Firebase وتحديث عند الانتهاء
   loadFromFirebase().then(() => {
@@ -4954,6 +4957,8 @@ const FB_LOGO_URL = FB_URL + '/branding/logoDataUrl';
 let isSyncing = false;
 let syncTimeout = null;
 let lastSavedAt = '';
+let cloudReadyForSave = false;
+let pendingCloudSave = false;
 
 function getAllData() {
   const cleanSettings = Object.assign({}, nurserySettings);
@@ -4969,6 +4974,10 @@ function getAllData() {
 }
 
 function autoSave() {
+  if (!cloudReadyForSave) {
+    pendingCloudSave = true;
+    return;
+  }
   clearTimeout(syncTimeout);
   syncTimeout = setTimeout(pushToFirebase, 10);
 }
@@ -5278,6 +5287,7 @@ async function loadFromFirebase() {
     updateLogoDisplay();
     refreshNextIds();
     lastSavedAt = data.savedAt || '';
+    cloudReadyForSave = true;
     renderDash();
     if (shouldProtectLocalStudents || shouldProtectLocalPayments) {
       const warnings = [];
@@ -5287,6 +5297,10 @@ async function loadFromFirebase() {
     } else {
       showSyncBadge('✅ تم التحميل');
     }
+    if (pendingCloudSave) {
+      pendingCloudSave = false;
+      autoSave();
+    }
   } catch(e) {
     const msg = (e && e.message) ? e.message : 'unknown';
     if (msg.indexOf('null') >= 0 || msg.indexOf('undefined') >= 0) {
@@ -5295,6 +5309,7 @@ async function loadFromFirebase() {
       showSyncBadge('📴 بدون إنترنت — بيانات محلية');
     }
     console.log('Firebase load failed:', msg);
+    cloudReadyForSave = true;
     sanitizeCoreData();
     try { refreshNextIds(); renderDash(); if (typeof renderStudents==='function') renderStudents(); if (typeof renderPayments==='function') renderPayments(); if (typeof renderExpenses==='function') renderExpenses(); if (typeof renderReceipts==='function') renderReceipts(); if (typeof renderAtt==='function') renderAtt(); } catch(_) {}
   }
