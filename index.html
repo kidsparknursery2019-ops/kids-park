@@ -4915,7 +4915,7 @@ window.addEventListener('DOMContentLoaded', () => {
 // FIREBASE REST API — بدون SDK، يشتغل من أي مكان
 // ============================================================
 const FB_URL = 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data';
-const FB_LOGO_URL = FB_URL + '/branding/logoDataUrl';
+const FB_LOGO_URL = 'https://kids-park-nursery-default-rtdb.firebaseio.com/kp_logo';
 let isSyncing = false;
 let syncTimeout = null;
 let lastSavedAt = '';
@@ -4955,7 +4955,7 @@ async function saveLogoToFirebase() {
 
 async function loadLogoFromFirebase() {
   try {
-    const res = await fetch(FB_LOGO_URL + '.json', { cache: 'no-store' });
+    const res = await fetch(FB_LOGO_URL + '.json', { cache: 'no-store', mode: 'cors' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const remoteLogo = await res.json();
     if (typeof remoteLogo === 'string' && remoteLogo) {
@@ -5190,20 +5190,28 @@ async function pushToFirebase() {
 
 async function loadFromFirebase() {
   showSyncBadge('⏳ جاري التحميل...');
+  let data = null;
   try {
-    const res = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    const res = await fetch(FB_URL + '.json', { cache: 'no-store', mode: 'cors' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
+    data = await res.json();
+  } catch (e) {
+    showSyncBadge('📴 تعذر الوصول إلى Firebase — استخدام البيانات المحلية');
+    console.log('Firebase fetch failed:', e.message);
+    return false;
+  }
+
+  try {
+    if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return false; }
     const localStudentsCount = Array.isArray(students) ? students.length : 0;
     const remoteStudentsCount = Array.isArray(data.students) ? data.students.length : 0;
     const localPaymentsCount = Array.isArray(payments) ? payments.length : 0;
     const remotePaymentsCount = Array.isArray(data.payments) ? data.payments.length : 0;
     const shouldProtectLocalStudents = localStudentsCount > 0 && remoteStudentsCount === 0;
     const shouldProtectLocalPayments = localPaymentsCount > 0 && remotePaymentsCount === 0;
-    // حماية: لا تستبدل البيانات المحلية ببيانات سحابية فارغة
+
     if (Array.isArray(data.students) && !shouldProtectLocalStudents) students = data.students;
-    resetPaymentMatchCache();
+    if (typeof resetPaymentMatchCache === 'function') resetPaymentMatchCache();
     if (Array.isArray(data.payments) && !shouldProtectLocalPayments) payments = data.payments;
     if (Array.isArray(data.expenses)) expenses = data.expenses;
     if (Array.isArray(data.renewals)) renewals = data.renewals;
@@ -5213,8 +5221,6 @@ async function loadFromFirebase() {
       localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
     }
     if (data.tombstones && typeof tombstones !== 'undefined') {
-      // Firebase هو المرجع - استبدل tombstones بالكامل
-      // لأن restoreStudent على أي جهاز يحذف من Firebase
       ['students','payments','expenses','renewals'].forEach(function(type){
         if (data.tombstones[type] && Array.isArray(data.tombstones[type])) {
           tombstones[type] = data.tombstones[type].slice();
@@ -5223,21 +5229,22 @@ async function loadFromFirebase() {
         }
       });
       localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
-      applyTombstones();
+      if (typeof applyTombstones === 'function') applyTombstones();
     }
     if (data.CLASSES)         Object.assign(CLASSES, data.CLASSES);
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
     if (data.kp_users && data.kp_users.length) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
-    await loadLogoFromFirebase();
-    if (!logoDataUrl && nurserySettings.logoDataUrl) {
-      logoDataUrl = nurserySettings.logoDataUrl;
-      localStorage.setItem('kp_logo', logoDataUrl);
-    }
+
     localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
-    updateLogoDisplay();
-    refreshNextIds();
+    if (typeof updateLogoDisplay === 'function') updateLogoDisplay();
+    if (typeof refreshNextIds === 'function') refreshNextIds();
     lastSavedAt = data.savedAt || '';
-    renderDash();
+    if (typeof renderDash === 'function') renderDash();
+
+    setTimeout(function(){
+      loadLogoFromFirebase().catch(function(){});
+    }, 0);
+
     if (shouldProtectLocalStudents || shouldProtectLocalPayments) {
       const warnings = [];
       if (shouldProtectLocalStudents) warnings.push('الطلاب المحليين محفوظين');
@@ -5246,9 +5253,11 @@ async function loadFromFirebase() {
     } else {
       showSyncBadge('✅ تم التحميل');
     }
+    return true;
   } catch(e) {
-    showSyncBadge('📴 بدون إنترنت — بيانات محلية');
-    console.log('Firebase load failed:', e.message);
+    showSyncBadge('⚠️ تم جلب بيانات Firebase لكن حصل خطأ داخلي: ' + e.message);
+    console.error('Firebase merge/render failed:', e);
+    return false;
   }
 }
 
