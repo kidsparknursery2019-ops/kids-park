@@ -4386,7 +4386,6 @@ function saveNurseryInfo() {
   nurserySettings.addr_en = document.getElementById('set-addr-en').value;
   nurserySettings.phone = document.getElementById('set-phone').value;
   nurserySettings.email = document.getElementById('set-email').value;
-  nurserySettings.logoDataUrl = logoDataUrl || '';
   localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
   autoSave();
   alert('✅ تم حفظ معلومات الحضانة');
@@ -4422,7 +4421,7 @@ function removeLogo() {
   localStorage.removeItem('kp_logo');
   localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
   updateLogoDisplay();
-  autoSave();
+  saveLogoToFirebase();
 }
 
 function updateLogoDisplay() {
@@ -4916,16 +4915,19 @@ window.addEventListener('DOMContentLoaded', () => {
 // FIREBASE REST API — بدون SDK، يشتغل من أي مكان
 // ============================================================
 const FB_URL = 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data';
+const FB_LOGO_URL = FB_URL + '/branding/logoDataUrl';
 let isSyncing = false;
 let syncTimeout = null;
 let lastSavedAt = '';
 
 function getAllData() {
+  const cleanSettings = Object.assign({}, nurserySettings);
+  delete cleanSettings.logoDataUrl;
   return {
     version: 2,
     savedAt: new Date().toISOString(),
     students, payments, expenses, attLog, CLASSES,
-    nurserySettings: Object.assign({}, nurserySettings, { logoDataUrl: logoDataUrl || nurserySettings.logoDataUrl || '' }),
+    nurserySettings: cleanSettings,
     renewals,
     kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
   };
@@ -4934,6 +4936,38 @@ function getAllData() {
 function autoSave() {
   clearTimeout(syncTimeout);
   syncTimeout = setTimeout(pushToFirebase, 300);
+}
+
+async function saveLogoToFirebase() {
+  try {
+    const res = await fetch(FB_LOGO_URL + '.json', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(logoDataUrl || '')
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    showSyncBadge('✅ تم حفظ الشعار');
+  } catch (e) {
+    console.error('saveLogoToFirebase error:', e);
+    showSyncBadge('⚠️ تعذر حفظ الشعار سحابياً');
+  }
+}
+
+async function loadLogoFromFirebase() {
+  try {
+    const res = await fetch(FB_LOGO_URL + '.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const remoteLogo = await res.json();
+    if (typeof remoteLogo === 'string' && remoteLogo) {
+      logoDataUrl = remoteLogo;
+      nurserySettings.logoDataUrl = remoteLogo;
+      localStorage.setItem('kp_logo', remoteLogo);
+      localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
+      updateLogoDisplay();
+    }
+  } catch (e) {
+    console.log('loadLogoFromFirebase skipped:', e.message);
+  }
 }
 
 
@@ -5193,13 +5227,14 @@ async function loadFromFirebase() {
     }
     if (data.CLASSES)         Object.assign(CLASSES, data.CLASSES);
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
-    if (nurserySettings.logoDataUrl) {
+    if (data.kp_users && data.kp_users.length) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
+    await loadLogoFromFirebase();
+    if (!logoDataUrl && nurserySettings.logoDataUrl) {
       logoDataUrl = nurserySettings.logoDataUrl;
       localStorage.setItem('kp_logo', logoDataUrl);
-      localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
-      updateLogoDisplay();
     }
-    if (data.kp_users && data.kp_users.length) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
+    localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
+    updateLogoDisplay();
     refreshNextIds();
     lastSavedAt = data.savedAt || '';
     renderDash();
