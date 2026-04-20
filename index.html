@@ -962,6 +962,7 @@ textarea{resize:vertical;min-height:65px}
       <div class="fl" id="np-stuinfo" style="display:none;background:var(--gp);padding:6px 10px;border-radius:8px;font-size:12px;grid-column:1/-1"></div>
       <div class="fl fgr"><label>ولي الأمر / الطالب *</label><input id="np-who" placeholder="والد/والدة الطفل..."></div>
       <div class="fl"><label>المبلغ (درهم) *</label><input id="np-amt" type="number" placeholder="0"></div>
+      <div class="fl fgr"><label>كتابة المبلغ على السند (قابلة للتعديل)</label><input id="np-amtwords" placeholder="مثال: ألف وخمسمائة درهم"></div>
       <div class="fl"><label>التاريخ</label><input id="np-date" type="date"></div>
       <div class="fl"><label>رقم الإيصال</label><input id="np-id" type="number" placeholder="تلقائي" disabled></div>
       <div class="fl fgr"><label>البيان *</label><input id="np-desc" placeholder="قسط شهر + رسم تسجيل..."></div>
@@ -1148,12 +1149,25 @@ var nextPayId = 1;
 var nextExpId = 600;
 var nextRenId = 51;
 
+function getSafeNextReceiptId() {
+  if (!Array.isArray(payments) || !payments.length) return 1;
+  const ids = payments
+    .map(function(p){ return parseInt(p.id, 10) || 0; })
+    .filter(function(id){ return id > 0; })
+    .sort(function(a,b){ return a - b; });
+  if (!ids.length) return 1;
+  const maxId = ids[ids.length - 1];
+  const prevId = ids.length > 1 ? ids[ids.length - 2] : 0;
+  // حماية من قفز غير منطقي مثل 2031 -> 3001 بسبب رقم شاذ وحيد
+  if (prevId > 0 && maxId - prevId >= 500) return prevId + 1;
+  return maxId + 1;
+}
+
 function refreshNextIds(){
   if (Array.isArray(students) && students.length) nextStuId = Math.max.apply(null, students.map(function(s){ return s.id || 0; }).concat([199])) + 1;
   else nextStuId = 200;
 
-  if (Array.isArray(payments) && payments.length) nextPayId = Math.max.apply(null, payments.map(function(p){ return p.id || 0; }).concat([0])) + 1;
-  else nextPayId = 1;
+  nextPayId = getSafeNextReceiptId();
 
   if (Array.isArray(expenses) && expenses.length) nextExpId = Math.max.apply(null, expenses.map(function(e){ return e.id || 0; }).concat([599])) + 1;
   else nextExpId = 600;
@@ -3238,7 +3252,7 @@ function lookupStudentForPay(idVal) {
 function openAddPay(){
   editingPayId = null;
   document.getElementById('np-date').value=new Date().toISOString().slice(0,10);
-  ['np-who','np-amt','np-desc','np-rcvr','np-note','np-stuid','np-id'].forEach(id=>{
+  ['np-who','np-amt','np-amtwords','np-desc','np-rcvr','np-note','np-stuid','np-id'].forEach(id=>{
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -3246,6 +3260,8 @@ function openAddPay(){
   if (info) info.style.display = 'none';
   document.getElementById('np-id').value = nextPayId;
   document.getElementById('np-id').disabled = !(currentUser && currentUser.role === 'admin');
+  const amtWordsEl = document.getElementById('np-amtwords');
+  if (amtWordsEl) amtWordsEl.disabled = !(currentUser && currentUser.role === 'admin');
   document.getElementById('mo-pay-title').textContent = '💰 تسجيل دفعة جديدة';
   document.getElementById('pay-del-btn').style.display = 'none';
   document.getElementById('pay-save-btn').textContent = '💾 تسجيل';
@@ -3257,6 +3273,11 @@ function openEditPay(id){
   editingPayId = id;
   document.getElementById('np-who').value   = p.who;
   document.getElementById('np-amt').value   = p.amt;
+  const amtWordsEl = document.getElementById('np-amtwords');
+  if (amtWordsEl) {
+    amtWordsEl.value = p.amtWords || amtToWords(+p.amt||0);
+    amtWordsEl.disabled = !(currentUser && currentUser.role === 'admin');
+  }
   document.getElementById('np-desc').value  = p.desc;
   document.getElementById('np-id').value    = p.id;
   document.getElementById('np-id').disabled = !(currentUser && currentUser.role === 'admin');
@@ -3299,6 +3320,7 @@ function savePayment(){
   const desc = document.getElementById('np-desc').value.trim();
   const idInput = document.getElementById('np-id');
   const internalValue = (document.getElementById('np-internal') || {}).value || '';
+  const amtWordsValue = ((document.getElementById('np-amtwords') || {}).value || '').trim();
   if(!who || !amt || !desc){ alert('يرجى تعبئة الحقول المطلوبة'); return; }
 
   if(editingPayId){
@@ -3314,6 +3336,7 @@ function savePayment(){
     p.rcvr = document.getElementById('np-rcvr').value;
     p.note = document.getElementById('np-note').value;
     p.internalNote = internalValue;
+    p.amtWords = amtWordsValue || amtToWords(amt);
     p.stuId = parseInt((document.getElementById('np-stuid')||{}).value) || null;
 
     if (currentUser && currentUser.role === 'admin') {
@@ -3351,6 +3374,7 @@ function savePayment(){
       rcvr: document.getElementById('np-rcvr').value,
       note: document.getElementById('np-note').value,
       internalNote: internalValue,
+      amtWords: amtWordsValue || amtToWords(amt),
       stuId: stuid
     };
     payments.push(p);
@@ -3522,17 +3546,44 @@ function openReceiptDetail(id){
 }
 
 function amtToWords(n){
-  // Simple Arabic number to words for common amounts
-  const ones=['','واحد','اثنان','ثلاثة','أربعة','خمسة','ستة','سبعة','ثمانية','تسعة','عشرة','أحد عشر','اثنا عشر','ثلاثة عشر','أربعة عشر','خمسة عشر','ستة عشر','سبعة عشر','ثمانية عشر','تسعة عشر'];
-  const tens=['','','عشرون','ثلاثون','أربعون','خمسون','ستون','سبعون','ثمانون','تسعون'];
-  if(n===0)return'صفر';
-  if(n<0)return'ناقص '+amtToWords(-n);
-  let words='';
-  if(n>=1000){words+=amtToWords(Math.floor(n/1000))+' ألف ';n=n%1000;}
-  if(n>=100){const h=Math.floor(n/100);words+=(h===1?'مئة':h===2?'مئتان':ones[h]+' مئة')+' ';n=n%100;}
-  if(n>=20){words+=tens[Math.floor(n/10)]+(n%10?' و'+ones[n%10]:'')+' ';}
-  else if(n>0){words+=ones[n]+' ';}
-  return words.trim()+' درهم';
+  n = Math.round(Number(n) || 0);
+  const ones = ['', 'واحد', 'اثنان', 'ثلاثة', 'أربعة', 'خمسة', 'ستة', 'سبعة', 'ثمانية', 'تسعة'];
+  const teens = ['عشرة', 'أحد عشر', 'اثنا عشر', 'ثلاثة عشر', 'أربعة عشر', 'خمسة عشر', 'ستة عشر', 'سبعة عشر', 'ثمانية عشر', 'تسعة عشر'];
+  const tens = ['', '', 'عشرون', 'ثلاثون', 'أربعون', 'خمسون', 'ستون', 'سبعون', 'ثمانون', 'تسعون'];
+  const hundreds = ['', 'مئة', 'مئتان', 'ثلاثمائة', 'أربعمائة', 'خمسمائة', 'ستمائة', 'سبعمائة', 'ثمانمائة', 'تسعمائة'];
+
+  function under100(num){
+    if (num === 0) return '';
+    if (num < 10) return ones[num];
+    if (num < 20) return teens[num - 10];
+    const t = Math.floor(num / 10), o = num % 10;
+    return o ? ones[o] + ' و' + tens[t] : tens[t];
+  }
+
+  function under1000(num){
+    if (num === 0) return '';
+    const h = Math.floor(num / 100), r = num % 100;
+    const parts = [];
+    if (h) parts.push(hundreds[h]);
+    if (r) parts.push(under100(r));
+    return parts.join(' و');
+  }
+
+  if (n === 0) return 'صفر درهم';
+  if (n < 0) return 'ناقص ' + amtToWords(-n);
+
+  const parts = [];
+  const thousands = Math.floor(n / 1000);
+  const rest = n % 1000;
+
+  if (thousands) {
+    if (thousands === 1) parts.push('ألف');
+    else if (thousands === 2) parts.push('ألفان');
+    else if (thousands >= 3 && thousands <= 10) parts.push(under1000(thousands) + ' آلاف');
+    else parts.push(under1000(thousands) + ' ألف');
+  }
+  if (rest) parts.push(under1000(rest));
+  return parts.filter(Boolean).join(' و') + ' درهم';
 }
 
 // buildReceiptHTML() overridden below
@@ -4315,7 +4366,7 @@ function checkSession() {
 function loadSettings() {
   const saved = localStorage.getItem('kp_settings');
   if (saved) nurserySettings = { ...nurserySettings, ...JSON.parse(saved) };
-  logoDataUrl = localStorage.getItem('kp_logo') || '';
+  logoDataUrl = nurserySettings.logoDataUrl || localStorage.getItem('kp_logo') || '';
   // Apply to form
   const f = (id, val) => { const el = document.getElementById(id); if(el) el.value = val; };
   f('set-name', nurserySettings.name);
@@ -4335,14 +4386,18 @@ function saveNurseryInfo() {
   nurserySettings.addr_en = document.getElementById('set-addr-en').value;
   nurserySettings.phone = document.getElementById('set-phone').value;
   nurserySettings.email = document.getElementById('set-email').value;
+  nurserySettings.logoDataUrl = logoDataUrl || '';
   localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
+  autoSave();
   alert('✅ تم حفظ معلومات الحضانة');
 }
 
 function saveRefundPolicy() {
   nurserySettings.refund_ar = document.getElementById('set-refund-ar').value;
   nurserySettings.refund_en = document.getElementById('set-refund-en').value;
+  nurserySettings.logoDataUrl = logoDataUrl || '';
   localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
+  autoSave();
   alert('✅ تم حفظ السياسة');
 }
 
@@ -4351,8 +4406,11 @@ function uploadLogo(input) {
   const reader = new FileReader();
   reader.onload = e => {
     logoDataUrl = e.target.result;
+    nurserySettings.logoDataUrl = logoDataUrl;
     localStorage.setItem('kp_logo', logoDataUrl);
+    localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
     updateLogoDisplay();
+    autoSave();
   };
   reader.readAsDataURL(file);
 }
@@ -4360,8 +4418,11 @@ function uploadLogo(input) {
 function removeLogo() {
   if(!confirm('حذف الشعار؟')) return;
   logoDataUrl = '';
+  nurserySettings.logoDataUrl = '';
   localStorage.removeItem('kp_logo');
+  localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
   updateLogoDisplay();
+  autoSave();
 }
 
 function updateLogoDisplay() {
@@ -4863,7 +4924,9 @@ function getAllData() {
   return {
     version: 2,
     savedAt: new Date().toISOString(),
-    students, payments, expenses, attLog, CLASSES, nurserySettings, renewals,
+    students, payments, expenses, attLog, CLASSES,
+    nurserySettings: Object.assign({}, nurserySettings, { logoDataUrl: logoDataUrl || nurserySettings.logoDataUrl || '' }),
+    renewals,
     kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
   };
 }
@@ -5130,6 +5193,12 @@ async function loadFromFirebase() {
     }
     if (data.CLASSES)         Object.assign(CLASSES, data.CLASSES);
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
+    if (nurserySettings.logoDataUrl) {
+      logoDataUrl = nurserySettings.logoDataUrl;
+      localStorage.setItem('kp_logo', logoDataUrl);
+      localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
+      updateLogoDisplay();
+    }
     if (data.kp_users && data.kp_users.length) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
     refreshNextIds();
     lastSavedAt = data.savedAt || '';
