@@ -5403,11 +5403,12 @@ async function syncFromGoogleSheets() {
       var firstName = g(1), lastName = g(2);
       var name = (firstName + ' ' + lastName).trim();
       if (!name) return;
-      var gv = g(5);
+      var gv = g(4);
       syncedFormRows.push({
         timestamp: ts, name: name,
         dob: g(3),
-        gen: (gv === 'ذكر' || gv.toLowerCase() === 'male') ? 'ذكر' : 'انثى',
+        gen: ((gv || '').toLowerCase().includes('male') || gv.includes('ذكر')) ? 'ذكر'
+             : (((gv || '').toLowerCase().includes('female') || gv.includes('أنثى') || gv.includes('انثى')) ? 'انثى' : ''),
         emiratesId: g(5), nat: g(6), passport: g(7), religion: g(8),
         addr: g(11),
         dadFull: g(12), dadMob: g(15), dadJob: g(16), dadEmail: g(18),
