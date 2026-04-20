@@ -277,7 +277,12 @@ textarea{resize:vertical;min-height:65px}
 @media print {
   .sidebar, .hdr, .no-print { display: none !important; }
   body { background: white !important; padding: 0 !important; }
-  .pg:not(#pg-finreport) { display: none !important; }
+  .pg { display: none !important; }
+  #pg-finreport { display: block !important; }
+  #pg-finreport #fr-results,
+  #pg-finreport .card,
+  #pg-finreport table,
+  #pg-finreport .tw { display: block !important; visibility: visible !important; }
   .card { page-break-inside: avoid; box-shadow: none !important; border: 1.5px solid #ccc !important; }
 }
 </style>
@@ -4346,13 +4351,11 @@ function applyLogin() {
   if (yfInit) yfInit.value = String(dashYear);
 
   if (typeof applyTombstones === 'function') applyTombstones();
-  // اعتماد جماعي لمطابقات السندات المقترحة الحالية (مرة واحدة فقط)
-  let bulkApprovedNow = runOneTimeBulkMatchApproval();
-  // عرض البيانات المحلية فوراً
+  // لا تقم بأي اعتماد/حفظ قبل تحميل بيانات Firebase أولاً
+  // حتى لا يتم دفع بيانات محلية ناقصة إلى السحابة عند أول تسجيل دخول من جهاز جديد
+  let bulkApprovedNow = 0;
+  // عرض البيانات المحلية فوراً فقط
   renderDash();
-  if (bulkApprovedNow > 0) {
-    setTimeout(function(){ alert('✅ تم اعتماد ' + bulkApprovedNow + ' عملية ربط بين السندات وملفات الطلاب'); }, 300);
-  }
   setTimeout(updateNotifications, 500);
   // تحميل من Firebase وتحديث عند الانتهاء
   loadFromFirebase().then(() => {
@@ -4954,6 +4957,8 @@ const FB_LOGO_URL = FB_URL + '/branding/logoDataUrl';
 let isSyncing = false;
 let syncTimeout = null;
 let lastSavedAt = '';
+let cloudReadyForSave = false;
+let pendingCloudSave = false;
 
 function getAllData() {
   const cleanSettings = Object.assign({}, nurserySettings);
@@ -4965,11 +4970,14 @@ function getAllData() {
     nurserySettings: cleanSettings,
     renewals,
     kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
-    kp_form_rows: syncedFormRows,
   };
 }
 
 function autoSave() {
+  if (!cloudReadyForSave) {
+    pendingCloudSave = true;
+    return;
+  }
   clearTimeout(syncTimeout);
   syncTimeout = setTimeout(pushToFirebase, 10);
 }
@@ -5269,10 +5277,6 @@ async function loadFromFirebase() {
     }
     if (data.CLASSES)         Object.assign(CLASSES, data.CLASSES);
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
-    if (Array.isArray(data.kp_form_rows)) {
-      syncedFormRows = data.kp_form_rows.slice();
-      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-    }
     if (data.kp_users && data.kp_users.length) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
     await loadLogoFromFirebase();
     if (!logoDataUrl && nurserySettings.logoDataUrl) {
@@ -5283,8 +5287,8 @@ async function loadFromFirebase() {
     updateLogoDisplay();
     refreshNextIds();
     lastSavedAt = data.savedAt || '';
+    cloudReadyForSave = true;
     renderDash();
-    if (typeof renderFormRequests==='function') renderFormRequests();
     if (shouldProtectLocalStudents || shouldProtectLocalPayments) {
       const warnings = [];
       if (shouldProtectLocalStudents) warnings.push('الطلاب المحليين محفوظين');
@@ -5292,6 +5296,10 @@ async function loadFromFirebase() {
       showSyncBadge('🛡️ ' + warnings.join(' + '));
     } else {
       showSyncBadge('✅ تم التحميل');
+    }
+    if (pendingCloudSave) {
+      pendingCloudSave = false;
+      autoSave();
     }
   } catch(e) {
     const msg = (e && e.message) ? e.message : 'unknown';
@@ -5301,8 +5309,9 @@ async function loadFromFirebase() {
       showSyncBadge('📴 بدون إنترنت — بيانات محلية');
     }
     console.log('Firebase load failed:', msg);
+    cloudReadyForSave = true;
     sanitizeCoreData();
-    try { refreshNextIds(); renderDash(); if (typeof renderStudents==='function') renderStudents(); if (typeof renderPayments==='function') renderPayments(); if (typeof renderExpenses==='function') renderExpenses(); if (typeof renderReceipts==='function') renderReceipts(); if (typeof renderAtt==='function') renderAtt(); if (typeof renderFormRequests==='function') renderFormRequests(); } catch(_) {}
+    try { refreshNextIds(); renderDash(); if (typeof renderStudents==='function') renderStudents(); if (typeof renderPayments==='function') renderPayments(); if (typeof renderExpenses==='function') renderExpenses(); if (typeof renderReceipts==='function') renderReceipts(); if (typeof renderAtt==='function') renderAtt(); } catch(_) {}
   }
 }
 
@@ -5318,7 +5327,6 @@ async function manualRefreshFromFirebase() {
     if (typeof renderRenewals === 'function') renderRenewals();
     if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
     if (typeof renderAtt === 'function') renderAtt();
-    if (typeof renderFormRequests === 'function') renderFormRequests();
     if (typeof updateNotifications === 'function') updateNotifications();
     showSyncBadge('🔄 تم جلب أحدث البيانات من Firebase');
   } catch (e) {
@@ -5395,7 +5403,7 @@ async function syncFromGoogleSheets() {
       var firstName = g(1), lastName = g(2);
       var name = (firstName + ' ' + lastName).trim();
       if (!name) return;
-      var gv = g(4);
+      var gv = g(5);
       syncedFormRows.push({
         timestamp: ts, name: name,
         dob: g(3),
@@ -5421,7 +5429,6 @@ async function syncFromGoogleSheets() {
     });
 
     localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-    autoSave();
     var el = document.getElementById('forms-last-sync');
     if (el) el.textContent = new Date().toLocaleTimeString('ar');
     if (added > 0) showSyncBadge('✅ ' + added + ' طلب تسجيل جديد');
@@ -5610,7 +5617,6 @@ function rejectFormRow(ts) {
   if (!confirm('حذف هذا الطلب؟')) return;
   syncedFormRows = syncedFormRows.filter(function(x){ return x.timestamp !== ts; });
   localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-  autoSave();
   renderFormRequests();
 }
 
