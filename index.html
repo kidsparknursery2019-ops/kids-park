@@ -1804,29 +1804,40 @@ setInterval(tick,1000);tick();
 function normalizeDate(d) {
   if (!d) return '';
   const s = String(d).trim();
+
+  // Google Sheets / gviz date format: Date(2023,5,20)
+  let m = s.match(/^Date\((\d{4}),(\d{1,2}),(\d{1,2})\)$/i);
+  if (m) {
+    const y = m[1];
+    const mon = String(parseInt(m[2], 10) + 1).padStart(2,'0'); // JS months are 0-based
+    const day = String(parseInt(m[3], 10)).padStart(2,'0');
+    return y + '-' + mon + '-' + day;
+  }
+
   // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
   // Try DD-MM-YYYY or DD/MM/YYYY
-  let m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+  m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
   if (m) {
     const [,a,b,y] = m;
-    // Ambiguous: if a > 12 it must be day; if b > 12 it must be day (swap)
-    // Default: DD-MM-YYYY
-    const day = parseInt(a), mon = parseInt(b), yr = parseInt(y);
+    const day = parseInt(a, 10), mon = parseInt(b, 10);
     if (day > 12) return y + '-' + String(mon).padStart(2,'0') + '-' + String(day).padStart(2,'0');
-    // Both could be day or month — assume DD/MM/YYYY (more common in UAE)
     return y + '-' + String(mon).padStart(2,'0') + '-' + String(day).padStart(2,'0');
   }
-  // Try MM/DD/YYYY (US format) — only if first part > 12 won't work and second <= 12
+
+  // Try MM/DD/YYYY (2-digit year in source)
   m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})$/);
   if (m) {
     const [,a,b,y] = m;
-    const yr = parseInt(y) + (parseInt(y) < 50 ? 2000 : 1900);
-    return yr + '-' + String(parseInt(a)).padStart(2,'0') + '-' + String(parseInt(b)).padStart(2,'0');
+    const yr = parseInt(y, 10) + (parseInt(y, 10) < 50 ? 2000 : 1900);
+    return yr + '-' + String(parseInt(a, 10)).padStart(2,'0') + '-' + String(parseInt(b, 10)).padStart(2,'0');
   }
+
   // YYYY/MM/DD
   m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
   if (m) return m[1] + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
+
   return s.slice(0,10);
 }
 
