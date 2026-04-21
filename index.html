@@ -5805,9 +5805,29 @@ function mergeMissingStudentFields(target, source) {
   return filled;
 }
 
+function confirmStudentMatchForForm(selected, totalMatches) {
+  if (!selected || !selected.student) return false;
+  var msg = [
+    'تم العثور على ملف طالب مطابق قبل الربط.',
+    '',
+    'هل هذا هو الطالب الصحيح؟',
+    '#' + selected.student.id + ' - ' + (selected.student.name || ''),
+    'عوامل التطابق: ' + (selected.reasons && selected.reasons.length ? selected.reasons.join('، ') : 'غير محددة')
+  ];
+  if (totalMatches && totalMatches > 1) {
+    msg.push('عدد الملفات المطابقة: ' + totalMatches);
+  }
+  msg.push('');
+  msg.push('موافق = تنفيذ الربط مع هذا الملف');
+  msg.push('إلغاء = عدم الربط');
+  return confirm(msg.join('\n'));
+}
+
 function chooseStudentMatchForForm(matches) {
   if (!matches || !matches.length) return null;
-  if (matches.length === 1) return matches[0];
+  if (matches.length === 1) {
+    return confirmStudentMatchForForm(matches[0], 1) ? matches[0] : null;
+  }
   var lines = [
     'تم العثور على أكثر من ملف طالب مطابق.',
     'أدخلي رقم ملف الطالب المطلوب ربط الطلب معه:',
@@ -5827,6 +5847,7 @@ function chooseStudentMatchForForm(matches) {
     alert('رقم ملف الطالب غير موجود ضمن الخيارات المطابقة.');
     return null;
   }
+  if (!confirmStudentMatchForForm(selected, matches.length)) return null;
   return selected;
 }
 
