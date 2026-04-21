@@ -907,6 +907,7 @@ textarea{resize:vertical;min-height:65px}
     <div class="mot" id="mo-stu-title">➕ إضافة طالب جديد</div>
     <div class="fg">
       <div class="fl"><label>اسم الطالب *</label><input id="ns-name" placeholder="الاسم الكامل"></div>
+      <div class="fl"><label>الاسم بالإنجليزية</label><input id="ns-name-en" placeholder="يُولّد تلقائياً عند الحفظ"></div>
       <div class="fl"><label>تاريخ الميلاد</label><input id="ns-dob" type="date"></div>
       <div class="fl"><label>الجنس</label><select id="ns-gen"><option>ذكر</option><option>انثى</option></select></div>
       <div class="fl"><label>الجنسية</label>
@@ -938,9 +939,11 @@ textarea{resize:vertical;min-height:65px}
       <div class="fl"><label>هاتف الأب</label><input id="ns-dph" placeholder="05xxxxxxxx" type="tel"></div>
       <div class="fl"><label>اسم الأم</label><input id="ns-mom" placeholder=""></div>
       <div class="fl"><label>هاتف الأم</label><input id="ns-mph" placeholder="05xxxxxxxx" type="tel"></div>
+      <div class="fl"><label>رقم الهوية</label><input id="ns-emirates-id" placeholder="784-xxxx-xxxxxxx-x"></div>
       <div class="fl fgr"><label>العنوان</label><input id="ns-addr" placeholder="الشارقة - المجاز..."></div>
       <div class="fl fgr"><label>الحالة الصحية / الحساسية</label><textarea id="ns-health" rows="2" placeholder="مثال: حساسية ألبان، ربو، ملاحظات صحية خاصة..."></textarea></div>
       <div class="fl fgr"><label>ملاحظات</label><textarea id="ns-note" rows="2"></textarea></div>
+      <div class="fl fgr"><label>🔒 ملاحظات داخلية</label><textarea id="ns-internal-note" rows="2" placeholder="ملاحظات داخلية تظهر في القائمة فقط" style="background:#fff8e1"></textarea></div>
     </div>
     <div class="mof">
       <button class="btn btn-out" onclick="closeAll()">إلغاء</button>
@@ -2065,16 +2068,15 @@ function renderStudents(){
   const q=document.getElementById('stu-search').value.toLowerCase();
   const cls=document.getElementById('stu-cls').value;
   const gen=document.getElementById('stu-gen').value;
-  let f=students.filter(s=>(!q||s.name.includes(q)||s.dad.includes(q)||s.mom.includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen)).map(function(s){
-    const healthItems = getStudentHealthNotes(s);
-    return Object.assign({}, s, { healthSummary: getStudentHealthSummary(s) });
+  let f=students.filter(s=>(!q||String(s.name||'').toLowerCase().includes(q)||String(getStudentEnglishName(s)||'').toLowerCase().includes(q)||String(s.dad||'').toLowerCase().includes(q)||String(s.mom||'').toLowerCase().includes(q)||String(s.emiratesId||'').toLowerCase().includes(q)||String(s.internalNote||'').toLowerCase().includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen)).map(function(s){
+    return Object.assign({}, s, { healthSummary: getStudentHealthSummary(s), nameEnDisplay: getStudentEnglishName(s), internalNoteDisplay: String(s.internalNote||'') });
   });
   if (tableSortState['stu-table']) f = applyTableSort('stu-table', f);
   const stuTheadEl = document.getElementById('stu-thead');
   if (stuTheadEl) stuTheadEl.innerHTML = sortableHead('stu-table', [
-    ['id','#'], ['name','اسم الطالب'], ['healthSummary','الحالة الصحية'], ['dob','تاريخ الميلاد'], ['gen','الجنس'],
-    ['nat','الجنسية'], ['cls','الفصل'], ['dad','اسم الأب'], ['dph','هاتف الأب'],
-    ['mph','هاتف الأم'], ['addr','العنوان'], ['','إجراءات']
+    ['id','#'], ['name','اسم الطالب'], ['nameEnDisplay','الاسم بالإنجليزية'], ['dob','تاريخ الميلاد'], ['gen','الجنس'],
+    ['emiratesId','رقم الهوية'], ['nat','الجنسية'], ['cls','الفصل'], ['healthSummary','الحالة الصحية'], ['dad','اسم الأب'], ['dph','هاتف الأب'],
+    ['mom','اسم الأم'], ['mph','هاتف الأم'], ['internalNoteDisplay','ملاحظات داخلية'], ['addr','العنوان'], ['','إجراءات']
   ]);
   document.getElementById('stu-count').textContent=`الطلاب (${f.length})`;
   document.getElementById('stu-tbody').innerHTML=f.map((s,i)=>{
@@ -2084,12 +2086,15 @@ function renderStudents(){
     <tr>
       <td><b>#${s.id}</b></td>
       <td><b>${s.name}</b>${(s.note||s.notes) ? `<div style="font-size:11px;color:#e67e22;margin-top:2px;font-weight:600">📝 ${s.note||s.notes}</div>` : ''}</td>
-      <td style="font-size:12px">${healthSummary !== '—' ? `<span class="b br">⚕️ ${healthSummary}</span>` : '—'}</td>
+      <td dir="ltr" style="font-size:12px;font-weight:600">${s.nameEnDisplay || '—'}</td>
       <td>${formatDate(s.dob)}</td>
       <td><span class="b ${s.gen==='ذكر'?'bb':'bo'}">${s.gen}</span></td>
+      <td dir="ltr" style="font-size:12px">${s.emiratesId || '—'}</td>
       <td>${(NATIONALITIES_SHORT[s.nat]||'')+'  '+s.nat}</td>
       <td><span class="b bg">${CLASSES[s.cls]?.emoji||''} ${s.cls}</span></td>
-      <td>${s.dad}</td><td dir="ltr">${s.dph}</td><td dir="ltr">${s.mph}</td>
+      <td style="font-size:12px">${healthSummary !== '—' ? `<span class="b br">⚕️ ${healthSummary}</span>` : '—'}</td>
+      <td>${s.dad}</td><td dir="ltr">${s.dph}</td><td>${s.mom||'—'}</td><td dir="ltr">${s.mph}</td>
+      <td style="font-size:12px">${s.internalNote ? `<div style="padding:3px 8px;background:#fff8e1;border-right:3px solid #f39c12;border-radius:5px;color:#b8860b;font-weight:600">🔒 ${s.internalNote}</div>` : '—'}</td>
       <td style="font-size:12px">${s.addr}</td>
       <td>
         <button class="btn btn-out btn-sm" onclick="viewStudentProfile(${s.id})" title="عرض الملف الكامل">👁</button><button class="btn btn-out btn-sm" onclick="editStudent(${s.id})" title="تعديل">✏️</button><button class="btn btn-y btn-sm" onclick="quickEditStudentHealth(${s.id})" title="تعديل الحالة الصحية">⚕️</button>
@@ -2103,6 +2108,47 @@ function formatDate(d){
   if(d.includes('-')&&d.length===10){const[y,m,dd]=d.split('-');return`${dd}/${m}/${y}`;}
   return d;
 }
+
+const ARABIC_NAME_LATIN_OVERRIDES = {
+  'محمد':'Mohammad','محمود':'Mahmoud','احمد':'Ahmad','أحمد':'Ahmad','عبد':'Abd','الرحمن':'Al Rahman','الرحمن':'Al Rahman',
+  'يوسف':'Yousef','عمر':'Omar','علي':'Ali','حسن':'Hasan','حسين':'Hussein','فاطمه':'Fatima','فاطمة':'Fatima','مريم':'Mariam',
+  'نور':'Noor','لين':'Lynn','ليان':'Layan','ساره':'Sarah','سارة':'Sarah','دلال':'Dalal','ليليان':'Lilian','اسيا':'Asia','آسيا':'Asia',
+  'شهلاء':'Shahla','ربا':'Ruba','ولاء':'Walaa','سميه':'Sumaya','سمية':'Sumaya','امنيه':'Omnia','أمنية':'Omnia','دينا':'Dina',
+  'مارسيل':'Marcelle','ماريسيل':'Maricel','ايمي':'Amy','إيمي':'Amy','ايتل':'Eitel','بيل':'Belle'
+};
+const ARABIC_CHAR_LATIN_MAP = {
+  'ا':'a','أ':'a','إ':'i','آ':'a','ء':'a','ؤ':'o','ئ':'e','ب':'b','ت':'t','ث':'th','ج':'j','ح':'h','خ':'kh',
+  'د':'d','ذ':'dh','ر':'r','ز':'z','س':'s','ش':'sh','ص':'s','ض':'d','ط':'t','ظ':'z','ع':'a','غ':'gh','ف':'f',
+  'ق':'q','ك':'k','ل':'l','م':'m','ن':'n','ه':'h','ة':'a','و':'w','ي':'y','ى':'a','ﻻ':'la'
+};
+function titleCaseLatin(str){
+  return String(str||'').replace(/\s+/g,' ').trim().split(' ').filter(Boolean).map(function(part){
+    return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+  }).join(' ');
+}
+function transliterateArabicNamePart(part){
+  var raw = String(part||'').trim();
+  if (!raw) return '';
+  if (ARABIC_NAME_LATIN_OVERRIDES[raw]) return ARABIC_NAME_LATIN_OVERRIDES[raw];
+  var out = '';
+  for (var i = 0; i < raw.length; i++) {
+    var ch = raw[i];
+    out += (ARABIC_CHAR_LATIN_MAP[ch] != null ? ARABIC_CHAR_LATIN_MAP[ch] : ch);
+  }
+  out = out.replace(/aa+/g,'a').replace(/ii+/g,'i').replace(/uu+/g,'u').replace(/yy+/g,'y');
+  out = out.replace(/(al)/ig,'Al').replace(/(abd)/ig,'Abd');
+  return titleCaseLatin(out);
+}
+function transliterateArabicName(fullName){
+  var src = String(fullName||'').trim();
+  if (!src) return '';
+  if (/^[A-Za-z][A-Za-z\s'.-]*$/.test(src)) return titleCaseLatin(src);
+  return src.split(/\s+/).filter(Boolean).map(transliterateArabicNamePart).join(' ').replace(/\s+/g,' ').trim();
+}
+function getStudentEnglishName(s){
+  var current = String((s && (s.nameEn || s.name_en || s.englishName)) || '').trim();
+  return current || transliterateArabicName(s && s.name || '');
+}
 function escapeHtml(v){
   return String(v==null?'':v)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -2114,7 +2160,7 @@ function getStudentsFilteredForPrint(){
   const cls=document.getElementById('stu-cls')?.value||'';
   const gen=document.getElementById('stu-gen')?.value||'';
   return students.filter(s =>
-    (!q || String(s.name||'').includes(q) || String(s.dad||'').includes(q) || String(s.mom||'').includes(q)) &&
+    (!q || String(s.name||'').toLowerCase().includes(q) || String(getStudentEnglishName(s)||'').toLowerCase().includes(q) || String(s.dad||'').toLowerCase().includes(q) || String(s.mom||'').toLowerCase().includes(q) || String(s.emiratesId||'').toLowerCase().includes(q) || String(s.internalNote||'').toLowerCase().includes(q)) &&
     (!cls || s.cls===cls) &&
     (!gen || s.gen===gen)
   );
@@ -2138,13 +2184,28 @@ function getPrintDateText(){
 }
 
 function buildClassNameListTable(className, items){
-  const rows = items.map((s,idx)=>`<tr><td>${idx+1}</td><td>${escapeHtml(s.name||'')}</td><td>${escapeHtml((CLASSES[s.cls]?.emoji||'')+' '+(s.cls||''))}</td></tr>`).join('');
+  const rows = items.map((s,idx)=>`<tr>
+      <td>${s.id || idx+1}</td>
+      <td>${escapeHtml(s.name||'')}</td>
+      <td dir="ltr">${escapeHtml(getStudentEnglishName(s)||'')}</td>
+      <td>${escapeHtml(formatDate(s.dob)||'')}</td>
+      <td>${escapeHtml(s.gen||'')}</td>
+      <td dir="ltr">${escapeHtml(s.emiratesId||'')}</td>
+      <td>${escapeHtml(s.nat||'')}</td>
+      <td>${escapeHtml(s.cls||'')}</td>
+      <td>${escapeHtml(getStudentHealthSummary(s)||s.health||s.healthStatus||'')}</td>
+      <td>${escapeHtml(s.dad||'')}</td>
+      <td dir="ltr">${escapeHtml(s.dph||'')}</td>
+      <td>${escapeHtml(s.mom||'')}</td>
+      <td dir="ltr">${escapeHtml(s.mph||'')}</td>
+      <td>${escapeHtml(s.addr||'')}</td>
+    </tr>`).join('');
   return `
     <table class="print-grid">
       <thead>
-        <tr><th style="width:60px">م</th><th>اسم الطالب</th><th style="width:180px">الفصل</th></tr>
+        <tr><th>رقم الطالب</th><th>الاسم عربي</th><th>الاسم إنجليزي</th><th>تاريخ الميلاد</th><th>الجنس</th><th>رقم الهوية</th><th>الجنسية</th><th>الفصل</th><th>الحالة الصحية</th><th>اسم الأب</th><th>هاتف الأب</th><th>اسم الأم</th><th>هاتف الأم</th><th>العنوان</th></tr>
       </thead>
-      <tbody>${rows || '<tr><td colspan="3">لا يوجد طلاب ضمن هذا الصف</td></tr>'}</tbody>
+      <tbody>${rows || '<tr><td colspan="14">لا يوجد طلاب ضمن هذا الصف</td></tr>'}</tbody>
     </table>`;
 }
 
@@ -2487,7 +2548,7 @@ function openAddStudent(){
   populateClassDropdowns();
   editingStuId=null;
   document.getElementById('mo-stu-title').textContent='➕ إضافة طالب جديد';
-  ['ns-name','ns-dob','ns-nat','ns-bpl','ns-dad','ns-job','ns-dph','ns-mom','ns-mph','ns-addr','ns-health','ns-note'].forEach(id=>document.getElementById(id).value='');
+  ['ns-name','ns-name-en','ns-dob','ns-nat','ns-bpl','ns-dad','ns-job','ns-dph','ns-mom','ns-mph','ns-emirates-id','ns-addr','ns-health','ns-note','ns-internal-note'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('ns-gen').value='ذكر';
   document.getElementById('ns-cls').value='النحل';
   document.getElementById('mo-student').classList.add('on');
@@ -2712,6 +2773,7 @@ function viewStudentProfile(id) {
   document.getElementById('mo-stu-profile-body').innerHTML =
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">' +
       '<div class="fl"><label>الاسم</label><div style="font-size:15px;font-weight:700">' + s.name + '</div></div>' +
+      '<div class="fl"><label>الاسم بالإنجليزية</label><div dir="ltr">' + (getStudentEnglishName(s)||'—') + '</div></div>' +
       '<div class="fl"><label>الفصل</label><div>' + (CLASSES[s.cls]?CLASSES[s.cls].emoji+' ':'') + (s.cls||'—') + '</div></div>' +
       '<div class="fl"><label>تاريخ الميلاد</label><div>' + (s.dob||'—') + '</div></div>' +
       '<div class="fl"><label>الجنس</label><div>' + (s.gen||'—') + '</div></div>' +
@@ -2761,6 +2823,7 @@ function viewStudentProfile(id) {
     (s.diseaseDetails ? '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">🦠 <b>تفاصيل الأمراض:</b> ' + s.diseaseDetails + '</div>' : '') +
     (s.accidentDetails ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">🏥 <b>تفاصيل الحوادث / العمليات:</b> ' + s.accidentDetails + '</div>' : '') +
     (s.note || s.notes ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📝 ' + (s.note||s.notes) + '</div>' : '') +
+    (s.internalNote ? '<div style="background:#fff8e1;border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">🔒 <b>ملاحظات داخلية:</b> ' + s.internalNote + '</div>' : '') +
     (s.sub_end ? '<div style="background:var(--gp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📅 <b>تاريخ انتهاء الاشتراك:</b> ' + s.sub_end + '</div>' : '') +
     '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px;border-top:1.5px solid var(--border);padding-top:10px">💰 المدفوعات (' + (function(){
       const pays = payments.filter(function(p){ return p.stuId === id; });
@@ -2893,6 +2956,7 @@ function editStudent(id){
   const title = document.getElementById('mo-stu-title');
   if (title) title.textContent = '✏️ تعديل: ' + (s.name || '');
   setVal('ns-name',    s.name);
+  setVal('ns-name-en', getStudentEnglishName(s));
   setVal('ns-dob',     s.dob);
   setVal('ns-gen',     s.gen);
   setVal('ns-nat',     s.nat);
@@ -2903,9 +2967,11 @@ function editStudent(id){
   setVal('ns-dph',     s.dph);
   setVal('ns-mom',     s.mom);
   setVal('ns-mph',     s.mph);
+  setVal('ns-emirates-id', s.emiratesId);
   setVal('ns-addr',    s.addr);
   setVal('ns-health',  getStudentHealthSummary(s) || s.healthOverride || s.health || s.healthStatus);
   setVal('ns-note',    s.note || s.notes);
+  setVal('ns-internal-note', s.internalNote);
   setVal('ns-sub-end', s.sub_end);
   document.getElementById('mo-student').classList.add('on');
 }
@@ -2914,7 +2980,8 @@ function saveStudent(){
   const name=document.getElementById('ns-name').value.trim();
   if(!name){alert('اسم الطالب مطلوب');return;}
   const manualHealthValue = document.getElementById('ns-health').value.trim();
-  const data={name,dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,addr:document.getElementById('ns-addr').value,health:manualHealthValue,healthOverride:manualHealthValue,healthDeleted:false,note:document.getElementById('ns-note').value,sub_end:(document.getElementById('ns-sub-end')||{}).value||''};
+  const nameEnValue = (document.getElementById('ns-name-en').value || '').trim() || transliterateArabicName(name);
+  const data={name,nameEn:nameEnValue,dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,emiratesId:document.getElementById('ns-emirates-id').value,addr:document.getElementById('ns-addr').value,health:manualHealthValue,healthOverride:manualHealthValue,healthDeleted:false,note:document.getElementById('ns-note').value,internalNote:document.getElementById('ns-internal-note').value,sub_end:(document.getElementById('ns-sub-end')||{}).value||''};
   if(editingStuId){
     const i=students.findIndex(x=>x.id===editingStuId);
     if(i>=0)students[i]={...students[i],...data};
@@ -3825,8 +3892,11 @@ const IMPORT_SCHEMAS = {
       { key: 'mph', label: 'هاتف الأم', sample: '0509876543' },
       { key: 'addr', label: 'العنوان', sample: 'الشارقة' },
       { key: 'sub_end', label: 'انتهاء الاشتراك', sample: '2026-08-31' },
+      { key: 'nameEn', label: 'الاسم بالإنجليزية', sample: '' },
       { key: 'health', label: 'الحالة الصحية', sample: '' },
+      { key: 'emiratesId', label: 'رقم الهوية', sample: '' },
       { key: 'note', label: 'ملاحظات', sample: '' },
+      { key: 'internalNote', label: 'ملاحظات داخلية', sample: '' },
     ]
   },
   payments: {
@@ -4138,7 +4208,7 @@ function doImport() {
   if (importTarget === 'students') {
     importParsedData.forEach(function(item){
       if (!item.name || !item.cls) return;
-      students.push({ id: nextStuId++, name:item.name, dob:item.dob, gen:item.gen||'ذكر', nat:item.nat, cls:item.cls, bpl:item.bpl, dad:item.dad, job:item.job, dph:item.dph, mom:item.mom, mph:item.mph, addr:item.addr, health:item.health||item.healthStatus||'', healthOverride:item.healthOverride||'', healthDeleted:!!item.healthDeleted, note:item.note, sub_end:item.sub_end });
+      students.push({ id: nextStuId++, name:item.name, nameEn:item.nameEn||item.name_en||transliterateArabicName(item.name), dob:item.dob, gen:item.gen||'ذكر', nat:item.nat, cls:item.cls, bpl:item.bpl, dad:item.dad, job:item.job, dph:item.dph, mom:item.mom, mph:item.mph, emiratesId:item.emiratesId||'', addr:item.addr, health:item.health||item.healthStatus||'', healthOverride:item.healthOverride||'', healthDeleted:!!item.healthDeleted, note:item.note, internalNote:item.internalNote||'', sub_end:item.sub_end });
       added++;
     });
     renderStudents();
@@ -4219,7 +4289,7 @@ function doExport(){
   const dataMap = {
     students: {
       cols: ['#','اسم الطالب','الحالة الصحية','تاريخ الميلاد','الجنس','الجنسية','الفصل','اسم الأب','عمل الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان','انتهاء الاشتراك','ملاحظات'],
-      rows: students.map(function(s,i){ return [i+1, s.name||'', getStudentHealthSummary(s)||s.health||'', s.dob||'', s.gen||'', s.nat||'', s.cls||'', s.dad||'', s.job||'', s.dph||'', s.mom||'', s.mph||'', s.addr||'', s.sub_end||'', s.note||s.notes||'']; })
+      rows: students.map(function(s,i){ return [i+1, s.name||'', getStudentEnglishName(s)||'', getStudentHealthSummary(s)||s.health||'', s.emiratesId||'', s.dob||'', s.gen||'', s.nat||'', s.cls||'', s.dad||'', s.job||'', s.dph||'', s.mom||'', s.mph||'', s.addr||'', s.sub_end||'', s.note||s.notes||'', s.internalNote||'']; })
     },
     payments: {
       cols: ['#السند','ولي الأمر','المبلغ (د.إ)','البيان','النوع','طريقة الدفع','التاريخ','المستلم','ملاحظات'],
@@ -4283,7 +4353,7 @@ function doPrintExport(){
   let html=`<html dir="rtl"><head><meta charset="UTF-8"><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet"><style>body{font-family:'Tajawal',sans-serif;font-size:12px}table{width:100%;border-collapse:collapse}th{background:#eaf6ef;color:#1e6b3f;padding:7px;border:1px solid #d2e5d2}td{padding:6px;border:1px solid #eee}.title{font-size:18px;font-weight:900;margin-bottom:10px;color:#1e6b3f}</style></head><body>
   <div class="title">حضانة حديقة الأطفال — ${names[exportTarget]||exportTarget}</div>
   <div style="font-size:11px;color:#666;margin-bottom:10px">تاريخ التصدير: ${new Date().toLocaleDateString('ar-AE')}</div><table>`;
-  const dataMap={students:{cols:['#','الاسم','الحالة الصحية','الميلاد','الجنس','الجنسية','الفصل','الأب','هاتف الأب','هاتف الأم','العنوان'],rows:students.map((s,i)=>[i+1,s.name,getStudentHealthSummary(s)||'',formatDate(s.dob),s.gen,s.nat,s.cls,s.dad,s.dph,s.mph,s.addr])},payments:{cols:['#','ولي الأمر','المبلغ','البيان','النوع','الطريقة','التاريخ','المستلم'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.type,p.method,p.date,p.rcvr])},expenses:{cols:['#','البيان','المبلغ','الفئة','التاريخ'],rows:expenses.map(e=>[e.id,e.desc,e.amt+' د.إ',e.cat,e.date])},finance:{cols:['الشهر','الإيرادات','المصاريف','الصافي'],rows:finData.map(d=>[d.month,d.inc.toLocaleString(),d.exp.toLocaleString(),(d.inc-d.exp).toLocaleString()])},attendance:{cols:['التاريخ','الفصل','الطالب','الحالة'],rows:Object.entries(attLog).filter(([,v])=>v).map(([k,v])=>{const[date,idStr]=k.split('_');const s=students.find(x=>x.id===+idStr);return s?[date,s.cls,s.name,v==='present'?'حاضر':v==='absent'?'غائب':'متأخر']:null;}).filter(Boolean)},receipts:{cols:['#','ولي الأمر','المبلغ','البيان','التاريخ'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.date])}};
+  const dataMap={students:{cols:['#','الاسم','الاسم بالإنجليزية','الحالة الصحية','رقم الهوية','الميلاد','الجنس','الجنسية','الفصل','الأب','هاتف الأب','الأم','هاتف الأم','العنوان'],rows:students.map((s,i)=>[i+1,s.name,getStudentEnglishName(s)||'',getStudentHealthSummary(s)||'',s.emiratesId||'',formatDate(s.dob),s.gen,s.nat,s.cls,s.dad,s.dph,s.mom||'',s.mph,s.addr])},payments:{cols:['#','ولي الأمر','المبلغ','البيان','النوع','الطريقة','التاريخ','المستلم'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.type,p.method,p.date,p.rcvr])},expenses:{cols:['#','البيان','المبلغ','الفئة','التاريخ'],rows:expenses.map(e=>[e.id,e.desc,e.amt+' د.إ',e.cat,e.date])},finance:{cols:['الشهر','الإيرادات','المصاريف','الصافي'],rows:finData.map(d=>[d.month,d.inc.toLocaleString(),d.exp.toLocaleString(),(d.inc-d.exp).toLocaleString()])},attendance:{cols:['التاريخ','الفصل','الطالب','الحالة'],rows:Object.entries(attLog).filter(([,v])=>v).map(([k,v])=>{const[date,idStr]=k.split('_');const s=students.find(x=>x.id===+idStr);return s?[date,s.cls,s.name,v==='present'?'حاضر':v==='absent'?'غائب':'متأخر']:null;}).filter(Boolean)},receipts:{cols:['#','ولي الأمر','المبلغ','البيان','التاريخ'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.date])}};
   const d=dataMap[exportTarget];
   if(d){
     html+=`<thead><tr>${d.cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
@@ -5683,31 +5753,15 @@ function quickApprove(ts) {
   doApprove(r);
 }
 
-function normalizeIdentityNumber(v) {
-  return String(v || '').replace(/\D+/g, '').trim();
-}
-
-function normalizeFormDateValue(v) {
-  var s = String(v || '').trim();
-  if (!s) return '';
-  s = s.replace(/[\.]/g, '/').replace(/-/g, '/');
-  var parts = s.split('/').map(function(x){ return x.trim(); }).filter(Boolean);
-  if (parts.length === 3) {
-    if (parts[0].length === 4) {
-      return parts[0] + '-' + parts[1].padStart(2,'0') + '-' + parts[2].padStart(2,'0');
-    }
-    return parts[2] + '-' + parts[1].padStart(2,'0') + '-' + parts[0].padStart(2,'0');
-  }
-  return normalizeDate(s);
-}
-
-function buildStudentFromFormRequest(r) {
-  return {
-    name: r.name, dob: normalizeFormDateValue(r.dob), gen: r.gen, nat: r.nat,
+function doApprove(r) {
+  // احفظ كل البيانات الأصلية مع الطالب
+  students.push({
+    id: nextStuId++, name: r.name, nameEn: transliterateArabicName(r.name), dob: r.dob, gen: r.gen, nat: r.nat,
     cls: r.cls || Object.keys(CLASSES)[0], bpl: '',
     dad: r.dadFull, job: r.dadJob, dph: r.dadMob,
     mom: r.momFull, mph: r.momMob, addr: r.addr,
     note: [r.notes, r.allergyNote ? '⚠️ حساسية: ' + r.allergyNote : ''].filter(Boolean).join(' | '),
+    // بيانات إضافية من النموذج
     familyName: r.familyName, firstName: r.firstName,
     emiratesId: r.emiratesId, passport: r.passport,
     religion: r.religion, motherTongue: r.motherTongue, otherLanguages: r.otherLanguages,
@@ -5719,6 +5773,7 @@ function buildStudentFromFormRequest(r) {
     photoConsent: r.photoConsent, socialConsent: r.socialConsent, nurseConsent: r.nurseConsent,
     contagious: r.contagious, surgical: r.surgical, diseaseDetails: r.diseaseDetails, accidentDetails: r.accidentDetails,
     guardianUndertake: r.guardianUndertake,
+    // الصور والوثائق
     imgChildPhoto:   r.imgChildPhoto,
     imgEmiratesId:   r.imgEmiratesId,
     imgVaccination:  r.imgVaccination,
@@ -5727,157 +5782,10 @@ function buildStudentFromFormRequest(r) {
     imgGuardianId:   r.imgGuardianId,
     imgGuardianPass: r.imgGuardianPass,
     imgBirthCert:    r.imgBirthCert,
+    // تاريخ القبول
     approvedAt: new Date().toISOString(),
     formTimestamp: r.timestamp,
-  };
-}
-
-function getFormStudentMatches(r) {
-  var reqName = normalizeArabicName(r.name || '');
-  var reqDob = normalizeFormDateValue(r.dob);
-  var reqId = normalizeIdentityNumber(r.emiratesId || r.passport);
-  var reqDad = normalizePhone(r.dadMob || '');
-  var reqMom = normalizePhone(r.momMob || '');
-
-  return students.map(function(s) {
-    var reasons = [];
-    if (reqName && normalizeArabicName(s.name || '') === reqName) reasons.push('الاسم');
-    if (reqDob && normalizeFormDateValue(s.dob) === reqDob) reasons.push('تاريخ الميلاد');
-    if (reqId) {
-      var stuId = normalizeIdentityNumber(s.emiratesId || s.passport);
-      if (stuId && stuId === reqId) reasons.push('رقم الهوية');
-    }
-    if (reqDad) {
-      var stuDad = normalizePhone(s.dph || '');
-      if (stuDad && stuDad === reqDad) reasons.push('هاتف الأب');
-    }
-    if (reqMom) {
-      var stuMom = normalizePhone(s.mph || '');
-      if (stuMom && stuMom === reqMom) reasons.push('هاتف الأم');
-    }
-    return { student: s, reasons: reasons };
-  }).filter(function(x){ return x.reasons.length; }).sort(function(a,b){
-    if (b.reasons.length !== a.reasons.length) return b.reasons.length - a.reasons.length;
-    return (a.student.id || 0) - (b.student.id || 0);
   });
-}
-
-function mergeMissingStudentFields(target, source) {
-  var filled = 0;
-  Object.keys(source).forEach(function(key) {
-    if (key === 'id') return;
-    var current = target[key];
-    var incoming = source[key];
-    var currentEmpty = current === undefined || current === null || String(current).trim() === '';
-    var incomingFilled = !(incoming === undefined || incoming === null || String(incoming).trim() === '');
-    if (currentEmpty && incomingFilled) {
-      target[key] = incoming;
-      filled++;
-    }
-  });
-  return filled;
-}
-
-function chooseStudentMatchForForm(matches) {
-  if (!matches || !matches.length) return { action: 'cancel' };
-
-  var lines = [
-    matches.length === 1 ? 'تم العثور على ملف طالب مطابق.' : 'تم العثور على أكثر من ملف طالب مطابق.',
-    'اختاري أحد الخيارات التالية:',
-    '1) اكتبي رقم ملف طالب موجود لربط الطلب عليه (من المطابقات أو أي رقم طالب محدد).',
-    '2) اكتبي new لقبول الطالب كملف جديد بدون ربط.',
-    '3) اتركي الحقل فارغاً للإلغاء.',
-    ''
-  ];
-
-  matches.forEach(function(item) {
-    lines.push('#' + item.student.id + ' - ' + item.student.name + ' | عوامل التطابق: ' + item.reasons.join('، '));
-  });
-
-  var defaultValue = matches[0] && matches[0].student ? String(matches[0].student.id) : '';
-  var answer = prompt(lines.join('\n'), defaultValue);
-  if (answer === null) return { action: 'cancel' };
-
-  var raw = String(answer).trim();
-  if (!raw) return { action: 'cancel' };
-
-  var lowered = raw.toLowerCase();
-  if (lowered === 'new' || lowered === 'new student' || raw === 'جديد' || raw === 'بدون ربط' || raw === 'طالب جديد') {
-    return { action: 'new' };
-  }
-
-  var sid = parseInt(raw, 10);
-  if (!sid) {
-    alert('الرجاء إدخال رقم ملف طالب صحيح أو كتابة new لقبول الطالب كملف جديد بدون ربط.');
-    return { action: 'retry' };
-  }
-
-  var selected = matches.find(function(item){ return item.student.id === sid; });
-  if (selected) return { action: 'link', match: selected };
-
-  var manualStudent = students.find(function(s){ return s.id === sid; });
-  if (!manualStudent) {
-    alert('رقم ملف الطالب غير موجود.');
-    return { action: 'retry' };
-  }
-
-  return {
-    action: 'link',
-    match: {
-      student: manualStudent,
-      reasons: ['ربط يدوي']
-    }
-  };
-}
-
-function doApprove(r) {
-  var matches = getFormStudentMatches(r);
-  if (matches.length) {
-    var choice;
-    do {
-      choice = chooseStudentMatchForForm(matches);
-    } while (choice && choice.action === 'retry');
-
-    if (!choice || choice.action === 'cancel') return;
-
-    if (choice.action === 'new') {
-      if (!confirm('يوجد تطابق محتمل، لكن سيتم قبول الطالب كملف جديد بدون أي ربط. هل تريدين المتابعة؟')) return;
-      var forcedNewStudent = buildStudentFromFormRequest(r);
-      forcedNewStudent.id = nextStuId++;
-      students.push(forcedNewStudent);
-      r.status = 'approved';
-      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-      autoSave();
-      renderStudents(); renderDash(); renderFormRequests();
-      showSyncBadge('✅ تم قبول الطالب كملف جديد بدون ربط');
-      return;
-    }
-
-    var selected = choice.match;
-    var confirmMsg = 'سيتم ربط الطلب مع ملف الطالب: #' + selected.student.id + ' ' + selected.student.name;
-    if (selected.reasons && selected.reasons.length) {
-      confirmMsg += '\nعوامل الربط: ' + selected.reasons.join('، ');
-    }
-    confirmMsg += '\n\nهل هذا هو الملف الصحيح؟';
-    if (!confirm(confirmMsg)) return;
-
-    var sourceStudent = buildStudentFromFormRequest(r);
-    var filledCount = mergeMissingStudentFields(selected.student, sourceStudent);
-    if (filledCount > 0 && !selected.student.formTimestamp) selected.student.formTimestamp = r.timestamp;
-    if (filledCount > 0 && !selected.student.approvedAt) selected.student.approvedAt = new Date().toISOString();
-    r.status = 'approved';
-    localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-    autoSave();
-    renderStudents(); renderDash(); renderFormRequests();
-    showSyncBadge(filledCount > 0
-      ? '✅ تم ربط الطلب مع ملف الطالب الموجود وتعبئة البيانات الناقصة'
-      : '✅ تم ربط الطلب مع ملف الطالب الموجود بدون استبدال أي بيانات');
-    return;
-  }
-
-  var newStudent = buildStudentFromFormRequest(r);
-  newStudent.id = nextStuId++;
-  students.push(newStudent);
   r.status = 'approved';
   localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
   autoSave();
