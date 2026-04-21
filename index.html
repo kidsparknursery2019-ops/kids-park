@@ -5741,23 +5741,50 @@ function getFormStudentMatches(r) {
 
   return students.map(function(s) {
     var reasons = [];
-    if (reqName && normalizeArabicName(s.name || '') === reqName) reasons.push('الاسم');
-    if (reqDob && normalizeFormDateValue(s.dob) === reqDob) reasons.push('تاريخ الميلاد');
+    var nameMatch = !!(reqName && normalizeArabicName(s.name || '') === reqName);
+    var dobMatch = !!(reqDob && normalizeFormDateValue(s.dob) === reqDob);
+    var idMatch = false;
+    var dadMatch = false;
+    var momMatch = false;
+
     if (reqId) {
       var stuId = normalizeIdentityNumber(s.emiratesId || s.passport);
-      if (stuId && stuId === reqId) reasons.push('رقم الهوية');
+      idMatch = !!(stuId && stuId === reqId);
     }
     if (reqDad) {
       var stuDad = normalizePhone(s.dph || '');
-      if (stuDad && stuDad === reqDad) reasons.push('هاتف الأب');
+      dadMatch = !!(stuDad && stuDad === reqDad);
     }
     if (reqMom) {
       var stuMom = normalizePhone(s.mph || '');
-      if (stuMom && stuMom === reqMom) reasons.push('هاتف الأم');
+      momMatch = !!(stuMom && stuMom === reqMom);
     }
-    return { student: s, reasons: reasons };
-  }).filter(function(x){ return x.reasons.length; }).sort(function(a,b){
-    if (b.reasons.length !== a.reasons.length) return b.reasons.length - a.reasons.length;
+
+    if (nameMatch) reasons.push('الاسم');
+    if (dobMatch) reasons.push('تاريخ الميلاد');
+    if (idMatch) reasons.push('رقم الهوية');
+    if (dadMatch) reasons.push('هاتف الأب');
+    if (momMatch) reasons.push('هاتف الأم');
+
+    var otherMatches = (dobMatch ? 1 : 0) + (idMatch ? 1 : 0) + (dadMatch ? 1 : 0) + (momMatch ? 1 : 0);
+    var isStrongMatch = false;
+
+    if (nameMatch && otherMatches >= 1) {
+      isStrongMatch = true;
+    } else if (!nameMatch && idMatch && otherMatches >= 2) {
+      isStrongMatch = true;
+    } else if (!nameMatch && dobMatch && dadMatch && momMatch) {
+      isStrongMatch = true;
+    }
+
+    return {
+      student: s,
+      reasons: reasons,
+      score: reasons.length,
+      isStrongMatch: isStrongMatch
+    };
+  }).filter(function(x){ return x.isStrongMatch; }).sort(function(a,b){
+    if (b.score !== a.score) return b.score - a.score;
     return (a.student.id || 0) - (b.student.id || 0);
   });
 }
