@@ -5683,27 +5683,34 @@ function quickApprove(ts) {
   doApprove(r);
 }
 
-function normalizeIdentityNumber(v) {
-  return String(v || '').replace(/\D+/g, '').trim();
+function normalizeLookupText(v) {
+  return String(v || '')
+    .toLowerCase()
+    .replace(/[ً-ٰٟ]/g, '')
+    .replace(/[‏‎]/g, '')
+    .replace(/[ـ]/g, '')
+    .replace(/[إأآٱ]/g, 'ا')
+    .replace(/[ى]/g, 'ي')
+    .replace(/[ة]/g, 'ه')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-function normalizeFormDateValue(v) {
-  var s = String(v || '').trim();
-  if (!s) return '';
-  s = s.replace(/[\.]/g, '/').replace(/-/g, '/');
-  var parts = s.split('/').map(function(x){ return x.trim(); }).filter(Boolean);
-  if (parts.length === 3) {
-    if (parts[0].length === 4) {
-      return parts[0] + '-' + parts[1].padStart(2,'0') + '-' + parts[2].padStart(2,'0');
-    }
-    return parts[2] + '-' + parts[1].padStart(2,'0') + '-' + parts[0].padStart(2,'0');
-  }
-  return normalizeDate(s);
+function normalizeDigitsOnly(v) {
+  var raw = String(v || '').replace(/\D+/g, '');
+  if (!raw) return '';
+  if (raw.length > 9 && raw.indexOf('971') === 0) raw = '0' + raw.slice(3);
+  if (raw.length > 11 && raw.indexOf('00971') === 0) raw = '0' + raw.slice(5);
+  return raw;
 }
 
-function buildStudentFromFormRequest(r) {
+function isFilledValue(v) {
+  return !(v == null || String(v).trim() === '');
+}
+
+function buildStudentFromForm(r) {
   return {
-    name: r.name, dob: r.dob, gen: r.gen, nat: r.nat,
+    id: null, name: r.name, dob: normalizeDate(r.dob), gen: r.gen, nat: r.nat,
     cls: r.cls || Object.keys(CLASSES)[0], bpl: '',
     dad: r.dadFull, job: r.dadJob, dph: r.dadMob,
     mom: r.momFull, mph: r.momMob, addr: r.addr,
@@ -5732,147 +5739,108 @@ function buildStudentFromFormRequest(r) {
   };
 }
 
-function getFormStudentMatches(r) {
-  var reqName = normalizeArabicName(r.name || '');
-  var reqDob = normalizeFormDateValue(r.dob);
-  var reqId = normalizeIdentityNumber(r.emiratesId || r.passport);
-  var reqDad = normalizePhone(r.dadMob || '');
-  var reqMom = normalizePhone(r.momMob || '');
+function findExistingStudentsForForm(r) {
+  var reqName = normalizeLookupText(r.name);
+  var reqDob = normalizeDate(r.dob);
+  var reqId = normalizeDigitsOnly(r.emiratesId);
+  var reqDadPhone = normalizeDigitsOnly(r.dadMob);
+  var reqMomPhone = normalizeDigitsOnly(r.momMob);
 
   return students.map(function(s) {
     var reasons = [];
-    var nameMatch = !!(reqName && normalizeArabicName(s.name || '') === reqName);
-    var dobMatch = !!(reqDob && normalizeFormDateValue(s.dob) === reqDob);
-    var idMatch = false;
-    var dadMatch = false;
-    var momMatch = false;
+    var stuName = normalizeLookupText(s.name);
+    var stuDob = normalizeDate(s.dob);
+    var stuIdNo = normalizeDigitsOnly(s.emiratesId);
+    var stuDadPhone = normalizeDigitsOnly(s.dph);
+    var stuMomPhone = normalizeDigitsOnly(s.mph);
 
-    if (reqId) {
-      var stuId = normalizeIdentityNumber(s.emiratesId || s.passport);
-      idMatch = !!(stuId && stuId === reqId);
-    }
-    if (reqDad) {
-      var stuDad = normalizePhone(s.dph || '');
-      dadMatch = !!(stuDad && stuDad === reqDad);
-    }
-    if (reqMom) {
-      var stuMom = normalizePhone(s.mph || '');
-      momMatch = !!(stuMom && stuMom === reqMom);
-    }
+    if (reqName && stuName && reqName === stuName) reasons.push('الاسم');
+    if (reqDob && stuDob && reqDob === stuDob) reasons.push('تاريخ الميلاد');
+    if (reqId && stuIdNo && reqId === stuIdNo) reasons.push('رقم الهوية');
+    if (reqDadPhone && stuDadPhone && reqDadPhone === stuDadPhone) reasons.push('هاتف الأب');
+    if (reqMomPhone && stuMomPhone && reqMomPhone === stuMomPhone) reasons.push('هاتف الأم');
 
-    if (nameMatch) reasons.push('الاسم');
-    if (dobMatch) reasons.push('تاريخ الميلاد');
-    if (idMatch) reasons.push('رقم الهوية');
-    if (dadMatch) reasons.push('هاتف الأب');
-    if (momMatch) reasons.push('هاتف الأم');
-
-    var otherMatches = (dobMatch ? 1 : 0) + (idMatch ? 1 : 0) + (dadMatch ? 1 : 0) + (momMatch ? 1 : 0);
-    var isStrongMatch = false;
-
-    if (nameMatch && otherMatches >= 1) {
-      isStrongMatch = true;
-    } else if (!nameMatch && idMatch && otherMatches >= 2) {
-      isStrongMatch = true;
-    } else if (!nameMatch && dobMatch && dadMatch && momMatch) {
-      isStrongMatch = true;
-    }
-
-    return {
-      student: s,
-      reasons: reasons,
-      score: reasons.length,
-      isStrongMatch: isStrongMatch
-    };
-  }).filter(function(x){ return x.isStrongMatch; }).sort(function(a,b){
-    if (b.score !== a.score) return b.score - a.score;
-    return (a.student.id || 0) - (b.student.id || 0);
-  });
+    return reasons.length ? { student: s, reasons: reasons } : null;
+  }).filter(Boolean);
 }
 
 function mergeMissingStudentFields(target, source) {
-  var filled = 0;
+  var filledCount = 0;
   Object.keys(source).forEach(function(key) {
     if (key === 'id') return;
     var current = target[key];
     var incoming = source[key];
-    var currentEmpty = current === undefined || current === null || String(current).trim() === '';
-    var incomingFilled = !(incoming === undefined || incoming === null || String(incoming).trim() === '');
-    if (currentEmpty && incomingFilled) {
+    if (!isFilledValue(incoming)) return;
+    if (!isFilledValue(current)) {
       target[key] = incoming;
-      filled++;
+      filledCount++;
     }
   });
-  return filled;
+  if (!isFilledValue(target.formTimestamp) && isFilledValue(source.formTimestamp)) target.formTimestamp = source.formTimestamp;
+  if (!isFilledValue(target.approvedAt) && isFilledValue(source.approvedAt)) target.approvedAt = source.approvedAt;
+  return filledCount;
 }
 
-function confirmStudentMatchForForm(selected, totalMatches) {
-  if (!selected || !selected.student) return false;
-  var msg = [
-    'تم العثور على ملف طالب مطابق قبل الربط.',
-    '',
-    'هل هذا هو الطالب الصحيح؟',
-    '#' + selected.student.id + ' - ' + (selected.student.name || ''),
-    'عوامل التطابق: ' + (selected.reasons && selected.reasons.length ? selected.reasons.join('، ') : 'غير محددة')
-  ];
-  if (totalMatches && totalMatches > 1) {
-    msg.push('عدد الملفات المطابقة: ' + totalMatches);
-  }
-  msg.push('');
-  msg.push('موافق = تنفيذ الربط مع هذا الملف');
-  msg.push('إلغاء = عدم الربط');
-  return confirm(msg.join('\n'));
+function getFormMatchScore(item) {
+  var score = 0;
+  (item.reasons || []).forEach(function(reason) {
+    if (reason === 'رقم الهوية') score += 100;
+    else if (reason === 'هاتف الأب' || reason === 'هاتف الأم') score += 50;
+    else if (reason === 'تاريخ الميلاد') score += 30;
+    else if (reason === 'الاسم') score += 10;
+  });
+  return score;
 }
 
-function chooseStudentMatchForForm(matches) {
+function chooseBestFormMatch(matches) {
   if (!matches || !matches.length) return null;
-  if (matches.length === 1) {
-    return confirmStudentMatchForForm(matches[0], 1) ? matches[0] : null;
-  }
+  return matches.slice().sort(function(a, b) {
+    var diff = getFormMatchScore(b) - getFormMatchScore(a);
+    if (diff) return diff;
+    return (b.reasons.length || 0) - (a.reasons.length || 0);
+  })[0];
+}
+
+function formatFormMatchMessage(r, matches) {
   var lines = [
-    'تم العثور على أكثر من ملف طالب مطابق.',
-    'أدخلي رقم ملف الطالب المطلوب ربط الطلب معه:',
+    '⚠️ تم العثور على طالب/طلاب مطابقين في قائمة الطلاب لهذا الطلب:',
     ''
   ];
-  matches.forEach(function(item) {
-    lines.push('#' + item.student.id + ' - ' + item.student.name + ' | عوامل التطابق: ' + item.reasons.join('، '));
+  matches.forEach(function(item, idx) {
+    var s = item.student;
+    lines.push((idx + 1) + ') ' + (s.name || 'بدون اسم') + ' — #' + (s.id || '—'));
+    lines.push('   عوامل التطابق: ' + item.reasons.join('، '));
   });
   lines.push('');
-  lines.push('اتركي الحقل فارغاً للإلغاء.');
-  var answer = prompt(lines.join('\n'), String(matches[0].student.id));
-  if (answer === null) return null;
-  var sid = parseInt(String(answer).trim(), 10);
-  if (!sid) return null;
-  var selected = matches.find(function(item){ return item.student.id === sid; });
-  if (!selected) {
-    alert('رقم ملف الطالب غير موجود ضمن الخيارات المطابقة.');
-    return null;
-  }
-  if (!confirmStudentMatchForForm(selected, matches.length)) return null;
-  return selected;
+  lines.push('عند المتابعة لن يتم حذف بيانات الطالب الموجود.');
+  lines.push('سيتم فقط تعبئة الحقول الناقصة داخل ملف الطالب الأقرب تطابقاً.');
+  lines.push('');
+  lines.push('هل تريد المتابعة؟');
+  return lines.join('\n');
 }
 
 function doApprove(r) {
-  var matches = getFormStudentMatches(r);
+  var candidate = buildStudentFromForm(r);
+  var matches = findExistingStudentsForForm(r);
+  var message = '';
+
   if (matches.length) {
-    var selected = chooseStudentMatchForForm(matches);
-    if (!selected) return;
-    var sourceStudent = buildStudentFromFormRequest(r);
-    var filledCount = mergeMissingStudentFields(selected.student, sourceStudent);
-    if (filledCount > 0 && !selected.student.formTimestamp) selected.student.formTimestamp = r.timestamp;
-    if (filledCount > 0 && !selected.student.approvedAt) selected.student.approvedAt = new Date().toISOString();
+    if (!confirm(formatFormMatchMessage(r, matches))) return;
+    var bestMatch = chooseBestFormMatch(matches);
+    var totalFilled = bestMatch ? mergeMissingStudentFields(bestMatch.student, candidate) : 0;
     r.status = 'approved';
     localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
     autoSave();
     renderStudents(); renderDash(); renderFormRequests();
-    showSyncBadge(filledCount > 0
-      ? '✅ تم ربط الطلب مع ملف الطالب الموجود وتعبئة البيانات الناقصة'
-      : '✅ تم ربط الطلب مع ملف الطالب الموجود بدون استبدال أي بيانات');
+    message = totalFilled > 0
+      ? '✅ تم العثور على تطابق، وتمت تعبئة ' + totalFilled + ' بيانات ناقصة داخل ملف الطالب الموجود'
+      : '✅ تم العثور على تطابق، وملف الطالب الموجود كان مكتملاً ولم يتم استبدال أي بيانات';
+    showSyncBadge(message);
     return;
   }
 
-  var newStudent = buildStudentFromFormRequest(r);
-  newStudent.id = nextStuId++;
-  students.push(newStudent);
+  candidate.id = nextStuId++;
+  students.push(candidate);
   r.status = 'approved';
   localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
   autoSave();
