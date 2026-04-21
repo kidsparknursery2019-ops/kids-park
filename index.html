@@ -5703,7 +5703,7 @@ function normalizeFormDateValue(v) {
 
 function buildStudentFromFormRequest(r) {
   return {
-    name: r.name, dob: r.dob, gen: r.gen, nat: r.nat,
+    name: r.name, dob: normalizeFormDateValue(r.dob), gen: r.gen, nat: r.nat,
     cls: r.cls || Object.keys(CLASSES)[0], bpl: '',
     dad: r.dadFull, job: r.dadJob, dph: r.dadMob,
     mom: r.momFull, mph: r.momMob, addr: r.addr,
