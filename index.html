@@ -3140,15 +3140,10 @@ function sortableHead(tableId, fields) {
 
 function renderPayments(){
   sanitizeCoreData();
-  const paySortEl = document.getElementById('pay-sort');
-  if (paySortEl && !paySortEl.dataset.defaultApplied) {
-    paySortEl.value = 'id-asc';
-    paySortEl.dataset.defaultApplied = '1';
-  }
   const q    = document.getElementById('pay-search').value.toLowerCase();
   const type = document.getElementById('pay-type').value;
   const yr   = document.getElementById('pay-year') ? document.getElementById('pay-year').value : '';
-  const sort = paySortEl ? paySortEl.value : 'id-asc';
+  const sort = document.getElementById('pay-sort') ? document.getElementById('pay-sort').value : 'desc';
   let f = payments.filter(function(p){
     if (!p) return false;
     const who = String(p.who || '').toLowerCase();
@@ -5549,21 +5544,15 @@ function quickApprove(ts) {
   doApprove(r);
 }
 
-function normalizeDupText(v) {
-  return String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
-}
-
-function normalizeDupPhone(v) {
-  return String(v || '').replace(/\D+/g, '');
-}
-
-function buildApprovedStudentFromForm(r) {
-  return {
+function doApprove(r) {
+  // احفظ كل البيانات الأصلية مع الطالب
+  students.push({
     id: nextStuId++, name: r.name, dob: r.dob, gen: r.gen, nat: r.nat,
     cls: r.cls || Object.keys(CLASSES)[0], bpl: '',
     dad: r.dadFull, job: r.dadJob, dph: r.dadMob,
     mom: r.momFull, mph: r.momMob, addr: r.addr,
     note: [r.notes, r.allergyNote ? '⚠️ حساسية: ' + r.allergyNote : ''].filter(Boolean).join(' | '),
+    // بيانات إضافية من النموذج
     emiratesId: r.emiratesId, passport: r.passport,
     religion: r.religion, motherTongue: r.motherTongue,
     dadNat: r.dadNat, dadEmail: r.dadEmail,
@@ -5571,6 +5560,7 @@ function buildApprovedStudentFromForm(r) {
     emergName: r.emergName, emergRel: r.emergRel, emergMob: r.emergMob,
     allergy: r.allergy, allergyNote: r.allergyNote, allergyType: r.allergyType,
     photoConsent: r.photoConsent, contagious: r.contagious, surgical: r.surgical,
+    // الصور والوثائق
     imgChildPhoto:   r.imgChildPhoto,
     imgEmiratesId:   r.imgEmiratesId,
     imgVaccination:  r.imgVaccination,
@@ -5579,70 +5569,10 @@ function buildApprovedStudentFromForm(r) {
     imgGuardianId:   r.imgGuardianId,
     imgGuardianPass: r.imgGuardianPass,
     imgBirthCert:    r.imgBirthCert,
+    // تاريخ القبول
     approvedAt: new Date().toISOString(),
     formTimestamp: r.timestamp,
-  };
-}
-
-function findExistingStudentForApproval(stu) {
-  if (!Array.isArray(students) || !students.length) return null;
-  var name = normalizeDupText(stu.name);
-  var eid = normalizeDupText(stu.emiratesId);
-  var passport = normalizeDupText(stu.passport);
-  var dadPhone = normalizeDupPhone(stu.dph);
-  var momPhone = normalizeDupPhone(stu.mph);
-  var dob = String(stu.dob || '').trim();
-
-  return students.find(function(s) {
-    if (!s) return false;
-    var sName = normalizeDupText(s.name);
-    var sEid = normalizeDupText(s.emiratesId);
-    var sPassport = normalizeDupText(s.passport);
-    var sDadPhone = normalizeDupPhone(s.dph);
-    var sMomPhone = normalizeDupPhone(s.mph);
-    var sDob = String(s.dob || '').trim();
-
-    if (eid && sEid && eid === sEid) return true;
-    if (passport && sPassport && passport === sPassport) return true;
-    if (name && sName && name === sName && dadPhone && sDadPhone && dadPhone === sDadPhone) return true;
-    if (name && sName && name === sName && momPhone && sMomPhone && momPhone === sMomPhone) return true;
-    if (name && sName && name === sName && dob && sDob && dob === sDob) return true;
-    return false;
-  }) || null;
-}
-
-function mergeMissingStudentFields(target, source) {
-  var changed = [];
-  Object.keys(source).forEach(function(key) {
-    if (key === 'id') return;
-    var oldVal = target[key];
-    var newVal = source[key];
-    var oldEmpty = oldVal == null || oldVal === '';
-    var newHasValue = !(newVal == null || newVal === '');
-    if (oldEmpty && newHasValue) {
-      target[key] = newVal;
-      changed.push(key);
-    }
   });
-  return changed;
-}
-
-function doApprove(r) {
-  var stu = buildApprovedStudentFromForm(r);
-  var existing = findExistingStudentForApproval(stu);
-
-  if (existing) {
-    if (!confirm('⚠️ الطالب موجود مسبقًا في قائمة الطلاب. سيتم إضافة البيانات الناقصة فقط دون تكرار. هل تريدين المتابعة؟')) return;
-    var changed = mergeMissingStudentFields(existing, stu);
-    r.status = 'approved';
-    localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-    autoSave();
-    renderStudents(); renderDash(); renderFormRequests();
-    showSyncBadge(changed.length ? '✅ الطالب موجود مسبقًا وتمت إضافة البيانات الناقصة فقط' : 'ℹ️ الطالب موجود مسبقًا ولا توجد بيانات ناقصة لإضافتها');
-    return;
-  }
-
-  students.push(stu);
   r.status = 'approved';
   localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
   autoSave();
