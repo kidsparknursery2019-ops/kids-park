@@ -5779,35 +5779,88 @@ function mergeMissingStudentFields(target, source) {
 }
 
 function chooseStudentMatchForForm(matches) {
-  if (!matches || !matches.length) return null;
-  if (matches.length === 1) return matches[0];
+  if (!matches || !matches.length) return { action: 'cancel' };
+
   var lines = [
-    'تم العثور على أكثر من ملف طالب مطابق.',
-    'أدخلي رقم ملف الطالب المطلوب ربط الطلب معه:',
+    matches.length === 1 ? 'تم العثور على ملف طالب مطابق.' : 'تم العثور على أكثر من ملف طالب مطابق.',
+    'اختاري أحد الخيارات التالية:',
+    '1) اكتبي رقم ملف طالب موجود لربط الطلب عليه (من المطابقات أو أي رقم طالب محدد).',
+    '2) اكتبي new لقبول الطالب كملف جديد بدون ربط.',
+    '3) اتركي الحقل فارغاً للإلغاء.',
     ''
   ];
+
   matches.forEach(function(item) {
     lines.push('#' + item.student.id + ' - ' + item.student.name + ' | عوامل التطابق: ' + item.reasons.join('، '));
   });
-  lines.push('');
-  lines.push('اتركي الحقل فارغاً للإلغاء.');
-  var answer = prompt(lines.join('\n'), String(matches[0].student.id));
-  if (answer === null) return null;
-  var sid = parseInt(String(answer).trim(), 10);
-  if (!sid) return null;
-  var selected = matches.find(function(item){ return item.student.id === sid; });
-  if (!selected) {
-    alert('رقم ملف الطالب غير موجود ضمن الخيارات المطابقة.');
-    return null;
+
+  var defaultValue = matches[0] && matches[0].student ? String(matches[0].student.id) : '';
+  var answer = prompt(lines.join('\n'), defaultValue);
+  if (answer === null) return { action: 'cancel' };
+
+  var raw = String(answer).trim();
+  if (!raw) return { action: 'cancel' };
+
+  var lowered = raw.toLowerCase();
+  if (lowered === 'new' || lowered === 'new student' || raw === 'جديد' || raw === 'بدون ربط' || raw === 'طالب جديد') {
+    return { action: 'new' };
   }
-  return selected;
+
+  var sid = parseInt(raw, 10);
+  if (!sid) {
+    alert('الرجاء إدخال رقم ملف طالب صحيح أو كتابة new لقبول الطالب كملف جديد بدون ربط.');
+    return { action: 'retry' };
+  }
+
+  var selected = matches.find(function(item){ return item.student.id === sid; });
+  if (selected) return { action: 'link', match: selected };
+
+  var manualStudent = students.find(function(s){ return s.id === sid; });
+  if (!manualStudent) {
+    alert('رقم ملف الطالب غير موجود.');
+    return { action: 'retry' };
+  }
+
+  return {
+    action: 'link',
+    match: {
+      student: manualStudent,
+      reasons: ['ربط يدوي']
+    }
+  };
 }
 
 function doApprove(r) {
   var matches = getFormStudentMatches(r);
   if (matches.length) {
-    var selected = chooseStudentMatchForForm(matches);
-    if (!selected) return;
+    var choice;
+    do {
+      choice = chooseStudentMatchForForm(matches);
+    } while (choice && choice.action === 'retry');
+
+    if (!choice || choice.action === 'cancel') return;
+
+    if (choice.action === 'new') {
+      if (!confirm('يوجد تطابق محتمل، لكن سيتم قبول الطالب كملف جديد بدون أي ربط. هل تريدين المتابعة؟')) return;
+      var forcedNewStudent = buildStudentFromFormRequest(r);
+      forcedNewStudent.id = nextStuId++;
+      students.push(forcedNewStudent);
+      r.status = 'approved';
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      autoSave();
+      renderStudents(); renderDash(); renderFormRequests();
+      showSyncBadge('✅ تم قبول الطالب كملف جديد بدون ربط');
+      return;
+    }
+
+    var selected = choice.match;
+    var confirmMsg = 'سيتم ربط الطلب مع ملف الطالب: #' + selected.student.id + ' ' + selected.student.name;
+    if (selected.reasons && selected.reasons.length) {
+      confirmMsg += '\nعوامل الربط: ' + selected.reasons.join('، ');
+    }
+    confirmMsg += '\n\nهل هذا هو الملف الصحيح؟';
+    if (!confirm(confirmMsg)) return;
+
     var sourceStudent = buildStudentFromFormRequest(r);
     var filledCount = mergeMissingStudentFields(selected.student, sourceStudent);
     if (filledCount > 0 && !selected.student.formTimestamp) selected.student.formTimestamp = r.timestamp;
