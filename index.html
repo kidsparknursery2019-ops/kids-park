@@ -316,6 +316,7 @@ textarea{resize:vertical;min-height:65px}
   <div class="hdr-time" id="clock"></div>
   <button id="notif-btn" class="notif-btn" onclick="toggleNotifPanel()" title="التنبيهات">🔔<span class="notif-badge" id="notif-badge-count" style="display:none">0</span></button>
   <button id="btn-save-cloud" onclick="pushToFirebase()" style="display:none;padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.5);background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:12px;font-weight:700">☁️ حفظ</button>
+  <button id="btn-refresh-cloud" onclick="manualRefreshFromFirebase()" style="display:none;padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.5);background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:12px;font-weight:700;margin-right:6px">🔄 تحديث</button>
   <div id="user-badge" style="display:none;align-items:center;gap:10px;font-size:13px">
     <div><div style="font-weight:700" id="ub-name"></div><div style="font-size:11px;opacity:.7" id="ub-role"></div></div>
     <button onclick="doLogout()" style="padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.4);background:transparent;color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:13px;font-weight:600">خروج</button>
@@ -2709,22 +2710,32 @@ function viewStudentProfile(id) {
       '<div class="fl"><label>رقم الجواز</label><div dir="ltr">' + (s.passport||'—') + '</div></div>' +
       '<div class="fl"><label>الديانة</label><div>' + (s.religion||'—') + '</div></div>' +
       '<div class="fl"><label>اللغة الأم</label><div>' + (s.motherTongue||'—') + '</div></div>' +
+      '<div class="fl"><label>لغات أخرى</label><div>' + (s.otherLanguages||'—') + '</div></div>' +
       '<div class="fl" style="grid-column:1/-1"><label>العنوان</label><div>' + (s.addr||'—') + '</div></div>' +
     '</div>' +
     '<div style="font-weight:700;color:var(--g1);margin-bottom:6px;border-top:1.5px solid var(--border);padding-top:10px">👨 بيانات الأب</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:13px">' +
       '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + (s.dad||'—') + '</div></div>' +
       '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + (s.dph||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">هاتف المنزل</label><div dir="ltr">' + (s.dadHome||'—') + '</div></div>' +
       '<div><label style="font-size:11px;color:var(--muted)">المهنة</label><div>' + (s.job||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">جهة العمل</label><div>' + (s.dadWork||'—') + '</div></div>' +
       '<div><label style="font-size:11px;color:var(--muted)">الإيميل</label><div dir="ltr">' + (s.dadEmail||'—') + '</div></div>' +
       '<div><label style="font-size:11px;color:var(--muted)">الجنسية</label><div>' + (s.dadNat||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">اللغة الأم</label><div>' + (s.dadMotherTongue||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">لغات أخرى</label><div>' + (s.dadOtherLanguages||'—') + '</div></div>' +
     '</div>' +
     '<div style="font-weight:700;color:var(--g1);margin-bottom:6px">👩 بيانات الأم</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:13px">' +
       '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + (s.mom||'—') + '</div></div>' +
       '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + (s.mph||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">هاتف المنزل</label><div dir="ltr">' + (s.momHome||'—') + '</div></div>' +
       '<div><label style="font-size:11px;color:var(--muted)">المهنة</label><div>' + (s.momJob||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">جهة العمل</label><div>' + (s.momWork||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الإيميل</label><div dir="ltr">' + (s.momEmail||'—') + '</div></div>' +
       '<div><label style="font-size:11px;color:var(--muted)">الجنسية</label><div>' + (s.momNat||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">اللغة الأم</label><div>' + (s.momMotherTongue||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">لغات أخرى</label><div>' + (s.momOtherLanguages||'—') + '</div></div>' +
     '</div>' +
     (s.emergName ? '<div style="font-weight:700;color:var(--g1);margin-bottom:6px">🚨 جهة اتصال للطوارئ</div>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;font-size:13px">' +
@@ -2736,6 +2747,8 @@ function viewStudentProfile(id) {
     (s.allergy === 'نعم' || String(s.allergy||'').toLowerCase().includes('yes') ?
       '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">' +
       '⚠️ <b>حساسية إضافية:</b> ' + (s.allergyNote||s.allergyType||'يرجى المراجعة') + '</div>' : '') +
+    (s.diseaseDetails ? '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">🦠 <b>تفاصيل الأمراض:</b> ' + s.diseaseDetails + '</div>' : '') +
+    (s.accidentDetails ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">🏥 <b>تفاصيل الحوادث / العمليات:</b> ' + s.accidentDetails + '</div>' : '') +
     (s.note || s.notes ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📝 ' + (s.note||s.notes) + '</div>' : '') +
     (s.sub_end ? '<div style="background:var(--gp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📅 <b>تاريخ انتهاء الاشتراك:</b> ' + s.sub_end + '</div>' : '') +
     '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px;border-top:1.5px solid var(--border);padding-top:10px">💰 المدفوعات (' + (function(){
@@ -3068,12 +3081,14 @@ function renderAttGrid(){
 function setAtt(date,id,status){
   attLog[date+'_'+id]=status;
   renderAttGrid();renderAttLog();renderDash();
+  autoSave();
 }
 
 function markAll(status){
   const date=document.getElementById('att-date').value;
   students.filter(function(s){ return s && s.cls===currentClsTab; }).forEach(function(s){ attLog[date+'_'+s.id]=status; });
   renderAttGrid();renderAttLog();renderDash();
+  autoSave();
 }
 
 function renderAttLog(){
@@ -4324,6 +4339,8 @@ function applyLogin() {
   if (sb) sb.style.display = 'inline-block';
   const nb = document.getElementById('notif-btn');
   if (nb) nb.style.display = 'inline-block';
+  const rb = document.getElementById('btn-refresh-cloud');
+  if (rb) rb.style.display = 'inline-block';
   document.getElementById('ub-name').textContent = currentUser.name || currentUser.username;
   document.getElementById('ub-role').textContent = currentUser.role === 'admin' ? '👑 مدير' : '👤 موظف';
   // Show admin nav only for admin
@@ -4373,6 +4390,8 @@ function doLogout() {
   if (sb2) sb2.style.display = 'none';
   const nb2 = document.getElementById('notif-btn');
   if (nb2) nb2.style.display = 'none';
+  const rb2 = document.getElementById('btn-refresh-cloud');
+  if (rb2) rb2.style.display = 'none';
   document.getElementById('user-badge').style.display = 'none';
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
@@ -4411,6 +4430,7 @@ function saveNurseryInfo() {
   nurserySettings.addr_en = document.getElementById('set-addr-en').value;
   nurserySettings.phone = document.getElementById('set-phone').value;
   nurserySettings.email = document.getElementById('set-email').value;
+  nurserySettings.logoDataUrl = logoDataUrl || '';
   localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
   autoSave();
   alert('✅ تم حفظ معلومات الحضانة');
@@ -4448,6 +4468,7 @@ function removeLogo() {
   localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
   updateLogoDisplay();
   saveLogoToFirebase();
+  autoSave();
 }
 
 function updateLogoDisplay() {
@@ -4961,17 +4982,21 @@ function getAllData() {
 
 function autoSave() {
   clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(pushToFirebase, 300);
+  syncTimeout = setTimeout(pushToFirebase, 10);
+}
+
+async function saveLogoToFirebaseSilent() {
+  const res = await fetch(FB_LOGO_URL + '.json', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(logoDataUrl || '')
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
 }
 
 async function saveLogoToFirebase() {
   try {
-    const res = await fetch(FB_LOGO_URL + '.json', {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(logoDataUrl || '')
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    await saveLogoToFirebaseSilent();
     showSyncBadge('✅ تم حفظ الشعار');
   } catch (e) {
     console.error('saveLogoToFirebase error:', e);
@@ -5199,6 +5224,7 @@ async function pushToFirebase() {
     });
 
     if (res.ok) {
+      try { await saveLogoToFirebaseSilent(); } catch(_) {}
       lastSavedAt = data.savedAt;
       showSyncBadge('✅ محفوظ');
     } else {
@@ -5286,6 +5312,26 @@ async function loadFromFirebase() {
   }
 }
 
+async function manualRefreshFromFirebase() {
+  showSyncBadge('⏳ جاري التحديث...');
+  try {
+    await loadFromFirebase();
+    renderDash();
+    if (typeof renderStudents === 'function') renderStudents();
+    if (typeof renderPayments === 'function') renderPayments();
+    if (typeof renderExpenses === 'function') renderExpenses();
+    if (typeof renderReceipts === 'function') renderReceipts();
+    if (typeof renderRenewals === 'function') renderRenewals();
+    if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
+    if (typeof renderAtt === 'function') renderAtt();
+    if (typeof updateNotifications === 'function') updateNotifications();
+    showSyncBadge('🔄 تم جلب أحدث البيانات من Firebase');
+  } catch (e) {
+    showSyncBadge('⚠️ تعذر التحديث من Firebase');
+    console.error('manualRefreshFromFirebase error:', e);
+  }
+}
+
 async function checkForUpdates() {
   if (isSyncing) return;
   try {
@@ -5342,41 +5388,118 @@ async function syncFromGoogleSheets() {
     const text = await res.text();
     const raw  = text.slice(text.indexOf('(') + 1, text.lastIndexOf(')'));
     const json = JSON.parse(raw);
-    const rows = json.table ? json.table.rows : [];
+    const table = json.table || {};
+    const rows = table.rows || [];
+    const cols = table.cols || [];
     let added = 0;
-    const existing = new Set(syncedFormRows.map(r => r.timestamp));
+
+    function normKey(s) {
+      return String(s || '')
+        .replace(/[\u064B-\u065F\u0670]/g, '')
+        .replace(/\u200f|\u200e/g, '')
+        .replace(/\s+/g, ' ')
+        .replace(/\s*\|\s*/g, ' | ')
+        .trim();
+    }
+
+    var labels = cols.map(function(col){
+      return normKey((col && (col.label || col.id)) || '');
+    });
+
+    function valByLabel(cells, names, fallbackIndex) {
+      for (var n = 0; n < names.length; n++) {
+        var wanted = normKey(names[n]);
+        var idx = labels.indexOf(wanted);
+        if (idx >= 0) {
+          var cell = cells[idx];
+          return (cell && cell.v != null) ? String(cell.v).trim() : '';
+        }
+      }
+      if (typeof fallbackIndex === 'number') {
+        var fb = cells[fallbackIndex];
+        return (fb && fb.v != null) ? String(fb.v).trim() : '';
+      }
+      return '';
+    }
 
     rows.forEach(function(row) {
       var c = row.c || [];
-      var g = function(i) { return (c[i] && c[i].v != null) ? String(c[i].v).trim() : ''; };
-      var ts = g(0);
+
+      var ts = valByLabel(c, ['طابع زمني', 'Timestamp'], 0);
       if (!ts) return;
-      var firstName = g(1), lastName = g(2);
+
+      var firstName = valByLabel(c, ['إسم الطفل | Child Name', 'اسم الطفل | Child Name'], 1);
+      var lastName  = valByLabel(c, ['إسم العائلة | Family Name', 'اسم العائلة | Family Name'], 2);
       var name = (firstName + ' ' + lastName).trim();
       if (!name) return;
-      var gv = g(4);
+
+      var gv = valByLabel(c, ['الجنس | Gender', 'Gender'], 4);
       var gvNorm = (gv || '').toLowerCase();
-      var parsedGen = (gv.includes('أنثى') || gv.includes('انثى') || gvNorm.startsWith('female')) ? 'انثى'
-                    : ((gv.includes('ذكر') || gvNorm.startsWith('male')) ? 'ذكر' : '');
+      var parsedGen = (gv.indexOf('أنثى') >= 0 || gv.indexOf('انثى') >= 0 || gvNorm.indexOf('female') >= 0) ? 'انثى'
+                    : ((gv.indexOf('ذكر') >= 0 || gvNorm.indexOf('male') >= 0) ? 'ذكر' : '');
 
       var mappedRow = {
-        timestamp: ts, name: name,
-        dob: g(3),
+        timestamp: ts,
+        name: name,
+        firstName: firstName,
+        familyName: lastName,
+        dob: valByLabel(c, ['تاريخ الميلاد | Date of Birth'], 3),
         gen: parsedGen,
-        emiratesId: g(5), nat: g(6), passport: g(7), religion: g(8),
-        addr: g(11),
-        dadFull: g(12), dadMob: g(15), dadJob: g(16), dadEmail: g(18),
-        momFull: g(21), momMob: g(24), momJob: g(25),
-        emergName: g(30), emergRel: g(31), emergMob: g(32),
-        notes: g(35), allergy: g(41), allergyNote: g(42), allergyType: g(43),
-        imgEmiratesId:   g(44),
-        imgVaccination:  g(45),
-        imgChildPhoto:   g(46),
-        imgPassport:     g(47),
-        imgResidency:    g(48),
-        imgGuardianId:   g(49),
-        imgGuardianPass: g(50),
-        imgBirthCert:    g(51),
+        emiratesId: valByLabel(c, ['رقم الهوية | Emirates ID Number'], 5),
+        nat: valByLabel(c, ['الجنسية | Nationality'], 6),
+        passport: valByLabel(c, ['رقم جواز السفر | Passport No'], 7),
+        religion: valByLabel(c, ['الديانة | Religion'], 8),
+        motherTongue: valByLabel(c, ['اللغة الأم | Mother Tongue'], 9),
+        otherLanguages: valByLabel(c, ['لغات أخرى | Other Languages (إختياري | Optional)', 'لغات أخرى | Other Languages (اختياري | Optional)'], 10),
+        addr: valByLabel(c, ['العنوان التفصيلي | Detailed Address'], 11),
+
+        momFull: valByLabel(c, ['الإسم الكامل (الأم) | Full Name', 'الاسم الكامل (الأم) | Full Name'], 12),
+        momNat: valByLabel(c, ['الجنسية (الأم) | Nationality'], 13),
+        momHome: valByLabel(c, ['هاتف المنزل  (الأم) | Home Tel  (إختياري | Optional)', 'هاتف المنزل (الأم) | Home Tel  (إختياري | Optional)'], 14),
+        momMob: valByLabel(c, ['رقم الموبايل (الأم) | Mobile Number'], 15),
+        momJob: valByLabel(c, ['المهنة (الأم) | Occupation'], 16),
+        momWork: valByLabel(c, ['المهنة | Occupation'], 17),
+        momEmail: valByLabel(c, ['البريد الالكتروني (الأم) | E-mail Address  (إختياري | Optional)', 'البريد الإلكتروني (الأم) | E-mail Address  (إختياري | Optional)'], 18),
+        momMotherTongue: valByLabel(c, ['اللغة الأم (الأم) | Mother Tongue'], 19),
+        momOtherLanguages: valByLabel(c, ['لغات أخرى (الأم) | Other Languages (إختياري | Optional)', 'لغات أخرى (الأم) | Other Languages (اختياري | Optional)'], 20),
+
+        dadFull: valByLabel(c, ['الإسم الكامل (الأب) | Full Name', 'الاسم الكامل (الأب) | Full Name'], 21),
+        dadNat: valByLabel(c, ['الجنسية (الأب) | Nationality'], 22),
+        dadHome: valByLabel(c, ['هاتف المنزل (الأب) | Home Tel  (إختياري | Optional)', 'هاتف المنزل (الأب) | Home Tel (إختياري | Optional)'], 23),
+        dadMob: valByLabel(c, ['رقم الموبايل (الأب) | Mobile Number'], 24),
+        dadJob: valByLabel(c, ['المهنة (الأب) | Occupation'], 25),
+        dadWork: valByLabel(c, ['جهة العمل (الأب) | Work Location'], 26),
+        dadEmail: valByLabel(c, ['البريد الالكتروني (الأب) | E-mail Address', 'البريد الإلكتروني (الأب) | E-mail Address'], 27),
+        dadMotherTongue: valByLabel(c, ['اللغة (الأب) | Mother Tongue'], 28),
+        dadOtherLanguages: valByLabel(c, ['لغات أخرى (الأب) | Other Languages (إختياري | Optional)', 'لغات أخرى (الأب) | Other Languages (اختياري | Optional)'], 29),
+
+        emergName: valByLabel(c, ['الاسم الكامل (أقارب) | Full Name'], 30),
+        emergRel: valByLabel(c, ['صلة القرابة | Relationship'], 31),
+        emergMob: valByLabel(c, ['رقم الموبايل (القريب) | Mobile Number'], 32),
+
+        photoConsent: valByLabel(c, ['أوافق على تصوير طفلي لتوثيق أنشطة الحضانة المختلفة I Agree to Take Photos or Videos of my child to record nursery activities'], 33),
+        socialConsent: valByLabel(c, ['أوافق على نشر صور أو فيديوهات طفلي على وسائل الإعلام أو مواقع التواصل الاجتماعي I Agree to to publish photos or videos of my child in the social media'], 34),
+        notes: valByLabel(c, ['إذا كان لديكم ملاحظات فيرجى ذكرها في الخانة أدناه Do you have comments? Please use the box below'], 35),
+        guardianUndertake: valByLabel(c, ['أتعهد أنا ولي الأمر بما يلي | I The guardian undertake the below'], 36),
+        contagious: valByLabel(c, ['هل يعاني طفلكم من أمراض معدية | Does your child suffer from a contagious disease', 'هل يعاني طفلكم من أمراض معدية |'], 37),
+        surgical: valByLabel(c, ['يرجى التوضيح في حال تعرض طفلكم لأي حادث خطير أو خضع لعملية جراحية أو عانى من مشاكل صحية Has your child had any serious accident or underwent a surgical operation?'], 38),
+        diseaseDetails: valByLabel(c, ['في حال الإجابة بنعم يرجى توضيح ذلك (أمراض) | if yes, please clarify'], 39),
+        accidentDetails: valByLabel(c, ['في حال الإجابة بنعم يرجى توضيح ذلك (حادث) | if yes, please clarify'], 40),
+        allergyMedicationFood: valByLabel(c, ['هل يعاني طفلكم من أي نوع من أنواع الحساسية من مأكولات أو أدوية معينة ؟ Does your child have any kind of allergies from food or certain medications?'], 41),
+        allergyNote: valByLabel(c, ['في حال الإجابة بنعم يرجى توضيح ذلك (حساسية) | if yes, please clarify'], 42),
+        allergy: valByLabel(c, ['هل يعاني طفلك من أي نوع من أنواع الحساسية؟ Does your child have any type of allergy? '], 43),
+        allergyType: valByLabel(c, ['ما نوع الحساسية إن وجد؟ What is the allergy type if any?'], 44),
+        nurseConsent: valByLabel(c, ['هل توافقون على تقديم الممرضة ما قد يحتاجه طفلكم من: Do you agree to let the nurse give your child what might be necessary such as:'], 45),
+
+        imgEmiratesId:   valByLabel(c, ['الهوية الإماراتية | Emirates ID'], 46),
+        imgVaccination:  valByLabel(c, ['شهادة التطعيم | Vaccination card'], 47),
+        imgChildPhoto:   valByLabel(c, ['صورة شخصية للطفل | Child Photo'], 48),
+        imgPassport:     valByLabel(c, ['جواز سفر الطفل | Child passport'], 49),
+        imgResidency:    valByLabel(c, ['إقامة الطفل سارية المفعول | Child valid residents visa'], 50),
+        imgGuardianId:   valByLabel(c, ['صورة هوية ولي الأمر | Guardian\'s Emirates ID'], 51),
+        imgGuardianPass: valByLabel(c, ['صورة جواز سفر ولي الأمر | Guardian\'s passport'], 52),
+        imgBirthCert:    valByLabel(c, ['شهادة الميلاد | Birth certificate'], 53),
+
         cls: '', status: 'pending'
       };
 
@@ -5389,7 +5512,6 @@ async function syncFromGoogleSheets() {
         });
       } else {
         syncedFormRows.push(mappedRow);
-        existing.add(ts);
         added++;
       }
     });
@@ -5552,13 +5674,17 @@ function doApprove(r) {
     mom: r.momFull, mph: r.momMob, addr: r.addr,
     note: [r.notes, r.allergyNote ? '⚠️ حساسية: ' + r.allergyNote : ''].filter(Boolean).join(' | '),
     // بيانات إضافية من النموذج
+    familyName: r.familyName, firstName: r.firstName,
     emiratesId: r.emiratesId, passport: r.passport,
-    religion: r.religion, motherTongue: r.motherTongue,
-    dadNat: r.dadNat, dadEmail: r.dadEmail,
-    momNat: r.momNat, momJob: r.momJob,
+    religion: r.religion, motherTongue: r.motherTongue, otherLanguages: r.otherLanguages,
+    dadNat: r.dadNat, dadEmail: r.dadEmail, dadHome: r.dadHome, dadWork: r.dadWork, dadMotherTongue: r.dadMotherTongue, dadOtherLanguages: r.dadOtherLanguages,
+    momNat: r.momNat, momJob: r.momJob, momEmail: r.momEmail, momHome: r.momHome, momWork: r.momWork, momMotherTongue: r.momMotherTongue, momOtherLanguages: r.momOtherLanguages,
     emergName: r.emergName, emergRel: r.emergRel, emergMob: r.emergMob,
     allergy: r.allergy, allergyNote: r.allergyNote, allergyType: r.allergyType,
-    photoConsent: r.photoConsent, contagious: r.contagious, surgical: r.surgical,
+    allergyMedicationFood: r.allergyMedicationFood,
+    photoConsent: r.photoConsent, socialConsent: r.socialConsent, nurseConsent: r.nurseConsent,
+    contagious: r.contagious, surgical: r.surgical, diseaseDetails: r.diseaseDetails, accidentDetails: r.accidentDetails,
+    guardianUndertake: r.guardianUndertake,
     // الصور والوثائق
     imgChildPhoto:   r.imgChildPhoto,
     imgEmiratesId:   r.imgEmiratesId,
