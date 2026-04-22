@@ -5275,36 +5275,153 @@ function exportFinReport() {
 
 // Print CSS
 
+// ============================================================
+// MERGE HELPERS — دمج البيانات من مستخدمين متعددين
+// ============================================================
+
+// دمج مصفوفة محلية مع مصفوفة من Firebase بناءً على الـ id
+// يضيف السجلات الجديدة ويحافظ على السجلات الموجودة في كلا الطرفين
+function mergeArrayById(localArr, remoteArr, localTombstones) {
+  if (!Array.isArray(remoteArr)) return Array.isArray(localArr) ? localArr : [];
+  if (!Array.isArray(localArr)) return remoteArr;
+  const ts = Array.isArray(localTombstones) ? localTombstones : [];
+  const merged = {};
+  // أضف جميع السجلات من Firebase أولاً
+  remoteArr.forEach(function(item) {
+    if (item && item.id != null && !ts.includes(item.id)) {
+      merged[item.id] = item;
+    }
+  });
+  // أضف/اكتب فوق بالسجلات المحلية (أحدث - تغييرات الجلسة الحالية)
+  localArr.forEach(function(item) {
+    if (item && item.id != null && !ts.includes(item.id)) {
+      merged[item.id] = item;
+    }
+  });
+  return Object.values(merged).sort(function(a,b){ return (a.id||0)-(b.id||0); });
+}
+
+// دمج attLog (كائن مفاتيح)
+function mergeAttLog(localLog, remoteLog) {
+  const result = Object.assign({}, remoteLog || {});
+  Object.assign(result, localLog || {});
+  return result;
+}
+
+// دمج tombstones — اتحاد المحذوفات من الطرفين
+function mergeTombstones(localTs, remoteTs) {
+  const result = {};
+  ['students','payments','expenses','renewals'].forEach(function(type) {
+    const local  = Array.isArray(localTs  && localTs[type])  ? localTs[type]  : [];
+    const remote = Array.isArray(remoteTs && remoteTs[type]) ? remoteTs[type] : [];
+    const combined = local.concat(remote.filter(function(id){ return !local.includes(id); }));
+    result[type] = combined;
+  });
+  return result;
+}
+
 async function pushToFirebase() {
   if (isSyncing) return;
   isSyncing = true;
   try {
-    const data = getAllData();
-    const lightData = {
-      version:         data.version,
-      savedAt:         data.savedAt,
-      students:        data.students,
-      payments:        data.payments,
-      expenses:        data.expenses,
-      attLog:          data.attLog,
-      CLASSES:         data.CLASSES,
-      nurserySettings: data.nurserySettings,
-      renewals:        data.renewals,
-      kp_users:        data.kp_users,
-      kp_form_rows:    data.kp_form_rows,
-      deletedStudents: (typeof deletedStudents !== 'undefined' ? deletedStudents : []),
-      tombstones:      (typeof tombstones !== 'undefined' ? tombstones : {}),
+    // ── الخطوة 1: اقرأ البيانات الحالية من Firebase ──────────────────
+    let remoteData = null;
+    try {
+      const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+      if (fetchRes.ok) remoteData = await fetchRes.json();
+    } catch(_) { /* نتابع بدون بيانات سحابية */ }
+
+    // ── الخطوة 2: دمج البيانات المحلية مع السحابية ───────────────────
+    const localTombstones = typeof tombstones !== 'undefined' ? tombstones : {};
+    const remoteTombstones = (remoteData && remoteData.tombstones) ? remoteData.tombstones : {};
+    const mergedTombstones = mergeTombstones(localTombstones, remoteTombstones);
+
+    const mergedStudents = mergeArrayById(
+      students,
+      remoteData && remoteData.students,
+      mergedTombstones.students
+    );
+    const mergedPayments = mergeArrayById(
+      payments,
+      remoteData && remoteData.payments,
+      mergedTombstones.payments
+    );
+    const mergedExpenses = mergeArrayById(
+      expenses,
+      remoteData && remoteData.expenses,
+      mergedTombstones.expenses
+    );
+    const mergedRenewals = mergeArrayById(
+      renewals,
+      remoteData && remoteData.renewals,
+      mergedTombstones.renewals
+    );
+    const mergedAttLog = mergeAttLog(
+      attLog,
+      remoteData && remoteData.attLog
+    );
+
+    // دمج سجلات النماذج (بدون تكرار بناءً على timestamp)
+    const localFormRows = JSON.parse(localStorage.getItem('kp_form_rows') || '[]');
+    const remoteFormRows = (remoteData && Array.isArray(remoteData.kp_form_rows)) ? remoteData.kp_form_rows : [];
+    const formRowsMap = {};
+    remoteFormRows.forEach(function(r){ if(r && r.timestamp) formRowsMap[r.timestamp] = r; });
+    localFormRows.forEach(function(r){ if(r && r.timestamp) formRowsMap[r.timestamp] = r; });
+    const mergedFormRows = Object.values(formRowsMap);
+
+    // دمج قائمة الطلاب المحذوفين
+    const localDeleted = typeof deletedStudents !== 'undefined' ? deletedStudents : [];
+    const remoteDeleted = (remoteData && Array.isArray(remoteData.deletedStudents)) ? remoteData.deletedStudents : [];
+    const deletedMap = {};
+    remoteDeleted.forEach(function(s){ if(s && s.id) deletedMap[s.id] = s; });
+    localDeleted.forEach(function(s){ if(s && s.id) deletedMap[s.id] = s; });
+    const mergedDeleted = Object.values(deletedMap);
+
+    // حدّث المتغيرات المحلية بالبيانات المدمجة
+    students = sanitizeEntityArray(mergedStudents);
+    payments = sanitizeEntityArray(mergedPayments);
+    expenses = sanitizeEntityArray(mergedExpenses);
+    renewals = sanitizeEntityArray(mergedRenewals);
+    Object.keys(mergedAttLog).forEach(function(k){ attLog[k] = mergedAttLog[k]; });
+    if (typeof deletedStudents !== 'undefined') deletedStudents = mergedDeleted;
+    if (typeof tombstones !== 'undefined') {
+      tombstones.students = mergedTombstones.students;
+      tombstones.payments = mergedTombstones.payments;
+      tombstones.expenses = mergedTombstones.expenses;
+      tombstones.renewals = mergedTombstones.renewals;
+      localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+    }
+    resetPaymentMatchCache();
+    refreshNextIds();
+
+    // ── الخطوة 3: اكتب البيانات المدمجة إلى Firebase ────────────────
+    const cleanSettings = Object.assign({}, nurserySettings);
+    delete cleanSettings.logoDataUrl;
+    const mergedData = {
+      version:         2,
+      savedAt:         new Date().toISOString(),
+      students:        students,
+      payments:        payments,
+      expenses:        expenses,
+      attLog:          attLog,
+      CLASSES:         CLASSES,
+      nurserySettings: cleanSettings,
+      renewals:        renewals,
+      kp_users:        JSON.parse(localStorage.getItem('kp_users') || '[]'),
+      kp_form_rows:    mergedFormRows,
+      deletedStudents: mergedDeleted,
+      tombstones:      mergedTombstones,
     };
 
     const res = await fetch(FB_URL + '.json', {
       method: 'PUT',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(lightData)
+      body: JSON.stringify(mergedData)
     });
 
     if (res.ok) {
       try { await saveLogoToFirebaseSilent(); } catch(_) {}
-      lastSavedAt = data.savedAt;
+      lastSavedAt = mergedData.savedAt;
       showSyncBadge('✅ محفوظ');
     } else {
       const errText = await res.text().catch(()=>'');
