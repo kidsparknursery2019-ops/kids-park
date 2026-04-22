@@ -5661,7 +5661,7 @@ async function syncFromGoogleSheets() {
         name: name,
         firstName: firstName,
         familyName: lastName,
-        dob: valByLabel(c, ['تاريخ الميلاد | Date of Birth'], 3),
+        dob: normalizeDate(valByLabel(c, ['تاريخ الميلاد | Date of Birth'], 3)),
         gen: parsedGen,
         emiratesId: valByLabel(c, ['رقم الهوية | Emirates ID Number'], 5),
         nat: valByLabel(c, ['الجنسية | Nationality'], 6),
