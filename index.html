@@ -2978,6 +2978,8 @@ function delStudent(id){
   });
   deletedStudents.unshift(deletedCopy);
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
+  // مهم: أضف tombstone مباشرة حتى لا يعيد Firebase نفس الطالب بعد أي تحميل/مزامنة
+  addTombstone('students', id);
   students = students.filter(x => x.id !== id);
   resetPaymentMatchCache();
   autoSave();
