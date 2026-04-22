@@ -5661,7 +5661,26 @@ async function syncFromGoogleSheets() {
         name: name,
         firstName: firstName,
         familyName: lastName,
-        dob: valByLabel(c, ['تاريخ الميلاد | Date of Birth'], 3),
+        dob: (function(){
+          var raw = valByLabel(c, ['تاريخ الميلاد | Date of Birth'], 3);
+          if (!raw) return '';
+          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+          if (/^\d+$/.test(raw)) {
+            var serial = parseInt(raw, 10);
+            if (serial > 1000) {
+              var d = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+              if (!isNaN(d)) {
+                var y=d.getUTCFullYear(), mo=d.getUTCMonth()+1, dy=d.getUTCDate();
+                return y+'-'+(mo<10?'0'+mo:mo)+'-'+(dy<10?'0'+dy:dy);
+              }
+            }
+          }
+          var m1 = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+          if (m1) { var mo=m1[1],dy=m1[2],y=m1[3]; return y+'-'+(mo.length<2?'0'+mo:mo)+'-'+(dy.length<2?'0'+dy:dy); }
+          var m2 = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+          if (m2) { var dy=m2[1],mo=m2[2],y=m2[3]; return y+'-'+(mo.length<2?'0'+mo:mo)+'-'+(dy.length<2?'0'+dy:dy); }
+          return raw;
+        })(),
         gen: parsedGen,
         emiratesId: valByLabel(c, ['رقم الهوية | Emirates ID Number'], 5),
         nat: valByLabel(c, ['الجنسية | Nationality'], 6),
@@ -5871,8 +5890,8 @@ function openFormDetail(ts) {
   approveBtn.style.display = r.status === 'pending' ? 'inline-flex' : 'none';
   approveBtn.onclick = function() {
     r.cls = (document.getElementById('detail-cls-select') || {}).value || Object.keys(CLASSES)[0];
-    doApprove(r);
     closeAll();
+    startApproveFlow(r);
   };
   document.getElementById('mo-form-detail').classList.add('on');
 }
@@ -5881,18 +5900,18 @@ function quickApprove(ts) {
   var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
   if (!r) return;
   r.cls = r.cls || Object.keys(CLASSES)[0];
-  doApprove(r);
+  startApproveFlow(r);
 }
 
-function doApprove(r) {
-  // احفظ كل البيانات الأصلية مع الطالب
-  students.push({
-    id: nextStuId++, name: r.name, dob: r.dob, gen: r.gen, nat: r.nat,
+// ─── بناء كائن الطالب الكامل من بيانات النموذج ───────────────────────────
+function buildStudentFromForm(r, existingId) {
+  return {
+    id: existingId || nextStuId++,
+    name: r.name, dob: r.dob, gen: r.gen, nat: r.nat,
     cls: r.cls || Object.keys(CLASSES)[0], bpl: '',
     dad: r.dadFull, job: r.dadJob, dph: r.dadMob,
     mom: r.momFull, mph: r.momMob, addr: r.addr,
     note: [r.notes, r.allergyNote ? '⚠️ حساسية: ' + r.allergyNote : ''].filter(Boolean).join(' | '),
-    // بيانات إضافية من النموذج
     familyName: r.familyName, firstName: r.firstName,
     emiratesId: r.emiratesId, passport: r.passport,
     religion: r.religion, motherTongue: r.motherTongue, otherLanguages: r.otherLanguages,
@@ -5904,24 +5923,130 @@ function doApprove(r) {
     photoConsent: r.photoConsent, socialConsent: r.socialConsent, nurseConsent: r.nurseConsent,
     contagious: r.contagious, surgical: r.surgical, diseaseDetails: r.diseaseDetails, accidentDetails: r.accidentDetails,
     guardianUndertake: r.guardianUndertake,
-    // الصور والوثائق
-    imgChildPhoto:   r.imgChildPhoto,
-    imgEmiratesId:   r.imgEmiratesId,
-    imgVaccination:  r.imgVaccination,
-    imgPassport:     r.imgPassport,
-    imgResidency:    r.imgResidency,
-    imgGuardianId:   r.imgGuardianId,
-    imgGuardianPass: r.imgGuardianPass,
-    imgBirthCert:    r.imgBirthCert,
-    // تاريخ القبول
+    imgChildPhoto: r.imgChildPhoto, imgEmiratesId: r.imgEmiratesId, imgVaccination: r.imgVaccination,
+    imgPassport: r.imgPassport, imgResidency: r.imgResidency, imgGuardianId: r.imgGuardianId,
+    imgGuardianPass: r.imgGuardianPass, imgBirthCert: r.imgBirthCert,
     approvedAt: new Date().toISOString(),
     formTimestamp: r.timestamp,
+  };
+}
+
+// ─── إيجاد الطلاب المشابهين ───────────────────────────────────────────────
+function findSimilarStudents(r) {
+  var rName = (r.name || '').trim();
+  var rDob  = (r.dob  || '').trim();
+  var rDad  = (r.dadFull || '').trim();
+  var rMom  = (r.momFull || '').trim();
+  var rDph  = (r.dadMob  || '').trim();
+  var rMph  = (r.momMob  || '').trim();
+  return students.filter(function(s) {
+    var sameName = rName && s.name && s.name.trim() === rName;
+    var sameDob  = rDob  && s.dob  && s.dob.trim()  === rDob;
+    var sameDad  = rDad  && s.dad  && s.dad.trim()   === rDad;
+    var sameMom  = rMom  && s.mom  && s.mom.trim()   === rMom;
+    var sameDph  = rDph  && s.dph  && s.dph.replace(/\s/g,'') === rDph.replace(/\s/g,'');
+    var sameMph  = rMph  && s.mph  && s.mph.replace(/\s/g,'') === rMph.replace(/\s/g,'');
+    // يُعتبر مشابهاً إذا تطابق الاسم + (تاريخ الميلاد أو هاتف أحد الوالدين)
+    return sameName && (sameDob || sameDad || sameMom || sameDph || sameMph);
   });
+}
+
+// ─── تدفق القبول الرئيسي ─────────────────────────────────────────────────
+function startApproveFlow(r) {
+  var similar = findSimilarStudents(r);
+  if (similar.length === 0) {
+    // لا يوجد تكرار → أضف مباشرة
+    doApprove(r, null);
+    return;
+  }
+  // يوجد طلاب مشابهون → اعرض نافذة الاختيار
+  showDuplicateDialog(r, similar);
+}
+
+// ─── نافذة الطلاب المشابهين ──────────────────────────────────────────────
+function showDuplicateDialog(r, similar) {
+  // إزالة نافذة قديمة إن وجدت
+  var old = document.getElementById('dup-dialog-overlay');
+  if (old) old.remove();
+
+  var rows = similar.map(function(s, i) {
+    return '<div style="border:1.5px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--gp);cursor:pointer;transition:box-shadow .15s" ' +
+      'onmouseover="this.style.boxShadow='0 0 0 2px var(--g1)'" onmouseout="this.style.boxShadow='none'" ' +
+      'onclick="confirmMerge('' + r.timestamp.replace(/'/g,"\'") + '',' + s.id + ')">' +
+      '<div style="font-weight:700;font-size:15px;color:var(--g1)">' + escapeHtml(s.name) + ' <span style="font-size:12px;color:var(--muted)">#' + s.id + '</span></div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-top:4px">' +
+        '📅 ' + (s.dob||'—') + ' &nbsp;|&nbsp; 🏫 ' + (s.cls||'—') + ' &nbsp;|&nbsp; 👨 ' + (s.dad||'—') +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  var html = '<div id="dup-dialog-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px">' +
+    '<div style="background:#fff;border-radius:16px;padding:28px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.25)">' +
+      '<div style="font-size:18px;font-weight:900;color:var(--g1);margin-bottom:6px">⚠️ طالب مشابه موجود</div>' +
+      '<div style="color:var(--muted);font-size:13px;margin-bottom:18px">تم العثور على ' + similar.length + ' طالب مشابه لـ <b>' + escapeHtml(r.name) + '</b>. اختر أحدهم لدمج البيانات، أو سجّله كطالب جديد.</div>' +
+      '<div style="font-weight:700;color:var(--text);margin-bottom:10px;font-size:13px">الطلاب المشابهون:</div>' +
+      rows +
+      '<div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">' +
+        '<button onclick="doApprove(window._pendingApproveRow, null);document.getElementById('dup-dialog-overlay').remove()" ' +
+          'style="flex:1;padding:11px;background:var(--b1);color:#fff;border:none;border-radius:9px;font-family:Tajawal,sans-serif;font-size:14px;font-weight:700;cursor:pointer">➕ تسجيل كطالب جديد</button>' +
+        '<button onclick="document.getElementById('dup-dialog-overlay').remove()" ' +
+          'style="flex:1;padding:11px;background:#eee;color:var(--text);border:none;border-radius:9px;font-family:Tajawal,sans-serif;font-size:14px;font-weight:700;cursor:pointer">❌ إلغاء</button>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+
+  window._pendingApproveRow = r;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+// ─── تأكيد الدمج مع طالب موجود ───────────────────────────────────────────
+function confirmMerge(ts, stuId) {
+  var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
+  if (!r) return;
+  var s = students.find(function(x){ return x.id === stuId; });
+  if (!s) return;
+
+  var msg = 'دمج بيانات النموذج مع الطالب "' + s.name + '"؟
+' +
+    'سيتم تحديث بياناته بالمعلومات الجديدة من النموذج والاحتفاظ برقمه الحالي (' + s.id + ').';
+  if (!confirm(msg)) return;
+
+  document.getElementById('dup-dialog-overlay').remove();
+  doApprove(r, stuId);
+}
+
+// ─── تنفيذ القبول (جديد أو دمج) ─────────────────────────────────────────
+function doApprove(r, mergeWithId) {
+  if (mergeWithId != null) {
+    // دمج مع طالب موجود: حدّث بياناته واحتفظ بـ id والحضور والمدفوعات
+    var idx = students.findIndex(function(s){ return s.id === mergeWithId; });
+    if (idx >= 0) {
+      var existing = students[idx];
+      var updated = buildStudentFromForm(r, existing.id);
+      // احتفظ ببعض البيانات القديمة التي قد تكون أهم
+      updated.cls = updated.cls || existing.cls;
+      updated.note = [existing.note, updated.note].filter(Boolean).join(' | ');
+      students[idx] = updated;
+    }
+  } else {
+    // طالب جديد
+    students.push(buildStudentFromForm(r, null));
+  }
+
+  // ✅ حدّث حالة الطلب في syncedFormRows وارفعه لـ Firebase ليُحذف من قائمة الانتظار لجميع المستخدمين
   r.status = 'approved';
+  r.approvedAt = new Date().toISOString();
   localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-  autoSave();
-  renderStudents(); renderDash(); renderFormRequests();
-  showSyncBadge('✅ تم قبول الطالب وإضافته');
+
+  // مزامنة فورية مع Firebase لتحديث status الطلب لجميع المستخدمين
+  pushToFirebase().then(function() {
+    renderStudents(); renderDash(); renderFormRequests();
+    showSyncBadge(mergeWithId != null ? '✅ تم دمج بيانات الطالب ومزامنته' : '✅ تم قبول الطالب وإضافته ومزامنته');
+  }).catch(function() {
+    autoSave();
+    renderStudents(); renderDash(); renderFormRequests();
+    showSyncBadge('✅ تم القبول (مزامنة لاحقة)');
+  });
 }
 
 function rejectFormRow(ts) {
