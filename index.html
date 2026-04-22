@@ -3437,7 +3437,7 @@ function renderPayments(){
   const theadEl = document.getElementById('pay-thead');
   if (theadEl) theadEl.innerHTML = sortableHead('pay-table', [
     ['id','#السند'], ['who','ولي الأمر'], ['amt','المبلغ'], ['desc','البيان'],
-    ['studentMatch','ربط الطالب'], ['internalNote','ملاحظات داخلية'], ['type','النوع'], ['method','طريقة الدفع'], ['date','التاريخ'], ['rcvr','المستلم'], ['','']
+    ['studentMatch','ربط الطالب'], ['internalNote','ملاحظات داخلية'], ['type','النوع'], ['method','طريقة الدفع'], ['date','التاريخ'], ['sub_end','انتهاء التسجيل'], ['rcvr','المستلم'], ['','']
   ]);
   const total=f.reduce((s,p)=>s+p.amt,0);
   document.getElementById('pay-total').textContent=total.toLocaleString();
@@ -3460,7 +3460,7 @@ function renderPayments(){
       <td style="font-size:12px">${matchCell}</td>
       <td style="font-size:12px">${(p.internalNote || p.internal || p.internal_note) ? `<div style="padding:3px 8px;background:#fff8e1;border-right:3px solid #f39c12;border-radius:5px;color:#b8860b;font-weight:600">🔒 ${p.internalNote || p.internal || p.internal_note}</div>` : '<span style="color:#999">—</span>'}</td>
       <td><span class="b bgr">${p.type}</span></td>
-      <td>${p.method}</td><td>${p.date}</td><td>${p.rcvr}</td>
+      <td>${p.method}</td><td>${p.date}</td><td>${p.sub_end ? formatDate(p.sub_end) : '—'}</td><td>${p.rcvr}</td>
       <td style="display:flex;gap:5px"><button class="btn btn-out btn-sm" onclick="openReceiptDetail(${p.id})">🧾 سند</button><button class="btn btn-out btn-sm" onclick="openEditPay(${p.id})">✏️</button></td>
     </tr>`;
   }).join('');
@@ -5193,13 +5193,6 @@ function buildReceiptHTML(p) {
         </td>
         <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:13px;font-weight:600">${p.desc||''}</td>
       </tr>
-      ${p.sub_end ? `<tr>
-        <td style="border:1px solid #000;padding:6px 10px;text-align:right;background:#f9f9f9">
-          <div style="font-size:11px;color:#555;font-weight:700">تاريخ انتهاء التسجيل</div>
-          <div style="font-size:10px;color:#888;font-style:italic">Registration expiry date</div>
-        </td>
-        <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:13px;font-weight:600">${formatDate(p.sub_end)}</td>
-      </tr>` : ''}
     </table>
     <table style="width:100%;border-collapse:collapse;border:1px solid #000;margin-bottom:6px">
       <tr><td style="padding:5px 10px;font-weight:900;border-bottom:1px solid #000">ملاحظات &nbsp; Notes</td></tr>
