@@ -2700,6 +2700,7 @@ function printStudentFullFile(studentId) {
       '<div class="item"><b>رقم الطالب:</b> #'+(s.id||'—')+'</div>'+
       '<div class="item"><b>الفصل:</b> '+(s.cls||'—')+'</div>'+
       '<div class="item"><b>تاريخ الميلاد:</b> '+(s.dob||'—')+'</div>'+
+      '<div class="item"><b>رقم الهوية:</b> <span dir="ltr">'+(s.idNo||s.identityNo||s.nationalId||s.emiratesId||'—')+'</span></div>'+
       '<div class="item"><b>اسم الأب:</b> '+(s.dad||'—')+'</div>'+
       '<div class="item"><b>هاتف الأب:</b> '+(s.dph||'—')+'</div>'+
       '<div class="item"><b>اسم الأم:</b> '+(s.mom||'—')+'</div>'+
@@ -2749,7 +2750,7 @@ function viewStudentProfile(id) {
       '<div class="fl"><label>الجنس</label><div>' + (s.gen||'—') + '</div></div>' +
       '<div class="fl"><label>الجنسية</label><div>' + (s.nat||'—') + '</div></div>' +
       '<div class="fl"><label>مكان الميلاد</label><div>' + (s.bpl||'—') + '</div></div>' +
-      '<div class="fl"><label>رقم الهوية</label><div dir="ltr">' + (s.emiratesId||'—') + '</div></div>' +
+      '<div class="fl"><label>رقم الهوية</label><div dir="ltr">' + (s.idNo||s.identityNo||s.nationalId||s.emiratesId||'—') + '</div></div>' +
       '<div class="fl"><label>رقم الجواز</label><div dir="ltr">' + (s.passport||'—') + '</div></div>' +
       '<div class="fl"><label>الديانة</label><div>' + (s.religion||'—') + '</div></div>' +
       '<div class="fl"><label>اللغة الأم</label><div>' + (s.motherTongue||'—') + '</div></div>' +
