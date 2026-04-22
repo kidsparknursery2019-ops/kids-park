@@ -1180,16 +1180,6 @@ function refreshNextIds(){
   else nextRenId = 51;
 }
 
-// ── تمييز البيانات الـ hardcoded ─────────────────────────────────
-// نضع _hc:true على كل سجل أصلي في الكود حتى لا يطغى على Firebase
-// عند فتح التطبيق من cache قديم
-(function markHardcoded() {
-  [students, expenses].forEach(function(arr) {
-    if (Array.isArray(arr)) arr.forEach(function(item) { if (item) item._hc = true; });
-  });
-})();
-// ─────────────────────────────────────────────────────────────────
-
 let deletedStudents = JSON.parse(localStorage.getItem('kp_deleted_students') || '[]');
 setTimeout(function(){ try{ resetPaymentMatchCache(); }catch(e){} }, 0);
 let tombstones = JSON.parse(localStorage.getItem('kp_tombstones') || '{"students":[],"payments":[],"expenses":[],"renewals":[]}');
@@ -5291,26 +5281,10 @@ function exportFinReport() {
 
 // دمج مصفوفة محلية مع مصفوفة من Firebase بناءً على الـ id
 // يضيف السجلات الجديدة ويحافظ على السجلات الموجودة في كلا الطرفين
-// إذا كانت البيانات المحلية كلها hardcoded (من الكود الأصلي)،
-// ولدى Firebase بيانات حقيقية، نعطي الأولوية الكاملة لـ Firebase
 function mergeArrayById(localArr, remoteArr, localTombstones) {
   if (!Array.isArray(remoteArr)) return Array.isArray(localArr) ? localArr : [];
   if (!Array.isArray(localArr)) return remoteArr;
   const ts = Array.isArray(localTombstones) ? localTombstones : [];
-
-  // ── حماية من البيانات الـ hardcoded ──────────────────────────────
-  // لو كل البيانات المحلية hardcoded (لم يُضف عليها شيء في هذه الجلسة)
-  // ولدى Firebase بيانات، نستخدم Firebase كمصدر وحيد
-  const localAllHardcoded = localArr.length > 0 && localArr.every(function(i){ return i && i._hc; });
-  if (localAllHardcoded && remoteArr.length > 0) {
-    const merged = {};
-    remoteArr.forEach(function(item) {
-      if (item && item.id != null && !ts.includes(item.id)) merged[item.id] = item;
-    });
-    return Object.values(merged).sort(function(a,b){ return (a.id||0)-(b.id||0); });
-  }
-  // ─────────────────────────────────────────────────────────────────
-
   const merged = {};
   // أضف جميع السجلات من Firebase أولاً
   remoteArr.forEach(function(item) {
@@ -5318,9 +5292,9 @@ function mergeArrayById(localArr, remoteArr, localTombstones) {
       merged[item.id] = item;
     }
   });
-  // أضف/اكتب فوق بالسجلات المحلية الجديدة فقط (غير الـ hardcoded)
+  // أضف/اكتب فوق بالسجلات المحلية (أحدث - تغييرات الجلسة الحالية)
   localArr.forEach(function(item) {
-    if (item && item.id != null && !ts.includes(item.id) && !item._hc) {
+    if (item && item.id != null && !ts.includes(item.id)) {
       merged[item.id] = item;
     }
   });
@@ -5328,13 +5302,9 @@ function mergeArrayById(localArr, remoteArr, localTombstones) {
 }
 
 // دمج attLog (كائن مفاتيح)
-// Firebase له الأولوية، والمحلي يُضاف فقط إن كان أحدث (مفاتيح غير موجودة في Firebase)
 function mergeAttLog(localLog, remoteLog) {
   const result = Object.assign({}, remoteLog || {});
-  // أضف فقط المفاتيح المحلية الجديدة التي لم تأت من Firebase
-  Object.keys(localLog || {}).forEach(function(k) {
-    if (!(k in result)) result[k] = localLog[k];
-  });
+  Object.assign(result, localLog || {});
   return result;
 }
 
@@ -5361,23 +5331,32 @@ async function pushToFirebase() {
       if (fetchRes.ok) remoteData = await fetchRes.json();
     } catch(_) { /* نتابع بدون بيانات سحابية */ }
 
+    // ── حماية من Cache القديم ─────────────────────────────────────────
+    // إذا كانت Firebase عندها بيانات محفوظة أحدث من آخر مزامنة محلية،
+    // نعطي Firebase الأولوية الكاملة ولا نسمح للبيانات القديمة بالكتابة فوقها
+    const localSyncedAt = localStorage.getItem('kp_last_synced_at') || '';
+    const remoteSavedAt = (remoteData && remoteData.savedAt) || '';
+    const firebaseIsNewer = remoteSavedAt && remoteSavedAt > localSyncedAt;
+
     // ── الخطوة 2: دمج البيانات المحلية مع السحابية ───────────────────
     const localTombstones = typeof tombstones !== 'undefined' ? tombstones : {};
     const remoteTombstones = (remoteData && remoteData.tombstones) ? remoteData.tombstones : {};
     const mergedTombstones = mergeTombstones(localTombstones, remoteTombstones);
 
+    // إذا Firebase أحدث: خذ Firebase أساساً ولا تكتب المحلي القديم فوقها
     const mergedStudents = mergeArrayById(
-      students,
+      firebaseIsNewer ? [] : students,
       remoteData && remoteData.students,
       mergedTombstones.students
     );
+    // للمدفوعات: دائماً ادمج (لأن المستخدم قد يضيف دفعة جديدة)
     const mergedPayments = mergeArrayById(
       payments,
       remoteData && remoteData.payments,
       mergedTombstones.payments
     );
     const mergedExpenses = mergeArrayById(
-      expenses,
+      firebaseIsNewer ? [] : expenses,
       remoteData && remoteData.expenses,
       mergedTombstones.expenses
     );
@@ -5452,6 +5431,7 @@ async function pushToFirebase() {
     if (res.ok) {
       try { await saveLogoToFirebaseSilent(); } catch(_) {}
       lastSavedAt = mergedData.savedAt;
+      localStorage.setItem('kp_last_synced_at', mergedData.savedAt);
       showSyncBadge('✅ محفوظ');
     } else {
       const errText = await res.text().catch(()=>'');
@@ -5520,6 +5500,7 @@ async function loadFromFirebase() {
     updateLogoDisplay();
     refreshNextIds();
     lastSavedAt = data.savedAt || '';
+    localStorage.setItem('kp_last_synced_at', lastSavedAt);
     renderDash();
     if (shouldProtectLocalStudents || shouldProtectLocalPayments) {
       const warnings = [];
