@@ -5765,6 +5765,186 @@ function driveImgUrl(url) {
   return m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w400' : url;
 }
 
+function normalizeFormMatchText(v){
+  return String(v || '')
+    .toLowerCase()
+    .replace(/[\u064B-\u0652\u0670]/g, '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeFormMatchPhone(v){
+  return String(v || '').replace(/\D+/g, '');
+}
+
+function isStudentValueEmpty(v){
+  return v == null || String(v).trim() === '';
+}
+
+function escapeTsForInline(ts){
+  return String(ts || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function buildStudentFromFormRow(r) {
+  return {
+    id: nextStuId++, name: r.name, dob: r.dob, gen: r.gen, nat: r.nat,
+    cls: r.cls || Object.keys(CLASSES)[0], bpl: '',
+    dad: r.dadFull, job: r.dadJob, dph: r.dadMob,
+    mom: r.momFull, mph: r.momMob, addr: r.addr,
+    note: [r.notes, r.allergyNote ? '⚠️ حساسية: ' + r.allergyNote : ''].filter(Boolean).join(' | '),
+    familyName: r.familyName, firstName: r.firstName,
+    emiratesId: r.emiratesId, passport: r.passport,
+    religion: r.religion, motherTongue: r.motherTongue, otherLanguages: r.otherLanguages,
+    dadNat: r.dadNat, dadEmail: r.dadEmail, dadHome: r.dadHome, dadWork: r.dadWork, dadMotherTongue: r.dadMotherTongue, dadOtherLanguages: r.dadOtherLanguages,
+    momNat: r.momNat, momJob: r.momJob, momEmail: r.momEmail, momHome: r.momHome, momWork: r.momWork, momMotherTongue: r.momMotherTongue, momOtherLanguages: r.momOtherLanguages,
+    emergName: r.emergName, emergRel: r.emergRel, emergMob: r.emergMob,
+    allergy: r.allergy, allergyNote: r.allergyNote, allergyType: r.allergyType,
+    allergyMedicationFood: r.allergyMedicationFood,
+    photoConsent: r.photoConsent, socialConsent: r.socialConsent, nurseConsent: r.nurseConsent,
+    contagious: r.contagious, surgical: r.surgical, diseaseDetails: r.diseaseDetails, accidentDetails: r.accidentDetails,
+    guardianUndertake: r.guardianUndertake,
+    imgChildPhoto: r.imgChildPhoto,
+    imgEmiratesId: r.imgEmiratesId,
+    imgVaccination: r.imgVaccination,
+    imgPassport: r.imgPassport,
+    imgResidency: r.imgResidency,
+    imgGuardianId: r.imgGuardianId,
+    imgGuardianPass: r.imgGuardianPass,
+    imgBirthCert: r.imgBirthCert,
+    approvedAt: new Date().toISOString(),
+    formTimestamp: r.timestamp,
+  };
+}
+
+function getFormStudentMatchCandidates(r) {
+  var childName = normalizeFormMatchText(r.name);
+  var dadName = normalizeFormMatchText(r.dadFull);
+  var momName = normalizeFormMatchText(r.momFull);
+  var emiratesId = String(r.emiratesId || '').trim();
+  var passport = String(r.passport || '').trim();
+  var dadMob = normalizeFormMatchPhone(r.dadMob);
+  var momMob = normalizeFormMatchPhone(r.momMob);
+
+  return students.map(function(s){
+    var score = 0;
+    var reasons = [];
+    var sName = normalizeFormMatchText(s.name);
+    var sDad = normalizeFormMatchText(s.dad);
+    var sMom = normalizeFormMatchText(s.mom);
+    var sEmirates = String(s.emiratesId || s.idNo || s.identityNo || s.nationalId || '').trim();
+    var sPassport = String(s.passport || '').trim();
+    var sDadMob = normalizeFormMatchPhone(s.dph || s.dadMob || s.fatherPhone);
+    var sMomMob = normalizeFormMatchPhone(s.mph || s.momMob || s.motherPhone);
+
+    if (emiratesId && sEmirates && emiratesId === sEmirates) { score += 140; reasons.push('تطابق رقم الهوية'); }
+    if (passport && sPassport && passport === sPassport) { score += 100; reasons.push('تطابق رقم الجواز'); }
+    if (childName && sName && childName === sName) { score += 40; reasons.push('تطابق اسم الطالب'); }
+    if (dadMob && sDadMob && dadMob === sDadMob) { score += 45; reasons.push('تطابق موبايل الأب'); }
+    if (momMob && sMomMob && momMob === sMomMob) { score += 45; reasons.push('تطابق موبايل الأم'); }
+    if (dadName && sDad && dadName === sDad) { score += 25; reasons.push('تطابق اسم الأب'); }
+    if (momName && sMom && momName === sMom) { score += 25; reasons.push('تطابق اسم الأم'); }
+    if (childName && sName && childName === sName && dadMob && sDadMob && dadMob === sDadMob) score += 60;
+    if (childName && sName && childName === sName && momMob && sMomMob && momMob === sMomMob) score += 60;
+    if (childName && sName && childName === sName && dadName && sDad && dadName === sDad) score += 30;
+    if (childName && sName && childName === sName && momName && sMom && momName === sMom) score += 30;
+
+    return { student: s, score: score, reasons: reasons };
+  }).filter(function(x){ return x.score >= 70; }).sort(function(a,b){ return b.score - a.score; });
+}
+
+function mergeMissingStudentFields(target, source) {
+  var filled = [];
+  var fieldMap = {
+    name:'name', dob:'dob', gen:'gen', nat:'nat', dadFull:'dad', dadJob:'job', dadMob:'dph', momFull:'mom', momMob:'mph', addr:'addr',
+    familyName:'familyName', firstName:'firstName', emiratesId:'emiratesId', passport:'passport', religion:'religion', motherTongue:'motherTongue',
+    otherLanguages:'otherLanguages', dadNat:'dadNat', dadEmail:'dadEmail', dadHome:'dadHome', dadWork:'dadWork', dadMotherTongue:'dadMotherTongue',
+    dadOtherLanguages:'dadOtherLanguages', momNat:'momNat', momJob:'momJob', momEmail:'momEmail', momHome:'momHome', momWork:'momWork',
+    momMotherTongue:'momMotherTongue', momOtherLanguages:'momOtherLanguages', emergName:'emergName', emergRel:'emergRel', emergMob:'emergMob',
+    allergy:'allergy', allergyNote:'allergyNote', allergyType:'allergyType', allergyMedicationFood:'allergyMedicationFood', photoConsent:'photoConsent',
+    socialConsent:'socialConsent', nurseConsent:'nurseConsent', contagious:'contagious', surgical:'surgical', diseaseDetails:'diseaseDetails',
+    accidentDetails:'accidentDetails', guardianUndertake:'guardianUndertake', imgChildPhoto:'imgChildPhoto', imgEmiratesId:'imgEmiratesId',
+    imgVaccination:'imgVaccination', imgPassport:'imgPassport', imgResidency:'imgResidency', imgGuardianId:'imgGuardianId',
+    imgGuardianPass:'imgGuardianPass', imgBirthCert:'imgBirthCert'
+  };
+
+  Object.keys(fieldMap).forEach(function(srcKey){
+    var dstKey = fieldMap[srcKey];
+    if (isStudentValueEmpty(target[dstKey]) && !isStudentValueEmpty(source[srcKey])) {
+      target[dstKey] = source[srcKey];
+      filled.push(dstKey);
+    }
+  });
+
+  var extraNote = [source.notes, source.allergyNote ? '⚠️ حساسية: ' + source.allergyNote : ''].filter(Boolean).join(' | ');
+  if (extraNote && isStudentValueEmpty(target.note)) {
+    target.note = extraNote;
+    filled.push('note');
+  }
+  target.formTimestamp = source.timestamp;
+  target.lastFormLinkedAt = new Date().toISOString();
+  return filled;
+}
+
+function chooseStudentForFormLink(r, matches) {
+  if (!matches || !matches.length) return null;
+  if (matches.length === 1) {
+    var only = matches[0];
+    var msg = 'تم العثور على تطابق محتمل مع ملف الطالب #' + only.student.id + ' — ' + (only.student.name || 'بدون اسم') + '\n' +
+      'الأسباب: ' + (only.reasons.join('، ') || 'تطابق ذكي') + '\n\n' +
+      'موافق على ربط الطلب بهذا الملف وإضافة البيانات الناقصة فقط؟';
+    return confirm(msg) ? only.student.id : null;
+  }
+
+  var lines = matches.slice(0, 8).map(function(m){
+    return '#' + m.student.id + ' — ' + (m.student.name || 'بدون اسم') + ' | ' + (m.reasons.join('، ') || 'تطابق ذكي');
+  }).join('\n');
+  var answer = prompt(
+    'وجدت أكثر من تطابق محتمل للطالب "' + (r.name || '') + '".\n\n' +
+    lines + '\n\n' +
+    'اكتبي رقم ملف الطالب للربط، أو اكتبي 0 لإنشاء ملف جديد، أو اتركيها فارغة للإلغاء.'
+  , String(matches[0].student.id || ''));
+  if (answer == null) return null;
+  answer = String(answer).trim();
+  if (!answer) return null;
+  if (answer === '0') return 0;
+  var chosenId = parseInt(answer, 10);
+  if (!chosenId) return null;
+  return chosenId;
+}
+
+function findStudentByAnyId(id) {
+  return students.find(function(s){ return s.id === id; }) || null;
+}
+
+function undoFormDecision(ts) {
+  var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
+  if (!r || !r.status || r.status === 'pending') return;
+  if (!confirm('إرجاع هذا الطلب إلى قائمة الطلبات المعلّقة؟')) return;
+
+  if (r.status === 'approved' && r.approvalMeta) {
+    if (r.approvalMeta.action === 'create' && r.approvalMeta.studentId) {
+      students = students.filter(function(s){ return s.id !== r.approvalMeta.studentId; });
+    } else if (r.approvalMeta.action === 'link' && r.approvalMeta.studentId && r.approvalMeta.before) {
+      var idx = students.findIndex(function(s){ return s.id === r.approvalMeta.studentId; });
+      if (idx >= 0) students[idx] = Object.assign({}, r.approvalMeta.before);
+    }
+  }
+
+  delete r.approvalMeta;
+  delete r.rejectedAt;
+  delete r.rejectedBy;
+  delete r.linkedStudentId;
+  delete r.approvedAt;
+  r.status = 'pending';
+  localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+  autoSave();
+  renderStudents(); renderDash(); renderFormRequests();
+  showSyncBadge('↩️ تم إرجاع الطلب إلى قيد المراجعة');
+}
+
 function renderFormRequests() {
   if (!document.getElementById('pg-forms')) return;
   var pending  = syncedFormRows.filter(function(r){ return r.status === 'pending'; });
@@ -5777,7 +5957,7 @@ function renderFormRequests() {
   var filter = (document.getElementById('forms-filter') || {}).value || 'pending';
   var search = ((document.getElementById('forms-search') || {}).value || '').toLowerCase();
   var rows = filter === 'all' ? syncedFormRows : filter === 'approved' ? approved : pending;
-  if (search) rows = rows.filter(function(r){ return r.name.toLowerCase().includes(search); });
+  if (search) rows = rows.filter(function(r){ return String(r.name||'').toLowerCase().includes(search); });
 
   var list = document.getElementById('forms-list');
   if (!list) return;
@@ -5787,32 +5967,29 @@ function renderFormRequests() {
     return;
   }
   list.innerHTML = rows.map(function(r) {
-    var ts = r.timestamp.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return '<div class="form-req-card" onclick="openFormDetail(\'' + ts + '\')">' +
-      '<div class="form-req-left">' +
-        (r.imgChildPhoto
-          ? '<img src="' + driveImgUrl(r.imgChildPhoto) + '" class="form-req-photo" onerror="this.style.display=\'none\'">'
-          : '<div class="form-req-photo-empty">👶</div>') +
-      '</div>' +
-      '<div class="form-req-info">' +
-        '<div class="form-req-name">' + r.name + '</div>' +
-        '<div class="form-req-meta">' +
-          '<span>🌍 ' + (r.nat||'—') + '</span>' +
-          '<span>📅 ' + (r.dob||'—') + '</span>' +
-          '<span>' + (r.gen||'—') + '</span>' +
-        '</div>' +
-        '<div class="form-req-meta">' +
-          '<span>👨 ' + (r.dadFull||'—') + '</span>' +
-          '<span>📱 ' + (r.dadMob||r.momMob||'—') + '</span>' +
-        '</div>' +
-      '</div>' +
-      '<div class="form-req-actions" onclick="event.stopPropagation()">' +
-        (r.status === 'pending'
-          ? '<button class="btn btn-g btn-sm" onclick="quickApprove(\'' + ts + '\')">✅ قبول</button>' +
-            '<button class="btn btn-r btn-sm" onclick="rejectFormRow(\'' + ts + '\')">❌ رفض</button>'
-          : '<span class="b bg">✅ مقبول</span>') +
-      '</div>' +
-    '</div>';
+    var ts = escapeTsForInline(r.timestamp);
+    var statusHtml = r.status === 'pending'
+      ? `<button class="btn btn-g btn-sm" onclick="quickApprove('${ts}')">✅ قبول</button><button class="btn btn-r btn-sm" onclick="rejectFormRow('${ts}')">❌ رفض</button>`
+      : ((r.status === 'approved') ? '<span class="b bg">✅ مقبول</span>' : '<span class="b br">❌ مرفوض</span>') +
+        `<button class="btn btn-out btn-sm" onclick="undoFormDecision('${ts}')">↩️ تراجع</button>`;
+    return `<div class="form-req-card" onclick="openFormDetail('${ts}')">
+      <div class="form-req-left">
+        ${r.imgChildPhoto ? `<img src="${driveImgUrl(r.imgChildPhoto)}" class="form-req-photo" onerror="this.style.display='none'">` : '<div class="form-req-photo-empty">👶</div>'}
+      </div>
+      <div class="form-req-info">
+        <div class="form-req-name">${r.name}</div>
+        <div class="form-req-meta">
+          <span>🌍 ${r.nat||'—'}</span>
+          <span>📅 ${r.dob||'—'}</span>
+          <span>${r.gen||'—'}</span>
+        </div>
+        <div class="form-req-meta">
+          <span>👨 ${r.dadFull||'—'}</span>
+          <span>📱 ${r.dadMob||r.momMob||'—'}</span>
+        </div>
+      </div>
+      <div class="form-req-actions" onclick="event.stopPropagation()">${statusHtml}</div>
+    </div>`;
   }).join('');
 }
 
@@ -5844,7 +6021,15 @@ function openFormDetail(ts) {
     return '<option value="' + e[0] + '">' + e[1].emoji + ' ' + e[0] + '</option>';
   }).join('');
 
+  var tsInline = escapeTsForInline(ts);
+  var statusBanner = r.status === 'approved'
+    ? `<div style="background:var(--gp);border-radius:8px;padding:10px;margin-bottom:12px;font-size:13px">✅ هذا الطلب مقبول${r.linkedStudentId ? ' ومرتبط بالملف #' + r.linkedStudentId : ''} <button class="btn btn-out btn-sm" style="margin-right:8px" onclick="undoFormDecision('${tsInline}')">↩️ تراجع</button></div>`
+    : (r.status === 'rejected'
+      ? `<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:12px;font-size:13px">❌ هذا الطلب مرفوض <button class="btn btn-out btn-sm" style="margin-right:8px" onclick="undoFormDecision('${tsInline}')">↩️ تراجع</button></div>`
+      : '');
+
   document.getElementById('mo-form-detail-body').innerHTML =
+    statusBanner +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">' +
       '<div class="fl"><label>الاسم</label><div style="font-size:15px;font-weight:700">' + r.name + '</div></div>' +
       '<div class="fl"><label>تاريخ الميلاد</label><div>' + (r.dob||'—') + '</div></div>' +
@@ -5896,53 +6081,71 @@ function quickApprove(ts) {
 }
 
 function doApprove(r) {
-  // احفظ كل البيانات الأصلية مع الطالب
-  students.push({
-    id: nextStuId++, name: r.name, dob: r.dob, gen: r.gen, nat: r.nat,
-    cls: r.cls || Object.keys(CLASSES)[0], bpl: '',
-    dad: r.dadFull, job: r.dadJob, dph: r.dadMob,
-    mom: r.momFull, mph: r.momMob, addr: r.addr,
-    note: [r.notes, r.allergyNote ? '⚠️ حساسية: ' + r.allergyNote : ''].filter(Boolean).join(' | '),
-    // بيانات إضافية من النموذج
-    familyName: r.familyName, firstName: r.firstName,
-    emiratesId: r.emiratesId, passport: r.passport,
-    religion: r.religion, motherTongue: r.motherTongue, otherLanguages: r.otherLanguages,
-    dadNat: r.dadNat, dadEmail: r.dadEmail, dadHome: r.dadHome, dadWork: r.dadWork, dadMotherTongue: r.dadMotherTongue, dadOtherLanguages: r.dadOtherLanguages,
-    momNat: r.momNat, momJob: r.momJob, momEmail: r.momEmail, momHome: r.momHome, momWork: r.momWork, momMotherTongue: r.momMotherTongue, momOtherLanguages: r.momOtherLanguages,
-    emergName: r.emergName, emergRel: r.emergRel, emergMob: r.emergMob,
-    allergy: r.allergy, allergyNote: r.allergyNote, allergyType: r.allergyType,
-    allergyMedicationFood: r.allergyMedicationFood,
-    photoConsent: r.photoConsent, socialConsent: r.socialConsent, nurseConsent: r.nurseConsent,
-    contagious: r.contagious, surgical: r.surgical, diseaseDetails: r.diseaseDetails, accidentDetails: r.accidentDetails,
-    guardianUndertake: r.guardianUndertake,
-    // الصور والوثائق
-    imgChildPhoto:   r.imgChildPhoto,
-    imgEmiratesId:   r.imgEmiratesId,
-    imgVaccination:  r.imgVaccination,
-    imgPassport:     r.imgPassport,
-    imgResidency:    r.imgResidency,
-    imgGuardianId:   r.imgGuardianId,
-    imgGuardianPass: r.imgGuardianPass,
-    imgBirthCert:    r.imgBirthCert,
-    // تاريخ القبول
-    approvedAt: new Date().toISOString(),
-    formTimestamp: r.timestamp,
-  });
+  var matches = getFormStudentMatchCandidates(r);
+  var chosenId = null;
+
+  if (matches.length) {
+    chosenId = chooseStudentForFormLink(r, matches);
+    if (chosenId == null) {
+      if (!confirm('تم إلغاء الربط. هل تريدين إنشاء ملف جديد لهذا الطالب بدلًا من ذلك؟')) return;
+      chosenId = 0;
+    }
+  } else {
+    if (!confirm('لم يتم العثور على ملف طالب مطابق. سيتم إنشاء ملف جديد لهذا الطالب. متابعة؟')) return;
+    chosenId = 0;
+  }
+
+  if (chosenId === 0) {
+    var created = buildStudentFromFormRow(r);
+    students.push(created);
+    r.approvalMeta = { action:'create', studentId: created.id };
+    r.linkedStudentId = created.id;
+    r.status = 'approved';
+    r.approvedAt = new Date().toISOString();
+    localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+    autoSave();
+    renderStudents(); renderDash(); renderFormRequests();
+    showSyncBadge('✅ تم قبول الطلب وإنشاء ملف جديد للطالب');
+    return;
+  }
+
+  var target = findStudentByAnyId(chosenId);
+  if (!target) {
+    alert('رقم الملف الذي تم إدخاله غير موجود.');
+    return;
+  }
+
+  var before = JSON.parse(JSON.stringify(target));
+  var filled = mergeMissingStudentFields(target, r);
+  if (!confirm('سيتم ربط الطلب بملف الطالب #' + target.id + ' — ' + (target.name || 'بدون اسم') + '\n' +
+               'عدد الحقول التي ستُستكمل: ' + filled.length + '\n\n' +
+               'متابعة القبول وربط الطلب بهذا الملف؟')) {
+    var idxBefore = students.findIndex(function(s){ return s.id === target.id; });
+    if (idxBefore >= 0) students[idxBefore] = before;
+    return;
+  }
+
+  r.approvalMeta = { action:'link', studentId: target.id, before: before, filledFields: filled };
+  r.linkedStudentId = target.id;
   r.status = 'approved';
+  r.approvedAt = new Date().toISOString();
   localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
   autoSave();
   renderStudents(); renderDash(); renderFormRequests();
-  showSyncBadge('✅ تم قبول الطالب وإضافته');
+  showSyncBadge('✅ تم قبول الطلب وربطه بالملف #' + target.id);
 }
 
 function rejectFormRow(ts) {
-  if (!confirm('حذف هذا الطلب؟')) return;
-  syncedFormRows = syncedFormRows.filter(function(x){ return x.timestamp !== ts; });
+  var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
+  if (!r) return;
+  if (!confirm('رفض هذا الطلب وإخفاؤه من قائمة الطلبات المعلّقة؟')) return;
+  r.status = 'rejected';
+  r.rejectedAt = new Date().toISOString();
   localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
   autoSave();
   renderFormRequests();
+  showSyncBadge('❌ تم رفض الطلب');
 }
-
 
 // ============================================================
 // RENEWALS — التجديدات والوثائق الرسمية
