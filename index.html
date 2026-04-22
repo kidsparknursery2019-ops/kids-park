@@ -143,6 +143,11 @@ textarea{resize:vertical;min-height:65px}
 @media print{
   body > *{display:none!important}
   #receipt-print-area{display:block!important;margin:0;padding:0}
+  body.print-finreport > *{display:none!important}
+  body.print-finreport .main{display:block!important}
+  body.print-finreport .main .pg:not(#pg-finreport){display:none!important}
+  body.print-finreport .main #pg-finreport{display:block!important}
+  body.print-finreport .hdr,body.print-finreport .sidebar,body.print-finreport .sbar,body.print-finreport .no-print{display:none!important}
 }
 .rp-wrap{font-family:'Tajawal',Arial,sans-serif;width:210mm;margin:0 auto;padding:8mm 10mm;color:#000;font-size:13px;direction:rtl}
 .rp-logo{text-align:center;margin-bottom:6mm}
@@ -275,10 +280,13 @@ textarea{resize:vertical;min-height:65px}
 @media print { .no-print { display: none !important; } }
 
 @media print {
-  .sidebar, .hdr, .no-print { display: none !important; }
-  body { background: white !important; padding: 0 !important; }
-  .pg:not(#pg-finreport) { display: none !important; }
-  .card { page-break-inside: avoid; box-shadow: none !important; border: 1.5px solid #ccc !important; }
+  body:not(.print-finreport) .sidebar,
+  body:not(.print-finreport) .hdr,
+  .no-print { display: none !important; }
+  body:not(.print-finreport) { background: white !important; padding: 0 !important; }
+  body:not(.print-finreport) .pg:not(#pg-finreport) { display: none !important; }
+  body:not(.print-finreport) .card { page-break-inside: avoid; box-shadow: none !important; border: 1.5px solid #ccc !important; }
+  body.print-finreport .card { page-break-inside: avoid; box-shadow: none !important; border: 1.5px solid #ccc !important; }
 }
 </style>
 </head>
@@ -592,7 +600,7 @@ textarea{resize:vertical;min-height:65px}
     <div class="pg" id="pg-finreport">
       <div class="pt">
         📈 التقارير المالية
-        <button class="btn btn-out btn-sm no-print" onclick="window.print()">🖨 طباعة التقرير</button>
+        <button class="btn btn-out btn-sm no-print" onclick="printFinancialReport()">🖨 طباعة التقرير</button>
       </div>
 
       <div class="card no-print">
@@ -5283,6 +5291,7 @@ window.addEventListener('DOMContentLoaded', () => {
 const FB_URL = 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data';
 const FB_LOGO_URL = FB_URL + '/branding/logoDataUrl';
 let isSyncing = false;
+let pendingSync = false;
 let syncTimeout = null;
 let lastSavedAt = '';
 let forceFullReplaceOnNextSync = false;
@@ -5302,8 +5311,13 @@ function getAllData() {
 }
 
 function autoSave() {
+  if (isSyncing) {
+    // إذا كان هناك حفظ جارٍ، ضع علامة لحفظ مرة ثانية بعده
+    pendingSync = true;
+    return;
+  }
   clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(pushToFirebase, 10);
+  syncTimeout = setTimeout(pushToFirebase, 300);
 }
 
 async function saveLogoToFirebaseSilent() {
@@ -5345,6 +5359,16 @@ async function loadLogoFromFirebase() {
 
 // FINANCIAL REPORTS
 let lastFinReportData = null;
+
+function printFinancialReport() {
+  // تأكد من تحديث التقرير أولاً
+  generateFinReport();
+  // أضف class على body للـ print CSS
+  document.body.classList.add('print-finreport');
+  window.print();
+  // أزل الـ class بعد الطباعة
+  setTimeout(function(){ document.body.classList.remove('print-finreport'); }, 1000);
+}
 
 function renderFinReport() {
   const today = new Date().toISOString().slice(0,10);
@@ -5643,24 +5667,44 @@ async function pushToFirebase() {
     localFormRows.forEach(function(r){ if(r && r.timestamp) formRowsMap[r.timestamp] = pickPreferredFormRow(formRowsMap[r.timestamp], r); });
     const mergedFormRows = Object.values(formRowsMap);
 
-    // دمج سلة المحذوفات
+    // دمج سلة المحذوفات — احترم tombstones والمُستعادين
     const localDeleted = typeof deletedStudents !== 'undefined' ? deletedStudents : [];
     const remoteDeleted = (remoteData && Array.isArray(remoteData.deletedStudents)) ? remoteData.deletedStudents : [];
     const deletedMap = {};
+    // ابدأ بالبيانات البعيدة
     remoteDeleted.forEach(function(s){ if(s && s.id) deletedMap[s.id] = s; });
+    // البيانات المحلية تأخذ الأولوية (تشمل الحذف الجديد أو شطب الاستعادة)
     localDeleted.forEach(function(s){ if(s && s.id) deletedMap[s.id] = s; });
-    const mergedDeleted = Object.values(deletedMap);
+    // أي عنصر تمت استعادته محلياً (غير موجود في localDeleted لكن موجود في remoteDeleted) يُحذف
+    // أي عنصر tombstone يجب ألا يكون في deletedStudents أيضاً (حذف نهائي)
+    const finalTsStudents = mergedTombstones.students || [];
+    const mergedDeleted = Object.values(deletedMap).filter(function(s){
+      // إذا لم يعد في القائمة المحلية وكان قد استُعيد (ليس في tombstones) فلا نُدرجه
+      const inLocal = localDeleted.some(function(x){ return x.id === s.id; });
+      const inTombstone = finalTsStudents.includes(s.id);
+      // إذا كان في tombstone (حذف نهائي) لا يظهر في سلة المحذوفات
+      if (inTombstone) return false;
+      // إذا لم يكن في البيانات المحلية وقد جاء فقط من Firebase، تحقق أنه لم يُستعد محلياً
+      // (أي أن students المحلي يحتوي عليه — إذاً قد استُعيد)
+      if (!inLocal) {
+        const restoredLocally = (typeof students !== 'undefined') && students.some(function(x){ return x.id === s.id; });
+        if (restoredLocally) return false;
+      }
+      return true;
+    });
 
-    const mergeDeletedByKey = function(localArr, remoteArr, keyField) {
+    const mergeDeletedByKey = function(localArr, remoteArr, keyField, tombstoneArr) {
+      const ts = Array.isArray(tombstoneArr) ? tombstoneArr : [];
       const map = {};
       (Array.isArray(remoteArr)?remoteArr:[]).forEach(function(item){ if(item && item[keyField] !== undefined) map[item[keyField]] = item; });
       (Array.isArray(localArr)?localArr:[]).forEach(function(item){ if(item && item[keyField] !== undefined) map[item[keyField]] = item; });
-      return Object.values(map);
+      // أزل أي عنصر tombstone (محذوف نهائياً)
+      return Object.values(map).filter(function(item){ return !ts.includes(item[keyField]); });
     };
-    const mergedDeletedPayments = mergeDeletedByKey(typeof deletedPayments !== 'undefined' ? deletedPayments : [], remoteData && remoteData.deletedPayments, 'id');
-    const mergedDeletedExpenses = mergeDeletedByKey(typeof deletedExpenses !== 'undefined' ? deletedExpenses : [], remoteData && remoteData.deletedExpenses, 'id');
-    const mergedDeletedRenewals = mergeDeletedByKey(typeof deletedRenewals !== 'undefined' ? deletedRenewals : [], remoteData && remoteData.deletedRenewals, 'id');
-    const mergedDeletedClasses  = mergeDeletedByKey(typeof deletedClasses  !== 'undefined' ? deletedClasses  : [], remoteData && remoteData.deletedClasses, 'key');
+    const mergedDeletedPayments = mergeDeletedByKey(typeof deletedPayments !== 'undefined' ? deletedPayments : [], remoteData && remoteData.deletedPayments, 'id', mergedTombstones.payments);
+    const mergedDeletedExpenses = mergeDeletedByKey(typeof deletedExpenses !== 'undefined' ? deletedExpenses : [], remoteData && remoteData.deletedExpenses, 'id', mergedTombstones.expenses);
+    const mergedDeletedRenewals = mergeDeletedByKey(typeof deletedRenewals !== 'undefined' ? deletedRenewals : [], remoteData && remoteData.deletedRenewals, 'id', mergedTombstones.renewals);
+    const mergedDeletedClasses  = mergeDeletedByKey(typeof deletedClasses  !== 'undefined' ? deletedClasses  : [], remoteData && remoteData.deletedClasses, 'key', []);
 
     // حدّث المتغيرات المحلية بالبيانات المدمجة
     students = sanitizeEntityArray(mergedStudents);
@@ -5728,6 +5772,11 @@ async function pushToFirebase() {
     console.error('pushToFirebase error:', e);
   } finally {
     isSyncing = false;
+    // إذا جاء طلب حفظ أثناء الحفظ الحالي، نفّذه الآن
+    if (pendingSync) {
+      pendingSync = false;
+      setTimeout(pushToFirebase, 300);
+    }
   }
 }
 
@@ -5753,12 +5802,41 @@ async function loadFromFirebase() {
     sanitizeCoreData();
     if (data.attLog) { Object.keys(data.attLog).forEach(function(k){ attLog[k] = data.attLog[k]; }); }
     if (data.deletedStudents && typeof deletedStudents !== 'undefined') {
-      deletedStudents = data.deletedStudents;
+      // احترم tombstones: لا تُعد السجلات المحذوفة نهائياً إلى سلة المحذوفات
+      const localTs = (typeof tombstones !== 'undefined' && tombstones.students) ? tombstones.students : [];
+      const remoteTs = (data.tombstones && Array.isArray(data.tombstones.students)) ? data.tombstones.students : [];
+      const combinedTs = localTs.concat(remoteTs.filter(function(id){ return !localTs.includes(id); }));
+      // أيضاً: لا تُعد المستعادين محلياً
+      deletedStudents = data.deletedStudents.filter(function(s){
+        if (!s || !s.id) return false;
+        if (combinedTs.includes(s.id)) return false;
+        // إذا كان موجوداً في students المحلي فهو مستعاد
+        if (students.some(function(x){ return x.id === s.id; })) return false;
+        return true;
+      });
       localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
     }
-    if (Array.isArray(data.deletedPayments) && typeof deletedPayments !== 'undefined') { deletedPayments = data.deletedPayments; localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments)); }
-    if (Array.isArray(data.deletedExpenses) && typeof deletedExpenses !== 'undefined') { deletedExpenses = data.deletedExpenses; localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses)); }
-    if (Array.isArray(data.deletedRenewals) && typeof deletedRenewals !== 'undefined') { deletedRenewals = data.deletedRenewals; localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals)); }
+    if (Array.isArray(data.deletedPayments) && typeof deletedPayments !== 'undefined') {
+      const tsP = (data.tombstones && Array.isArray(data.tombstones.payments)) ? data.tombstones.payments : [];
+      const localTsP = (typeof tombstones !== 'undefined' && tombstones.payments) ? tombstones.payments : [];
+      const combTsP = tsP.concat(localTsP.filter(function(id){ return !tsP.includes(id); }));
+      deletedPayments = data.deletedPayments.filter(function(x){ return x && !combTsP.includes(x.id); });
+      localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
+    }
+    if (Array.isArray(data.deletedExpenses) && typeof deletedExpenses !== 'undefined') {
+      const tsE = (data.tombstones && Array.isArray(data.tombstones.expenses)) ? data.tombstones.expenses : [];
+      const localTsE = (typeof tombstones !== 'undefined' && tombstones.expenses) ? tombstones.expenses : [];
+      const combTsE = tsE.concat(localTsE.filter(function(id){ return !tsE.includes(id); }));
+      deletedExpenses = data.deletedExpenses.filter(function(x){ return x && !combTsE.includes(x.id); });
+      localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
+    }
+    if (Array.isArray(data.deletedRenewals) && typeof deletedRenewals !== 'undefined') {
+      const tsR = (data.tombstones && Array.isArray(data.tombstones.renewals)) ? data.tombstones.renewals : [];
+      const localTsR = (typeof tombstones !== 'undefined' && tombstones.renewals) ? tombstones.renewals : [];
+      const combTsR = tsR.concat(localTsR.filter(function(id){ return !tsR.includes(id); }));
+      deletedRenewals = data.deletedRenewals.filter(function(x){ return x && !combTsR.includes(x.id); });
+      localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
+    }
     if (Array.isArray(data.deletedClasses) && typeof deletedClasses !== 'undefined') { deletedClasses = data.deletedClasses; localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses)); }
     if (data.tombstones && typeof tombstones !== 'undefined') {
       // Firebase هو المرجع - استبدل tombstones بالكامل
@@ -5950,7 +6028,7 @@ async function syncFromGoogleSheets() {
         name: name,
         firstName: firstName,
         familyName: lastName,
-        dob: valByLabel(c, ['تاريخ الميلاد | Date of Birth'], 3),
+        dob: normalizeDate(valByLabel(c, ['تاريخ الميلاد | Date of Birth'], 3)),
         gen: parsedGen,
         emiratesId: valByLabel(c, ['رقم الهوية | Emirates ID Number'], 5),
         nat: valByLabel(c, ['الجنسية | Nationality'], 6),
