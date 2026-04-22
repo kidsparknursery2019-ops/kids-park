@@ -2094,18 +2094,17 @@ function setDismissedStudentAlerts(map){
 
 function getStudentRegistrationExpiry(s){
   if (!s) return '';
-  let latestPaymentExpiry = '';
+  const direct = normalizeDate(s.sub_end || '');
+  let latest = direct;
   if (Array.isArray(payments)) {
     payments.forEach(function(p){
       if (!p || +p.stuId !== +s.id || !p.sub_end) return;
       const d = normalizeDate(p.sub_end || '');
       if (!d) return;
-      if (!latestPaymentExpiry || d > latestPaymentExpiry) latestPaymentExpiry = d;
+      if (!latest || d > latest) latest = d;
     });
   }
-  if (latestPaymentExpiry) return latestPaymentExpiry;
-  const direct = normalizeDate(s.sub_end || '');
-  return direct || '';
+  return latest || '';
 }
 
 function getStudentAlertKey(s){
@@ -5194,6 +5193,13 @@ function buildReceiptHTML(p) {
         </td>
         <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:13px;font-weight:600">${p.desc||''}</td>
       </tr>
+      ${p.sub_end ? `<tr>
+        <td style="border:1px solid #000;padding:6px 10px;text-align:right;background:#f9f9f9">
+          <div style="font-size:11px;color:#555;font-weight:700">تاريخ انتهاء التسجيل</div>
+          <div style="font-size:10px;color:#888;font-style:italic">Registration expiry date</div>
+        </td>
+        <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:13px;font-weight:600">${formatDate(p.sub_end)}</td>
+      </tr>` : ''}
     </table>
     <table style="width:100%;border-collapse:collapse;border:1px solid #000;margin-bottom:6px">
       <tr><td style="padding:5px 10px;font-weight:900;border-bottom:1px solid #000">ملاحظات &nbsp; Notes</td></tr>
@@ -6494,34 +6500,21 @@ function updateRegExpiryNotifications() {
   const alerts = [];
   const dismissedStudentAlerts = getDismissedStudentAlerts();
 
-  payments.forEach(function(p) {
-    const regExpiry = normalizeDate((p && p.sub_end) || '');
+  students.forEach(s => {
+    const regExpiry = getStudentRegistrationExpiry(s);
     if (!regExpiry) return;
     const days = getRenDays(regExpiry);
-    if (days === null || Number.isNaN(days) || days > 7) return;
-    const alertKey = 'pay|' + String((p && p.id) || '') + '|' + String(regExpiry || '');
+    if (days === null || Number.isNaN(days)) return;
+    const alertKey = String((s && s.id) || '') + '|' + String(regExpiry || '');
     if (dismissedStudentAlerts[alertKey]) return;
-    const title = (p && (p.who || p.desc || ('سند #' + p.id))) || 'سند قبض';
-    const sub = days < 0
-      ? 'انتهى التسجيل المرتبط بهذا السند منذ ' + Math.abs(days) + ' يوم'
-      : 'ينتهي التسجيل المرتبط بهذا السند خلال ' + days + ' يوم';
-    alerts.push({
-      type:'payment',
-      id:p.id,
-      icon:'🧾',
-      title:title,
-      sub:sub,
-      days:days,
-      urgent:true,
-      dismissible:true,
-      alertKey:alertKey,
-      sub_end:regExpiry,
-      who:p.who || '',
-      desc:p.desc || ''
-    });
+    if (days < 0) {
+      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'انتهى تسجيله منذ ' + Math.abs(days) + ' يوم', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:regExpiry });
+    } else if (days <= 7) {
+      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'ينتهي تسجيله خلال ' + days + ' يوم', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:regExpiry });
+    }
   });
 
-  alerts.sort((a,b) => a.days - b.days || a.id - b.id);
+  alerts.sort((a,b) => a.days - b.days);
 
   const btn = document.getElementById('reg-notif-btn');
   const badge = document.getElementById('reg-notif-badge-count');
@@ -6543,11 +6536,11 @@ function updateRegExpiryNotifications() {
     return;
   }
 
-  body.innerHTML = alerts.map(function(a) {
+  body.innerHTML = alerts.map(a => {
     const color = a.days < 0 ? '#e74c3c' : '#e67e22';
     const daysText = a.days < 0 ? 'منتهية' : a.days + ' يوم';
     const dismissBtn = a.dismissible
-      ? '<button class="btn btn-out btn-sm" style="padding:2px 8px;font-size:11px" onclick="dismissStudentAlert(' + a.id + ','' + String(a.alertKey || '').replace(/'/g, "&#39;") + '');event.stopPropagation();">Dismiss</button>'
+      ? '<button class="btn btn-out btn-sm" style="padding:2px 8px;font-size:11px" onclick="dismissStudentAlert(' + a.id + ',\'' + String(a.alertKey || '').replace(/'/g, "&#39;") + '\');event.stopPropagation();">Dismiss</button>'
       : '';
     return '<div class="notif-item" onclick="goToRegAlert(' + a.id + ')">' +
       '<div class="notif-item-icon">' + a.icon + '</div>' +
@@ -6563,8 +6556,8 @@ function updateRegExpiryNotifications() {
 
 function goToRegAlert(id) {
   toggleRegNotifPanel();
-  go('payments');
-  setTimeout(function(){ openReceiptDetail(id); }, 300);
+  go('students');
+  setTimeout(function(){ editStudent(id); }, 300);
 }
 
 function toggleRegNotifPanel() {
