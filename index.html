@@ -4315,6 +4315,7 @@ function restoreBackup(event) {
       if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(backup.kp_users));
       if (backup.kp_form_rows) { localStorage.setItem('kp_form_rows', JSON.stringify(backup.kp_form_rows)); syncedFormRows = backup.kp_form_rows; }
       refreshNextIds();
+      forceFullReplaceOnNextSync = true;
       autoSave();
       renderDash();
       if (typeof renderStudents === 'function') renderStudents();
@@ -5271,6 +5272,7 @@ const FB_LOGO_URL = FB_URL + '/branding/logoDataUrl';
 let isSyncing = false;
 let syncTimeout = null;
 let lastSavedAt = '';
+let forceFullReplaceOnNextSync = false;
 
 function getAllData() {
   const cleanSettings = Object.assign({}, nurserySettings);
@@ -5552,24 +5554,35 @@ async function pushToFirebase() {
   if (isSyncing) return;
   isSyncing = true;
   try {
+    const fullReplace = forceFullReplaceOnNextSync === true;
+
     // ── الخطوة 1: اقرأ البيانات الحالية من Firebase ──────────────────
     let remoteData = null;
-    try {
-      const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
-      if (fetchRes.ok) remoteData = await fetchRes.json();
-    } catch(_) { /* نتابع بدون بيانات سحابية */ }
+    if (!fullReplace) {
+      try {
+        const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+        if (fetchRes.ok) remoteData = await fetchRes.json();
+      } catch(_) { /* نتابع بدون بيانات سحابية */ }
+    }
 
     // ── حماية من Cache القديم ─────────────────────────────────────────
     // إذا كانت Firebase عندها بيانات محفوظة أحدث من آخر مزامنة محلية،
     // نعطي Firebase الأولوية الكاملة ولا نسمح للبيانات القديمة بالكتابة فوقها
     const localSyncedAt = localStorage.getItem('kp_last_synced_at') || '';
     const remoteSavedAt = (remoteData && remoteData.savedAt) || '';
-    const firebaseIsNewer = remoteSavedAt && remoteSavedAt > localSyncedAt;
+    const firebaseIsNewer = !fullReplace && remoteSavedAt && remoteSavedAt > localSyncedAt;
 
     // ── الخطوة 2: دمج البيانات المحلية مع السحابية ───────────────────
     const localTombstones = typeof tombstones !== 'undefined' ? tombstones : {};
-    const remoteTombstones = (remoteData && remoteData.tombstones) ? remoteData.tombstones : {};
-    const mergedTombstones = mergeTombstones(localTombstones, remoteTombstones);
+    const remoteTombstones = fullReplace ? {} : ((remoteData && remoteData.tombstones) ? remoteData.tombstones : {});
+    const mergedTombstones = fullReplace
+      ? {
+          students: Array.isArray(localTombstones.students) ? localTombstones.students.slice() : [],
+          payments: Array.isArray(localTombstones.payments) ? localTombstones.payments.slice() : [],
+          expenses: Array.isArray(localTombstones.expenses) ? localTombstones.expenses.slice() : [],
+          renewals: Array.isArray(localTombstones.renewals) ? localTombstones.renewals.slice() : []
+        }
+      : mergeTombstones(localTombstones, remoteTombstones);
 
     // إذا Firebase أحدث: خذ Firebase أساساً ولا تكتب المحلي القديم فوقها
     const mergedStudents = mergeArrayById(
@@ -5679,7 +5692,8 @@ async function pushToFirebase() {
       try { await saveLogoToFirebaseSilent(); } catch(_) {}
       lastSavedAt = mergedData.savedAt;
       localStorage.setItem('kp_last_synced_at', mergedData.savedAt);
-      showSyncBadge('✅ محفوظ');
+      forceFullReplaceOnNextSync = false;
+      showSyncBadge(fullReplace ? '✅ تم استبدال البيانات بالكامل' : '✅ محفوظ');
     } else {
       const errText = await res.text().catch(()=>'');
       showSyncBadge('⚠️ خطأ ' + res.status + ': ' + errText.slice(0,50));
