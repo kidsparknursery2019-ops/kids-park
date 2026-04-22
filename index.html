@@ -6507,6 +6507,33 @@ function updateRegExpiryNotifications() {
     }
   });
 
+  // تنبيهات من تواريخ انتهاء التسجيل في المدفوعات (للدفعات غير المربوطة بطالب أو المربوطة)
+  const seenPayAlertKeys = new Set();
+  (typeof payments !== 'undefined' ? payments : []).forEach(function(p) {
+    if (!p || !p.sub_end) return;
+    const days = getRenDays(p.sub_end);
+    if (days === null || Number.isNaN(days)) return;
+    if (days > 7) return; // فقط 7 أيام وأقل
+
+    // إذا الدفعة مربوطة بطالب، الطالب سيظهر بالفعل من قسم الطلاب — تجنب التكرار
+    if (p.stuId) {
+      const s = students.find(function(x){ return x.id === p.stuId; });
+      if (s && getStudentRegistrationExpiry(s) === p.sub_end) return;
+    }
+
+    const alertKey = 'pay|' + String(p.id) + '|' + String(p.sub_end);
+    if (dismissedStudentAlerts[alertKey]) return;
+    if (seenPayAlertKeys.has(alertKey)) return;
+    seenPayAlertKeys.add(alertKey);
+
+    const label = p.who ? p.who : ('سند #' + p.id);
+    if (days < 0) {
+      alerts.push({ type:'payment', id:p.id, icon:'💰', title:label, sub:'انتهى تسجيله منذ ' + Math.abs(days) + ' يوم (سند #' + p.id + ')', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:p.sub_end });
+    } else {
+      alerts.push({ type:'payment', id:p.id, icon:'💰', title:label, sub:'ينتهي تسجيله خلال ' + days + ' يوم (سند #' + p.id + ')', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:p.sub_end });
+    }
+  });
+
   alerts.sort((a,b) => a.days - b.days);
 
   const btn = document.getElementById('reg-notif-btn');
@@ -6535,7 +6562,7 @@ function updateRegExpiryNotifications() {
     const dismissBtn = a.dismissible
       ? '<button class="btn btn-out btn-sm" style="padding:2px 8px;font-size:11px" onclick="dismissStudentAlert(' + a.id + ',\'' + String(a.alertKey || '').replace(/'/g, "&#39;") + '\');event.stopPropagation();">Dismiss</button>'
       : '';
-    return '<div class="notif-item" onclick="goToRegAlert(' + a.id + ')">' +
+    return '<div class="notif-item" onclick="goToRegAlert(\'' + a.type + '\',' + a.id + ')">' +
       '<div class="notif-item-icon">' + a.icon + '</div>' +
       '<div style="flex:1;min-width:0">' +
         '<div class="notif-item-title">' + a.title + '</div>' +
@@ -6547,10 +6574,15 @@ function updateRegExpiryNotifications() {
   }).join('');
 }
 
-function goToRegAlert(id) {
+function goToRegAlert(type, id) {
   toggleRegNotifPanel();
-  go('students');
-  setTimeout(function(){ editStudent(id); }, 300);
+  if (type === 'payment') {
+    go('payments');
+    setTimeout(function(){ openEditPay(id); }, 300);
+  } else {
+    go('students');
+    setTimeout(function(){ editStudent(id); }, 300);
+  }
 }
 
 function toggleRegNotifPanel() {
