@@ -2978,9 +2978,8 @@ function delStudent(id){
   });
   deletedStudents.unshift(deletedCopy);
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
-  // مهم: أضف tombstone مباشرة حتى لا يعيد Firebase نفس الطالب بعد أي تحميل/مزامنة
-  addTombstone('students', id);
   students = students.filter(x => x.id !== id);
+  addTombstone('students', id);
   resetPaymentMatchCache();
   autoSave();
   renderStudents();
@@ -4110,7 +4109,7 @@ function restoreBackup(event) {
       if (backup.attLog) attLog = backup.attLog;
       if (backup.deletedStudents) { deletedStudents = backup.deletedStudents; localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents)); }
       if (backup.tombstones) { tombstones = backup.tombstones; localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); }
-      if (backup.CLASSES) Object.assign(CLASSES, backup.CLASSES);
+      if (backup.CLASSES) replaceClassesData(backup.CLASSES);
       if (backup.nurserySettings) Object.assign(nurserySettings, backup.nurserySettings);
       if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(backup.kp_users));
       if (backup.kp_form_rows) { localStorage.setItem('kp_form_rows', JSON.stringify(backup.kp_form_rows)); syncedFormRows = backup.kp_form_rows; }
@@ -4641,10 +4640,16 @@ function deleteUser(username) {
 // ============================================================
 // CLASSES_DATA = CLASSES (defined above)
 
+function replaceClassesData(source) {
+  if (!source || typeof source !== 'object') return;
+  Object.keys(CLASSES).forEach(function(k){ delete CLASSES[k]; });
+  Object.keys(source).forEach(function(k){ CLASSES[k] = source[k]; });
+  CLASSES_DATA = CLASSES;
+  localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
+}
+
 function saveClasses() {
-  localStorage.setItem('kp_classes', JSON.stringify(CLASSES_DATA));
-  // Sync CLASSES global
-  Object.assign(CLASSES, CLASSES_DATA);
+  replaceClassesData(CLASSES_DATA);
 }
 
 function renderAdminClasses() {
@@ -5497,7 +5502,7 @@ async function loadFromFirebase() {
       localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
       applyTombstones();
     }
-    if (data.CLASSES)         Object.assign(CLASSES, data.CLASSES);
+    if (data.CLASSES)         replaceClassesData(data.CLASSES);
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
     if (data.kp_users && data.kp_users.length) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
     if (Array.isArray(data.kp_form_rows)) {
@@ -5929,6 +5934,7 @@ function undoFormDecision(ts) {
   if (r.status === 'approved' && r.approvalMeta) {
     if (r.approvalMeta.action === 'create' && r.approvalMeta.studentId) {
       students = students.filter(function(s){ return s.id !== r.approvalMeta.studentId; });
+      addTombstone('students', r.approvalMeta.studentId);
     } else if (r.approvalMeta.action === 'link' && r.approvalMeta.studentId && r.approvalMeta.before) {
       var idx = students.findIndex(function(s){ return s.id === r.approvalMeta.studentId; });
       if (idx >= 0) students[idx] = Object.assign({}, r.approvalMeta.before);
