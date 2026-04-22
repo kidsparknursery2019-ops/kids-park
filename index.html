@@ -4128,7 +4128,6 @@ function restoreBackup(event) {
       if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
       if (typeof updateNotifications === 'function') updateNotifications();
       if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
-      if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
       alert('✅ تم استعادة النسخة الاحتياطية بنجاح!\n\n' + 'الطلاب: ' + (backup.students||[]).length + '\n' + 'السندات: ' + (backup.payments||[]).length + '\n' + 'المصاريف: ' + (backup.expenses||[]).length);
     } catch(err) { alert('❌ فشل قراءة الملف: ' + err.message); }
     event.target.value = '';
@@ -4438,33 +4437,31 @@ function applyLogin() {
   if (rb) rb.style.display = 'inline-block';
   document.getElementById('ub-name').textContent = currentUser.name || currentUser.username;
   document.getElementById('ub-role').textContent = currentUser.role === 'admin' ? '👑 مدير' : '👤 موظف';
-  // Show admin nav only for admin
   const navAdmin = document.getElementById('nav-admin');
   if (navAdmin) navAdmin.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
-  // Load saved settings
+
+  clearTimeout(syncTimeout);
+  if (cloudWatchTimer) clearInterval(cloudWatchTimer);
+  cloudWatchTimer = null;
+  if (typeof autoSyncTimer !== 'undefined' && autoSyncTimer) clearInterval(autoSyncTimer);
+  autoSyncTimer = null;
+  hasUnsyncedChanges = false;
+  cloudBootstrapDone = false;
+  isApplyingCloudSnapshot = false;
+
   loadSettings();
-  // تهيئة فلتر السنة على السنة الحالية
   const yf = document.getElementById('dash-year-filter');
   if (yf && !yf.value) yf.value = String(new Date().getFullYear());
-
-  // تهيئة السنة الافتراضية
   dashYear = new Date().getFullYear();
   const yfInit = document.getElementById('dash-year-filter');
   if (yfInit) yfInit.value = String(dashYear);
 
   if (typeof applyTombstones === 'function') applyTombstones();
-  // اعتماد جماعي لمطابقات السندات المقترحة الحالية (مرة واحدة فقط)
-  let bulkApprovedNow = runOneTimeBulkMatchApproval();
-  // عرض البيانات المحلية فوراً
   renderDash();
-  if (bulkApprovedNow > 0) {
-    setTimeout(function(){ alert('✅ تم اعتماد ' + bulkApprovedNow + ' عملية ربط بين السندات وملفات الطلاب'); }, 300);
-  }
   setTimeout(function(){ updateNotifications(); updateRegExpiryNotifications(); }, 500);
-  // تحميل من Firebase أولاً، وبعد نجاح التهيئة ابدأ المزامنات الدورية
+
   loadFromFirebase().then(() => {
     const approvedAfterSync = runOneTimeBulkMatchApproval();
-    // إعادة تهيئة الفلتر بعد التحميل
     const yf2 = document.getElementById('dash-year-filter');
     if (yf2 && !yf2.value) yf2.value = String(new Date().getFullYear());
     renderDash();
@@ -4473,17 +4470,7 @@ function applyLogin() {
     if (approvedAfterSync > 0) {
       setTimeout(function(){ alert('✅ تم اعتماد ' + approvedAfterSync + ' عملية ربط إضافية بعد مزامنة البيانات'); }, 500);
     }
-    if (!window.__kpCloudWatchStarted) {
-      window.__kpCloudWatchStarted = true;
-      setInterval(checkForUpdates, 5000);
-    }
-    startAutoSync();
-  }).catch(function(e){
-    console.error('post-login sync init error:', e);
-    if (!window.__kpCloudWatchStarted) {
-      window.__kpCloudWatchStarted = true;
-      setInterval(checkForUpdates, 5000);
-    }
+    cloudWatchTimer = setInterval(checkForUpdates, 5000);
     startAutoSync();
   });
 }
@@ -5041,25 +5028,13 @@ function buildReceiptHTML(p) {
 // ============================================================
 // Override init - require login first
 window.addEventListener('DOMContentLoaded', () => {
-  // Set default admin if no local users
+  // لا تتصل بالسحابة قبل تسجيل الدخول. حافظ على المستخدمين المحليين فقط عند الإقلاع.
   if (!localStorage.getItem('kp_users')) {
     localStorage.setItem('kp_users', JSON.stringify([
       {username:'admin', password:'admin123', role:'admin', name:'المدير'}
     ]));
   }
-  // Load users from Firebase BEFORE showing login screen
-  refreshNextIds();
-  fetch('https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data/kp_users.json')
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      if (data && Array.isArray(data) && data.length > 0) {
-        localStorage.setItem('kp_users', JSON.stringify(data));
-      }
-    })
-    .catch(function() { /* offline — use local */ })
-    .finally(function() {
-      checkSession();
-    });
+  checkSession();
 });
 
 // INIT (handled by checkSession above)
@@ -5076,8 +5051,6 @@ let syncTimeout = null;
 let lastSavedAt = '';
 let lastLoadedFromCloudAt = '';
 let hasUnsyncedChanges = false;
-let cloudBootstrapDone = false;
-let isApplyingCloudSnapshot = false;
 
 const RECORD_COLLECTIONS = {
   students:   { get: () => sanitizeEntityArray(students || []),          set: (arr) => { students = sanitizeEntityArray(arr || []); resetPaymentMatchCache(); }, id: (x) => x && x.id },
@@ -5124,6 +5097,49 @@ function rememberCurrentState() {
   });
 }
 
+function getLocalSnapshotSummary() {
+  return {
+    students: Array.isArray(students) ? students.length : 0,
+    payments: Array.isArray(payments) ? payments.length : 0,
+    expenses: Array.isArray(expenses) ? expenses.length : 0,
+    renewals: Array.isArray(renewals) ? renewals.length : 0,
+    kp_form_rows: Array.isArray(syncedFormRows) ? syncedFormRows.length : 0,
+    attLog: attLog ? Object.keys(attLog).length : 0,
+    deletedStudents: Array.isArray(typeof deletedStudents !== 'undefined' ? deletedStudents : []) ? deletedStudents.length : 0
+  };
+}
+
+function getRemoteSnapshotSummary(data) {
+  data = data || {};
+  return {
+    students: Array.isArray(data.students) ? data.students.length : 0,
+    payments: Array.isArray(data.payments) ? data.payments.length : 0,
+    expenses: Array.isArray(data.expenses) ? data.expenses.length : 0,
+    renewals: Array.isArray(data.renewals) ? data.renewals.length : 0,
+    kp_form_rows: Array.isArray(data.kp_form_rows) ? data.kp_form_rows.length : 0,
+    attLog: data.attLog ? Object.keys(data.attLog).length : 0,
+    deletedStudents: Array.isArray(data.deletedStudents) ? data.deletedStudents.length : 0
+  };
+}
+
+function totalSummaryCount(summary) {
+  return Object.values(summary || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+}
+
+function shouldRejectRemoteData(data) {
+  const local = getLocalSnapshotSummary();
+  const remote = getRemoteSnapshotSummary(data);
+  const localTotal = totalSummaryCount(local);
+  const remoteTotal = totalSummaryCount(remote);
+
+  if (!data) return localTotal > 0;
+  if (localTotal > 0 && remoteTotal === 0) return true;
+  if (local.students > 0 && remote.students === 0) return true;
+  if (local.payments > 0 && remote.payments === 0) return true;
+  if (localTotal >= 20 && remoteTotal > 0 && remoteTotal <= Math.max(2, Math.floor(localTotal * 0.1))) return true;
+  return false;
+}
+
 function getAllData() {
   const cleanSettings = Object.assign({}, nurserySettings);
   delete cleanSettings.logoDataUrl;
@@ -5142,7 +5158,6 @@ function getAllData() {
 
 function autoSave() {
   hasUnsyncedChanges = true;
-  if (!currentUser || isApplyingCloudSnapshot) return;
   clearTimeout(syncTimeout);
   syncTimeout = setTimeout(pushToFirebase, 250);
 }
@@ -5226,7 +5241,6 @@ async function pushMeta(savedAt) {
 }
 
 async function pushToFirebase() {
-  if (!currentUser || !cloudBootstrapDone) return;
   if (isSyncing) return;
   isSyncing = true;
   try {
@@ -5250,73 +5264,20 @@ async function pushToFirebase() {
   }
 }
 
-
-function getLocalSnapshotSummary() {
-  return {
-    students: Array.isArray(students) ? students.length : 0,
-    payments: Array.isArray(payments) ? payments.length : 0,
-    expenses: Array.isArray(expenses) ? expenses.length : 0,
-    renewals: Array.isArray(renewals) ? renewals.length : 0,
-    kp_form_rows: Array.isArray(syncedFormRows) ? syncedFormRows.length : 0,
-    attLog: attLog ? Object.keys(attLog).length : 0,
-    deletedStudents: Array.isArray(deletedStudents) ? deletedStudents.length : 0
-  };
-}
-
-function getRemoteRecordsSummary(payload) {
-  payload = payload || {};
-  return {
-    students: payload.students && !Array.isArray(payload.students) ? Object.keys(payload.students).length : Array.isArray(payload.students) ? payload.students.length : 0,
-    payments: payload.payments && !Array.isArray(payload.payments) ? Object.keys(payload.payments).length : Array.isArray(payload.payments) ? payload.payments.length : 0,
-    expenses: payload.expenses && !Array.isArray(payload.expenses) ? Object.keys(payload.expenses).length : Array.isArray(payload.expenses) ? payload.expenses.length : 0,
-    renewals: payload.renewals && !Array.isArray(payload.renewals) ? Object.keys(payload.renewals).length : Array.isArray(payload.renewals) ? payload.renewals.length : 0,
-    kp_form_rows: payload.kp_form_rows && !Array.isArray(payload.kp_form_rows) ? Object.keys(payload.kp_form_rows).length : Array.isArray(payload.kp_form_rows) ? payload.kp_form_rows.length : 0,
-    attLog: payload.attLog && !Array.isArray(payload.attLog) ? Object.keys(payload.attLog).length : Array.isArray(payload.attLog) ? payload.attLog.length : 0,
-    deletedStudents: payload.deletedStudents && !Array.isArray(payload.deletedStudents) ? Object.keys(payload.deletedStudents).length : Array.isArray(payload.deletedStudents) ? payload.deletedStudents.length : 0
-  };
-}
-
-function totalSummaryCount(summary) {
-  return Object.values(summary || {}).reduce((a, b) => a + (Number(b) || 0), 0);
-}
-
-function shouldRejectCloudSnapshot(payload) {
-  const local = getLocalSnapshotSummary();
-  const remote = getRemoteRecordsSummary(payload);
-  const localTotal = totalSummaryCount(local);
-  const remoteTotal = totalSummaryCount(remote);
-  const hasAnyRemoteData = remoteTotal > 0;
-  const hasMajorRemoteData = (remote.students + remote.payments + remote.expenses + remote.renewals + remote.kp_form_rows) > 0;
-  const payloadKeys = Object.keys(payload || {}).filter((k) => k !== 'meta');
-  const missingMajor = ['students','payments','expenses','renewals'].filter((k) => !(payload && Object.prototype.hasOwnProperty.call(payload, k)));
-
-  // لا تسمح أبداً لحمولة فارغة/ناقصة أن تمسح قاعدة محلية موجودة عند فتح النظام.
-  if (localTotal > 0 && !hasAnyRemoteData) return true;
-  if (localTotal > 0 && !hasMajorRemoteData && missingMajor.length >= 2) return true;
-  if (local.students > 0 && remote.students === 0 && payloadKeys.length <= 2) return true;
-  if (localTotal >= 20 && remoteTotal > 0 && remoteTotal <= Math.max(2, Math.floor(localTotal * 0.1))) return true;
-  return false;
-}
-
 function hydrateRecordsPayload(payload) {
   payload = payload || {};
-  isApplyingCloudSnapshot = true;
-  try {
-    Object.keys(RECORD_COLLECTIONS).forEach((collection) => {
-      const raw = payload[collection] || {};
-      const rows = Array.isArray(raw)
-        ? raw
-        : Object.keys(raw).sort().map((k) => raw[k]).filter((v) => v != null);
-      RECORD_COLLECTIONS[collection].set(rows);
-    });
-    sanitizeCoreData();
-    localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
-    updateLogoDisplay();
-    refreshNextIds();
-    rememberCurrentState();
-  } finally {
-    isApplyingCloudSnapshot = false;
-  }
+  Object.keys(RECORD_COLLECTIONS).forEach((collection) => {
+    const raw = payload[collection] || {};
+    const rows = Array.isArray(raw)
+      ? raw
+      : Object.keys(raw).sort().map((k) => raw[k]).filter((v) => v != null);
+    RECORD_COLLECTIONS[collection].set(rows);
+  });
+  sanitizeCoreData();
+  localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
+  updateLogoDisplay();
+  refreshNextIds();
+  rememberCurrentState();
 }
 
 function applyLegacyCloudData(data) {
@@ -5354,18 +5315,11 @@ async function loadFromFirebase() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data && Object.keys(data).length) {
-      if (shouldRejectCloudSnapshot(data)) {
-        console.warn('Rejected suspicious cloud snapshot during load', getLocalSnapshotSummary(), getRemoteRecordsSummary(data));
-        showSyncBadge('🛡️ تم تجاهل نسخة سحابية ناقصة لحماية بياناتك');
-        cloudBootstrapDone = true;
-        return;
-      }
       hydrateRecordsPayload(data);
       const meta = data.meta || {};
       lastSavedAt = meta.savedAt || '';
       lastLoadedFromCloudAt = lastSavedAt;
       hasUnsyncedChanges = false;
-      cloudBootstrapDone = true;
       await loadLogoFromFirebase();
       renderDash();
       showSyncBadge('✅ تم التحميل');
@@ -5375,12 +5329,11 @@ async function loadFromFirebase() {
     const legacyRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
     if (!legacyRes.ok) throw new Error('HTTP ' + legacyRes.status);
     const legacyData = await legacyRes.json();
-    if (!legacyData || !legacyData.version) { cloudBootstrapDone = true; showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
+    if (!legacyData || !legacyData.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
     applyLegacyCloudData(legacyData);
     lastSavedAt = legacyData.savedAt || '';
     lastLoadedFromCloudAt = lastSavedAt;
     hasUnsyncedChanges = false;
-    cloudBootstrapDone = true;
     await loadLogoFromFirebase();
     renderDash();
     showSyncBadge('✅ تم تحميل النسخة السحابية');
@@ -5393,7 +5346,6 @@ async function loadFromFirebase() {
       showSyncBadge('📴 بدون إنترنت — بيانات محلية');
     }
     console.log('Firebase load failed:', msg);
-    cloudBootstrapDone = true;
     sanitizeCoreData();
     try { refreshNextIds(); renderDash(); if (typeof renderStudents==='function') renderStudents(); if (typeof renderPayments==='function') renderPayments(); if (typeof renderExpenses==='function') renderExpenses(); if (typeof renderReceipts==='function') renderReceipts(); if (typeof renderAtt==='function') renderAtt(); } catch(_) {}
   }
@@ -5425,7 +5377,6 @@ async function manualRefreshFromFirebase() {
 }
 
 async function checkForUpdates() {
-  if (!currentUser || !cloudBootstrapDone) return;
   if (isSyncing || hasUnsyncedChanges) return;
   try {
     const res = await fetch(FB_META_URL + '/savedAt.json', { cache: 'no-store' });
@@ -5469,12 +5420,13 @@ let autoSyncTimer = null;
 
 function startAutoSync() {
   if (!currentUser || !cloudBootstrapDone) return;
-  syncFromGoogleSheets();
   clearInterval(autoSyncTimer);
+  syncFromGoogleSheets();
   autoSyncTimer = setInterval(syncFromGoogleSheets, 5 * 60 * 1000);
 }
 
 async function syncFromGoogleSheets() {
+  if (!currentUser || !cloudBootstrapDone || isApplyingCloudSnapshot) return;
   const btn = document.getElementById('sync-sheets-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ جاري المزامنة...'; }
   try {
@@ -6409,10 +6361,10 @@ document.addEventListener('click', function(e) {
 
 
 window.addEventListener('focus', function(){
-  if (typeof checkForUpdates === 'function' && currentUser) checkForUpdates();
+  if (typeof checkForUpdates === 'function' && currentUser && cloudBootstrapDone && !hasUnsyncedChanges) checkForUpdates();
 });
 document.addEventListener('visibilitychange', function(){
-  if (!document.hidden && typeof checkForUpdates === 'function' && currentUser) checkForUpdates();
+  if (!document.hidden && typeof checkForUpdates === 'function' && currentUser && cloudBootstrapDone && !hasUnsyncedChanges) checkForUpdates();
 });
 
 // renderDash is called by applyLogin after login
