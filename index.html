@@ -141,13 +141,20 @@ textarea{resize:vertical;min-height:65px}
 /* ===== RECEIPT PRINT TEMPLATE ===== */
 #receipt-print-area{display:none}
 @media print{
-  body > *{display:none!important}
-  #receipt-print-area{display:block!important;margin:0;padding:0}
+  /* الوضع الافتراضي: طباعة السندات فقط */
+  body:not(.print-finreport) > *{display:none!important}
+  body:not(.print-finreport) #receipt-print-area{display:block!important;margin:0;padding:0}
+
+  /* وضع طباعة التقرير المالي */
   body.print-finreport > *{display:none!important}
-  body.print-finreport .main{display:block!important}
-  body.print-finreport .main .pg:not(#pg-finreport){display:none!important}
+  body.print-finreport > .wrap{display:flex!important}
+  body.print-finreport .side{display:none!important}
+  body.print-finreport .main{display:block!important;max-width:100%!important;padding:10px!important}
+  body.print-finreport .main .pg{display:none!important}
   body.print-finreport .main #pg-finreport{display:block!important}
-  body.print-finreport .hdr,body.print-finreport .sidebar,body.print-finreport .sbar,body.print-finreport .no-print{display:none!important}
+  body.print-finreport .no-print{display:none!important}
+  body.print-finreport .hdr{display:none!important}
+  body.print-finreport .card{box-shadow:none!important;border:1px solid #ccc!important}
 }
 .rp-wrap{font-family:'Tajawal',Arial,sans-serif;width:210mm;margin:0 auto;padding:8mm 10mm;color:#000;font-size:13px;direction:rtl}
 .rp-logo{text-align:center;margin-bottom:6mm}
@@ -280,13 +287,7 @@ textarea{resize:vertical;min-height:65px}
 @media print { .no-print { display: none !important; } }
 
 @media print {
-  body:not(.print-finreport) .sidebar,
-  body:not(.print-finreport) .hdr,
-  .no-print { display: none !important; }
-  body:not(.print-finreport) { background: white !important; padding: 0 !important; }
-  body:not(.print-finreport) .pg:not(#pg-finreport) { display: none !important; }
-  body:not(.print-finreport) .card { page-break-inside: avoid; box-shadow: none !important; border: 1.5px solid #ccc !important; }
-  body.print-finreport .card { page-break-inside: avoid; box-shadow: none !important; border: 1.5px solid #ccc !important; }
+  body.print-finreport .card { page-break-inside: avoid; }
 }
 </style>
 </head>
@@ -5602,14 +5603,9 @@ async function pushToFirebase() {
       } catch(_) { /* نتابع بدون بيانات سحابية */ }
     }
 
-    // ── حماية من Cache القديم ─────────────────────────────────────────
-    // إذا كانت Firebase عندها بيانات محفوظة أحدث من آخر مزامنة محلية،
-    // نعطي Firebase الأولوية الكاملة ولا نسمح للبيانات القديمة بالكتابة فوقها
-    const localSyncedAt = localStorage.getItem('kp_last_synced_at') || '';
-    const remoteSavedAt = (remoteData && remoteData.savedAt) || '';
-    const firebaseIsNewer = !fullReplace && remoteSavedAt && remoteSavedAt > localSyncedAt;
-
     // ── الخطوة 2: دمج البيانات المحلية مع السحابية ───────────────────
+    // الاستراتيجية: دائماً ادمج المحلي مع السحابي بناءً على الـ id
+    // البيانات المحلية تأخذ الأولوية (هي الأحدث - تعديلات الجلسة الحالية)
     const localTombstones = typeof tombstones !== 'undefined' ? tombstones : {};
     const remoteTombstones = fullReplace ? {} : ((remoteData && remoteData.tombstones) ? remoteData.tombstones : {});
     const mergedTombstones = fullReplace
@@ -5621,20 +5617,19 @@ async function pushToFirebase() {
         }
       : mergeTombstones(localTombstones, remoteTombstones);
 
-    // إذا Firebase أحدث: خذ Firebase أساساً ولا تكتب المحلي القديم فوقها
+    // دائماً ادمج المحلي مع السحابي — المحلي يأخذ الأولوية (الأحدث)
     const mergedStudents = mergeArrayById(
-      firebaseIsNewer ? [] : students,
+      students,
       remoteData && remoteData.students,
       mergedTombstones.students
     );
-    // للمدفوعات: دائماً ادمج (لأن المستخدم قد يضيف دفعة جديدة)
     const mergedPayments = mergeArrayById(
       payments,
       remoteData && remoteData.payments,
       mergedTombstones.payments
     );
     const mergedExpenses = mergeArrayById(
-      firebaseIsNewer ? [] : expenses,
+      expenses,
       remoteData && remoteData.expenses,
       mergedTombstones.expenses
     );
