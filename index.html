@@ -4128,6 +4128,7 @@ function restoreBackup(event) {
       if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
       if (typeof updateNotifications === 'function') updateNotifications();
       if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
+      if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
       alert('✅ تم استعادة النسخة الاحتياطية بنجاح!\n\n' + 'الطلاب: ' + (backup.students||[]).length + '\n' + 'السندات: ' + (backup.payments||[]).length + '\n' + 'المصاريف: ' + (backup.expenses||[]).length);
     } catch(err) { alert('❌ فشل قراءة الملف: ' + err.message); }
     event.target.value = '';
@@ -4437,31 +4438,33 @@ function applyLogin() {
   if (rb) rb.style.display = 'inline-block';
   document.getElementById('ub-name').textContent = currentUser.name || currentUser.username;
   document.getElementById('ub-role').textContent = currentUser.role === 'admin' ? '👑 مدير' : '👤 موظف';
+  // Show admin nav only for admin
   const navAdmin = document.getElementById('nav-admin');
   if (navAdmin) navAdmin.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
-
-  clearTimeout(syncTimeout);
-  if (cloudWatchTimer) clearInterval(cloudWatchTimer);
-  cloudWatchTimer = null;
-  if (typeof autoSyncTimer !== 'undefined' && autoSyncTimer) clearInterval(autoSyncTimer);
-  autoSyncTimer = null;
-  hasUnsyncedChanges = false;
-  cloudBootstrapDone = false;
-  isApplyingCloudSnapshot = false;
-
+  // Load saved settings
   loadSettings();
+  // تهيئة فلتر السنة على السنة الحالية
   const yf = document.getElementById('dash-year-filter');
   if (yf && !yf.value) yf.value = String(new Date().getFullYear());
+
+  // تهيئة السنة الافتراضية
   dashYear = new Date().getFullYear();
   const yfInit = document.getElementById('dash-year-filter');
   if (yfInit) yfInit.value = String(dashYear);
 
   if (typeof applyTombstones === 'function') applyTombstones();
+  // اعتماد جماعي لمطابقات السندات المقترحة الحالية (مرة واحدة فقط)
+  let bulkApprovedNow = runOneTimeBulkMatchApproval();
+  // عرض البيانات المحلية فوراً
   renderDash();
+  if (bulkApprovedNow > 0) {
+    setTimeout(function(){ alert('✅ تم اعتماد ' + bulkApprovedNow + ' عملية ربط بين السندات وملفات الطلاب'); }, 300);
+  }
   setTimeout(function(){ updateNotifications(); updateRegExpiryNotifications(); }, 500);
-
+  // تحميل من Firebase وتحديث عند الانتهاء
   loadFromFirebase().then(() => {
     const approvedAfterSync = runOneTimeBulkMatchApproval();
+    // إعادة تهيئة الفلتر بعد التحميل
     const yf2 = document.getElementById('dash-year-filter');
     if (yf2 && !yf2.value) yf2.value = String(new Date().getFullYear());
     renderDash();
@@ -4470,9 +4473,9 @@ function applyLogin() {
     if (approvedAfterSync > 0) {
       setTimeout(function(){ alert('✅ تم اعتماد ' + approvedAfterSync + ' عملية ربط إضافية بعد مزامنة البيانات'); }, 500);
     }
-    cloudWatchTimer = setInterval(checkForUpdates, 5000);
-    startAutoSync();
   });
+  setInterval(checkForUpdates, 5000);
+  startAutoSync();
 }
 
 function doLogout() {
@@ -5028,13 +5031,25 @@ function buildReceiptHTML(p) {
 // ============================================================
 // Override init - require login first
 window.addEventListener('DOMContentLoaded', () => {
-  // لا تتصل بالسحابة قبل تسجيل الدخول. حافظ على المستخدمين المحليين فقط عند الإقلاع.
+  // Set default admin if no local users
   if (!localStorage.getItem('kp_users')) {
     localStorage.setItem('kp_users', JSON.stringify([
       {username:'admin', password:'admin123', role:'admin', name:'المدير'}
     ]));
   }
-  checkSession();
+  // Load users from Firebase BEFORE showing login screen
+  refreshNextIds();
+  fetch('https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data/kp_users.json')
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data && Array.isArray(data) && data.length > 0) {
+        localStorage.setItem('kp_users', JSON.stringify(data));
+      }
+    })
+    .catch(function() { /* offline — use local */ })
+    .finally(function() {
+      checkSession();
+    });
 });
 
 // INIT (handled by checkSession above)
@@ -5044,122 +5059,27 @@ window.addEventListener('DOMContentLoaded', () => {
 // ============================================================
 const FB_URL = 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data';
 const FB_LOGO_URL = FB_URL + '/branding/logoDataUrl';
-const FB_RECORDS_URL = FB_URL + '/records_v2';
-const FB_META_URL = FB_RECORDS_URL + '/meta';
 let isSyncing = false;
 let syncTimeout = null;
 let lastSavedAt = '';
-let lastLoadedFromCloudAt = '';
-let hasUnsyncedChanges = false;
-
-const RECORD_COLLECTIONS = {
-  students:   { get: () => sanitizeEntityArray(students || []),          set: (arr) => { students = sanitizeEntityArray(arr || []); resetPaymentMatchCache(); }, id: (x) => x && x.id },
-  payments:   { get: () => sanitizeEntityArray(payments || []),          set: (arr) => { payments = sanitizeEntityArray(arr || []); }, id: (x) => x && x.id },
-  expenses:   { get: () => sanitizeEntityArray(expenses || []),          set: (arr) => { expenses = sanitizeEntityArray(arr || []); }, id: (x) => x && x.id },
-  renewals:   { get: () => sanitizeEntityArray(renewals || []),          set: (arr) => { renewals = sanitizeEntityArray(arr || []); }, id: (x) => x && x.id },
-  kp_form_rows:{ get: () => Array.isArray(syncedFormRows) ? syncedFormRows : JSON.parse(localStorage.getItem('kp_form_rows') || '[]'), set: (arr) => { syncedFormRows = Array.isArray(arr) ? arr : []; localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); }, id: (x) => (x && (x.id || x.ts || x.timestamp || x.name || JSON.stringify(x))) },
-  kp_users:   { get: () => JSON.parse(localStorage.getItem('kp_users') || '[]'), set: (arr) => { localStorage.setItem('kp_users', JSON.stringify(Array.isArray(arr) ? arr : [])); }, id: (x) => (x && (x.username || x.user || x.name || x.id)) },
-  attLog:     { get: () => Object.entries(attLog || {}).map(([id, value]) => ({ id, value })), set: (arr) => { attLog = {}; (arr || []).forEach((x) => { if (x && x.id != null) attLog[String(x.id)] = x.value; }); }, id: (x) => x && x.id },
-  CLASSES:    { get: () => Object.entries(CLASSES || {}).map(([id, value]) => ({ id, value })), set: (arr) => { const next = {}; (arr || []).forEach((x) => { if (x && x.id != null) next[String(x.id)] = x.value; }); Object.keys(CLASSES || {}).forEach((k) => delete CLASSES[k]); Object.assign(CLASSES, next); localStorage.setItem('kp_classes', JSON.stringify(CLASSES)); }, id: (x) => x && x.id },
-  nurserySettings: { get: () => { const clean = Object.assign({}, nurserySettings || {}); delete clean.logoDataUrl; return Object.entries(clean).map(([id, value]) => ({ id, value })); }, set: (arr) => { const next = {}; (arr || []).forEach((x) => { if (x && x.id != null) next[String(x.id)] = x.value; }); Object.assign(nurserySettings, next); localStorage.setItem('kp_settings', JSON.stringify(nurserySettings)); }, id: (x) => x && x.id },
-  deletedStudents: { get: () => (Array.isArray(deletedStudents) ? deletedStudents : []).map((id) => ({ id: String(id), value: true })), set: (arr) => { deletedStudents = (arr || []).map((x) => String(x.id)); localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents)); }, id: (x) => x && x.id },
-  tombstones: { get: () => ['students','payments','expenses','renewals'].flatMap((type) => ((tombstones && tombstones[type]) || []).map((id) => ({ id: type + '__' + String(id), type, value: String(id) }))), set: (arr) => { tombstones = { students: [], payments: [], expenses: [], renewals: [] }; (arr || []).forEach((x) => { if (x && x.type && tombstones[x.type]) tombstones[x.type].push(String(x.value)); }); localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); applyTombstones(); }, id: (x) => x && x.id },
-};
-
-const lastSyncedState = {};
-Object.keys(RECORD_COLLECTIONS).forEach((name) => lastSyncedState[name] = new Map());
-
-function deepClone(obj) {
-  return JSON.parse(JSON.stringify(obj));
-}
-
-function normalizeRecordId(v) {
-  return String(v == null ? '' : v);
-}
-
-function recordPath(collection, id) {
-  return FB_RECORDS_URL + '/' + encodeURIComponent(collection) + '/' + encodeURIComponent(normalizeRecordId(id)) + '.json';
-}
-
-function mapFromItems(items, getId) {
-  const m = new Map();
-  (items || []).forEach((item) => {
-    const rawId = getId(item);
-    if (rawId == null || rawId === '') return;
-    m.set(normalizeRecordId(rawId), deepClone(item));
-  });
-  return m;
-}
-
-function rememberCurrentState() {
-  Object.keys(RECORD_COLLECTIONS).forEach((collection) => {
-    lastSyncedState[collection] = mapFromItems(RECORD_COLLECTIONS[collection].get(), RECORD_COLLECTIONS[collection].id);
-  });
-}
-
-function getLocalSnapshotSummary() {
-  return {
-    students: Array.isArray(students) ? students.length : 0,
-    payments: Array.isArray(payments) ? payments.length : 0,
-    expenses: Array.isArray(expenses) ? expenses.length : 0,
-    renewals: Array.isArray(renewals) ? renewals.length : 0,
-    kp_form_rows: Array.isArray(syncedFormRows) ? syncedFormRows.length : 0,
-    attLog: attLog ? Object.keys(attLog).length : 0,
-    deletedStudents: Array.isArray(typeof deletedStudents !== 'undefined' ? deletedStudents : []) ? deletedStudents.length : 0
-  };
-}
-
-function getRemoteSnapshotSummary(data) {
-  data = data || {};
-  return {
-    students: Array.isArray(data.students) ? data.students.length : 0,
-    payments: Array.isArray(data.payments) ? data.payments.length : 0,
-    expenses: Array.isArray(data.expenses) ? data.expenses.length : 0,
-    renewals: Array.isArray(data.renewals) ? data.renewals.length : 0,
-    kp_form_rows: Array.isArray(data.kp_form_rows) ? data.kp_form_rows.length : 0,
-    attLog: data.attLog ? Object.keys(data.attLog).length : 0,
-    deletedStudents: Array.isArray(data.deletedStudents) ? data.deletedStudents.length : 0
-  };
-}
-
-function totalSummaryCount(summary) {
-  return Object.values(summary || {}).reduce((a, b) => a + (Number(b) || 0), 0);
-}
-
-function shouldRejectRemoteData(data) {
-  const local = getLocalSnapshotSummary();
-  const remote = getRemoteSnapshotSummary(data);
-  const localTotal = totalSummaryCount(local);
-  const remoteTotal = totalSummaryCount(remote);
-
-  if (!data) return localTotal > 0;
-  if (localTotal > 0 && remoteTotal === 0) return true;
-  if (local.students > 0 && remote.students === 0) return true;
-  if (local.payments > 0 && remote.payments === 0) return true;
-  if (localTotal >= 20 && remoteTotal > 0 && remoteTotal <= Math.max(2, Math.floor(localTotal * 0.1))) return true;
-  return false;
-}
 
 function getAllData() {
   const cleanSettings = Object.assign({}, nurserySettings);
   delete cleanSettings.logoDataUrl;
   return {
-    version: 3,
+    version: 2,
     savedAt: new Date().toISOString(),
     students, payments, expenses, attLog, CLASSES,
     nurserySettings: cleanSettings,
     renewals,
     kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
     kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]'),
-    deletedStudents: (typeof deletedStudents !== 'undefined' ? deletedStudents : []),
-    tombstones: (typeof tombstones !== 'undefined' ? tombstones : {}),
   };
 }
 
 function autoSave() {
-  hasUnsyncedChanges = true;
   clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(pushToFirebase, 250);
+  syncTimeout = setTimeout(pushToFirebase, 10);
 }
 
 async function saveLogoToFirebaseSilent() {
@@ -5198,64 +5118,218 @@ async function loadLogoFromFirebase() {
   }
 }
 
-async function syncCollection(collection) {
-  const cfg = RECORD_COLLECTIONS[collection];
-  const currentMap = mapFromItems(cfg.get(), cfg.id);
-  const previousMap = lastSyncedState[collection] || new Map();
-  const ops = [];
 
-  currentMap.forEach((value, id) => {
-    const prev = previousMap.get(id);
-    if (!prev || JSON.stringify(prev) !== JSON.stringify(value)) {
-      ops.push(fetch(recordPath(collection, id), {
-        method: 'PUT',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(value)
-      }));
-    }
+// FINANCIAL REPORTS
+let lastFinReportData = null;
+
+function renderFinReport() {
+  const today = new Date().toISOString().slice(0,10);
+  const fromEl = document.getElementById('fr-from');
+  const toEl = document.getElementById('fr-to');
+  if (fromEl && !fromEl.value) fromEl.value = new Date().getFullYear() + '-01-01';
+  if (toEl && !toEl.value) toEl.value = today;
+  generateFinReport();
+}
+
+function frQuickSet(range) {
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0,10);
+  const fromEl = document.getElementById('fr-from');
+  const toEl = document.getElementById('fr-to');
+  if (range === 'month') {
+    fromEl.value = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-01';
+    toEl.value = todayStr;
+  } else if (range === 'quarter') {
+    const d = new Date(today); d.setMonth(d.getMonth()-3);
+    fromEl.value = d.toISOString().slice(0,10);
+    toEl.value = todayStr;
+  } else if (range === 'year') {
+    fromEl.value = today.getFullYear() + '-01-01';
+    toEl.value = todayStr;
+  } else if (range === 'all') {
+    fromEl.value = '2020-01-01';
+    toEl.value = todayStr;
+  }
+  generateFinReport();
+}
+
+function generateFinReport() {
+  const from = document.getElementById('fr-from').value;
+  const to = document.getElementById('fr-to').value;
+  if (!from || !to) return;
+  if (from > to) { alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية'); return; }
+
+  const filtPay = payments.filter(function(p){
+    const d = String(p.date||'').slice(0,10);
+    return d && d >= from && d <= to;
+  });
+  const filtExp = expenses.filter(function(e){
+    const d = String(e.exp_date || e.date || '').slice(0,10);
+    return d && d >= from && d <= to;
   });
 
-  previousMap.forEach((_value, id) => {
-    if (!currentMap.has(id)) {
-      ops.push(fetch(recordPath(collection, id), { method: 'DELETE' }));
-    }
-  });
+  const totalInc = filtPay.reduce(function(s,p){ return s+(p.amt||0); }, 0);
+  const totalExp = filtExp.reduce(function(s,e){ return s+(e.amt||0); }, 0);
+  const net = totalInc - totalExp;
+  const days = Math.round((new Date(to) - new Date(from)) / 86400000) + 1;
 
-  if (ops.length) {
-    const results = await Promise.all(ops);
-    const failed = results.find((r) => !r.ok);
-    if (failed) throw new Error('HTTP ' + failed.status + ' في ' + collection);
+  const hp = document.getElementById('fr-header-period');
+  if (hp) hp.textContent = 'الفترة: من ' + from + ' إلى ' + to + ' (' + days + ' يوم)';
+  const hd = document.getElementById('fr-header-date');
+  if (hd) hd.textContent = 'تم إنشاء التقرير في: ' + new Date().toLocaleString('ar-AE');
+  const ft = document.getElementById('fr-gen-time');
+  if (ft) ft.textContent = new Date().toLocaleString('ar-AE');
+
+  document.getElementById('fr-inc').textContent = totalInc.toLocaleString() + ' د.إ';
+  document.getElementById('fr-inc-sub').textContent = filtPay.length + ' سند';
+  document.getElementById('fr-exp').textContent = totalExp.toLocaleString() + ' د.إ';
+  document.getElementById('fr-exp-sub').textContent = filtExp.length + ' مصروف';
+  document.getElementById('fr-net').textContent = net.toLocaleString() + ' د.إ';
+  document.getElementById('fr-net').style.color = net >= 0 ? '#27ae60' : '#e74c3c';
+  const ns = document.getElementById('fr-net-sub');
+  if (ns) ns.textContent = net >= 0 ? '🟢 فائض' : '🔴 عجز';
+  document.getElementById('fr-days').textContent = days;
+
+  const incByType = {};
+  filtPay.forEach(function(p){
+    const t = p.type || 'غير محدد';
+    if (!incByType[t]) incByType[t] = { count: 0, amt: 0 };
+    incByType[t].count++;
+    incByType[t].amt += (p.amt || 0);
+  });
+  const incCatsEl = document.getElementById('fr-inc-cats');
+  if (incCatsEl) {
+    const entries = Object.entries(incByType).sort(function(a,b){ return b[1].amt - a[1].amt; });
+    incCatsEl.innerHTML = entries.length
+      ? entries.map(function(e){
+          const pct = totalInc > 0 ? ((e[1].amt/totalInc)*100).toFixed(1) : '0';
+          return '<tr><td>' + e[0] + '</td><td>' + e[1].count + '</td><td style="color:#27ae60;font-weight:700">' + e[1].amt.toLocaleString() + ' د.إ</td><td>' + pct + '%</td></tr>';
+        }).join('')
+      : '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">لا توجد واردات</td></tr>';
   }
 
-  lastSyncedState[collection] = currentMap;
+  const expByCat = {};
+  filtExp.forEach(function(e){
+    const c = e.cat || 'غير محدد';
+    if (!expByCat[c]) expByCat[c] = { count: 0, amt: 0 };
+    expByCat[c].count++;
+    expByCat[c].amt += (e.amt || 0);
+  });
+  const expCatsEl = document.getElementById('fr-exp-cats');
+  if (expCatsEl) {
+    const entries = Object.entries(expByCat).sort(function(a,b){ return b[1].amt - a[1].amt; });
+    expCatsEl.innerHTML = entries.length
+      ? entries.map(function(e){
+          const pct = totalExp > 0 ? ((e[1].amt/totalExp)*100).toFixed(1) : '0';
+          return '<tr><td>' + e[0] + '</td><td>' + e[1].count + '</td><td style="color:#e67e22;font-weight:700">' + e[1].amt.toLocaleString() + ' د.إ</td><td>' + pct + '%</td></tr>';
+        }).join('')
+      : '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">لا توجد صادرات</td></tr>';
+  }
+
+  const monthly = {};
+  filtPay.forEach(function(p){
+    const m = String(p.date||'').slice(0,7);
+    if (!monthly[m]) monthly[m] = { inc: 0, exp: 0 };
+    monthly[m].inc += (p.amt || 0);
+  });
+  filtExp.forEach(function(e){
+    const m = String(e.exp_date || e.date || '').slice(0,7);
+    if (!monthly[m]) monthly[m] = { inc: 0, exp: 0 };
+    monthly[m].exp += (e.amt || 0);
+  });
+  const monthsEl = document.getElementById('fr-monthly');
+  if (monthsEl) {
+    const months = Object.keys(monthly).filter(function(m){return m;}).sort();
+    monthsEl.innerHTML = months.length
+      ? months.map(function(m){
+          const n = monthly[m].inc - monthly[m].exp;
+          const clr = n >= 0 ? '#27ae60' : '#e74c3c';
+          return '<tr><td><b>' + m + '</b></td><td style="color:#27ae60">+' + monthly[m].inc.toLocaleString() + '</td><td style="color:#e67e22">-' + monthly[m].exp.toLocaleString() + '</td><td style="color:' + clr + ';font-weight:700">' + n.toLocaleString() + ' د.إ</td></tr>';
+        }).join('')
+      : '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">لا توجد بيانات</td></tr>';
+  }
+
+  const allRows = [];
+  filtPay.forEach(function(p){ allRows.push({ type:'وارد', date:String(p.date||'').slice(0,10), desc:p.desc||'', who:p.who||'', amt:p.amt||0, sign:1 }); });
+  filtExp.forEach(function(e){ allRows.push({ type:'صادر', date:String(e.exp_date||e.date||'').slice(0,10), desc:e.desc||'', who:e.cat||'', amt:e.amt||0, sign:-1 }); });
+  allRows.sort(function(a,b){ return a.date.localeCompare(b.date); });
+
+  const tbody = document.getElementById('fr-tbody');
+  if (tbody) {
+    tbody.innerHTML = allRows.length
+      ? allRows.map(function(r, i){
+          const clr = r.sign > 0 ? '#27ae60' : '#e67e22';
+          return '<tr><td>'+(i+1)+'</td><td><span style="color:'+clr+';font-weight:700">'+(r.sign>0?'🟢 ':'🟠 ')+r.type+'</span></td><td>'+r.date+'</td><td style="font-size:12px">'+r.desc+'</td><td style="font-size:12px">'+r.who+'</td><td style="color:'+clr+';font-weight:700">'+(r.sign>0?'+':'-')+r.amt.toLocaleString()+' د.إ</td></tr>';
+        }).join('')
+      : '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--muted)">لا توجد حركات</td></tr>';
+  }
+  const tfoot = document.getElementById('fr-tfoot');
+  if (tfoot) {
+    tfoot.innerHTML = '<tr style="background:linear-gradient(135deg,#f0fff5,#dcffea);font-weight:900;font-size:15px"><td colspan="5" style="text-align:left">📊 الصافي</td><td style="color:'+(net>=0?'#27ae60':'#e74c3c')+'">'+net.toLocaleString()+' د.إ</td></tr>';
+  }
+
+  lastFinReportData = { from: from, to: to, rows: allRows, totalInc: totalInc, totalExp: totalExp, net: net, incByType: incByType, expByCat: expByCat, monthly: monthly };
 }
 
-async function pushMeta(savedAt) {
-  const payload = { savedAt: savedAt, version: 3 };
-  const res = await fetch(FB_META_URL + '.json', {
-    method: 'PATCH',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload)
-  });
-  if (!res.ok) throw new Error('HTTP ' + res.status + ' في meta');
+function exportFinReport() {
+  if (!lastFinReportData) { alert('قم بإنشاء التقرير أولاً'); return; }
+  const d = lastFinReportData;
+  const wb = XLSX.utils.book_new();
+  const summary = [
+    ['التقرير المالي'],
+    ['الفترة', 'من ' + d.from + ' إلى ' + d.to],
+    [],
+    ['إجمالي الواردات', d.totalInc],
+    ['إجمالي الصادرات', d.totalExp],
+    ['الصافي', d.net],
+  ];
+  const ws1 = XLSX.utils.aoa_to_sheet(summary);
+  XLSX.utils.book_append_sheet(wb, ws1, 'الملخص');
+  const headers = ['#','النوع','التاريخ','البيان','الجهة/الفئة','المبلغ'];
+  const rows = d.rows.map(function(r, i){ return [i+1, r.type, r.date, r.desc, r.who, r.sign * r.amt]; });
+  const ws2 = XLSX.utils.aoa_to_sheet([headers].concat(rows));
+  XLSX.utils.book_append_sheet(wb, ws2, 'التفصيل');
+  XLSX.writeFile(wb, 'تقرير_مالي_' + d.from + '_الى_' + d.to + '.xlsx');
 }
+
+// Print CSS
 
 async function pushToFirebase() {
   if (isSyncing) return;
   isSyncing = true;
   try {
-    sanitizeCoreData();
     const data = getAllData();
-    const collections = Object.keys(RECORD_COLLECTIONS);
-    for (const collection of collections) {
-      await syncCollection(collection);
+    const lightData = {
+      version:         data.version,
+      savedAt:         data.savedAt,
+      students:        data.students,
+      payments:        data.payments,
+      expenses:        data.expenses,
+      attLog:          data.attLog,
+      CLASSES:         data.CLASSES,
+      nurserySettings: data.nurserySettings,
+      renewals:        data.renewals,
+      kp_users:        data.kp_users,
+      kp_form_rows:    data.kp_form_rows,
+      deletedStudents: (typeof deletedStudents !== 'undefined' ? deletedStudents : []),
+      tombstones:      (typeof tombstones !== 'undefined' ? tombstones : {}),
+    };
+
+    const res = await fetch(FB_URL + '.json', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(lightData)
+    });
+
+    if (res.ok) {
+      try { await saveLogoToFirebaseSilent(); } catch(_) {}
+      lastSavedAt = data.savedAt;
+      showSyncBadge('✅ محفوظ');
+    } else {
+      const errText = await res.text().catch(()=>'');
+      showSyncBadge('⚠️ خطأ ' + res.status + ': ' + errText.slice(0,50));
+      console.error('Firebase error:', res.status, errText);
     }
-    await pushMeta(data.savedAt);
-    try { await saveLogoToFirebaseSilent(); } catch(_) {}
-    lastSavedAt = data.savedAt;
-    lastLoadedFromCloudAt = data.savedAt;
-    hasUnsyncedChanges = false;
-    showSyncBadge('✅ محفوظ');
   } catch(e) {
     showSyncBadge('❌ ' + e.message);
     console.error('pushToFirebase error:', e);
@@ -5264,80 +5338,69 @@ async function pushToFirebase() {
   }
 }
 
-function hydrateRecordsPayload(payload) {
-  payload = payload || {};
-  Object.keys(RECORD_COLLECTIONS).forEach((collection) => {
-    const raw = payload[collection] || {};
-    const rows = Array.isArray(raw)
-      ? raw
-      : Object.keys(raw).sort().map((k) => raw[k]).filter((v) => v != null);
-    RECORD_COLLECTIONS[collection].set(rows);
-  });
-  sanitizeCoreData();
-  localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
-  updateLogoDisplay();
-  refreshNextIds();
-  rememberCurrentState();
-}
-
-function applyLegacyCloudData(data) {
-  const localStudentsCount = Array.isArray(students) ? students.length : 0;
-  const remoteStudentsCount = Array.isArray(data.students) ? data.students.length : 0;
-  const localPaymentsCount = Array.isArray(payments) ? payments.length : 0;
-  const remotePaymentsCount = Array.isArray(data.payments) ? data.payments.length : 0;
-  const shouldProtectLocalStudents = localStudentsCount > 0 && remoteStudentsCount === 0;
-  const shouldProtectLocalPayments = localPaymentsCount > 0 && remotePaymentsCount === 0;
-  if (Array.isArray(data.students) && !shouldProtectLocalStudents) students = sanitizeEntityArray(data.students);
-  resetPaymentMatchCache();
-  if (Array.isArray(data.payments) && !shouldProtectLocalPayments) payments = sanitizeEntityArray(data.payments);
-  if (Array.isArray(data.expenses)) expenses = sanitizeEntityArray(data.expenses);
-  if (Array.isArray(data.renewals)) renewals = sanitizeEntityArray(data.renewals);
-  if (data.attLog) { attLog = Object.assign({}, data.attLog); }
-  if (data.CLASSES) { Object.keys(CLASSES || {}).forEach((k) => delete CLASSES[k]); Object.assign(CLASSES, data.CLASSES); localStorage.setItem('kp_classes', JSON.stringify(CLASSES)); }
-  if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
-  if (data.kp_users) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
-  if (Array.isArray(data.kp_form_rows)) { syncedFormRows = data.kp_form_rows; localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); }
-  if (Array.isArray(data.deletedStudents)) { deletedStudents = data.deletedStudents; localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents)); }
-  if (data.tombstones) {
-    tombstones = data.tombstones;
-    localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
-    applyTombstones();
-  }
-  sanitizeCoreData();
-  refreshNextIds();
-  rememberCurrentState();
-}
-
 async function loadFromFirebase() {
   showSyncBadge('⏳ جاري التحميل...');
   try {
-    const res = await fetch(FB_RECORDS_URL + '.json', { cache: 'no-store' });
+    const res = await fetch(FB_URL + '.json', { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    if (data && Object.keys(data).length) {
-      hydrateRecordsPayload(data);
-      const meta = data.meta || {};
-      lastSavedAt = meta.savedAt || '';
-      lastLoadedFromCloudAt = lastSavedAt;
-      hasUnsyncedChanges = false;
-      await loadLogoFromFirebase();
-      renderDash();
-      showSyncBadge('✅ تم التحميل');
-      return;
+    if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
+    const localStudentsCount = Array.isArray(students) ? students.length : 0;
+    const remoteStudentsCount = Array.isArray(data.students) ? data.students.length : 0;
+    const localPaymentsCount = Array.isArray(payments) ? payments.length : 0;
+    const remotePaymentsCount = Array.isArray(data.payments) ? data.payments.length : 0;
+    const shouldProtectLocalStudents = localStudentsCount > 0 && remoteStudentsCount === 0;
+    const shouldProtectLocalPayments = localPaymentsCount > 0 && remotePaymentsCount === 0;
+    // حماية: لا تستبدل البيانات المحلية ببيانات سحابية فارغة
+    if (Array.isArray(data.students) && !shouldProtectLocalStudents) students = sanitizeEntityArray(data.students);
+    resetPaymentMatchCache();
+    if (Array.isArray(data.payments) && !shouldProtectLocalPayments) payments = sanitizeEntityArray(data.payments);
+    if (Array.isArray(data.expenses)) expenses = sanitizeEntityArray(data.expenses);
+    if (Array.isArray(data.renewals)) renewals = sanitizeEntityArray(data.renewals);
+    sanitizeCoreData();
+    if (data.attLog) { Object.keys(data.attLog).forEach(function(k){ attLog[k] = data.attLog[k]; }); }
+    if (data.deletedStudents && typeof deletedStudents !== 'undefined') {
+      deletedStudents = data.deletedStudents;
+      localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
     }
-
-    const legacyRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
-    if (!legacyRes.ok) throw new Error('HTTP ' + legacyRes.status);
-    const legacyData = await legacyRes.json();
-    if (!legacyData || !legacyData.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
-    applyLegacyCloudData(legacyData);
-    lastSavedAt = legacyData.savedAt || '';
-    lastLoadedFromCloudAt = lastSavedAt;
-    hasUnsyncedChanges = false;
+    if (data.tombstones && typeof tombstones !== 'undefined') {
+      // Firebase هو المرجع - استبدل tombstones بالكامل
+      // لأن restoreStudent على أي جهاز يحذف من Firebase
+      ['students','payments','expenses','renewals'].forEach(function(type){
+        if (data.tombstones[type] && Array.isArray(data.tombstones[type])) {
+          tombstones[type] = data.tombstones[type].slice();
+        } else {
+          tombstones[type] = [];
+        }
+      });
+      localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+      applyTombstones();
+    }
+    if (data.CLASSES)         Object.assign(CLASSES, data.CLASSES);
+    if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
+    if (data.kp_users && data.kp_users.length) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
+    if (Array.isArray(data.kp_form_rows)) {
+      syncedFormRows = data.kp_form_rows;
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+    }
     await loadLogoFromFirebase();
+    if (!logoDataUrl && nurserySettings.logoDataUrl) {
+      logoDataUrl = nurserySettings.logoDataUrl;
+      localStorage.setItem('kp_logo', logoDataUrl);
+    }
+    localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
+    updateLogoDisplay();
+    refreshNextIds();
+    lastSavedAt = data.savedAt || '';
     renderDash();
-    showSyncBadge('✅ تم تحميل النسخة السحابية');
-    setTimeout(function(){ pushToFirebase(); }, 500);
+    if (shouldProtectLocalStudents || shouldProtectLocalPayments) {
+      const warnings = [];
+      if (shouldProtectLocalStudents) warnings.push('الطلاب المحليين محفوظين');
+      if (shouldProtectLocalPayments) warnings.push('السندات المحلية محفوظة');
+      showSyncBadge('🛡️ ' + warnings.join(' + '));
+    } else {
+      showSyncBadge('✅ تم التحميل');
+    }
   } catch(e) {
     const msg = (e && e.message) ? e.message : 'unknown';
     if (msg.indexOf('null') >= 0 || msg.indexOf('undefined') >= 0) {
@@ -5352,10 +5415,6 @@ async function loadFromFirebase() {
 }
 
 async function manualRefreshFromFirebase() {
-  if (hasUnsyncedChanges) {
-    showSyncBadge('⚠️ يوجد تعديلات محلية غير محفوظة');
-    return;
-  }
   showSyncBadge('⏳ جاري التحديث...');
   try {
     await loadFromFirebase();
@@ -5368,7 +5427,7 @@ async function manualRefreshFromFirebase() {
     if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
     if (typeof renderAtt === 'function') renderAtt();
     if (typeof updateNotifications === 'function') updateNotifications();
-    if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
+      if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
     showSyncBadge('🔄 تم جلب أحدث البيانات من Firebase');
   } catch (e) {
     showSyncBadge('⚠️ تعذر التحديث من Firebase');
@@ -5377,11 +5436,11 @@ async function manualRefreshFromFirebase() {
 }
 
 async function checkForUpdates() {
-  if (isSyncing || hasUnsyncedChanges) return;
+  if (isSyncing) return;
   try {
-    const res = await fetch(FB_META_URL + '/savedAt.json', { cache: 'no-store' });
+    const res = await fetch(FB_URL + '/savedAt.json', { cache: 'no-store' });
     const time = await res.json();
-    if (time && time !== lastLoadedFromCloudAt && time !== lastSavedAt) {
+    if (time && time !== lastSavedAt) {
       await loadFromFirebase();
       renderDash();
       if (typeof renderStudents === 'function') renderStudents();
@@ -5391,6 +5450,7 @@ async function checkForUpdates() {
       if (typeof renderRenewals === 'function') renderRenewals();
       if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
       if (typeof updateNotifications === 'function') updateNotifications();
+      if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
       if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
       showSyncBadge('🔄 تم تحديث البيانات تلقائياً');
     }
@@ -5410,6 +5470,7 @@ function showSyncBadge(msg) {
   clearTimeout(el._t);
   el._t = setTimeout(() => el.style.opacity = '0', 2500);
 }
+
 // ============================================================
 // GOOGLE SHEETS — مزامنة طلبات التسجيل
 // ============================================================
@@ -5419,14 +5480,12 @@ let syncedFormRows = JSON.parse(localStorage.getItem('kp_form_rows') || '[]');
 let autoSyncTimer = null;
 
 function startAutoSync() {
-  if (!currentUser || !cloudBootstrapDone) return;
-  clearInterval(autoSyncTimer);
   syncFromGoogleSheets();
+  clearInterval(autoSyncTimer);
   autoSyncTimer = setInterval(syncFromGoogleSheets, 5 * 60 * 1000);
 }
 
 async function syncFromGoogleSheets() {
-  if (!currentUser || !cloudBootstrapDone || isApplyingCloudSnapshot) return;
   const btn = document.getElementById('sync-sheets-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ جاري المزامنة...'; }
   try {
@@ -6361,10 +6420,10 @@ document.addEventListener('click', function(e) {
 
 
 window.addEventListener('focus', function(){
-  if (typeof checkForUpdates === 'function' && currentUser && cloudBootstrapDone && !hasUnsyncedChanges) checkForUpdates();
+  if (typeof checkForUpdates === 'function' && currentUser) checkForUpdates();
 });
 document.addEventListener('visibilitychange', function(){
-  if (!document.hidden && typeof checkForUpdates === 'function' && currentUser && cloudBootstrapDone && !hasUnsyncedChanges) checkForUpdates();
+  if (!document.hidden && typeof checkForUpdates === 'function' && currentUser) checkForUpdates();
 });
 
 // renderDash is called by applyLogin after login
