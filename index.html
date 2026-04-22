@@ -2092,8 +2092,23 @@ function setDismissedStudentAlerts(map){
   localStorage.setItem('kp_dismissed_student_alerts', JSON.stringify(map || {}));
 }
 
+function getStudentRegistrationExpiry(s){
+  if (!s) return '';
+  const direct = normalizeDate(s.sub_end || '');
+  let latest = direct;
+  if (Array.isArray(payments)) {
+    payments.forEach(function(p){
+      if (!p || +p.stuId !== +s.id || !p.sub_end) return;
+      const d = normalizeDate(p.sub_end || '');
+      if (!d) return;
+      if (!latest || d > latest) latest = d;
+    });
+  }
+  return latest || '';
+}
+
 function getStudentAlertKey(s){
-  return s ? (String(s.id||'') + '|' + String(s.sub_end||'')) : '';
+  return s ? (String(s.id||'') + '|' + String(getStudentRegistrationExpiry(s)||'')) : '';
 }
 
 function renderStudents(){
@@ -6486,15 +6501,16 @@ function updateRegExpiryNotifications() {
   const dismissedStudentAlerts = getDismissedStudentAlerts();
 
   students.forEach(s => {
-    if (!s.sub_end) return;
-    const days = getRenDays(s.sub_end);
-    if (days === null) return;
-    const alertKey = getStudentAlertKey(s);
+    const regExpiry = getStudentRegistrationExpiry(s);
+    if (!regExpiry) return;
+    const days = getRenDays(regExpiry);
+    if (days === null || Number.isNaN(days)) return;
+    const alertKey = String((s && s.id) || '') + '|' + String(regExpiry || '');
     if (dismissedStudentAlerts[alertKey]) return;
     if (days < 0) {
-      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'انتهى تسجيله منذ ' + Math.abs(days) + ' يوم', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:s.sub_end });
+      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'انتهى تسجيله منذ ' + Math.abs(days) + ' يوم', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:regExpiry });
     } else if (days <= 7) {
-      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'ينتهي تسجيله خلال ' + days + ' يوم', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:s.sub_end });
+      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'ينتهي تسجيله خلال ' + days + ' يوم', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:regExpiry });
     }
   });
 
