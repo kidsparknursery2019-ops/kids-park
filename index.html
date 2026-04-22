@@ -563,16 +563,17 @@ textarea{resize:vertical;min-height:65px}
 
     
 
-    <!-- DELETED STUDENTS PAGE -->
+    <!-- RECYCLE BIN PAGE -->
     <div class="pg" id="pg-deleted">
-      <div class="pt">🗑 سجل الطلاب المحذوفين</div>
-      <div class="sg" style="grid-template-columns:repeat(2,1fr)">
-        <div class="sc r"><div class="sl">محذوفون</div><div class="sv" id="del-count">—</div></div>
-        <div class="sc"><div class="sl">معلومة</div><div class="sv" style="font-size:14px;line-height:1.4">يمكن استعادة أي طالب محذوف. الحذف النهائي لا يمكن التراجع عنه.</div></div>
+      <div class="pt">🗑 سلة المحذوفات الشاملة</div>
+      <div class="sg" style="grid-template-columns:repeat(3,1fr)">
+        <div class="sc r"><div class="sl">إجمالي المحذوفات</div><div class="sv" id="del-count">—</div></div>
+        <div class="sc"><div class="sl">طلاب محذوفون</div><div class="sv" id="del-students-count">—</div></div>
+        <div class="sc b"><div class="sl">عناصر أخرى</div><div class="sv" id="del-other-count">—</div></div>
       </div>
       <div class="card">
         <div class="ct">
-          <div style="font-size:13px;color:var(--muted)">جميع بيانات الطلاب المحذوفين محفوظة هنا لحماية السجلات</div>
+          <div style="font-size:13px;color:var(--muted)">يمكن استعادة الطلاب والسندات والمصاريف والتجديدات والفصول من هنا. الحذف النهائي لا يمكن التراجع عنه.</div>
           <button class="btn btn-out btn-sm" onclick="openExport('deleted')">⬇ تصدير</button>
         </div>
         <div id="deleted-list"></div>
@@ -1181,6 +1182,10 @@ function refreshNextIds(){
 }
 
 let deletedStudents = JSON.parse(localStorage.getItem('kp_deleted_students') || '[]');
+let deletedPayments = JSON.parse(localStorage.getItem('kp_deleted_payments') || '[]');
+let deletedExpenses = JSON.parse(localStorage.getItem('kp_deleted_expenses') || '[]');
+let deletedRenewals = JSON.parse(localStorage.getItem('kp_deleted_renewals') || '[]');
+let deletedClasses = JSON.parse(localStorage.getItem('kp_deleted_classes') || '[]');
 setTimeout(function(){ try{ resetPaymentMatchCache(); }catch(e){} }, 0);
 let tombstones = JSON.parse(localStorage.getItem('kp_tombstones') || '{"students":[],"payments":[],"expenses":[],"renewals":[]}');
 if (!tombstones.students) tombstones.students = [];
@@ -1856,17 +1861,6 @@ function getDateYear(d) {
   return 0;
 }
 
-function getStudentIdentityNo(s) {
-  if (!s || typeof s !== 'object') return '';
-  return String(
-    s.idNo ||
-    s.identityNo ||
-    s.nationalId ||
-    s.emiratesId ||
-    ''
-  ).trim();
-}
-
 function formatDateAr(d) {
   const n = normalizeDate(d);
   if (!n) return '—';
@@ -2079,7 +2073,7 @@ function renderStudents(){
   const q=document.getElementById('stu-search').value.toLowerCase();
   const cls=document.getElementById('stu-cls').value;
   const gen=document.getElementById('stu-gen').value;
-  let f=students.filter(s=>(!q||String(s.name||'').includes(q)||String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q)||String(s.dad||'').includes(q)||String(s.mom||'').includes(q)||String(getStudentIdentityNo(s)||'').includes(q)||String(s.internalNote||'').includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen)).map(function(s){
+  let f=students.filter(s=>(!q||String(s.name||'').includes(q)||String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q)||String(s.dad||'').includes(q)||String(s.mom||'').includes(q)||String(s.idNo||s.identityNo||'').includes(q)||String(s.internalNote||'').includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen)).map(function(s){
     const healthItems = getStudentHealthNotes(s);
     return Object.assign({}, s, { healthSummary: getStudentHealthSummary(s) });
   });
@@ -2099,7 +2093,7 @@ function renderStudents(){
       <td><b>#${s.id}</b></td>
       <td><b>${s.name}</b>${(s.note||s.notes) ? `<div style="font-size:11px;color:#e67e22;margin-top:2px;font-weight:600">📝 ${s.note||s.notes}</div>` : ''}</td>
       <td dir="ltr" style="font-size:12px">${escapeHtml(getStudentEnglishDisplayName(s)||'—')}</td>
-      <td dir="ltr">${escapeHtml(getStudentIdentityNo(s)||'—')}</td>
+      <td dir="ltr">${escapeHtml(s.idNo||s.identityNo||'—')}</td>
       <td style="font-size:12px">${escapeHtml(s.internalNote||'—')}</td>
       <td style="font-size:12px">${healthSummary !== '—' ? `<span class="b br">⚕️ ${healthSummary}</span>` : '—'}</td>
       <td>${formatDate(s.dob)}</td>
@@ -2131,7 +2125,7 @@ function getStudentsFilteredForPrint(){
   const cls=document.getElementById('stu-cls')?.value||'';
   const gen=document.getElementById('stu-gen')?.value||'';
   return students.filter(s =>
-    (!q || String(s.name||'').includes(q) || String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q) || String(s.dad||'').includes(q) || String(s.mom||'').includes(q) || String(getStudentIdentityNo(s)||'').includes(q) || String(s.internalNote||'').includes(q)) &&
+    (!q || String(s.name||'').includes(q) || String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q) || String(s.dad||'').includes(q) || String(s.mom||'').includes(q) || String(s.idNo||s.identityNo||'').includes(q) || String(s.internalNote||'').includes(q)) &&
     (!cls || s.cls===cls) &&
     (!gen || s.gen===gen)
   );
@@ -2161,7 +2155,7 @@ function buildClassNameListTable(className, items){
       <td dir="ltr">${escapeHtml(getStudentEnglishDisplayName(s)||'')}</td>
       <td>${escapeHtml(formatDate(s.dob)==='—' ? '' : formatDate(s.dob))}</td>
       <td>${escapeHtml(s.gen||'')}</td>
-      <td dir="ltr">${escapeHtml(getStudentIdentityNo(s)||'')}</td>
+      <td dir="ltr">${escapeHtml(s.idNo||s.identityNo||'')}</td>
       <td>${escapeHtml(s.nat||'')}</td>
       <td>${escapeHtml((CLASSES[s.cls]?.emoji||'')+' '+(s.cls||''))}</td>
       <td>${escapeHtml(getStudentHealthSummary(s)||s.health||'')}</td>
@@ -2929,7 +2923,7 @@ function editStudent(id){
   setVal('ns-name',    s.name);
   setVal('ns-name-en', getStudentEnglishDisplayName(s));
   setVal('ns-dob',     s.dob);
-  setVal('ns-idno',    getStudentIdentityNo(s));
+  setVal('ns-idno',    s.idNo || s.identityNo || s.nationalId || '');
   setVal('ns-gen',     s.gen);
   setVal('ns-nat',     s.nat);
   setVal('ns-cls',     s.cls || Object.keys(CLASSES)[0]);
@@ -3039,36 +3033,169 @@ function viewDeletedStudent(id) {
   setTimeout(function(){ students.length = original.length; }, 100);
 }
 
+
+function restorePayment(id) {
+  const p = deletedPayments.find(function(x){ return x.id === id; });
+  if (!p) return;
+  if (!confirm('استعادة السند #' + id + '؟')) return;
+  const restored = Object.assign({}, p);
+  delete restored.deletedAt; delete restored.deletedBy;
+  payments.push(restored);
+  deletedPayments = deletedPayments.filter(function(x){ return x.id !== id; });
+  localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
+  if (tombstones && tombstones.payments) {
+    tombstones.payments = tombstones.payments.filter(function(x){ return x !== id; });
+    localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+  }
+  autoSave(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); renderDeletedStudents();
+}
+
+function restoreExpense(id) {
+  const e = deletedExpenses.find(function(x){ return x.id === id; });
+  if (!e) return;
+  if (!confirm('استعادة المصروف #' + id + '؟')) return;
+  const restored = Object.assign({}, e);
+  delete restored.deletedAt; delete restored.deletedBy;
+  expenses.push(restored);
+  deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== id; });
+  localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
+  if (tombstones && tombstones.expenses) {
+    tombstones.expenses = tombstones.expenses.filter(function(x){ return x !== id; });
+    localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+  }
+  autoSave(); renderExpenses(); renderDash(); renderDeletedStudents();
+}
+
+function restoreRenewal(id) {
+  const r = deletedRenewals.find(function(x){ return x.id === id; });
+  if (!r) return;
+  if (!confirm('استعادة التجديد #' + id + '؟')) return;
+  const restored = Object.assign({}, r);
+  delete restored.deletedAt; delete restored.deletedBy;
+  renewals.push(restored);
+  deletedRenewals = deletedRenewals.filter(function(x){ return x.id !== id; });
+  localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
+  if (tombstones && tombstones.renewals) {
+    tombstones.renewals = tombstones.renewals.filter(function(x){ return x !== id; });
+    localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+  }
+  autoSave(); renderRenewals(); renderDeletedStudents();
+}
+
+function restoreClass(name) {
+  const c = deletedClasses.find(function(x){ return x.key === name; });
+  if (!c) return;
+  if (!confirm('استعادة الفصل "' + name + '"؟')) return;
+  CLASSES[name] = c.data || {teacher:'', emoji:'🏫'};
+  CLASSES_DATA = CLASSES;
+  deletedClasses = deletedClasses.filter(function(x){ return x.key !== name; });
+  localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
+  localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
+  autoSave(); populateClassDropdowns(); renderAdminClasses(); renderStudents(); renderDash(); renderDeletedStudents();
+}
+
+function permanentDeleteGeneric(type, key) {
+  if (!confirm('⚠️ حذف نهائي؟ لا يمكن التراجع!')) return;
+  if (type === 'payments') {
+    deletedPayments = deletedPayments.filter(function(x){ return x.id !== key; });
+    localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
+  } else if (type === 'expenses') {
+    deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== key; });
+    localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
+  } else if (type === 'renewals') {
+    deletedRenewals = deletedRenewals.filter(function(x){ return x.id !== key; });
+    localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
+  } else if (type === 'classes') {
+    deletedClasses = deletedClasses.filter(function(x){ return x.key !== key; });
+    localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
+  }
+  autoSave(); renderDeletedStudents();
+}
+
+function renderDeletedSectionCard(icon, title, subtitle, actionsHtml) {
+  return '<div class="card" style="padding:12px;margin-bottom:8px;border:1.5px solid var(--border)">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">' +
+      '<div style="flex:1;min-width:200px">' +
+        '<div style="font-weight:700;font-size:14px;margin-bottom:4px">' + icon + ' ' + title + '</div>' +
+        '<div style="font-size:12px;color:var(--muted);line-height:1.8">' + subtitle + '</div>' +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:6px">' + actionsHtml + '</div>' +
+    '</div>' +
+  '</div>';
+}
+
 function renderDeletedStudents() {
   const el = document.getElementById('deleted-list');
   if (!el) return;
-  document.getElementById('del-count').textContent = deletedStudents.length;
-  if (!deletedStudents.length) {
-    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">🗑 لا يوجد طلاب محذوفون</div>';
+  const totalStudents = deletedStudents.length;
+  const totalOthers = deletedPayments.length + deletedExpenses.length + deletedRenewals.length + deletedClasses.length;
+  const total = totalStudents + totalOthers;
+  document.getElementById('del-count').textContent = total;
+  const sEl = document.getElementById('del-students-count'); if (sEl) sEl.textContent = totalStudents;
+  const oEl = document.getElementById('del-other-count'); if (oEl) oEl.textContent = totalOthers;
+  if (!total) {
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">🗑 لا يوجد عناصر محذوفة</div>';
     return;
   }
-  el.innerHTML = deletedStudents.map(function(s){
-    return '<div class="card" style="padding:12px;margin-bottom:8px;border:1.5px solid var(--border)">' +
-      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">' +
-        '<div style="flex:1;min-width:200px">' +
-          '<div style="font-weight:700;font-size:14px;margin-bottom:4px">👶 ' + s.name + '</div>' +
-          '<div style="font-size:12px;color:var(--muted);line-height:1.8">' +
-            '📅 تاريخ الميلاد: ' + (s.dob||'—') + ' | 🏫 الفصل: ' + (s.cls||'—') + '<br>' +
-            '👨 ' + (s.dad||'—') + ' | 📱 ' + (s.dph||'—') + '<br>' +
-            '👩 ' + (s.mom||'—') + ' | 📱 ' + (s.mph||'—') + '<br>' +
-            '<span style="color:#e74c3c">🗑 حُذف في: ' + (s.deletedAt||'—') + '</span>' +
-            (s.deletionReason ? '<br>📝 السبب: ' + s.deletionReason : '') +
-            (s.deletedBy ? '<br>👤 بواسطة: ' + s.deletedBy : '') +
-          '</div>' +
-        '</div>' +
-        '<div style="display:flex;flex-direction:column;gap:6px">' +
-          '<button class="btn btn-out btn-sm" onclick="viewDeletedStudent(' + s.id + ')">👁 عرض</button>' +
-          '<button class="btn btn-g btn-sm" onclick="restoreStudent(' + s.id + ')">♻️ استعادة</button>' +
-          '<button class="btn btn-r btn-sm" onclick="permanentDeleteStudent(' + s.id + ')">🗑 حذف نهائي</button>' +
-        '</div>' +
-      '</div>' +
-    '</div>';
-  }).join('');
+  let html = '';
+  if (deletedStudents.length) {
+    html += '<div style="font-weight:800;color:var(--g1);margin:8px 0 12px">👶 الطلاب</div>';
+    html += deletedStudents.map(function(s){
+      return renderDeletedSectionCard('👶', s.name,
+        '📅 تاريخ الميلاد: ' + (s.dob||'—') + ' | 🏫 الفصل: ' + (s.cls||'—') + '<br>' +
+        '👨 ' + (s.dad||'—') + ' | 📱 ' + (s.dph||'—') + '<br>' +
+        '👩 ' + (s.mom||'—') + ' | 📱 ' + (s.mph||'—') + '<br>' +
+        '<span style="color:#e74c3c">🗑 حُذف في: ' + (s.deletedAt||'—') + '</span>' +
+        (s.deletionReason ? '<br>📝 السبب: ' + s.deletionReason : '') +
+        (s.deletedBy ? '<br>👤 بواسطة: ' + s.deletedBy : ''),
+        '<button class="btn btn-out btn-sm" onclick="viewDeletedStudent(' + s.id + ')">👁 عرض</button>' +
+        '<button class="btn btn-g btn-sm" onclick="restoreStudent(' + s.id + ')">♻️ استعادة</button>' +
+        '<button class="btn btn-r btn-sm" onclick="permanentDeleteStudent(' + s.id + ')">🗑 حذف نهائي</button>'
+      );
+    }).join('');
+  }
+  if (deletedPayments.length) {
+    html += '<div style="font-weight:800;color:var(--g1);margin:16px 0 12px">🧾 السندات</div>';
+    html += deletedPayments.map(function(p){
+      return renderDeletedSectionCard('🧾', 'السند #' + p.id + ' — ' + (p.who||'—'),
+        '💰 ' + (p.amt||'—') + ' | 📝 ' + (p.desc||'—') + '<br>🗑 حُذف في: ' + (p.deletedAt||'—'),
+        '<button class="btn btn-g btn-sm" onclick="restorePayment(' + p.id + ')">♻️ استعادة</button>' +
+        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'payments\',' + p.id + ')">🗑 حذف نهائي</button>'
+      );
+    }).join('');
+  }
+  if (deletedExpenses.length) {
+    html += '<div style="font-weight:800;color:var(--g1);margin:16px 0 12px">💸 المصاريف</div>';
+    html += deletedExpenses.map(function(x){
+      return renderDeletedSectionCard('💸', 'المصروف #' + x.id + ' — ' + (x.desc||'—'),
+        '💰 ' + (x.amt||'—') + ' | 🗂 ' + (x.cat||'—') + '<br>🗑 حُذف في: ' + (x.deletedAt||'—'),
+        '<button class="btn btn-g btn-sm" onclick="restoreExpense(' + x.id + ')">♻️ استعادة</button>' +
+        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'expenses\',' + x.id + ')">🗑 حذف نهائي</button>'
+      );
+    }).join('');
+  }
+  if (deletedRenewals.length) {
+    html += '<div style="font-weight:800;color:var(--g1);margin:16px 0 12px">🔔 التجديدات</div>';
+    html += deletedRenewals.map(function(x){
+      return renderDeletedSectionCard('🔔', x.name || ('التجديد #' + x.id),
+        '📅 ' + (x.date||'—') + ' | 💰 ' + (x.cost||'—') + '<br>🗑 حُذف في: ' + (x.deletedAt||'—'),
+        '<button class="btn btn-g btn-sm" onclick="restoreRenewal(' + x.id + ')">♻️ استعادة</button>' +
+        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'renewals\',' + x.id + ')">🗑 حذف نهائي</button>'
+      );
+    }).join('');
+  }
+  if (deletedClasses.length) {
+    html += '<div style="font-weight:800;color:var(--g1);margin:16px 0 12px">🏫 الفصول</div>';
+    html += deletedClasses.map(function(x){
+      var safeKey = JSON.stringify(String(x.key || ''));
+      return renderDeletedSectionCard('🏫', x.name,
+        '👩‍🏫 ' + ((x.data&&x.data.teacher)||'—') + ' | ' + ((x.data&&x.data.emoji)||'🏫') + '<br>🗑 حُذف في: ' + (x.deletedAt||'—'),
+        '<button class="btn btn-g btn-sm" onclick="restoreClass(' + safeKey.replace(/"/g,'&quot;') + ')">♻️ استعادة</button>' +
+        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'classes\',' + safeKey.replace(/"/g,'&quot;') + ')">🗑 حذف نهائي</button>'
+      );
+    }).join('');
+  }
+  el.innerHTML = html;
 }
 
 
@@ -3433,9 +3560,14 @@ function deletePayment(){
   const p = payments.find(x=>x.id===editingPayId);
   if(!p||!confirm('حذف السند #'+p.id+' ('+p.who+')؟')) return;
   const delId = editingPayId;
+  deletedPayments.unshift(Object.assign({}, p, {
+    deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
+    deletedBy: currentUser ? currentUser.name : 'نظام'
+  }));
+  localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
   payments = payments.filter(x=>x.id!==delId);
   addTombstone('payments', delId);
-  autoSave(); closeAll(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash();
+  autoSave(); closeAll(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
 }
 
 function savePayment(){
@@ -3598,11 +3730,17 @@ function saveExpense(){
 function delExpense(id){
   const delId = id || editingExpId;
   if(!delId) return;
-  if(!confirm('حذف هذا المصروف؟'))return;
+  const exp = expenses.find(function(e){ return e.id===delId; });
+  if(!exp || !confirm('حذف هذا المصروف؟'))return;
+  deletedExpenses.unshift(Object.assign({}, exp, {
+    deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
+    deletedBy: currentUser ? currentUser.name : 'نظام'
+  }));
+  localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
   expenses=expenses.filter(e=>e.id!==delId);
   addTombstone('expenses', delId);
   closeAll();
-  autoSave(); renderExpenses(); renderDash();
+  autoSave(); renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
 }
 
 // ============================================================
@@ -3987,6 +4125,10 @@ function performAutoBackup(silent) {
       renewals: renewals,
       attLog: attLog,
       deletedStudents: (typeof deletedStudents !== 'undefined' ? deletedStudents : []),
+      deletedPayments: (typeof deletedPayments !== 'undefined' ? deletedPayments : []),
+      deletedExpenses: (typeof deletedExpenses !== 'undefined' ? deletedExpenses : []),
+      deletedRenewals: (typeof deletedRenewals !== 'undefined' ? deletedRenewals : []),
+      deletedClasses: (typeof deletedClasses !== 'undefined' ? deletedClasses : []),
       tombstones: (typeof tombstones !== 'undefined' ? tombstones : {}),
       CLASSES: CLASSES,
       nurserySettings: nurserySettings,
@@ -4074,6 +4216,10 @@ function downloadBackup() {
     renewals: renewals,
     attLog: attLog,
     deletedStudents: (typeof deletedStudents !== 'undefined' ? deletedStudents : []),
+    deletedPayments: (typeof deletedPayments !== 'undefined' ? deletedPayments : []),
+    deletedExpenses: (typeof deletedExpenses !== 'undefined' ? deletedExpenses : []),
+    deletedRenewals: (typeof deletedRenewals !== 'undefined' ? deletedRenewals : []),
+    deletedClasses: (typeof deletedClasses !== 'undefined' ? deletedClasses : []),
     tombstones: (typeof tombstones !== 'undefined' ? tombstones : {}),
     CLASSES: CLASSES,
     nurserySettings: nurserySettings,
@@ -4108,8 +4254,12 @@ function restoreBackup(event) {
       if (backup.renewals) renewals = backup.renewals;
       if (backup.attLog) attLog = backup.attLog;
       if (backup.deletedStudents) { deletedStudents = backup.deletedStudents; localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents)); }
+      if (backup.deletedPayments) { deletedPayments = backup.deletedPayments; localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments)); }
+      if (backup.deletedExpenses) { deletedExpenses = backup.deletedExpenses; localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses)); }
+      if (backup.deletedRenewals) { deletedRenewals = backup.deletedRenewals; localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals)); }
+      if (backup.deletedClasses) { deletedClasses = backup.deletedClasses; localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses)); }
       if (backup.tombstones) { tombstones = backup.tombstones; localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); }
-      if (backup.CLASSES) replaceClassesData(backup.CLASSES);
+      if (backup.CLASSES) Object.assign(CLASSES, backup.CLASSES);
       if (backup.nurserySettings) Object.assign(nurserySettings, backup.nurserySettings);
       if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(backup.kp_users));
       if (backup.kp_form_rows) { localStorage.setItem('kp_form_rows', JSON.stringify(backup.kp_form_rows)); syncedFormRows = backup.kp_form_rows; }
@@ -4216,7 +4366,7 @@ function doImport() {
   if (importTarget === 'students') {
     importParsedData.forEach(function(item){
       if (!item.name || !item.cls) return;
-      students.push({ id: nextStuId++, name:item.name, nameEn:item.nameEn||item.name_en||item.englishName||transliterateArabicName(item.name||''), dob:item.dob, gen:item.gen||'ذكر', nat:item.nat, cls:item.cls, bpl:item.bpl, dad:item.dad, job:item.job, dph:item.dph, mom:item.mom, mph:item.mph, addr:item.addr, idNo:item.idNo||item.identityNo||item.nationalId||item.emiratesId||'', health:item.health||item.healthStatus||'', healthOverride:item.healthOverride||'', healthDeleted:!!item.healthDeleted, note:item.note, internalNote:item.internalNote||item.internal_note||'', sub_end:item.sub_end });
+      students.push({ id: nextStuId++, name:item.name, nameEn:item.nameEn||item.name_en||item.englishName||transliterateArabicName(item.name||''), dob:item.dob, gen:item.gen||'ذكر', nat:item.nat, cls:item.cls, bpl:item.bpl, dad:item.dad, job:item.job, dph:item.dph, mom:item.mom, mph:item.mph, addr:item.addr, idNo:item.idNo||item.identityNo||item.nationalId||'', health:item.health||item.healthStatus||'', healthOverride:item.healthOverride||'', healthDeleted:!!item.healthDeleted, note:item.note, internalNote:item.internalNote||item.internal_note||'', sub_end:item.sub_end });
       added++;
     });
     renderStudents();
@@ -4297,7 +4447,7 @@ function doExport(){
   const dataMap = {
     students: {
       cols: ['#','اسم الطالب','الاسم الإنجليزي','رقم الهوية','ملاحظات داخلية','الحالة الصحية','تاريخ الميلاد','الجنس','الجنسية','الفصل','اسم الأب','عمل الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان','انتهاء الاشتراك','ملاحظات'],
-      rows: students.map(function(s,i){ return [i+1, s.name||'', getStudentEnglishDisplayName(s)||'', getStudentIdentityNo(s)||'', s.internalNote||'', getStudentHealthSummary(s)||s.health||'', s.dob||'', s.gen||'', s.nat||'', s.cls||'', s.dad||'', s.job||'', s.dph||'', s.mom||'', s.mph||'', s.addr||'', s.sub_end||'', s.note||s.notes||'']; })
+      rows: students.map(function(s,i){ return [i+1, s.name||'', getStudentEnglishDisplayName(s)||'', s.idNo||s.identityNo||'', s.internalNote||'', getStudentHealthSummary(s)||s.health||'', s.dob||'', s.gen||'', s.nat||'', s.cls||'', s.dad||'', s.job||'', s.dph||'', s.mom||'', s.mph||'', s.addr||'', s.sub_end||'', s.note||s.notes||'']; })
     },
     payments: {
       cols: ['#السند','ولي الأمر','المبلغ (د.إ)','البيان','النوع','طريقة الدفع','التاريخ','المستلم','ملاحظات'],
@@ -4341,7 +4491,7 @@ function doExport(){
   };
   const d=dataMap[exportTarget];
   if(!d)return;
-  const names={students:'الطلاب',payments:'المدفوعات',expenses:'المصاريف',receipts:'سندات_القبض',finance:'الإيرادات',attendance:'الحضور',renewals:'التجديدات',deleted:'الطلاب_المحذوفون'};
+  const names={students:'الطلاب',payments:'المدفوعات',expenses:'المصاريف',receipts:'سندات_القبض',finance:'الإيرادات',attendance:'الحضور',renewals:'التجديدات',deleted:'سلة_المحذوفات'};
   const fname=`حضانة_حديقة_الأطفال_${names[exportTarget]||exportTarget}`;
   if(exportFmt==='xlsx'){
     const ws=XLSX.utils.aoa_to_sheet([d.cols,...d.rows]);
@@ -4361,7 +4511,7 @@ function doPrintExport(){
   let html=`<html dir="rtl"><head><meta charset="UTF-8"><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet"><style>body{font-family:'Tajawal',sans-serif;font-size:12px}table{width:100%;border-collapse:collapse}th{background:#eaf6ef;color:#1e6b3f;padding:7px;border:1px solid #d2e5d2}td{padding:6px;border:1px solid #eee}.title{font-size:18px;font-weight:900;margin-bottom:10px;color:#1e6b3f}</style></head><body>
   <div class="title">حضانة حديقة الأطفال — ${names[exportTarget]||exportTarget}</div>
   <div style="font-size:11px;color:#666;margin-bottom:10px">تاريخ التصدير: ${new Date().toLocaleDateString('ar-AE')}</div><table>`;
-  const dataMap={students:{cols:['رقم الطالب','الاسم العربي','الاسم الإنجليزي','تاريخ الميلاد','الجنس','رقم الهوية','الجنسية','الفصل','الحالة الصحية','اسم الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان'],rows:students.map((s)=>[s.id,s.name||'',getStudentEnglishDisplayName(s)||'',formatDate(s.dob),s.gen||'',getStudentIdentityNo(s)||'',s.nat||'',s.cls||'',getStudentHealthSummary(s)||'',s.dad||'',s.dph||'',s.mom||'',s.mph||'',s.addr||''])},payments:{cols:['#','ولي الأمر','المبلغ','البيان','النوع','الطريقة','التاريخ','المستلم'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.type,p.method,p.date,p.rcvr])},expenses:{cols:['#','البيان','المبلغ','الفئة','التاريخ'],rows:expenses.map(e=>[e.id,e.desc,e.amt+' د.إ',e.cat,e.date])},finance:{cols:['الشهر','الإيرادات','المصاريف','الصافي'],rows:finData.map(d=>[d.month,d.inc.toLocaleString(),d.exp.toLocaleString(),(d.inc-d.exp).toLocaleString()])},attendance:{cols:['التاريخ','الفصل','الطالب','الحالة'],rows:Object.entries(attLog).filter(([,v])=>v).map(([k,v])=>{const[date,idStr]=k.split('_');const s=students.find(x=>x.id===+idStr);return s?[date,s.cls,s.name,v==='present'?'حاضر':v==='absent'?'غائب':'متأخر']:null;}).filter(Boolean)},receipts:{cols:['#','ولي الأمر','المبلغ','البيان','التاريخ'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.date])}};
+  const dataMap={students:{cols:['رقم الطالب','الاسم العربي','الاسم الإنجليزي','تاريخ الميلاد','الجنس','رقم الهوية','الجنسية','الفصل','الحالة الصحية','اسم الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان'],rows:students.map((s)=>[s.id,s.name||'',getStudentEnglishDisplayName(s)||'',formatDate(s.dob),s.gen||'',s.idNo||s.identityNo||'',s.nat||'',s.cls||'',getStudentHealthSummary(s)||'',s.dad||'',s.dph||'',s.mom||'',s.mph||'',s.addr||''])},payments:{cols:['#','ولي الأمر','المبلغ','البيان','النوع','الطريقة','التاريخ','المستلم'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.type,p.method,p.date,p.rcvr])},expenses:{cols:['#','البيان','المبلغ','الفئة','التاريخ'],rows:expenses.map(e=>[e.id,e.desc,e.amt+' د.إ',e.cat,e.date])},finance:{cols:['الشهر','الإيرادات','المصاريف','الصافي'],rows:finData.map(d=>[d.month,d.inc.toLocaleString(),d.exp.toLocaleString(),(d.inc-d.exp).toLocaleString()])},attendance:{cols:['التاريخ','الفصل','الطالب','الحالة'],rows:Object.entries(attLog).filter(([,v])=>v).map(([k,v])=>{const[date,idStr]=k.split('_');const s=students.find(x=>x.id===+idStr);return s?[date,s.cls,s.name,v==='present'?'حاضر':v==='absent'?'غائب':'متأخر']:null;}).filter(Boolean)},receipts:{cols:['#','ولي الأمر','المبلغ','البيان','التاريخ'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.date])}};
   const d=dataMap[exportTarget];
   if(d){
     html+=`<thead><tr>${d.cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
@@ -4640,16 +4790,10 @@ function deleteUser(username) {
 // ============================================================
 // CLASSES_DATA = CLASSES (defined above)
 
-function replaceClassesData(source) {
-  if (!source || typeof source !== 'object') return;
-  Object.keys(CLASSES).forEach(function(k){ delete CLASSES[k]; });
-  Object.keys(source).forEach(function(k){ CLASSES[k] = source[k]; });
-  CLASSES_DATA = CLASSES;
-  localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
-}
-
 function saveClasses() {
-  replaceClassesData(CLASSES_DATA);
+  localStorage.setItem('kp_classes', JSON.stringify(CLASSES_DATA));
+  // Sync CLASSES global
+  Object.assign(CLASSES, CLASSES_DATA);
 }
 
 function renderAdminClasses() {
@@ -4692,6 +4836,15 @@ function editClass(name) {
 
 function deleteClass(name) {
   if (!confirm('حذف فصل "' + name + '"؟ سيتأثر الطلاب المسجلين فيه.')) return;
+  const clsData = CLASSES[name] ? Object.assign({}, CLASSES[name]) : null;
+  deletedClasses.unshift({
+    key: name,
+    name: name,
+    data: clsData,
+    deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
+    deletedBy: currentUser ? currentUser.name : 'نظام'
+  });
+  localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
   delete CLASSES[name];
   CLASSES_DATA = CLASSES;
   localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
@@ -4700,6 +4853,7 @@ function deleteClass(name) {
   renderAdminClasses();
   renderStudents();
   renderDash();
+  if (typeof renderDeletedStudents==='function') renderDeletedStudents();
 }
 
 // ============================================================
@@ -5396,13 +5550,24 @@ async function pushToFirebase() {
     localFormRows.forEach(function(r){ if(r && r.timestamp) formRowsMap[r.timestamp] = r; });
     const mergedFormRows = Object.values(formRowsMap);
 
-    // دمج قائمة الطلاب المحذوفين
+    // دمج سلة المحذوفات
     const localDeleted = typeof deletedStudents !== 'undefined' ? deletedStudents : [];
     const remoteDeleted = (remoteData && Array.isArray(remoteData.deletedStudents)) ? remoteData.deletedStudents : [];
     const deletedMap = {};
     remoteDeleted.forEach(function(s){ if(s && s.id) deletedMap[s.id] = s; });
     localDeleted.forEach(function(s){ if(s && s.id) deletedMap[s.id] = s; });
     const mergedDeleted = Object.values(deletedMap);
+
+    const mergeDeletedByKey = function(localArr, remoteArr, keyField) {
+      const map = {};
+      (Array.isArray(remoteArr)?remoteArr:[]).forEach(function(item){ if(item && item[keyField] !== undefined) map[item[keyField]] = item; });
+      (Array.isArray(localArr)?localArr:[]).forEach(function(item){ if(item && item[keyField] !== undefined) map[item[keyField]] = item; });
+      return Object.values(map);
+    };
+    const mergedDeletedPayments = mergeDeletedByKey(typeof deletedPayments !== 'undefined' ? deletedPayments : [], remoteData && remoteData.deletedPayments, 'id');
+    const mergedDeletedExpenses = mergeDeletedByKey(typeof deletedExpenses !== 'undefined' ? deletedExpenses : [], remoteData && remoteData.deletedExpenses, 'id');
+    const mergedDeletedRenewals = mergeDeletedByKey(typeof deletedRenewals !== 'undefined' ? deletedRenewals : [], remoteData && remoteData.deletedRenewals, 'id');
+    const mergedDeletedClasses  = mergeDeletedByKey(typeof deletedClasses  !== 'undefined' ? deletedClasses  : [], remoteData && remoteData.deletedClasses, 'key');
 
     // حدّث المتغيرات المحلية بالبيانات المدمجة
     students = sanitizeEntityArray(mergedStudents);
@@ -5411,6 +5576,10 @@ async function pushToFirebase() {
     renewals = sanitizeEntityArray(mergedRenewals);
     Object.keys(mergedAttLog).forEach(function(k){ attLog[k] = mergedAttLog[k]; });
     if (typeof deletedStudents !== 'undefined') deletedStudents = mergedDeleted;
+    if (typeof deletedPayments !== 'undefined') deletedPayments = mergedDeletedPayments;
+    if (typeof deletedExpenses !== 'undefined') deletedExpenses = mergedDeletedExpenses;
+    if (typeof deletedRenewals !== 'undefined') deletedRenewals = mergedDeletedRenewals;
+    if (typeof deletedClasses !== 'undefined') deletedClasses = mergedDeletedClasses;
     if (typeof tombstones !== 'undefined') {
       tombstones.students = mergedTombstones.students;
       tombstones.payments = mergedTombstones.payments;
@@ -5437,6 +5606,10 @@ async function pushToFirebase() {
       kp_users:        JSON.parse(localStorage.getItem('kp_users') || '[]'),
       kp_form_rows:    mergedFormRows,
       deletedStudents: mergedDeleted,
+      deletedPayments: mergedDeletedPayments,
+      deletedExpenses: mergedDeletedExpenses,
+      deletedRenewals: mergedDeletedRenewals,
+      deletedClasses:  mergedDeletedClasses,
       tombstones:      mergedTombstones,
     };
 
@@ -5489,6 +5662,10 @@ async function loadFromFirebase() {
       deletedStudents = data.deletedStudents;
       localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
     }
+    if (Array.isArray(data.deletedPayments) && typeof deletedPayments !== 'undefined') { deletedPayments = data.deletedPayments; localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments)); }
+    if (Array.isArray(data.deletedExpenses) && typeof deletedExpenses !== 'undefined') { deletedExpenses = data.deletedExpenses; localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses)); }
+    if (Array.isArray(data.deletedRenewals) && typeof deletedRenewals !== 'undefined') { deletedRenewals = data.deletedRenewals; localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals)); }
+    if (Array.isArray(data.deletedClasses) && typeof deletedClasses !== 'undefined') { deletedClasses = data.deletedClasses; localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses)); }
     if (data.tombstones && typeof tombstones !== 'undefined') {
       // Firebase هو المرجع - استبدل tombstones بالكامل
       // لأن restoreStudent على أي جهاز يحذف من Firebase
@@ -5502,7 +5679,7 @@ async function loadFromFirebase() {
       localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
       applyTombstones();
     }
-    if (data.CLASSES)         replaceClassesData(data.CLASSES);
+    if (data.CLASSES)         Object.assign(CLASSES, data.CLASSES);
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
     if (data.kp_users && data.kp_users.length) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
     if (Array.isArray(data.kp_form_rows)) {
@@ -5679,7 +5856,7 @@ async function syncFromGoogleSheets() {
         name: name,
         firstName: firstName,
         familyName: lastName,
-        dob: normalizeDate(valByLabel(c, ['تاريخ الميلاد | Date of Birth'], 3)),
+        dob: valByLabel(c, ['تاريخ الميلاد | Date of Birth'], 3),
         gen: parsedGen,
         emiratesId: valByLabel(c, ['رقم الهوية | Emirates ID Number'], 5),
         nat: valByLabel(c, ['الجنسية | Nationality'], 6),
@@ -5772,187 +5949,6 @@ function driveImgUrl(url) {
   return m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w400' : url;
 }
 
-function normalizeFormMatchText(v){
-  return String(v || '')
-    .toLowerCase()
-    .replace(/[\u064B-\u0652\u0670]/g, '')
-    .replace(/[أإآ]/g, 'ا')
-    .replace(/ة/g, 'ه')
-    .replace(/ى/g, 'ي')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function normalizeFormMatchPhone(v){
-  return String(v || '').replace(/\D+/g, '');
-}
-
-function isStudentValueEmpty(v){
-  return v == null || String(v).trim() === '';
-}
-
-function escapeTsForInline(ts){
-  return String(ts || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-}
-
-function buildStudentFromFormRow(r) {
-  return {
-    id: nextStuId++, name: r.name, dob: r.dob, gen: r.gen, nat: r.nat,
-    cls: r.cls || Object.keys(CLASSES)[0], bpl: '',
-    dad: r.dadFull, job: r.dadJob, dph: r.dadMob,
-    mom: r.momFull, mph: r.momMob, addr: r.addr,
-    note: [r.notes, r.allergyNote ? '⚠️ حساسية: ' + r.allergyNote : ''].filter(Boolean).join(' | '),
-    familyName: r.familyName, firstName: r.firstName,
-    emiratesId: r.emiratesId, passport: r.passport,
-    religion: r.religion, motherTongue: r.motherTongue, otherLanguages: r.otherLanguages,
-    dadNat: r.dadNat, dadEmail: r.dadEmail, dadHome: r.dadHome, dadWork: r.dadWork, dadMotherTongue: r.dadMotherTongue, dadOtherLanguages: r.dadOtherLanguages,
-    momNat: r.momNat, momJob: r.momJob, momEmail: r.momEmail, momHome: r.momHome, momWork: r.momWork, momMotherTongue: r.momMotherTongue, momOtherLanguages: r.momOtherLanguages,
-    emergName: r.emergName, emergRel: r.emergRel, emergMob: r.emergMob,
-    allergy: r.allergy, allergyNote: r.allergyNote, allergyType: r.allergyType,
-    allergyMedicationFood: r.allergyMedicationFood,
-    photoConsent: r.photoConsent, socialConsent: r.socialConsent, nurseConsent: r.nurseConsent,
-    contagious: r.contagious, surgical: r.surgical, diseaseDetails: r.diseaseDetails, accidentDetails: r.accidentDetails,
-    guardianUndertake: r.guardianUndertake,
-    imgChildPhoto: r.imgChildPhoto,
-    imgEmiratesId: r.imgEmiratesId,
-    imgVaccination: r.imgVaccination,
-    imgPassport: r.imgPassport,
-    imgResidency: r.imgResidency,
-    imgGuardianId: r.imgGuardianId,
-    imgGuardianPass: r.imgGuardianPass,
-    imgBirthCert: r.imgBirthCert,
-    approvedAt: new Date().toISOString(),
-    formTimestamp: r.timestamp,
-  };
-}
-
-function getFormStudentMatchCandidates(r) {
-  var childName = normalizeFormMatchText(r.name);
-  var dadName = normalizeFormMatchText(r.dadFull);
-  var momName = normalizeFormMatchText(r.momFull);
-  var emiratesId = String(r.emiratesId || '').trim();
-  var passport = String(r.passport || '').trim();
-  var dadMob = normalizeFormMatchPhone(r.dadMob);
-  var momMob = normalizeFormMatchPhone(r.momMob);
-
-  return students.map(function(s){
-    var score = 0;
-    var reasons = [];
-    var sName = normalizeFormMatchText(s.name);
-    var sDad = normalizeFormMatchText(s.dad);
-    var sMom = normalizeFormMatchText(s.mom);
-    var sEmirates = String(s.emiratesId || s.idNo || s.identityNo || s.nationalId || '').trim();
-    var sPassport = String(s.passport || '').trim();
-    var sDadMob = normalizeFormMatchPhone(s.dph || s.dadMob || s.fatherPhone);
-    var sMomMob = normalizeFormMatchPhone(s.mph || s.momMob || s.motherPhone);
-
-    if (emiratesId && sEmirates && emiratesId === sEmirates) { score += 140; reasons.push('تطابق رقم الهوية'); }
-    if (passport && sPassport && passport === sPassport) { score += 100; reasons.push('تطابق رقم الجواز'); }
-    if (childName && sName && childName === sName) { score += 40; reasons.push('تطابق اسم الطالب'); }
-    if (dadMob && sDadMob && dadMob === sDadMob) { score += 45; reasons.push('تطابق موبايل الأب'); }
-    if (momMob && sMomMob && momMob === sMomMob) { score += 45; reasons.push('تطابق موبايل الأم'); }
-    if (dadName && sDad && dadName === sDad) { score += 25; reasons.push('تطابق اسم الأب'); }
-    if (momName && sMom && momName === sMom) { score += 25; reasons.push('تطابق اسم الأم'); }
-    if (childName && sName && childName === sName && dadMob && sDadMob && dadMob === sDadMob) score += 60;
-    if (childName && sName && childName === sName && momMob && sMomMob && momMob === sMomMob) score += 60;
-    if (childName && sName && childName === sName && dadName && sDad && dadName === sDad) score += 30;
-    if (childName && sName && childName === sName && momName && sMom && momName === sMom) score += 30;
-
-    return { student: s, score: score, reasons: reasons };
-  }).filter(function(x){ return x.score >= 70; }).sort(function(a,b){ return b.score - a.score; });
-}
-
-function mergeMissingStudentFields(target, source) {
-  var filled = [];
-  var fieldMap = {
-    name:'name', dob:'dob', gen:'gen', nat:'nat', dadFull:'dad', dadJob:'job', dadMob:'dph', momFull:'mom', momMob:'mph', addr:'addr',
-    familyName:'familyName', firstName:'firstName', emiratesId:'emiratesId', passport:'passport', religion:'religion', motherTongue:'motherTongue',
-    otherLanguages:'otherLanguages', dadNat:'dadNat', dadEmail:'dadEmail', dadHome:'dadHome', dadWork:'dadWork', dadMotherTongue:'dadMotherTongue',
-    dadOtherLanguages:'dadOtherLanguages', momNat:'momNat', momJob:'momJob', momEmail:'momEmail', momHome:'momHome', momWork:'momWork',
-    momMotherTongue:'momMotherTongue', momOtherLanguages:'momOtherLanguages', emergName:'emergName', emergRel:'emergRel', emergMob:'emergMob',
-    allergy:'allergy', allergyNote:'allergyNote', allergyType:'allergyType', allergyMedicationFood:'allergyMedicationFood', photoConsent:'photoConsent',
-    socialConsent:'socialConsent', nurseConsent:'nurseConsent', contagious:'contagious', surgical:'surgical', diseaseDetails:'diseaseDetails',
-    accidentDetails:'accidentDetails', guardianUndertake:'guardianUndertake', imgChildPhoto:'imgChildPhoto', imgEmiratesId:'imgEmiratesId',
-    imgVaccination:'imgVaccination', imgPassport:'imgPassport', imgResidency:'imgResidency', imgGuardianId:'imgGuardianId',
-    imgGuardianPass:'imgGuardianPass', imgBirthCert:'imgBirthCert'
-  };
-
-  Object.keys(fieldMap).forEach(function(srcKey){
-    var dstKey = fieldMap[srcKey];
-    if (isStudentValueEmpty(target[dstKey]) && !isStudentValueEmpty(source[srcKey])) {
-      target[dstKey] = source[srcKey];
-      filled.push(dstKey);
-    }
-  });
-
-  var extraNote = [source.notes, source.allergyNote ? '⚠️ حساسية: ' + source.allergyNote : ''].filter(Boolean).join(' | ');
-  if (extraNote && isStudentValueEmpty(target.note)) {
-    target.note = extraNote;
-    filled.push('note');
-  }
-  target.formTimestamp = source.timestamp;
-  target.lastFormLinkedAt = new Date().toISOString();
-  return filled;
-}
-
-function chooseStudentForFormLink(r, matches) {
-  if (!matches || !matches.length) return null;
-  if (matches.length === 1) {
-    var only = matches[0];
-    var msg = 'تم العثور على تطابق محتمل مع ملف الطالب #' + only.student.id + ' — ' + (only.student.name || 'بدون اسم') + '\n' +
-      'الأسباب: ' + (only.reasons.join('، ') || 'تطابق ذكي') + '\n\n' +
-      'موافق على ربط الطلب بهذا الملف وإضافة البيانات الناقصة فقط؟';
-    return confirm(msg) ? only.student.id : null;
-  }
-
-  var lines = matches.slice(0, 8).map(function(m){
-    return '#' + m.student.id + ' — ' + (m.student.name || 'بدون اسم') + ' | ' + (m.reasons.join('، ') || 'تطابق ذكي');
-  }).join('\n');
-  var answer = prompt(
-    'وجدت أكثر من تطابق محتمل للطالب "' + (r.name || '') + '".\n\n' +
-    lines + '\n\n' +
-    'اكتبي رقم ملف الطالب للربط، أو اكتبي 0 لإنشاء ملف جديد، أو اتركيها فارغة للإلغاء.'
-  , String(matches[0].student.id || ''));
-  if (answer == null) return null;
-  answer = String(answer).trim();
-  if (!answer) return null;
-  if (answer === '0') return 0;
-  var chosenId = parseInt(answer, 10);
-  if (!chosenId) return null;
-  return chosenId;
-}
-
-function findStudentByAnyId(id) {
-  return students.find(function(s){ return s.id === id; }) || null;
-}
-
-function undoFormDecision(ts) {
-  var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
-  if (!r || !r.status || r.status === 'pending') return;
-  if (!confirm('إرجاع هذا الطلب إلى قائمة الطلبات المعلّقة؟')) return;
-
-  if (r.status === 'approved' && r.approvalMeta) {
-    if (r.approvalMeta.action === 'create' && r.approvalMeta.studentId) {
-      students = students.filter(function(s){ return s.id !== r.approvalMeta.studentId; });
-      addTombstone('students', r.approvalMeta.studentId);
-    } else if (r.approvalMeta.action === 'link' && r.approvalMeta.studentId && r.approvalMeta.before) {
-      var idx = students.findIndex(function(s){ return s.id === r.approvalMeta.studentId; });
-      if (idx >= 0) students[idx] = Object.assign({}, r.approvalMeta.before);
-    }
-  }
-
-  delete r.approvalMeta;
-  delete r.rejectedAt;
-  delete r.rejectedBy;
-  delete r.linkedStudentId;
-  delete r.approvedAt;
-  r.status = 'pending';
-  localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-  autoSave();
-  renderStudents(); renderDash(); renderFormRequests();
-  showSyncBadge('↩️ تم إرجاع الطلب إلى قيد المراجعة');
-}
-
 function renderFormRequests() {
   if (!document.getElementById('pg-forms')) return;
   var pending  = syncedFormRows.filter(function(r){ return r.status === 'pending'; });
@@ -5965,7 +5961,7 @@ function renderFormRequests() {
   var filter = (document.getElementById('forms-filter') || {}).value || 'pending';
   var search = ((document.getElementById('forms-search') || {}).value || '').toLowerCase();
   var rows = filter === 'all' ? syncedFormRows : filter === 'approved' ? approved : pending;
-  if (search) rows = rows.filter(function(r){ return String(r.name||'').toLowerCase().includes(search); });
+  if (search) rows = rows.filter(function(r){ return r.name.toLowerCase().includes(search); });
 
   var list = document.getElementById('forms-list');
   if (!list) return;
@@ -5975,29 +5971,32 @@ function renderFormRequests() {
     return;
   }
   list.innerHTML = rows.map(function(r) {
-    var ts = escapeTsForInline(r.timestamp);
-    var statusHtml = r.status === 'pending'
-      ? `<button class="btn btn-g btn-sm" onclick="quickApprove('${ts}')">✅ قبول</button><button class="btn btn-r btn-sm" onclick="rejectFormRow('${ts}')">❌ رفض</button>`
-      : ((r.status === 'approved') ? '<span class="b bg">✅ مقبول</span>' : '<span class="b br">❌ مرفوض</span>') +
-        `<button class="btn btn-out btn-sm" onclick="undoFormDecision('${ts}')">↩️ تراجع</button>`;
-    return `<div class="form-req-card" onclick="openFormDetail('${ts}')">
-      <div class="form-req-left">
-        ${r.imgChildPhoto ? `<img src="${driveImgUrl(r.imgChildPhoto)}" class="form-req-photo" onerror="this.style.display='none'">` : '<div class="form-req-photo-empty">👶</div>'}
-      </div>
-      <div class="form-req-info">
-        <div class="form-req-name">${r.name}</div>
-        <div class="form-req-meta">
-          <span>🌍 ${r.nat||'—'}</span>
-          <span>📅 ${r.dob||'—'}</span>
-          <span>${r.gen||'—'}</span>
-        </div>
-        <div class="form-req-meta">
-          <span>👨 ${r.dadFull||'—'}</span>
-          <span>📱 ${r.dadMob||r.momMob||'—'}</span>
-        </div>
-      </div>
-      <div class="form-req-actions" onclick="event.stopPropagation()">${statusHtml}</div>
-    </div>`;
+    var ts = r.timestamp.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return '<div class="form-req-card" onclick="openFormDetail(\'' + ts + '\')">' +
+      '<div class="form-req-left">' +
+        (r.imgChildPhoto
+          ? '<img src="' + driveImgUrl(r.imgChildPhoto) + '" class="form-req-photo" onerror="this.style.display=\'none\'">'
+          : '<div class="form-req-photo-empty">👶</div>') +
+      '</div>' +
+      '<div class="form-req-info">' +
+        '<div class="form-req-name">' + r.name + '</div>' +
+        '<div class="form-req-meta">' +
+          '<span>🌍 ' + (r.nat||'—') + '</span>' +
+          '<span>📅 ' + (r.dob||'—') + '</span>' +
+          '<span>' + (r.gen||'—') + '</span>' +
+        '</div>' +
+        '<div class="form-req-meta">' +
+          '<span>👨 ' + (r.dadFull||'—') + '</span>' +
+          '<span>📱 ' + (r.dadMob||r.momMob||'—') + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="form-req-actions" onclick="event.stopPropagation()">' +
+        (r.status === 'pending'
+          ? '<button class="btn btn-g btn-sm" onclick="quickApprove(\'' + ts + '\')">✅ قبول</button>' +
+            '<button class="btn btn-r btn-sm" onclick="rejectFormRow(\'' + ts + '\')">❌ رفض</button>'
+          : '<span class="b bg">✅ مقبول</span>') +
+      '</div>' +
+    '</div>';
   }).join('');
 }
 
@@ -6029,15 +6028,7 @@ function openFormDetail(ts) {
     return '<option value="' + e[0] + '">' + e[1].emoji + ' ' + e[0] + '</option>';
   }).join('');
 
-  var tsInline = escapeTsForInline(ts);
-  var statusBanner = r.status === 'approved'
-    ? `<div style="background:var(--gp);border-radius:8px;padding:10px;margin-bottom:12px;font-size:13px">✅ هذا الطلب مقبول${r.linkedStudentId ? ' ومرتبط بالملف #' + r.linkedStudentId : ''} <button class="btn btn-out btn-sm" style="margin-right:8px" onclick="undoFormDecision('${tsInline}')">↩️ تراجع</button></div>`
-    : (r.status === 'rejected'
-      ? `<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:12px;font-size:13px">❌ هذا الطلب مرفوض <button class="btn btn-out btn-sm" style="margin-right:8px" onclick="undoFormDecision('${tsInline}')">↩️ تراجع</button></div>`
-      : '');
-
   document.getElementById('mo-form-detail-body').innerHTML =
-    statusBanner +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">' +
       '<div class="fl"><label>الاسم</label><div style="font-size:15px;font-weight:700">' + r.name + '</div></div>' +
       '<div class="fl"><label>تاريخ الميلاد</label><div>' + (r.dob||'—') + '</div></div>' +
@@ -6089,71 +6080,53 @@ function quickApprove(ts) {
 }
 
 function doApprove(r) {
-  var matches = getFormStudentMatchCandidates(r);
-  var chosenId = null;
-
-  if (matches.length) {
-    chosenId = chooseStudentForFormLink(r, matches);
-    if (chosenId == null) {
-      if (!confirm('تم إلغاء الربط. هل تريدين إنشاء ملف جديد لهذا الطالب بدلًا من ذلك؟')) return;
-      chosenId = 0;
-    }
-  } else {
-    if (!confirm('لم يتم العثور على ملف طالب مطابق. سيتم إنشاء ملف جديد لهذا الطالب. متابعة؟')) return;
-    chosenId = 0;
-  }
-
-  if (chosenId === 0) {
-    var created = buildStudentFromFormRow(r);
-    students.push(created);
-    r.approvalMeta = { action:'create', studentId: created.id };
-    r.linkedStudentId = created.id;
-    r.status = 'approved';
-    r.approvedAt = new Date().toISOString();
-    localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-    autoSave();
-    renderStudents(); renderDash(); renderFormRequests();
-    showSyncBadge('✅ تم قبول الطلب وإنشاء ملف جديد للطالب');
-    return;
-  }
-
-  var target = findStudentByAnyId(chosenId);
-  if (!target) {
-    alert('رقم الملف الذي تم إدخاله غير موجود.');
-    return;
-  }
-
-  var before = JSON.parse(JSON.stringify(target));
-  var filled = mergeMissingStudentFields(target, r);
-  if (!confirm('سيتم ربط الطلب بملف الطالب #' + target.id + ' — ' + (target.name || 'بدون اسم') + '\n' +
-               'عدد الحقول التي ستُستكمل: ' + filled.length + '\n\n' +
-               'متابعة القبول وربط الطلب بهذا الملف؟')) {
-    var idxBefore = students.findIndex(function(s){ return s.id === target.id; });
-    if (idxBefore >= 0) students[idxBefore] = before;
-    return;
-  }
-
-  r.approvalMeta = { action:'link', studentId: target.id, before: before, filledFields: filled };
-  r.linkedStudentId = target.id;
+  // احفظ كل البيانات الأصلية مع الطالب
+  students.push({
+    id: nextStuId++, name: r.name, dob: r.dob, gen: r.gen, nat: r.nat,
+    cls: r.cls || Object.keys(CLASSES)[0], bpl: '',
+    dad: r.dadFull, job: r.dadJob, dph: r.dadMob,
+    mom: r.momFull, mph: r.momMob, addr: r.addr,
+    note: [r.notes, r.allergyNote ? '⚠️ حساسية: ' + r.allergyNote : ''].filter(Boolean).join(' | '),
+    // بيانات إضافية من النموذج
+    familyName: r.familyName, firstName: r.firstName,
+    emiratesId: r.emiratesId, passport: r.passport,
+    religion: r.religion, motherTongue: r.motherTongue, otherLanguages: r.otherLanguages,
+    dadNat: r.dadNat, dadEmail: r.dadEmail, dadHome: r.dadHome, dadWork: r.dadWork, dadMotherTongue: r.dadMotherTongue, dadOtherLanguages: r.dadOtherLanguages,
+    momNat: r.momNat, momJob: r.momJob, momEmail: r.momEmail, momHome: r.momHome, momWork: r.momWork, momMotherTongue: r.momMotherTongue, momOtherLanguages: r.momOtherLanguages,
+    emergName: r.emergName, emergRel: r.emergRel, emergMob: r.emergMob,
+    allergy: r.allergy, allergyNote: r.allergyNote, allergyType: r.allergyType,
+    allergyMedicationFood: r.allergyMedicationFood,
+    photoConsent: r.photoConsent, socialConsent: r.socialConsent, nurseConsent: r.nurseConsent,
+    contagious: r.contagious, surgical: r.surgical, diseaseDetails: r.diseaseDetails, accidentDetails: r.accidentDetails,
+    guardianUndertake: r.guardianUndertake,
+    // الصور والوثائق
+    imgChildPhoto:   r.imgChildPhoto,
+    imgEmiratesId:   r.imgEmiratesId,
+    imgVaccination:  r.imgVaccination,
+    imgPassport:     r.imgPassport,
+    imgResidency:    r.imgResidency,
+    imgGuardianId:   r.imgGuardianId,
+    imgGuardianPass: r.imgGuardianPass,
+    imgBirthCert:    r.imgBirthCert,
+    // تاريخ القبول
+    approvedAt: new Date().toISOString(),
+    formTimestamp: r.timestamp,
+  });
   r.status = 'approved';
-  r.approvedAt = new Date().toISOString();
   localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
   autoSave();
   renderStudents(); renderDash(); renderFormRequests();
-  showSyncBadge('✅ تم قبول الطلب وربطه بالملف #' + target.id);
+  showSyncBadge('✅ تم قبول الطالب وإضافته');
 }
 
 function rejectFormRow(ts) {
-  var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
-  if (!r) return;
-  if (!confirm('رفض هذا الطلب وإخفاؤه من قائمة الطلبات المعلّقة؟')) return;
-  r.status = 'rejected';
-  r.rejectedAt = new Date().toISOString();
+  if (!confirm('حذف هذا الطلب؟')) return;
+  syncedFormRows = syncedFormRows.filter(function(x){ return x.timestamp !== ts; });
   localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
   autoSave();
   renderFormRequests();
-  showSyncBadge('❌ تم رفض الطلب');
 }
+
 
 // ============================================================
 // RENEWALS — التجديدات والوثائق الرسمية
@@ -6355,11 +6328,17 @@ function deleteRenewal() {
   if (!r) return;
   if (!confirm('حذف "' + r.name + '"؟')) return;
   const delId = editingRenId;
+  deletedRenewals.unshift(Object.assign({}, r, {
+    deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
+    deletedBy: currentUser ? currentUser.name : 'نظام'
+  }));
+  localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
   renewals = renewals.filter(x => x.id !== delId);
   addTombstone('renewals', delId);
   autoSave();
   closeAll();
   renderRenewals();
+  if (typeof renderDeletedStudents==='function') renderDeletedStudents();
 }
 
 // ============================================================
