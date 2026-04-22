@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260418-0450 -->
+<!-- v20260422-forms-merge-undo -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -716,6 +716,7 @@ textarea{resize:vertical;min-height:65px}
             <select id="forms-filter" onchange="renderFormRequests()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
               <option value="pending">الجديدة فقط</option>
               <option value="approved">المقبولة</option>
+              <option value="rejected">المرفوضة</option>
               <option value="all">الكل</option>
             </select>
             <input type="text" id="forms-search" placeholder="🔍 ابحث..." oninput="renderFormRequests()" style="max-width:180px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
@@ -904,6 +905,18 @@ textarea{resize:vertical;min-height:65px}
     <div class="mof">
       <button class="btn btn-out" onclick="closeAll()">إغلاق</button>
       <button class="btn btn-g" id="mo-form-detail-approve" style="display:none">✅ قبول وإضافة للسيستم</button>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="mo-form-duplicates">
+  <div class="mo" style="width:720px;max-width:96vw">
+    <div class="mot">🔎 تم العثور على سجلات مشابهة</div>
+    <div id="mo-form-duplicates-body" style="max-height:60vh;overflow-y:auto"></div>
+    <div class="mof">
+      <button class="btn btn-out" onclick="closeAll()">إلغاء</button>
+      <button class="btn btn-y" id="mo-form-duplicates-new">➕ تسجيل كطالب جديد</button>
+      <button class="btn btn-g" id="mo-form-duplicates-merge">🔗 دمج مع السجل المحدد</button>
     </div>
   </div>
 </div>
@@ -5615,8 +5628,19 @@ async function pushToFirebase() {
     const localFormRows = JSON.parse(localStorage.getItem('kp_form_rows') || '[]');
     const remoteFormRows = (remoteData && Array.isArray(remoteData.kp_form_rows)) ? remoteData.kp_form_rows : [];
     const formRowsMap = {};
-    remoteFormRows.forEach(function(r){ if(r && r.timestamp) formRowsMap[r.timestamp] = r; });
-    localFormRows.forEach(function(r){ if(r && r.timestamp) formRowsMap[r.timestamp] = r; });
+    function pickPreferredFormRow(a, b) {
+      if (!a) return b;
+      if (!b) return a;
+      const aTime = formRowUpdatedAtValue(a);
+      const bTime = formRowUpdatedAtValue(b);
+      if (aTime !== bTime) return aTime > bTime ? a : b;
+      const aRank = formRowStatusRank(a.status);
+      const bRank = formRowStatusRank(b.status);
+      if (aRank !== bRank) return aRank > bRank ? a : b;
+      return Object.assign({}, a, b);
+    }
+    remoteFormRows.forEach(function(r){ if(r && r.timestamp) formRowsMap[r.timestamp] = pickPreferredFormRow(formRowsMap[r.timestamp], r); });
+    localFormRows.forEach(function(r){ if(r && r.timestamp) formRowsMap[r.timestamp] = pickPreferredFormRow(formRowsMap[r.timestamp], r); });
     const mergedFormRows = Object.values(formRowsMap);
 
     // دمج سلة المحذوفات
@@ -5991,7 +6015,12 @@ async function syncFromGoogleSheets() {
         var prev = syncedFormRows[existingIndex] || {};
         syncedFormRows[existingIndex] = Object.assign({}, prev, mappedRow, {
           status: prev.status || mappedRow.status,
-          cls: prev.cls || mappedRow.cls
+          cls: prev.cls || mappedRow.cls,
+          rowUpdatedAt: prev.rowUpdatedAt || prev.decisionAt || mappedRow.timestamp,
+          decisionAt: prev.decisionAt || '',
+          approvedStudentId: prev.approvedStudentId || null,
+          approvedAction: prev.approvedAction || '',
+          undoData: prev.undoData || null
         });
       } else {
         syncedFormRows.push(mappedRow);
@@ -6019,10 +6048,187 @@ function driveImgUrl(url) {
   return m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w400' : url;
 }
 
+function formRowStatusRank(status) {
+  return status === 'approved' ? 3 : status === 'rejected' ? 2 : 1;
+}
+
+function formRowUpdatedAtValue(row) {
+  return Date.parse((row && (row.rowUpdatedAt || row.decisionAt || row.approvedAt || row.timestamp)) || '') || 0;
+}
+
+function normalizeArabicText(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[ً-ٰٟ]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/[ة]/g, 'ه')
+    .replace(/[ى]/g, 'ي')
+    .replace(/[^؀-ۿa-z0-9]+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeDigitsOnly(s) {
+  return String(s || '').replace(/\D+/g, '');
+}
+
+function normalizeDateOnly(s) {
+  return String(s || '').trim().slice(0, 10);
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildStudentFromFormRow(r, studentIdOverride) {
+  return {
+    id: studentIdOverride || nextStuId++,
+    name: r.name,
+    dob: r.dob,
+    gen: r.gen,
+    nat: r.nat,
+    cls: r.cls || Object.keys(CLASSES)[0],
+    bpl: '',
+    dad: r.dadFull,
+    job: r.dadJob,
+    dph: r.dadMob,
+    mom: r.momFull,
+    mph: r.momMob,
+    addr: r.addr,
+    note: [r.notes, r.allergyNote ? '⚠️ حساسية: ' + r.allergyNote : ''].filter(Boolean).join(' | '),
+    familyName: r.familyName,
+    firstName: r.firstName,
+    emiratesId: r.emiratesId,
+    passport: r.passport,
+    religion: r.religion,
+    motherTongue: r.motherTongue,
+    otherLanguages: r.otherLanguages,
+    dadNat: r.dadNat,
+    dadEmail: r.dadEmail,
+    dadHome: r.dadHome,
+    dadWork: r.dadWork,
+    dadMotherTongue: r.dadMotherTongue,
+    dadOtherLanguages: r.dadOtherLanguages,
+    momNat: r.momNat,
+    momJob: r.momJob,
+    momEmail: r.momEmail,
+    momHome: r.momHome,
+    momWork: r.momWork,
+    momMotherTongue: r.momMotherTongue,
+    momOtherLanguages: r.momOtherLanguages,
+    emergName: r.emergName,
+    emergRel: r.emergRel,
+    emergMob: r.emergMob,
+    allergy: r.allergy,
+    allergyNote: r.allergyNote,
+    allergyType: r.allergyType,
+    allergyMedicationFood: r.allergyMedicationFood,
+    photoConsent: r.photoConsent,
+    socialConsent: r.socialConsent,
+    nurseConsent: r.nurseConsent,
+    contagious: r.contagious,
+    surgical: r.surgical,
+    diseaseDetails: r.diseaseDetails,
+    accidentDetails: r.accidentDetails,
+    guardianUndertake: r.guardianUndertake,
+    imgChildPhoto: r.imgChildPhoto,
+    imgEmiratesId: r.imgEmiratesId,
+    imgVaccination: r.imgVaccination,
+    imgPassport: r.imgPassport,
+    imgResidency: r.imgResidency,
+    imgGuardianId: r.imgGuardianId,
+    imgGuardianPass: r.imgGuardianPass,
+    imgBirthCert: r.imgBirthCert,
+    approvedAt: new Date().toISOString(),
+    formTimestamp: r.timestamp,
+  };
+}
+
+function mergeStudentWithFormData(existingStudent, r) {
+  var incoming = buildStudentFromFormRow(r, existingStudent.id);
+  var merged = Object.assign({}, existingStudent);
+  Object.keys(incoming).forEach(function(key) {
+    var val = incoming[key];
+    if (val === undefined || val === null) return;
+    if (typeof val === 'string') {
+      if (val.trim() !== '') merged[key] = val;
+      return;
+    }
+    merged[key] = val;
+  });
+  merged.id = existingStudent.id;
+  merged.mergedFromFormAt = new Date().toISOString();
+  merged.formTimestamp = r.timestamp;
+  return merged;
+}
+
+function findPotentialStudentMatches(r) {
+  var formName = normalizeArabicText(r.name);
+  var formDob = normalizeDateOnly(r.dob);
+  var formId = normalizeDigitsOnly(r.emiratesId);
+  var formPass = normalizeDigitsOnly(r.passport);
+  var formDad = normalizeArabicText(r.dadFull);
+  var formMom = normalizeArabicText(r.momFull);
+  var formDadMob = normalizeDigitsOnly(r.dadMob);
+  var formMomMob = normalizeDigitsOnly(r.momMob);
+
+  return students.map(function(s) {
+    var score = 0;
+    var reasons = [];
+    var studentId = normalizeDigitsOnly(getStudentIdentity ? getStudentIdentity(s) : (s.emiratesId || s.identity || ''));
+    var studentPass = normalizeDigitsOnly(s.passport);
+    var studentName = normalizeArabicText(s.name);
+    var studentDob = normalizeDateOnly(s.dob);
+    var studentDad = normalizeArabicText(s.dad);
+    var studentMom = normalizeArabicText(s.mom);
+    var studentDadMob = normalizeDigitsOnly(s.dph);
+    var studentMomMob = normalizeDigitsOnly(s.mph);
+
+    if (formId && studentId && formId === studentId) { score += 100; reasons.push('رقم الهوية مطابق'); }
+    if (formPass && studentPass && formPass === studentPass) { score += 70; reasons.push('رقم الجواز مطابق'); }
+    if (formName && studentName && formName === studentName) { score += 45; reasons.push('الاسم مطابق'); }
+    if (formDob && studentDob && formDob === studentDob) { score += 25; reasons.push('تاريخ الميلاد مطابق'); }
+    if (formDad && studentDad && formDad === studentDad) { score += 20; reasons.push('اسم الأب مطابق'); }
+    if (formMom && studentMom && formMom === studentMom) { score += 20; reasons.push('اسم الأم مطابق'); }
+    if (formDadMob && studentDadMob && formDadMob === studentDadMob) { score += 20; reasons.push('هاتف الأب مطابق'); }
+    if (formMomMob && studentMomMob && formMomMob === studentMomMob) { score += 20; reasons.push('هاتف الأم مطابق'); }
+
+    return { student: s, score: score, reasons: reasons };
+  }).filter(function(x) {
+    return x.score >= 45 || x.reasons.some(function(reason){ return reason.indexOf('الهوية') >= 0 || reason.indexOf('الجواز') >= 0; });
+  }).sort(function(a,b){ return b.score - a.score; });
+}
+
+function persistFormRowsAndSync() {
+  localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+  autoSave();
+}
+
+function setFormRowDecision(r, status, meta) {
+  meta = meta || {};
+  r.status = status;
+  r.decisionAt = new Date().toISOString();
+  r.rowUpdatedAt = r.decisionAt;
+  Object.keys(meta).forEach(function(k){ r[k] = meta[k]; });
+  persistFormRowsAndSync();
+}
+
+function refreshAllAfterFormDecision() {
+  renderStudents();
+  renderDash();
+  renderFormRequests();
+}
+
 function renderFormRequests() {
   if (!document.getElementById('pg-forms')) return;
   var pending  = syncedFormRows.filter(function(r){ return r.status === 'pending'; });
   var approved = syncedFormRows.filter(function(r){ return r.status === 'approved'; });
+  var rejected = syncedFormRows.filter(function(r){ return r.status === 'rejected'; });
   var pc = document.getElementById('forms-pending-count');
   var ac = document.getElementById('forms-approved-count');
   if (pc) pc.textContent = pending.length;
@@ -6030,42 +6236,50 @@ function renderFormRequests() {
 
   var filter = (document.getElementById('forms-filter') || {}).value || 'pending';
   var search = ((document.getElementById('forms-search') || {}).value || '').toLowerCase();
-  var rows = filter === 'all' ? syncedFormRows : filter === 'approved' ? approved : pending;
-  if (search) rows = rows.filter(function(r){ return r.name.toLowerCase().includes(search); });
+  var rows = filter === 'all' ? syncedFormRows : filter === 'approved' ? approved : filter === 'rejected' ? rejected : pending;
+  rows = rows.filter(function(r){
+    return !search || [r.name, r.dadFull, r.momFull, r.nat, r.dob, r.emiratesId].join(' ').toLowerCase().indexOf(search) >= 0;
+  }).sort(function(a,b){ return formRowUpdatedAtValue(b) - formRowUpdatedAtValue(a); });
 
   var list = document.getElementById('forms-list');
   if (!list) return;
   if (!rows.length) {
-    list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)">' +
-      (filter === 'pending' ? 'لا توجد طلبات جديدة' : 'لا توجد نتائج') + '</div>';
+    var emptyText = filter === 'pending' ? 'لا توجد طلبات جديدة' : filter === 'approved' ? 'لا توجد طلبات مقبولة' : filter === 'rejected' ? 'لا توجد طلبات مرفوضة' : 'لا توجد نتائج';
+    list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)">' + emptyText + '</div>';
     return;
   }
   list.innerHTML = rows.map(function(r) {
-    var ts = r.timestamp.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return '<div class="form-req-card" onclick="openFormDetail(\'' + ts + '\')">' +
+    var tsSafe = encodeURIComponent(String(r.timestamp || ''));
+    var viewBtn = '<button class="btn btn-b btn-sm" onclick="openFormDetail(decodeURIComponent(\'' + tsSafe + '\'));event.stopPropagation()">👁 عرض الطلب</button>';
+    var actionHtml = '';
+    if (r.status === 'pending') {
+      actionHtml = viewBtn +
+                   '<button class="btn btn-g btn-sm" onclick="quickApprove(decodeURIComponent(\'' + tsSafe + '\'));event.stopPropagation()">✅ قبول</button>' +
+                   '<button class="btn btn-r btn-sm" onclick="rejectFormRow(decodeURIComponent(\'' + tsSafe + '\'));event.stopPropagation()">❌ رفض</button>';
+    } else if (r.status === 'approved') {
+      actionHtml = viewBtn + '<span class="b bg">✅ مقبول</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\'' + tsSafe + '\'));event.stopPropagation()">↩️ تراجع</button>';
+    } else {
+      actionHtml = viewBtn + '<span class="b br">❌ مرفوض</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\'' + tsSafe + '\'));event.stopPropagation()">↩️ تراجع</button>';
+    }
+    return '<div class="form-req-card" onclick="openFormDetail(decodeURIComponent(\'' + tsSafe + '\'))">' +
       '<div class="form-req-left">' +
         (r.imgChildPhoto
           ? '<img src="' + driveImgUrl(r.imgChildPhoto) + '" class="form-req-photo" onerror="this.style.display=\'none\'">'
           : '<div class="form-req-photo-empty">👶</div>') +
       '</div>' +
       '<div class="form-req-info">' +
-        '<div class="form-req-name">' + r.name + '</div>' +
+        '<div class="form-req-name">' + escapeHtml(r.name) + '</div>' +
         '<div class="form-req-meta">' +
-          '<span>🌍 ' + (r.nat||'—') + '</span>' +
-          '<span>📅 ' + (r.dob||'—') + '</span>' +
-          '<span>' + (r.gen||'—') + '</span>' +
+          '<span>🌍 ' + escapeHtml(r.nat||'—') + '</span>' +
+          '<span>📅 ' + escapeHtml(r.dob||'—') + '</span>' +
+          '<span>' + escapeHtml(r.gen||'—') + '</span>' +
         '</div>' +
         '<div class="form-req-meta">' +
-          '<span>👨 ' + (r.dadFull||'—') + '</span>' +
-          '<span>📱 ' + (r.dadMob||r.momMob||'—') + '</span>' +
+          '<span>👨 ' + escapeHtml(r.dadFull||'—') + '</span>' +
+          '<span>📱 ' + escapeHtml(r.dadMob||r.momMob||'—') + '</span>' +
         '</div>' +
       '</div>' +
-      '<div class="form-req-actions" onclick="event.stopPropagation()">' +
-        (r.status === 'pending'
-          ? '<button class="btn btn-g btn-sm" onclick="quickApprove(\'' + ts + '\')">✅ قبول</button>' +
-            '<button class="btn btn-r btn-sm" onclick="rejectFormRow(\'' + ts + '\')">❌ رفض</button>'
-          : '<span class="b bg">✅ مقبول</span>') +
-      '</div>' +
+      '<div class="form-req-actions" onclick="event.stopPropagation()">' + actionHtml + '</div>' +
     '</div>';
   }).join('');
 }
@@ -6083,45 +6297,45 @@ function openFormDetail(ts) {
 
   var docsHtml = docs.length ? docs.map(function(d) {
     return '<div style="text-align:center">' +
-      '<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">' + d[0] + '</div>' +
+      '<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">' + escapeHtml(d[0]) + '</div>' +
       '<a href="' + d[1] + '" target="_blank">' +
-        '<img src="' + driveImgUrl(d[1]) + '" style="width:100%;max-height:160px;object-fit:cover;border-radius:8px;border:1.5px solid var(--border)" ' +
-          'onerror="this.outerHTML=\'<a href=' + d[1] + ' target=_blank style=font-size:11px;color:var(--b2)>فتح الملف</a>\'">' +
-      '</a></div>';
+        '<img src="' + driveImgUrl(d[1]) + '" style="width:100%;max-height:160px;object-fit:cover;border-radius:8px;border:1.5px solid var(--border)">' +
+      '</a><div style="margin-top:4px;font-size:11px"><a href="' + d[1] + '" target="_blank" style="color:var(--b2)">فتح الملف</a></div></div>';
   }).join('') : '<p style="color:var(--muted);font-size:13px">لا توجد صور مرفقة</p>';
 
   var allergyHtml = (r.allergy === 'نعم' || String(r.allergy||'').toLowerCase().includes('yes'))
-    ? '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">⚠️ <b>حساسية:</b> ' + (r.allergyNote||r.allergyType||'يرجى المراجعة') + '</div>'
+    ? '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">⚠️ <b>حساسية:</b> ' + escapeHtml(r.allergyNote||r.allergyType||'يرجى المراجعة') + '</div>'
     : '';
 
   var clsOptions = Object.entries(CLASSES).map(function(e){
-    return '<option value="' + e[0] + '">' + e[1].emoji + ' ' + e[0] + '</option>';
+    var selected = (r.cls && r.cls === e[0]) ? ' selected' : '';
+    return '<option value="' + escapeHtml(e[0]) + '"' + selected + '>' + e[1].emoji + ' ' + escapeHtml(e[0]) + '</option>';
   }).join('');
 
   document.getElementById('mo-form-detail-body').innerHTML =
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">' +
-      '<div class="fl"><label>الاسم</label><div style="font-size:15px;font-weight:700">' + r.name + '</div></div>' +
-      '<div class="fl"><label>تاريخ الميلاد</label><div>' + (r.dob||'—') + '</div></div>' +
-      '<div class="fl"><label>الجنس</label><div>' + (r.gen||'—') + '</div></div>' +
-      '<div class="fl"><label>الجنسية</label><div>' + (r.nat||'—') + '</div></div>' +
-      '<div class="fl"><label>رقم الهوية</label><div dir="ltr">' + (r.emiratesId||'—') + '</div></div>' +
-      '<div class="fl"><label>رقم الجواز</label><div dir="ltr">' + (r.passport||'—') + '</div></div>' +
-      '<div class="fl" style="grid-column:1/-1"><label>العنوان</label><div>' + (r.addr||'—') + '</div></div>' +
+      '<div class="fl"><label>الاسم</label><div style="font-size:15px;font-weight:700">' + escapeHtml(r.name) + '</div></div>' +
+      '<div class="fl"><label>تاريخ الميلاد</label><div>' + escapeHtml(r.dob||'—') + '</div></div>' +
+      '<div class="fl"><label>الجنس</label><div>' + escapeHtml(r.gen||'—') + '</div></div>' +
+      '<div class="fl"><label>الجنسية</label><div>' + escapeHtml(r.nat||'—') + '</div></div>' +
+      '<div class="fl"><label>رقم الهوية</label><div dir="ltr">' + escapeHtml(r.emiratesId||'—') + '</div></div>' +
+      '<div class="fl"><label>رقم الجواز</label><div dir="ltr">' + escapeHtml(r.passport||'—') + '</div></div>' +
+      '<div class="fl" style="grid-column:1/-1"><label>العنوان</label><div>' + escapeHtml(r.addr||'—') + '</div></div>' +
     '</div>' +
     '<div style="font-weight:700;color:var(--g1);margin-bottom:6px">👨 الأب</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:13px">' +
-      '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + (r.dadFull||'—') + '</div></div>' +
-      '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + (r.dadMob||'—') + '</div></div>' +
-      '<div><label style="font-size:11px;color:var(--muted)">المهنة</label><div>' + (r.dadJob||'—') + '</div></div>' +
-      '<div><label style="font-size:11px;color:var(--muted)">الإيميل</label><div dir="ltr">' + (r.dadEmail||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + escapeHtml(r.dadFull||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + escapeHtml(r.dadMob||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">المهنة</label><div>' + escapeHtml(r.dadJob||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الإيميل</label><div dir="ltr">' + escapeHtml(r.dadEmail||'—') + '</div></div>' +
     '</div>' +
     '<div style="font-weight:700;color:var(--g1);margin-bottom:6px">👩 الأم</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:13px">' +
-      '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + (r.momFull||'—') + '</div></div>' +
-      '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + (r.momMob||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + escapeHtml(r.momFull||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + escapeHtml(r.momMob||'—') + '</div></div>' +
     '</div>' +
     allergyHtml +
-    (r.notes ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📝 ' + r.notes + '</div>' : '') +
+    (r.notes ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📝 ' + escapeHtml(r.notes) + '</div>' : '') +
     '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px">📎 الوثائق</div>' +
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">' + docsHtml + '</div>' +
     (r.status === 'pending' ?
@@ -6130,14 +6344,15 @@ function openFormDetail(ts) {
         '<select id="detail-cls-select" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:14px;margin-top:6px">' +
           clsOptions +
         '</select>' +
-      '</div>' : '');
+      '</div>' : '') +
+    (r.status === 'approved' ? '<div style="margin-top:14px;background:var(--gp);padding:10px;border-radius:8px;font-size:13px">تم قبول هذا الطلب ويمكن التراجع عنه عند الحاجة.</div>' : '') +
+    (r.status === 'rejected' ? '<div style="margin-top:14px;background:var(--rp);padding:10px;border-radius:8px;font-size:13px">تم رفض هذا الطلب ويمكن التراجع عن الرفض.</div>' : '');
 
   var approveBtn = document.getElementById('mo-form-detail-approve');
   approveBtn.style.display = r.status === 'pending' ? 'inline-flex' : 'none';
   approveBtn.onclick = function() {
     r.cls = (document.getElementById('detail-cls-select') || {}).value || Object.keys(CLASSES)[0];
-    doApprove(r);
-    closeAll();
+    startApproveFlow(r);
   };
   document.getElementById('mo-form-detail').classList.add('on');
 }
@@ -6146,58 +6361,123 @@ function quickApprove(ts) {
   var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
   if (!r) return;
   r.cls = r.cls || Object.keys(CLASSES)[0];
-  doApprove(r);
+  startApproveFlow(r);
 }
 
-function doApprove(r) {
-  // احفظ كل البيانات الأصلية مع الطالب
-  students.push({
-    id: nextStuId++, name: r.name, dob: r.dob, gen: r.gen, nat: r.nat,
-    cls: r.cls || Object.keys(CLASSES)[0], bpl: '',
-    dad: r.dadFull, job: r.dadJob, dph: r.dadMob,
-    mom: r.momFull, mph: r.momMob, addr: r.addr,
-    note: [r.notes, r.allergyNote ? '⚠️ حساسية: ' + r.allergyNote : ''].filter(Boolean).join(' | '),
-    // بيانات إضافية من النموذج
-    familyName: r.familyName, firstName: r.firstName,
-    emiratesId: r.emiratesId, passport: r.passport,
-    religion: r.religion, motherTongue: r.motherTongue, otherLanguages: r.otherLanguages,
-    dadNat: r.dadNat, dadEmail: r.dadEmail, dadHome: r.dadHome, dadWork: r.dadWork, dadMotherTongue: r.dadMotherTongue, dadOtherLanguages: r.dadOtherLanguages,
-    momNat: r.momNat, momJob: r.momJob, momEmail: r.momEmail, momHome: r.momHome, momWork: r.momWork, momMotherTongue: r.momMotherTongue, momOtherLanguages: r.momOtherLanguages,
-    emergName: r.emergName, emergRel: r.emergRel, emergMob: r.emergMob,
-    allergy: r.allergy, allergyNote: r.allergyNote, allergyType: r.allergyType,
-    allergyMedicationFood: r.allergyMedicationFood,
-    photoConsent: r.photoConsent, socialConsent: r.socialConsent, nurseConsent: r.nurseConsent,
-    contagious: r.contagious, surgical: r.surgical, diseaseDetails: r.diseaseDetails, accidentDetails: r.accidentDetails,
-    guardianUndertake: r.guardianUndertake,
-    // الصور والوثائق
-    imgChildPhoto:   r.imgChildPhoto,
-    imgEmiratesId:   r.imgEmiratesId,
-    imgVaccination:  r.imgVaccination,
-    imgPassport:     r.imgPassport,
-    imgResidency:    r.imgResidency,
-    imgGuardianId:   r.imgGuardianId,
-    imgGuardianPass: r.imgGuardianPass,
-    imgBirthCert:    r.imgBirthCert,
-    // تاريخ القبول
-    approvedAt: new Date().toISOString(),
-    formTimestamp: r.timestamp,
+function startApproveFlow(r) {
+  if (!r || r.status !== 'pending') return;
+  var matches = findPotentialStudentMatches(r);
+  if (!matches.length) {
+    performApproveNew(r);
+    closeAll();
+    return;
+  }
+  openDuplicateDecisionModal(r, matches);
+}
+
+function openDuplicateDecisionModal(r, matches) {
+  var body = document.getElementById('mo-form-duplicates-body');
+  if (!body) return;
+  body.innerHTML = '<div style="background:var(--yp);padding:10px 12px;border-radius:10px;margin-bottom:12px;font-size:13px">' +
+    'تم العثور على ' + matches.length + ' سجل مشابه للطالب <b>' + escapeHtml(r.name) + '</b>. اختاري الطالب الصحيح للدمج، أو سجليه كطالب جديد إذا لم يكن أي سجل مطابق.' +
+  '</div>' +
+  matches.map(function(m, idx) {
+    var s = m.student;
+    return '<label style="display:block;border:1.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;cursor:pointer">' +
+      '<div style="display:flex;gap:10px;align-items:flex-start">' +
+        '<input type="radio" name="form-match-student" value="' + s.id + '" ' + (idx === 0 ? 'checked' : '') + ' style="margin-top:4px;width:auto">' +
+        '<div style="flex:1">' +
+          '<div style="font-size:15px;font-weight:800;color:var(--g1)">' + escapeHtml(s.name || 'بدون اسم') + '</div>' +
+          '<div style="font-size:12px;color:var(--muted);margin:4px 0 6px">الفصل: ' + escapeHtml(s.cls || '—') + ' | الميلاد: ' + escapeHtml(s.dob || '—') + ' | الهوية: ' + escapeHtml((getStudentIdentity ? getStudentIdentity(s) : (s.emiratesId||'')) || '—') + '</div>' +
+          '<div style="font-size:12px">🔎 ' + escapeHtml(m.reasons.join('، ') || 'تشابه عام بالبيانات') + ' — <b>' + m.score + '%</b></div>' +
+        '</div>' +
+      '</div>' +
+    '</label>';
+  }).join('');
+
+  var mergeBtn = document.getElementById('mo-form-duplicates-merge');
+  var newBtn = document.getElementById('mo-form-duplicates-new');
+  mergeBtn.onclick = function() {
+    var selected = document.querySelector('input[name="form-match-student"]:checked');
+    if (!selected) { alert('اختاري الطالب الذي تريدين الدمج معه'); return; }
+    var sid = Number(selected.value);
+    var target = students.find(function(s){ return s.id === sid; });
+    if (!target) { alert('تعذر العثور على الطالب المحدد'); return; }
+    if (!confirm('سيتم دمج بيانات الطلب مع سجل الطالب الحالي: ' + (target.name || '') + '. هل تريدين المتابعة؟')) return;
+    performApproveMerge(r, sid);
+    closeAll();
+  };
+  newBtn.onclick = function() {
+    if (!confirm('سيتم تسجيل هذا الطلب كطالب جديد. هل تريدين المتابعة؟')) return;
+    performApproveNew(r);
+    closeAll();
+  };
+  document.getElementById('mo-form-duplicates').classList.add('on');
+}
+
+function performApproveNew(r) {
+  var newStudent = buildStudentFromFormRow(r);
+  students.push(newStudent);
+  setFormRowDecision(r, 'approved', {
+    approvedStudentId: newStudent.id,
+    approvedAction: 'new',
+    undoData: { createdStudentId: newStudent.id }
   });
-  r.status = 'approved';
-  localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-  autoSave();
-  renderStudents(); renderDash(); renderFormRequests();
+  refreshAllAfterFormDecision();
   showSyncBadge('✅ تم قبول الطالب وإضافته');
 }
 
-function rejectFormRow(ts) {
-  if (!confirm('حذف هذا الطلب؟')) return;
-  syncedFormRows = syncedFormRows.filter(function(x){ return x.timestamp !== ts; });
-  localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-  autoSave();
-  renderFormRequests();
+function performApproveMerge(r, studentId) {
+  var idx = students.findIndex(function(s){ return s.id === studentId; });
+  if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+  var before = JSON.parse(JSON.stringify(students[idx]));
+  students[idx] = mergeStudentWithFormData(students[idx], r);
+  setFormRowDecision(r, 'approved', {
+    approvedStudentId: studentId,
+    approvedAction: 'merge',
+    undoData: { mergedStudentId: studentId, previousStudent: before }
+  });
+  refreshAllAfterFormDecision();
+  showSyncBadge('✅ تم قبول الطلب ودمج البيانات');
 }
 
+function rejectFormRow(ts) {
+  var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
+  if (!r) return;
+  if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+  setFormRowDecision(r, 'rejected', {
+    approvedStudentId: null,
+    approvedAction: 'reject',
+    undoData: { revertTo: 'pending' }
+  });
+  renderFormRequests();
+  showSyncBadge('✅ تم رفض الطلب');
+}
 
+function undoFormDecision(ts) {
+  var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
+  if (!r || r.status === 'pending') return;
+  if (!confirm('هل تريدين التراجع عن هذا القرار وإعادة الطلب إلى قائمة الجديدة؟')) return;
+
+  if (r.status === 'approved' && r.undoData) {
+    if (r.approvedAction === 'new' && r.undoData.createdStudentId != null) {
+      students = students.filter(function(s){ return s.id !== r.undoData.createdStudentId; });
+    } else if (r.approvedAction === 'merge' && r.undoData.mergedStudentId != null && r.undoData.previousStudent) {
+      var idx = students.findIndex(function(s){ return s.id === r.undoData.mergedStudentId; });
+      if (idx >= 0) students[idx] = r.undoData.previousStudent;
+    }
+  }
+
+  r.status = 'pending';
+  r.decisionAt = '';
+  r.rowUpdatedAt = new Date().toISOString();
+  r.approvedStudentId = null;
+  r.approvedAction = '';
+  r.undoData = null;
+  persistFormRowsAndSync();
+  refreshAllAfterFormDecision();
+  showSyncBadge('↩️ تم التراجع عن القرار');
+}
 // ============================================================
 // RENEWALS — التجديدات والوثائق الرسمية
 // ============================================================
