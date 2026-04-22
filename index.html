@@ -6495,24 +6495,20 @@ function updateRegExpiryNotifications() {
   const dismissedStudentAlerts = getDismissedStudentAlerts();
 
   payments.forEach(function(p) {
-    if (!p || !p.sub_end) return;
-    const regExpiry = normalizeDate(p.sub_end || '');
+    const regExpiry = normalizeDate((p && p.sub_end) || '');
     if (!regExpiry) return;
     const days = getRenDays(regExpiry);
-    if (days === null || Number.isNaN(days)) return;
-    if (days > 7) return;
-    const alertKey = 'payment|' + String((p && p.id) || '') + '|' + String(regExpiry || '');
+    if (days === null || Number.isNaN(days) || days > 7) return;
+    const alertKey = 'pay|' + String((p && p.id) || '') + '|' + String(regExpiry || '');
     if (dismissedStudentAlerts[alertKey]) return;
-
-    const title = p.who || ('سند قبض #' + p.id);
+    const title = (p && (p.who || p.desc || ('سند #' + p.id))) || 'سند قبض';
     const sub = days < 0
       ? 'انتهى التسجيل المرتبط بهذا السند منذ ' + Math.abs(days) + ' يوم'
       : 'ينتهي التسجيل المرتبط بهذا السند خلال ' + days + ' يوم';
-
     alerts.push({
       type:'payment',
       id:p.id,
-      icon:'💰',
+      icon:'🧾',
       title:title,
       sub:sub,
       days:days,
@@ -6520,7 +6516,8 @@ function updateRegExpiryNotifications() {
       dismissible:true,
       alertKey:alertKey,
       sub_end:regExpiry,
-      paymentNo:p.id
+      who:p.who || '',
+      desc:p.desc || ''
     });
   });
 
@@ -6546,7 +6543,7 @@ function updateRegExpiryNotifications() {
     return;
   }
 
-  body.innerHTML = alerts.map(a => {
+  body.innerHTML = alerts.map(function(a) {
     const color = a.days < 0 ? '#e74c3c' : '#e67e22';
     const daysText = a.days < 0 ? 'منتهية' : a.days + ' يوم';
     const dismissBtn = a.dismissible
@@ -6555,7 +6552,7 @@ function updateRegExpiryNotifications() {
     return '<div class="notif-item" onclick="goToRegAlert(' + a.id + ')">' +
       '<div class="notif-item-icon">' + a.icon + '</div>' +
       '<div style="flex:1;min-width:0">' +
-        '<div class="notif-item-title">' + a.title + ' <span style="font-size:11px;color:var(--muted)">#' + a.paymentNo + '</span></div>' +
+        '<div class="notif-item-title">' + a.title + '</div>' +
         '<div class="notif-item-sub">' + a.sub + '</div>' +
       '</div>' +
       dismissBtn +
