@@ -4461,7 +4461,7 @@ function applyLogin() {
     setTimeout(function(){ alert('✅ تم اعتماد ' + bulkApprovedNow + ' عملية ربط بين السندات وملفات الطلاب'); }, 300);
   }
   setTimeout(function(){ updateNotifications(); updateRegExpiryNotifications(); }, 500);
-  // تحميل من Firebase وتحديث عند الانتهاء
+  // تحميل من Firebase أولاً، وبعد نجاح التهيئة ابدأ المزامنات الدورية
   loadFromFirebase().then(() => {
     const approvedAfterSync = runOneTimeBulkMatchApproval();
     // إعادة تهيئة الفلتر بعد التحميل
@@ -4473,9 +4473,19 @@ function applyLogin() {
     if (approvedAfterSync > 0) {
       setTimeout(function(){ alert('✅ تم اعتماد ' + approvedAfterSync + ' عملية ربط إضافية بعد مزامنة البيانات'); }, 500);
     }
+    if (!window.__kpCloudWatchStarted) {
+      window.__kpCloudWatchStarted = true;
+      setInterval(checkForUpdates, 5000);
+    }
+    startAutoSync();
+  }).catch(function(e){
+    console.error('post-login sync init error:', e);
+    if (!window.__kpCloudWatchStarted) {
+      window.__kpCloudWatchStarted = true;
+      setInterval(checkForUpdates, 5000);
+    }
+    startAutoSync();
   });
-  setInterval(checkForUpdates, 5000);
-  startAutoSync();
 }
 
 function doLogout() {
@@ -5066,6 +5076,8 @@ let syncTimeout = null;
 let lastSavedAt = '';
 let lastLoadedFromCloudAt = '';
 let hasUnsyncedChanges = false;
+let cloudBootstrapDone = false;
+let isApplyingCloudSnapshot = false;
 
 const RECORD_COLLECTIONS = {
   students:   { get: () => sanitizeEntityArray(students || []),          set: (arr) => { students = sanitizeEntityArray(arr || []); resetPaymentMatchCache(); }, id: (x) => x && x.id },
@@ -5130,6 +5142,7 @@ function getAllData() {
 
 function autoSave() {
   hasUnsyncedChanges = true;
+  if (!currentUser || isApplyingCloudSnapshot) return;
   clearTimeout(syncTimeout);
   syncTimeout = setTimeout(pushToFirebase, 250);
 }
@@ -5213,6 +5226,7 @@ async function pushMeta(savedAt) {
 }
 
 async function pushToFirebase() {
+  if (!currentUser || !cloudBootstrapDone) return;
   if (isSyncing) return;
   isSyncing = true;
   try {
@@ -5236,20 +5250,73 @@ async function pushToFirebase() {
   }
 }
 
+
+function getLocalSnapshotSummary() {
+  return {
+    students: Array.isArray(students) ? students.length : 0,
+    payments: Array.isArray(payments) ? payments.length : 0,
+    expenses: Array.isArray(expenses) ? expenses.length : 0,
+    renewals: Array.isArray(renewals) ? renewals.length : 0,
+    kp_form_rows: Array.isArray(syncedFormRows) ? syncedFormRows.length : 0,
+    attLog: attLog ? Object.keys(attLog).length : 0,
+    deletedStudents: Array.isArray(deletedStudents) ? deletedStudents.length : 0
+  };
+}
+
+function getRemoteRecordsSummary(payload) {
+  payload = payload || {};
+  return {
+    students: payload.students && !Array.isArray(payload.students) ? Object.keys(payload.students).length : Array.isArray(payload.students) ? payload.students.length : 0,
+    payments: payload.payments && !Array.isArray(payload.payments) ? Object.keys(payload.payments).length : Array.isArray(payload.payments) ? payload.payments.length : 0,
+    expenses: payload.expenses && !Array.isArray(payload.expenses) ? Object.keys(payload.expenses).length : Array.isArray(payload.expenses) ? payload.expenses.length : 0,
+    renewals: payload.renewals && !Array.isArray(payload.renewals) ? Object.keys(payload.renewals).length : Array.isArray(payload.renewals) ? payload.renewals.length : 0,
+    kp_form_rows: payload.kp_form_rows && !Array.isArray(payload.kp_form_rows) ? Object.keys(payload.kp_form_rows).length : Array.isArray(payload.kp_form_rows) ? payload.kp_form_rows.length : 0,
+    attLog: payload.attLog && !Array.isArray(payload.attLog) ? Object.keys(payload.attLog).length : Array.isArray(payload.attLog) ? payload.attLog.length : 0,
+    deletedStudents: payload.deletedStudents && !Array.isArray(payload.deletedStudents) ? Object.keys(payload.deletedStudents).length : Array.isArray(payload.deletedStudents) ? payload.deletedStudents.length : 0
+  };
+}
+
+function totalSummaryCount(summary) {
+  return Object.values(summary || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+}
+
+function shouldRejectCloudSnapshot(payload) {
+  const local = getLocalSnapshotSummary();
+  const remote = getRemoteRecordsSummary(payload);
+  const localTotal = totalSummaryCount(local);
+  const remoteTotal = totalSummaryCount(remote);
+  const hasAnyRemoteData = remoteTotal > 0;
+  const hasMajorRemoteData = (remote.students + remote.payments + remote.expenses + remote.renewals + remote.kp_form_rows) > 0;
+  const payloadKeys = Object.keys(payload || {}).filter((k) => k !== 'meta');
+  const missingMajor = ['students','payments','expenses','renewals'].filter((k) => !(payload && Object.prototype.hasOwnProperty.call(payload, k)));
+
+  // لا تسمح أبداً لحمولة فارغة/ناقصة أن تمسح قاعدة محلية موجودة عند فتح النظام.
+  if (localTotal > 0 && !hasAnyRemoteData) return true;
+  if (localTotal > 0 && !hasMajorRemoteData && missingMajor.length >= 2) return true;
+  if (local.students > 0 && remote.students === 0 && payloadKeys.length <= 2) return true;
+  if (localTotal >= 20 && remoteTotal > 0 && remoteTotal <= Math.max(2, Math.floor(localTotal * 0.1))) return true;
+  return false;
+}
+
 function hydrateRecordsPayload(payload) {
   payload = payload || {};
-  Object.keys(RECORD_COLLECTIONS).forEach((collection) => {
-    const raw = payload[collection] || {};
-    const rows = Array.isArray(raw)
-      ? raw
-      : Object.keys(raw).sort().map((k) => raw[k]).filter((v) => v != null);
-    RECORD_COLLECTIONS[collection].set(rows);
-  });
-  sanitizeCoreData();
-  localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
-  updateLogoDisplay();
-  refreshNextIds();
-  rememberCurrentState();
+  isApplyingCloudSnapshot = true;
+  try {
+    Object.keys(RECORD_COLLECTIONS).forEach((collection) => {
+      const raw = payload[collection] || {};
+      const rows = Array.isArray(raw)
+        ? raw
+        : Object.keys(raw).sort().map((k) => raw[k]).filter((v) => v != null);
+      RECORD_COLLECTIONS[collection].set(rows);
+    });
+    sanitizeCoreData();
+    localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
+    updateLogoDisplay();
+    refreshNextIds();
+    rememberCurrentState();
+  } finally {
+    isApplyingCloudSnapshot = false;
+  }
 }
 
 function applyLegacyCloudData(data) {
@@ -5287,11 +5354,18 @@ async function loadFromFirebase() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data && Object.keys(data).length) {
+      if (shouldRejectCloudSnapshot(data)) {
+        console.warn('Rejected suspicious cloud snapshot during load', getLocalSnapshotSummary(), getRemoteRecordsSummary(data));
+        showSyncBadge('🛡️ تم تجاهل نسخة سحابية ناقصة لحماية بياناتك');
+        cloudBootstrapDone = true;
+        return;
+      }
       hydrateRecordsPayload(data);
       const meta = data.meta || {};
       lastSavedAt = meta.savedAt || '';
       lastLoadedFromCloudAt = lastSavedAt;
       hasUnsyncedChanges = false;
+      cloudBootstrapDone = true;
       await loadLogoFromFirebase();
       renderDash();
       showSyncBadge('✅ تم التحميل');
@@ -5301,11 +5375,12 @@ async function loadFromFirebase() {
     const legacyRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
     if (!legacyRes.ok) throw new Error('HTTP ' + legacyRes.status);
     const legacyData = await legacyRes.json();
-    if (!legacyData || !legacyData.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
+    if (!legacyData || !legacyData.version) { cloudBootstrapDone = true; showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
     applyLegacyCloudData(legacyData);
     lastSavedAt = legacyData.savedAt || '';
     lastLoadedFromCloudAt = lastSavedAt;
     hasUnsyncedChanges = false;
+    cloudBootstrapDone = true;
     await loadLogoFromFirebase();
     renderDash();
     showSyncBadge('✅ تم تحميل النسخة السحابية');
@@ -5318,6 +5393,7 @@ async function loadFromFirebase() {
       showSyncBadge('📴 بدون إنترنت — بيانات محلية');
     }
     console.log('Firebase load failed:', msg);
+    cloudBootstrapDone = true;
     sanitizeCoreData();
     try { refreshNextIds(); renderDash(); if (typeof renderStudents==='function') renderStudents(); if (typeof renderPayments==='function') renderPayments(); if (typeof renderExpenses==='function') renderExpenses(); if (typeof renderReceipts==='function') renderReceipts(); if (typeof renderAtt==='function') renderAtt(); } catch(_) {}
   }
@@ -5349,6 +5425,7 @@ async function manualRefreshFromFirebase() {
 }
 
 async function checkForUpdates() {
+  if (!currentUser || !cloudBootstrapDone) return;
   if (isSyncing || hasUnsyncedChanges) return;
   try {
     const res = await fetch(FB_META_URL + '/savedAt.json', { cache: 'no-store' });
@@ -5391,6 +5468,7 @@ let syncedFormRows = JSON.parse(localStorage.getItem('kp_form_rows') || '[]');
 let autoSyncTimer = null;
 
 function startAutoSync() {
+  if (!currentUser || !cloudBootstrapDone) return;
   syncFromGoogleSheets();
   clearInterval(autoSyncTimer);
   autoSyncTimer = setInterval(syncFromGoogleSheets, 5 * 60 * 1000);
