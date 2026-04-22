@@ -969,7 +969,6 @@ textarea{resize:vertical;min-height:65px}
       <div class="fl"><label>المبلغ (درهم) *</label><input id="np-amt" type="number" placeholder="0"></div>
       <div class="fl fgr"><label>كتابة المبلغ على السند (قابلة للتعديل)</label><input id="np-amtwords" placeholder="مثال: ألف وخمسمائة درهم"></div>
       <div class="fl"><label>التاريخ</label><input id="np-date" type="date"></div>
-      <div class="fl"><label>تاريخ انتهاء التسجيل</label><input id="np-sub-end" type="date"></div>
       <div class="fl"><label>رقم الإيصال</label><input id="np-id" type="number" placeholder="تلقائي" disabled></div>
       <div class="fl fgr"><label>البيان *</label><input id="np-desc" placeholder="قسط شهر + رسم تسجيل..."></div>
       <div class="fl"><label>نوع الدفع</label>
@@ -980,6 +979,7 @@ textarea{resize:vertical;min-height:65px}
       </div>
       <div class="fl"><label>المستلم</label><input id="np-rcvr" placeholder="ربا / الإدارة..."></div>
       <div class="fl"><label>ملاحظات (تُطبع)</label><input id="np-note" placeholder=""></div>
+      <div class="fl"><label>تاريخ انتهاء التسجيل</label><input id="np-sub-end" type="date"></div>
       <div class="fl fgr"><label>🔒 ملاحظات داخلية (لا تُطبع - للموظفين فقط)</label><textarea id="np-internal" rows="2" placeholder="ملاحظات خاصة لا تظهر في السند المطبوع..." style="background:#fff8e1"></textarea></div>
     </div>
     <div class="mof">
@@ -1193,6 +1193,8 @@ if (!tombstones.students) tombstones.students = [];
 if (!tombstones.payments) tombstones.payments = [];
 if (!tombstones.expenses) tombstones.expenses = [];
 if (!tombstones.renewals) tombstones.renewals = [];
+let dismissedStudentSubAlerts = JSON.parse(localStorage.getItem('kp_dismissed_student_sub_alerts') || '[]');
+if (!Array.isArray(dismissedStudentSubAlerts)) dismissedStudentSubAlerts = [];
 
 
 function sanitizeEntityArray(arr) {
@@ -3553,9 +3555,10 @@ function openEditPay(id){
   document.getElementById('np-id').value    = p.id;
   document.getElementById('np-id').disabled = !(currentUser && currentUser.role === 'admin');
   document.getElementById('np-date').value  = normalizeDate(p.date);
-  document.getElementById('np-sub-end').value = normalizeDate(p.sub_end || '');
   document.getElementById('np-rcvr').value  = p.rcvr||'';
   document.getElementById('np-note').value  = p.note||'';
+  const subEndEl = document.getElementById('np-sub-end');
+  if (subEndEl) subEndEl.value = normalizeDate(p.sub_end || '');
   document.getElementById('np-type').value  = p.type||'قسط شهري';
   document.getElementById('np-method').value= p.method||'نقدي';
   const intEl = document.getElementById('np-internal');
@@ -6374,6 +6377,23 @@ function deleteRenewal() {
 }
 
 // ============================================================
+function getStudentSubAlertKey(s) {
+  return String((s && s.id) || '') + '|' + String((s && s.sub_end) || '');
+}
+function isStudentSubAlertDismissed(s) {
+  const key = getStudentSubAlertKey(s);
+  return dismissedStudentSubAlerts.includes(key);
+}
+function dismissStudentSubAlert(id, subEnd, ev) {
+  if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+  const key = String(id) + '|' + String(subEnd || '');
+  if (!dismissedStudentSubAlerts.includes(key)) {
+    dismissedStudentSubAlerts.push(key);
+    localStorage.setItem('kp_dismissed_student_sub_alerts', JSON.stringify(dismissedStudentSubAlerts));
+  }
+  updateNotifications();
+}
+
 // NOTIFICATIONS — التنبيهات الشاملة
 // ============================================================
 function updateNotifications() {
@@ -6433,14 +6453,18 @@ function updateNotifications() {
   }
 
   body.innerHTML = alerts.map(a => {
-    const color = a.days < 0 ? '#e74c3c' : a.days <= 30 ? '#e67e22' : '#f39c12';
+    const color = a.days < 0 ? '#e74c3c' : a.days <= 7 ? '#e67e22' : '#f39c12';
     const daysText = a.days < 0 ? 'منتهية' : a.days + ' يوم';
+    const dismissBtn = a.dismissible
+      ? '<button class="btn btn-out btn-sm" style="padding:2px 8px;font-size:11px" onclick="dismissStudentSubAlert(' + a.id + ',\'' + String(a.sub_end || '').replace(/'/g,"&#39;") + '\',event)">Dismiss</button>'
+      : '';
     return '<div class="notif-item" onclick="goToAlert(\'' + a.type + '\',' + a.id + ')">' +
       '<div class="notif-item-icon">' + a.icon + '</div>' +
       '<div style="flex:1;min-width:0">' +
         '<div class="notif-item-title">' + a.title + '</div>' +
         '<div class="notif-item-sub">' + a.sub + '</div>' +
       '</div>' +
+      dismissBtn +
       '<div style="font-size:12px;font-weight:700;color:' + color + ';flex-shrink:0">' + daysText + '</div>' +
     '</div>';
   }).join('');
