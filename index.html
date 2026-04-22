@@ -6494,21 +6494,37 @@ function updateRegExpiryNotifications() {
   const alerts = [];
   const dismissedStudentAlerts = getDismissedStudentAlerts();
 
-  students.forEach(s => {
-    const regExpiry = getStudentRegistrationExpiry(s);
+  payments.forEach(function(p) {
+    if (!p || !p.sub_end) return;
+    const regExpiry = normalizeDate(p.sub_end || '');
     if (!regExpiry) return;
     const days = getRenDays(regExpiry);
     if (days === null || Number.isNaN(days)) return;
-    const alertKey = String((s && s.id) || '') + '|' + String(regExpiry || '');
+    if (days > 7) return;
+    const alertKey = 'payment|' + String((p && p.id) || '') + '|' + String(regExpiry || '');
     if (dismissedStudentAlerts[alertKey]) return;
-    if (days < 0) {
-      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'انتهى تسجيله منذ ' + Math.abs(days) + ' يوم', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:regExpiry });
-    } else if (days <= 7) {
-      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'ينتهي تسجيله خلال ' + days + ' يوم', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:regExpiry });
-    }
+
+    const title = p.who || ('سند قبض #' + p.id);
+    const sub = days < 0
+      ? 'انتهى التسجيل المرتبط بهذا السند منذ ' + Math.abs(days) + ' يوم'
+      : 'ينتهي التسجيل المرتبط بهذا السند خلال ' + days + ' يوم';
+
+    alerts.push({
+      type:'payment',
+      id:p.id,
+      icon:'💰',
+      title:title,
+      sub:sub,
+      days:days,
+      urgent:true,
+      dismissible:true,
+      alertKey:alertKey,
+      sub_end:regExpiry,
+      paymentNo:p.id
+    });
   });
 
-  alerts.sort((a,b) => a.days - b.days);
+  alerts.sort((a,b) => a.days - b.days || a.id - b.id);
 
   const btn = document.getElementById('reg-notif-btn');
   const badge = document.getElementById('reg-notif-badge-count');
@@ -6534,12 +6550,12 @@ function updateRegExpiryNotifications() {
     const color = a.days < 0 ? '#e74c3c' : '#e67e22';
     const daysText = a.days < 0 ? 'منتهية' : a.days + ' يوم';
     const dismissBtn = a.dismissible
-      ? '<button class="btn btn-out btn-sm" style="padding:2px 8px;font-size:11px" onclick="dismissStudentAlert(' + a.id + ',\'' + String(a.alertKey || '').replace(/'/g, "&#39;") + '\');event.stopPropagation();">Dismiss</button>'
+      ? '<button class="btn btn-out btn-sm" style="padding:2px 8px;font-size:11px" onclick="dismissStudentAlert(' + a.id + ','' + String(a.alertKey || '').replace(/'/g, "&#39;") + '');event.stopPropagation();">Dismiss</button>'
       : '';
     return '<div class="notif-item" onclick="goToRegAlert(' + a.id + ')">' +
       '<div class="notif-item-icon">' + a.icon + '</div>' +
       '<div style="flex:1;min-width:0">' +
-        '<div class="notif-item-title">' + a.title + '</div>' +
+        '<div class="notif-item-title">' + a.title + ' <span style="font-size:11px;color:var(--muted)">#' + a.paymentNo + '</span></div>' +
         '<div class="notif-item-sub">' + a.sub + '</div>' +
       '</div>' +
       dismissBtn +
@@ -6550,8 +6566,8 @@ function updateRegExpiryNotifications() {
 
 function goToRegAlert(id) {
   toggleRegNotifPanel();
-  go('students');
-  setTimeout(function(){ editStudent(id); }, 300);
+  go('payments');
+  setTimeout(function(){ openReceiptDetail(id); }, 300);
 }
 
 function toggleRegNotifPanel() {
