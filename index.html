@@ -969,6 +969,7 @@ textarea{resize:vertical;min-height:65px}
       <div class="fl"><label>المبلغ (درهم) *</label><input id="np-amt" type="number" placeholder="0"></div>
       <div class="fl fgr"><label>كتابة المبلغ على السند (قابلة للتعديل)</label><input id="np-amtwords" placeholder="مثال: ألف وخمسمائة درهم"></div>
       <div class="fl"><label>التاريخ</label><input id="np-date" type="date"></div>
+      <div class="fl"><label>تاريخ انتهاء التسجيل</label><input id="np-sub-end" type="date"></div>
       <div class="fl"><label>رقم الإيصال</label><input id="np-id" type="number" placeholder="تلقائي" disabled></div>
       <div class="fl fgr"><label>البيان *</label><input id="np-desc" placeholder="قسط شهر + رسم تسجيل..."></div>
       <div class="fl"><label>نوع الدفع</label>
@@ -2068,12 +2069,29 @@ function populateClassDropdowns() {
   }
 }
 
+
+function getStudentIdentity(s){
+  return (s && (s.idNo || s.identityNo || s.nationalId || s.emiratesId || '')) || '';
+}
+
+function getDismissedStudentAlerts(){
+  try { return JSON.parse(localStorage.getItem('kp_dismissed_student_alerts') || '{}') || {}; } catch(e) { return {}; }
+}
+
+function setDismissedStudentAlerts(map){
+  localStorage.setItem('kp_dismissed_student_alerts', JSON.stringify(map || {}));
+}
+
+function getStudentAlertKey(s){
+  return s ? (String(s.id||'') + '|' + String(s.sub_end||'')) : '';
+}
+
 function renderStudents(){
   populateClassDropdowns();
   const q=document.getElementById('stu-search').value.toLowerCase();
   const cls=document.getElementById('stu-cls').value;
   const gen=document.getElementById('stu-gen').value;
-  let f=students.filter(s=>(!q||String(s.name||'').includes(q)||String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q)||String(s.dad||'').includes(q)||String(s.mom||'').includes(q)||String(s.idNo||s.identityNo||'').includes(q)||String(s.internalNote||'').includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen)).map(function(s){
+  let f=students.filter(s=>(!q||String(s.name||'').includes(q)||String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q)||String(s.dad||'').includes(q)||String(s.mom||'').includes(q)||String(getStudentIdentity(s)||'').includes(q)||String(s.internalNote||'').includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen)).map(function(s){
     const healthItems = getStudentHealthNotes(s);
     return Object.assign({}, s, { healthSummary: getStudentHealthSummary(s) });
   });
@@ -2093,7 +2111,7 @@ function renderStudents(){
       <td><b>#${s.id}</b></td>
       <td><b>${s.name}</b>${(s.note||s.notes) ? `<div style="font-size:11px;color:#e67e22;margin-top:2px;font-weight:600">📝 ${s.note||s.notes}</div>` : ''}</td>
       <td dir="ltr" style="font-size:12px">${escapeHtml(getStudentEnglishDisplayName(s)||'—')}</td>
-      <td dir="ltr">${escapeHtml(s.idNo||s.identityNo||'—')}</td>
+      <td dir="ltr">${escapeHtml(getStudentIdentity(s)||'—')}</td>
       <td style="font-size:12px">${escapeHtml(s.internalNote||'—')}</td>
       <td style="font-size:12px">${healthSummary !== '—' ? `<span class="b br">⚕️ ${healthSummary}</span>` : '—'}</td>
       <td>${formatDate(s.dob)}</td>
@@ -2125,7 +2143,7 @@ function getStudentsFilteredForPrint(){
   const cls=document.getElementById('stu-cls')?.value||'';
   const gen=document.getElementById('stu-gen')?.value||'';
   return students.filter(s =>
-    (!q || String(s.name||'').includes(q) || String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q) || String(s.dad||'').includes(q) || String(s.mom||'').includes(q) || String(s.idNo||s.identityNo||'').includes(q) || String(s.internalNote||'').includes(q)) &&
+    (!q || String(s.name||'').includes(q) || String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q) || String(s.dad||'').includes(q) || String(s.mom||'').includes(q) || String(getStudentIdentity(s)||'').includes(q) || String(s.internalNote||'').includes(q)) &&
     (!cls || s.cls===cls) &&
     (!gen || s.gen===gen)
   );
@@ -2155,7 +2173,7 @@ function buildClassNameListTable(className, items){
       <td dir="ltr">${escapeHtml(getStudentEnglishDisplayName(s)||'')}</td>
       <td>${escapeHtml(formatDate(s.dob)==='—' ? '' : formatDate(s.dob))}</td>
       <td>${escapeHtml(s.gen||'')}</td>
-      <td dir="ltr">${escapeHtml(s.idNo||s.identityNo||'')}</td>
+      <td dir="ltr">${escapeHtml(getStudentIdentity(s)||'')}</td>
       <td>${escapeHtml(s.nat||'')}</td>
       <td>${escapeHtml((CLASSES[s.cls]?.emoji||'')+' '+(s.cls||''))}</td>
       <td>${escapeHtml(getStudentHealthSummary(s)||s.health||'')}</td>
@@ -2745,7 +2763,7 @@ function viewStudentProfile(id) {
       '<div class="fl"><label>الجنس</label><div>' + (s.gen||'—') + '</div></div>' +
       '<div class="fl"><label>الجنسية</label><div>' + (s.nat||'—') + '</div></div>' +
       '<div class="fl"><label>مكان الميلاد</label><div>' + (s.bpl||'—') + '</div></div>' +
-      '<div class="fl"><label>رقم الهوية</label><div dir="ltr">' + (s.emiratesId||'—') + '</div></div>' +
+      '<div class="fl"><label>رقم الهوية</label><div dir="ltr">' + (getStudentIdentity(s)||'—') + '</div></div>' +
       '<div class="fl"><label>رقم الجواز</label><div dir="ltr">' + (s.passport||'—') + '</div></div>' +
       '<div class="fl"><label>الديانة</label><div>' + (s.religion||'—') + '</div></div>' +
       '<div class="fl"><label>اللغة الأم</label><div>' + (s.motherTongue||'—') + '</div></div>' +
@@ -2923,7 +2941,7 @@ function editStudent(id){
   setVal('ns-name',    s.name);
   setVal('ns-name-en', getStudentEnglishDisplayName(s));
   setVal('ns-dob',     s.dob);
-  setVal('ns-idno',    s.idNo || s.identityNo || s.nationalId || '');
+  setVal('ns-idno',    getStudentIdentity(s) || '');
   setVal('ns-gen',     s.gen);
   setVal('ns-nat',     s.nat);
   setVal('ns-cls',     s.cls || Object.keys(CLASSES)[0]);
@@ -3491,6 +3509,8 @@ function selectStudentForPay(id) {
   }
   // املأ ولي الأمر تلقائياً
   if (whoEl && !whoEl.value) whoEl.value = 'والد/والدة الطفل ' + s.name;
+  const subEndEl = document.getElementById('np-sub-end');
+  if (subEndEl && !subEndEl.value) subEndEl.value = normalizeDate(s.sub_end || '');
 }
 
 // للتوافق مع الكود القديم
@@ -3503,7 +3523,7 @@ function lookupStudentForPay(idVal) {
 function openAddPay(){
   editingPayId = null;
   document.getElementById('np-date').value=new Date().toISOString().slice(0,10);
-  ['np-who','np-amt','np-amtwords','np-desc','np-rcvr','np-note','np-stuid','np-id'].forEach(id=>{
+  ['np-who','np-amt','np-amtwords','np-desc','np-rcvr','np-note','np-stuid','np-id','np-sub-end'].forEach(id=>{
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -3533,6 +3553,7 @@ function openEditPay(id){
   document.getElementById('np-id').value    = p.id;
   document.getElementById('np-id').disabled = !(currentUser && currentUser.role === 'admin');
   document.getElementById('np-date').value  = normalizeDate(p.date);
+  document.getElementById('np-sub-end').value = normalizeDate(p.sub_end || '');
   document.getElementById('np-rcvr').value  = p.rcvr||'';
   document.getElementById('np-note').value  = p.note||'';
   document.getElementById('np-type').value  = p.type||'قسط شهري';
@@ -3591,9 +3612,11 @@ function savePayment(){
     p.date = document.getElementById('np-date').value;
     p.rcvr = document.getElementById('np-rcvr').value;
     p.note = document.getElementById('np-note').value;
+    p.sub_end = document.getElementById('np-sub-end').value || '';
     p.internalNote = internalValue;
     p.amtWords = amtWordsValue || amtToWords(amt);
     p.stuId = parseInt((document.getElementById('np-stuid')||{}).value) || null;
+    if (p.stuId && p.sub_end) { const sp = students.find(function(x){ return x.id === p.stuId; }); if (sp) sp.sub_end = p.sub_end; }
 
     if (currentUser && currentUser.role === 'admin') {
       const requestedId = parseInt(idInput && idInput.value);
@@ -3629,10 +3652,12 @@ function savePayment(){
       date: document.getElementById('np-date').value,
       rcvr: document.getElementById('np-rcvr').value,
       note: document.getElementById('np-note').value,
+      sub_end: document.getElementById('np-sub-end').value || '',
       internalNote: internalValue,
       amtWords: amtWordsValue || amtToWords(amt),
       stuId: stuid
     };
+    if (p.stuId && p.sub_end) { const sp = students.find(function(x){ return x.id === p.stuId; }); if (sp) sp.sub_end = p.sub_end; }
     payments.push(p);
     refreshNextIds();
     closeAll();
@@ -4366,7 +4391,7 @@ function doImport() {
   if (importTarget === 'students') {
     importParsedData.forEach(function(item){
       if (!item.name || !item.cls) return;
-      students.push({ id: nextStuId++, name:item.name, nameEn:item.nameEn||item.name_en||item.englishName||transliterateArabicName(item.name||''), dob:item.dob, gen:item.gen||'ذكر', nat:item.nat, cls:item.cls, bpl:item.bpl, dad:item.dad, job:item.job, dph:item.dph, mom:item.mom, mph:item.mph, addr:item.addr, idNo:item.idNo||item.identityNo||item.nationalId||'', health:item.health||item.healthStatus||'', healthOverride:item.healthOverride||'', healthDeleted:!!item.healthDeleted, note:item.note, internalNote:item.internalNote||item.internal_note||'', sub_end:item.sub_end });
+      students.push({ id: nextStuId++, name:item.name, nameEn:item.nameEn||item.name_en||item.englishName||transliterateArabicName(item.name||''), dob:item.dob, gen:item.gen||'ذكر', nat:item.nat, cls:item.cls, bpl:item.bpl, dad:item.dad, job:item.job, dph:item.dph, mom:item.mom, mph:item.mph, addr:item.addr, idNo:item.idNo||item.identityNo||item.nationalId||item.emiratesId||'', health:item.health||item.healthStatus||'', healthOverride:item.healthOverride||'', healthDeleted:!!item.healthDeleted, note:item.note, internalNote:item.internalNote||item.internal_note||'', sub_end:item.sub_end });
       added++;
     });
     renderStudents();
@@ -4447,7 +4472,7 @@ function doExport(){
   const dataMap = {
     students: {
       cols: ['#','اسم الطالب','الاسم الإنجليزي','رقم الهوية','ملاحظات داخلية','الحالة الصحية','تاريخ الميلاد','الجنس','الجنسية','الفصل','اسم الأب','عمل الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان','انتهاء الاشتراك','ملاحظات'],
-      rows: students.map(function(s,i){ return [i+1, s.name||'', getStudentEnglishDisplayName(s)||'', s.idNo||s.identityNo||'', s.internalNote||'', getStudentHealthSummary(s)||s.health||'', s.dob||'', s.gen||'', s.nat||'', s.cls||'', s.dad||'', s.job||'', s.dph||'', s.mom||'', s.mph||'', s.addr||'', s.sub_end||'', s.note||s.notes||'']; })
+      rows: students.map(function(s,i){ return [i+1, s.name||'', getStudentEnglishDisplayName(s)||'', getStudentIdentity(s)||'', s.internalNote||'', getStudentHealthSummary(s)||s.health||'', s.dob||'', s.gen||'', s.nat||'', s.cls||'', s.dad||'', s.job||'', s.dph||'', s.mom||'', s.mph||'', s.addr||'', s.sub_end||'', s.note||s.notes||'']; })
     },
     payments: {
       cols: ['#السند','ولي الأمر','المبلغ (د.إ)','البيان','النوع','طريقة الدفع','التاريخ','المستلم','ملاحظات'],
@@ -4511,7 +4536,7 @@ function doPrintExport(){
   let html=`<html dir="rtl"><head><meta charset="UTF-8"><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet"><style>body{font-family:'Tajawal',sans-serif;font-size:12px}table{width:100%;border-collapse:collapse}th{background:#eaf6ef;color:#1e6b3f;padding:7px;border:1px solid #d2e5d2}td{padding:6px;border:1px solid #eee}.title{font-size:18px;font-weight:900;margin-bottom:10px;color:#1e6b3f}</style></head><body>
   <div class="title">حضانة حديقة الأطفال — ${names[exportTarget]||exportTarget}</div>
   <div style="font-size:11px;color:#666;margin-bottom:10px">تاريخ التصدير: ${new Date().toLocaleDateString('ar-AE')}</div><table>`;
-  const dataMap={students:{cols:['رقم الطالب','الاسم العربي','الاسم الإنجليزي','تاريخ الميلاد','الجنس','رقم الهوية','الجنسية','الفصل','الحالة الصحية','اسم الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان'],rows:students.map((s)=>[s.id,s.name||'',getStudentEnglishDisplayName(s)||'',formatDate(s.dob),s.gen||'',s.idNo||s.identityNo||'',s.nat||'',s.cls||'',getStudentHealthSummary(s)||'',s.dad||'',s.dph||'',s.mom||'',s.mph||'',s.addr||''])},payments:{cols:['#','ولي الأمر','المبلغ','البيان','النوع','الطريقة','التاريخ','المستلم'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.type,p.method,p.date,p.rcvr])},expenses:{cols:['#','البيان','المبلغ','الفئة','التاريخ'],rows:expenses.map(e=>[e.id,e.desc,e.amt+' د.إ',e.cat,e.date])},finance:{cols:['الشهر','الإيرادات','المصاريف','الصافي'],rows:finData.map(d=>[d.month,d.inc.toLocaleString(),d.exp.toLocaleString(),(d.inc-d.exp).toLocaleString()])},attendance:{cols:['التاريخ','الفصل','الطالب','الحالة'],rows:Object.entries(attLog).filter(([,v])=>v).map(([k,v])=>{const[date,idStr]=k.split('_');const s=students.find(x=>x.id===+idStr);return s?[date,s.cls,s.name,v==='present'?'حاضر':v==='absent'?'غائب':'متأخر']:null;}).filter(Boolean)},receipts:{cols:['#','ولي الأمر','المبلغ','البيان','التاريخ'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.date])}};
+  const dataMap={students:{cols:['رقم الطالب','الاسم العربي','الاسم الإنجليزي','تاريخ الميلاد','الجنس','رقم الهوية','الجنسية','الفصل','الحالة الصحية','اسم الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان'],rows:students.map((s)=>[s.id,s.name||'',getStudentEnglishDisplayName(s)||'',formatDate(s.dob),s.gen||'',getStudentIdentity(s)||'',s.nat||'',s.cls||'',getStudentHealthSummary(s)||'',s.dad||'',s.dph||'',s.mom||'',s.mph||'',s.addr||''])},payments:{cols:['#','ولي الأمر','المبلغ','البيان','النوع','الطريقة','التاريخ','المستلم'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.type,p.method,p.date,p.rcvr])},expenses:{cols:['#','البيان','المبلغ','الفئة','التاريخ'],rows:expenses.map(e=>[e.id,e.desc,e.amt+' د.إ',e.cat,e.date])},finance:{cols:['الشهر','الإيرادات','المصاريف','الصافي'],rows:finData.map(d=>[d.month,d.inc.toLocaleString(),d.exp.toLocaleString(),(d.inc-d.exp).toLocaleString()])},attendance:{cols:['التاريخ','الفصل','الطالب','الحالة'],rows:Object.entries(attLog).filter(([,v])=>v).map(([k,v])=>{const[date,idStr]=k.split('_');const s=students.find(x=>x.id===+idStr);return s?[date,s.cls,s.name,v==='present'?'حاضر':v==='absent'?'غائب':'متأخر']:null;}).filter(Boolean)},receipts:{cols:['#','ولي الأمر','المبلغ','البيان','التاريخ'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.date])}};
   const d=dataMap[exportTarget];
   if(d){
     html+=`<thead><tr>${d.cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
@@ -5137,6 +5162,13 @@ function buildReceiptHTML(p) {
         </td>
         <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:13px;font-weight:600">${p.desc||''}</td>
       </tr>
+      ${p.sub_end ? `<tr>
+        <td style="border:1px solid #000;padding:6px 10px;text-align:right;background:#f9f9f9">
+          <div style="font-size:11px;color:#555;font-weight:700">تاريخ انتهاء التسجيل</div>
+          <div style="font-size:10px;color:#888;font-style:italic">Registration expiry date</div>
+        </td>
+        <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:13px;font-weight:600">${formatDate(p.sub_end)}</td>
+      </tr>` : ''}
     </table>
     <table style="width:100%;border-collapse:collapse;border:1px solid #000;margin-bottom:6px">
       <tr><td style="padding:5px 10px;font-weight:900;border-bottom:1px solid #000">ملاحظات &nbsp; Notes</td></tr>
@@ -6359,17 +6391,18 @@ function updateNotifications() {
     }
   });
 
-  // Student subscription alerts
+  // Student subscription alerts (7 days + expired) with dismiss
+  const dismissedStudentAlerts = getDismissedStudentAlerts();
   students.forEach(s => {
     if (!s.sub_end) return;
     const days = getRenDays(s.sub_end);
     if (days === null) return;
+    const alertKey = getStudentAlertKey(s);
+    if (dismissedStudentAlerts[alertKey]) return;
     if (days < 0) {
-      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'انتهى اشتراكه منذ ' + Math.abs(days) + ' يوم', days, urgent:true });
-    } else if (days <= 30) {
-      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'ينتهي اشتراكه خلال ' + days + ' يوم', days, urgent:true });
-    } else if (days <= 60) {
-      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'ينتهي اشتراكه خلال ' + days + ' يوم', days, urgent:false });
+      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'انتهى تسجيله منذ ' + Math.abs(days) + ' يوم', days, urgent:true, dismissible:true, alertKey:alertKey });
+    } else if (days <= 7) {
+      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'ينتهي تسجيله خلال ' + days + ' يوم', days, urgent:true, dismissible:true, alertKey:alertKey });
     }
   });
 
@@ -6411,6 +6444,13 @@ function updateNotifications() {
       '<div style="font-size:12px;font-weight:700;color:' + color + ';flex-shrink:0">' + daysText + '</div>' +
     '</div>';
   }).join('');
+}
+
+function dismissStudentAlert(id, alertKey) {
+  const map = getDismissedStudentAlerts();
+  map[alertKey] = true;
+  setDismissedStudentAlerts(map);
+  updateNotifications();
 }
 
 function goToAlert(type, id) {
