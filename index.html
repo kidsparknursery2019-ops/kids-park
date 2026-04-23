@@ -3227,7 +3227,7 @@ function restorePayment(id) {
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
   cleanupDeletedBuckets();
-  autoSave(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); renderDeletedStudents();
+  autoSave(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
   if (typeof updateNotifications === 'function') updateNotifications();
   if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
 }
@@ -3247,7 +3247,7 @@ function restoreExpense(id) {
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
   cleanupDeletedBuckets();
-  autoSave(); renderExpenses(); renderDash(); renderDeletedStudents();
+  autoSave(); renderExpenses(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
   if (typeof updateNotifications === 'function') updateNotifications();
 }
 
@@ -3266,7 +3266,7 @@ function restoreRenewal(id) {
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
   cleanupDeletedBuckets();
-  autoSave(); renderRenewals(); renderDeletedStudents();
+  autoSave(); renderRenewals(); renderDeletedStudents(); renderOtherDeletedItems();
   if (typeof updateNotifications === 'function') updateNotifications();
 }
 
@@ -3292,17 +3292,21 @@ function permanentDeleteGeneric(type, key) {
   if (type === 'payments') {
     deletedPayments = deletedPayments.filter(function(x){ return x.id !== key; });
     localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
+    addTombstone('payments', key);
   } else if (type === 'expenses') {
     deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== key; });
     localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
+    addTombstone('expenses', key);
   } else if (type === 'renewals') {
     deletedRenewals = deletedRenewals.filter(function(x){ return x.id !== key; });
     localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
+    addTombstone('renewals', key);
   } else if (type === 'classes') {
     deletedClasses = deletedClasses.filter(function(x){ return x.key !== key; });
     localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
     addTombstone('classes', key);
   }
+  cleanupDeletedBuckets();
   autoSave(); renderDeletedStudents(); renderOtherDeletedItems();
 }
 
