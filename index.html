@@ -3735,30 +3735,30 @@ function renderExpenses(){
   sanitizeCoreData();
   const q=document.getElementById('exp-search').value.toLowerCase();
   const cat=document.getElementById('exp-cat').value;
-  let f=expenses.filter(e=>(!q||e.desc.toLowerCase().includes(q))&&(!cat||e.cat===cat));
+  let f=expenses.filter(e=>(!q||String(e.desc||'').toLowerCase().includes(q))&&(!cat||e.cat===cat));
   if (tableSortState['exp-table']) f = applyTableSort('exp-table', f);
   const expTheadEl = document.getElementById('exp-thead');
   if (expTheadEl) expTheadEl.innerHTML = sortableHead('exp-table', [
     ['id','#'], ['desc','البيان / الوصف'], ['amt','المبلغ'], ['cat','الفئة'],
     ['date','التاريخ'], ['method','طريقة الدفع'], ['note','ملاحظات'], ['','']
   ]);
-  const total=f.reduce((s,e)=>s+e.amt,0);
+  const total=f.reduce((s,e)=>s+(+e.amt||0),0);
   document.getElementById('exp-total').textContent=total.toLocaleString();
   document.getElementById('exp-count').textContent=f.length;
   // top category
   const catMap={};
-  expenses.forEach(e=>{catMap[e.cat]=(catMap[e.cat]||0)+e.amt;});
+  expenses.forEach(e=>{catMap[e.cat||'غير محدد']=(catMap[e.cat||'غير محدد']||0)+(+e.amt||0);});
   const topCat=Object.entries(catMap).sort((a,b)=>b[1]-a[1])[0];
   document.getElementById('exp-top').textContent=topCat?topCat[0]:'—';
   document.getElementById('exp-tbody').innerHTML=[...f].reverse().map(e=>`
     <tr>
-      <td>#${e.id}</td>
-      <td>${e.desc}</td>
-      <td class="fin-neg"><b>${e.amt.toLocaleString()} د.إ</b></td>
-      <td><span class="b br">${e.cat}</span></td>
-      <td>${e.date}</td>
-      <td>${e.method}</td>
-      <td style="font-size:12px">${e.note}</td>
+      <td>#${e.id||''}</td>
+      <td>${e.desc||''}</td>
+      <td class="fin-neg"><b>${(+e.amt||0).toLocaleString()} د.إ</b></td>
+      <td><span class="b br">${e.cat||''}</span></td>
+      <td>${e.exp_date||e.date||''}</td>
+      <td>${e.method||''}</td>
+      <td style="font-size:12px">${e.note||''}</td>
       <td style="display:flex;gap:5px"><button class="btn btn-out btn-sm" onclick="openEditExp(${e.id})">✏️</button><button class="btn btn-r btn-sm" onclick="delExpense(${e.id})">🗑</button></td>
     </tr>`).join('');
 }
@@ -3801,11 +3801,13 @@ function saveExpense(){
     e.cat = document.getElementById('ne-cat').value;
     e.method = document.getElementById('ne-method').value;
     e.date = document.getElementById('ne-date').value;
-    e.note = document.getElementById('ne-note').value;
+    e.exp_date = document.getElementById('ne-date').value;
+    e.note = document.getElementById('ne-note').value||'';
     closeAll();renderExpenses();renderDash();
     autoSave(); alert('✅ تم تعديل المصروف بنجاح');
   } else {
-    expenses.push({id:nextExpId++,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:document.getElementById('ne-date').value,note:document.getElementById('ne-note').value});
+    const expDate = document.getElementById('ne-date').value;
+    expenses.push({id:nextExpId++,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:expDate,exp_date:expDate,note:document.getElementById('ne-note').value||''});
     closeAll();renderExpenses();renderDash();
     autoSave(); alert('✅ تم حفظ المصروف بنجاح');
   }
@@ -5379,8 +5381,14 @@ function printFinancialReport() {
   // أضف class على body للـ print CSS
   document.body.classList.add('print-finreport');
   window.print();
-  // أزل الـ class بعد الطباعة
-  setTimeout(function(){ document.body.classList.remove('print-finreport'); }, 1000);
+  // أزل الـ class بعد انتهاء الطباعة فعلياً
+  function removePrintClass() {
+    document.body.classList.remove('print-finreport');
+    window.removeEventListener('afterprint', removePrintClass);
+  }
+  window.addEventListener('afterprint', removePrintClass);
+  // احتياطي لو afterprint ما دعمه المتصفح
+  setTimeout(removePrintClass, 3000);
 }
 
 function renderFinReport() {
