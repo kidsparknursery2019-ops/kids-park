@@ -338,7 +338,6 @@ textarea{resize:vertical;min-height:65px}
   <button id="reg-notif-btn" class="notif-btn" onclick="toggleRegNotifPanel()" title="تنبيهات انتهاء التسجيل">⏰<span class="notif-badge" id="reg-notif-badge-count" style="display:none">0</span></button>
   <button id="btn-save-cloud" onclick="pushToFirebase()" style="display:none;padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.5);background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:12px;font-weight:700">☁️ حفظ</button>
   <button id="btn-refresh-cloud" onclick="manualRefreshFromFirebase()" style="display:none;padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.5);background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:12px;font-weight:700;margin-right:6px">🔄 تحديث</button>
-  <button id="btn-debug" onclick="showDebugInfo()" style="display:none;padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,165,0,.8);background:rgba(255,165,0,.25);color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:12px;font-weight:700">🔍 تشخيص</button>
   <div id="user-badge" style="display:none;align-items:center;gap:10px;font-size:13px">
     <div><div style="font-weight:700" id="ub-name"></div><div style="font-size:11px;opacity:.7" id="ub-role"></div></div>
     <button onclick="doLogout()" style="padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.4);background:transparent;color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:13px;font-weight:600">خروج</button>
@@ -4670,8 +4669,6 @@ function applyLogin() {
   if (rnb) rnb.style.display = 'inline-block';
   const rb = document.getElementById('btn-refresh-cloud');
   if (rb) rb.style.display = 'inline-block';
-  const db = document.getElementById('btn-debug');
-  if (db) db.style.display = 'inline-block';
   document.getElementById('ub-name').textContent = currentUser.name || currentUser.username;
   document.getElementById('ub-role').textContent = currentUser.role === 'admin' ? '👑 مدير' : '👤 موظف';
   // Show admin nav only for admin
@@ -5983,57 +5980,6 @@ async function checkForUpdates() {
       showSyncBadge('🔄 تم تحديث البيانات تلقائياً');
     }
   } catch(e) { /* offline */ }
-}
-
-function showDebugInfo() {
-  const cache_exp = localStorage.getItem('kp_cache_expenses');
-  const cache_pay = localStorage.getItem('kp_cache_payments');
-  const cache_stu = localStorage.getItem('kp_cache_students');
-  const lastSync  = localStorage.getItem('kp_last_synced_at');
-
-  const expArr  = cache_exp ? JSON.parse(cache_exp) : null;
-  const payArr  = cache_pay ? JSON.parse(cache_pay) : null;
-  const stuArr  = cache_stu ? JSON.parse(cache_stu) : null;
-
-  const lastExp = expArr && expArr.length ? expArr[expArr.length-1] : null;
-  const lastPay = payArr && payArr.length ? payArr[payArr.length-1] : null;
-
-  const lines = [
-    '📦 الكاش المحلي (localStorage):',
-    '─────────────────────────────',
-    'المصاريف:  ' + (expArr ? expArr.length + ' سجل' : '❌ فارغ'),
-    'آخر مصروف: ' + (lastExp ? 'id=' + lastExp.id + ' | ' + lastExp.desc + ' | ' + lastExp.amt : '—'),
-    '',
-    'المدفوعات: ' + (payArr ? payArr.length + ' سجل' : '❌ فارغ'),
-    'آخر دفعة:  ' + (lastPay ? 'id=' + lastPay.id + ' | ' + lastPay.who + ' | ' + lastPay.amt : '—'),
-    '',
-    'الطلاب:    ' + (stuArr ? stuArr.length + ' سجل' : '❌ فارغ'),
-    '',
-    '🔥 Firebase:',
-    'آخر مزامنة: ' + (lastSync || '—'),
-    '',
-    '💾 في الذاكرة الآن:',
-    'المصاريف:  ' + (typeof expenses !== "undefined" ? expenses.length + ' سجل' : '—'),
-    'المدفوعات: ' + (typeof payments !== "undefined" ? payments.length + ' سجل' : '—'),
-    'الطلاب:    ' + (typeof students !== "undefined" ? students.length + ' سجل' : '—'),
-  ];
-
-  const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  overlay.onclick = function(){ document.body.removeChild(overlay); };
-
-  const box = document.createElement('div');
-  box.style.cssText = 'background:#1a1a2e;color:#e0e0e0;border-radius:14px;padding:20px 24px;font-family:monospace;font-size:13px;line-height:1.8;max-width:420px;width:100%;direction:ltr;white-space:pre-wrap;box-shadow:0 8px 40px rgba(0,0,0,.5)';
-  box.textContent = lines.join("
-");
-
-  const hint = document.createElement('div');
-  hint.style.cssText = 'text-align:center;color:#888;font-size:11px;margin-top:12px;font-family:Tajawal,sans-serif';
-  hint.textContent = 'اضغط في أي مكان للإغلاق';
-
-  overlay.appendChild(box);
-  overlay.appendChild(hint);
-  document.body.appendChild(overlay);
 }
 
 function showSyncBadge(msg) {
