@@ -1246,12 +1246,11 @@ let deletedExpenses = JSON.parse(localStorage.getItem('kp_deleted_expenses') || 
 let deletedRenewals = JSON.parse(localStorage.getItem('kp_deleted_renewals') || '[]');
 let deletedClasses = JSON.parse(localStorage.getItem('kp_deleted_classes') || '[]');
 setTimeout(function(){ try{ resetPaymentMatchCache(); }catch(e){} }, 0);
-let tombstones = JSON.parse(localStorage.getItem('kp_tombstones') || '{"students":[],"payments":[],"expenses":[],"renewals":[],"classes":[]}');
+let tombstones = JSON.parse(localStorage.getItem('kp_tombstones') || '{"students":[],"payments":[],"expenses":[],"renewals":[]}');
 if (!tombstones.students) tombstones.students = [];
 if (!tombstones.payments) tombstones.payments = [];
 if (!tombstones.expenses) tombstones.expenses = [];
 if (!tombstones.renewals) tombstones.renewals = [];
-if (!tombstones.classes) tombstones.classes = [];
 let dismissedStudentSubAlerts = JSON.parse(localStorage.getItem('kp_dismissed_student_sub_alerts') || '[]');
 if (!Array.isArray(dismissedStudentSubAlerts)) dismissedStudentSubAlerts = [];
 
@@ -1281,12 +1280,6 @@ function applyTombstones() {
   if (tombstones.payments && tombstones.payments.length) payments = payments.filter(function(p){ return !tombstones.payments.includes(p.id); });
   if (tombstones.expenses && tombstones.expenses.length) expenses = expenses.filter(function(e){ return !tombstones.expenses.includes(e.id); });
   if (tombstones.renewals && tombstones.renewals.length) renewals = renewals.filter(function(r){ return !tombstones.renewals.includes(r.id); });
-  if (tombstones.classes && tombstones.classes.length && CLASSES && typeof CLASSES === 'object') {
-    tombstones.classes.forEach(function(clsKey){
-      if (Object.prototype.hasOwnProperty.call(CLASSES, clsKey)) delete CLASSES[clsKey];
-    });
-    if (typeof CLASSES_DATA !== 'undefined') CLASSES_DATA = CLASSES;
-  }
 }
 
 let students = [
@@ -3190,10 +3183,6 @@ function restoreClass(name) {
   CLASSES_DATA = CLASSES;
   deletedClasses = deletedClasses.filter(function(x){ return x.key !== name; });
   localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
-  if (tombstones && tombstones.classes) {
-    tombstones.classes = tombstones.classes.filter(function(x){ return x !== name; });
-    localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
-  }
   localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
   autoSave(); populateClassDropdowns(); renderAdminClasses(); renderStudents(); renderDash(); renderDeletedStudents();
 }
@@ -3212,7 +3201,6 @@ function permanentDeleteGeneric(type, key) {
   } else if (type === 'classes') {
     deletedClasses = deletedClasses.filter(function(x){ return x.key !== key; });
     localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
-    addTombstone('classes', key);
   }
   autoSave(); renderDeletedStudents();
 }
@@ -4915,12 +4903,9 @@ function deleteUser(username) {
 // CLASSES_DATA = CLASSES (defined above)
 
 function saveClasses() {
-  const nextClasses = JSON.parse(JSON.stringify(CLASSES_DATA || {}));
-  Object.keys(CLASSES || {}).forEach(function(key){ if (!Object.prototype.hasOwnProperty.call(nextClasses, key)) delete CLASSES[key]; });
-  Object.assign(CLASSES, nextClasses);
-  CLASSES_DATA = CLASSES;
-  localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
-  autoSave();
+  localStorage.setItem('kp_classes', JSON.stringify(CLASSES_DATA));
+  // Sync CLASSES global
+  Object.assign(CLASSES, CLASSES_DATA);
 }
 
 function renderAdminClasses() {
@@ -4964,7 +4949,6 @@ function editClass(name) {
 function deleteClass(name) {
   if (!confirm('حذف فصل "' + name + '"؟ سيتأثر الطلاب المسجلين فيه.')) return;
   const clsData = CLASSES[name] ? Object.assign({}, CLASSES[name]) : null;
-  deletedClasses = deletedClasses.filter(function(x){ return x.key !== name; });
   deletedClasses.unshift({
     key: name,
     name: name,
@@ -4973,7 +4957,6 @@ function deleteClass(name) {
     deletedBy: currentUser ? currentUser.name : 'نظام'
   });
   localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
-  addTombstone('classes', name);
   delete CLASSES[name];
   CLASSES_DATA = CLASSES;
   localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
@@ -5389,10 +5372,7 @@ function loadCoreDataFromLocalStorage() {
     if (Array.isArray(localExpenses)) expenses = sanitizeEntityArray(localExpenses);
     if (Array.isArray(localRenewals)) renewals = sanitizeEntityArray(localRenewals);
     if (localAttLog && typeof localAttLog === 'object' && !Array.isArray(localAttLog)) attLog = localAttLog;
-    if (localClasses && typeof localClasses === 'object' && !Array.isArray(localClasses)) {
-      CLASSES = localClasses;
-      if (typeof CLASSES_DATA !== 'undefined') CLASSES_DATA = CLASSES;
-    }
+    if (localClasses && typeof localClasses === 'object' && !Array.isArray(localClasses)) CLASSES = localClasses;
 
     sanitizeCoreData();
     applyTombstones();
@@ -5828,34 +5808,10 @@ function mergeAttLog(localLog, remoteLog) {
   return result;
 }
 
-function mergeClasses(localClasses, remoteClasses, classTombstones) {
-  const ts = Array.isArray(classTombstones) ? classTombstones : [];
-  const merged = Object.assign({}, (remoteClasses && typeof remoteClasses === 'object' && !Array.isArray(remoteClasses)) ? remoteClasses : {});
-  if (localClasses && typeof localClasses === 'object' && !Array.isArray(localClasses)) {
-    Object.keys(localClasses).forEach(function(key){ merged[key] = localClasses[key]; });
-  }
-  ts.forEach(function(key){ if (Object.prototype.hasOwnProperty.call(merged, key)) delete merged[key]; });
-  return merged;
-}
-
-function mergeDeletedClasses(localArr, remoteArr, classTombstones, currentClasses) {
-  const ts = Array.isArray(classTombstones) ? classTombstones : [];
-  const current = currentClasses && typeof currentClasses === 'object' ? currentClasses : {};
-  const map = {};
-  (Array.isArray(remoteArr) ? remoteArr : []).forEach(function(item){ if (item && item.key != null) map[item.key] = item; });
-  (Array.isArray(localArr) ? localArr : []).forEach(function(item){ if (item && item.key != null) map[item.key] = item; });
-  return Object.values(map).filter(function(item){
-    if (!item || item.key == null) return false;
-    if (ts.includes(item.key)) return false;
-    if (Object.prototype.hasOwnProperty.call(current, item.key)) return false;
-    return true;
-  });
-}
-
 // دمج tombstones — اتحاد المحذوفات من الطرفين
 function mergeTombstones(localTs, remoteTs) {
   const result = {};
-  ['students','payments','expenses','renewals','classes'].forEach(function(type) {
+  ['students','payments','expenses','renewals'].forEach(function(type) {
     const local  = Array.isArray(localTs  && localTs[type])  ? localTs[type]  : [];
     const remote = Array.isArray(remoteTs && remoteTs[type]) ? remoteTs[type] : [];
     const combined = local.concat(remote.filter(function(id){ return !local.includes(id); }));
@@ -5918,11 +5874,6 @@ async function pushToFirebase() {
       attLog,
       remoteData && remoteData.attLog
     );
-    const mergedClasses = mergeClasses(
-      CLASSES,
-      remoteData && remoteData.CLASSES,
-      mergedTombstones.classes
-    );
 
     // دمج سجلات النماذج (بدون تكرار بناءً على timestamp)
     const localFormRows = JSON.parse(localStorage.getItem('kp_form_rows') || '[]');
@@ -5980,21 +5931,13 @@ async function pushToFirebase() {
     const mergedDeletedPayments = mergeDeletedByKey(typeof deletedPayments !== 'undefined' ? deletedPayments : [], remoteData && remoteData.deletedPayments, 'id', mergedTombstones.payments);
     const mergedDeletedExpenses = mergeDeletedByKey(typeof deletedExpenses !== 'undefined' ? deletedExpenses : [], remoteData && remoteData.deletedExpenses, 'id', mergedTombstones.expenses);
     const mergedDeletedRenewals = mergeDeletedByKey(typeof deletedRenewals !== 'undefined' ? deletedRenewals : [], remoteData && remoteData.deletedRenewals, 'id', mergedTombstones.renewals);
-    const mergedDeletedClasses = mergeDeletedClasses(
-      typeof deletedClasses !== 'undefined' ? deletedClasses : [],
-      remoteData && remoteData.deletedClasses,
-      mergedTombstones.classes,
-      mergedClasses
-    );
+    const mergedDeletedClasses  = mergeDeletedByKey(typeof deletedClasses  !== 'undefined' ? deletedClasses  : [], remoteData && remoteData.deletedClasses, 'key', []);
 
     // حدّث المتغيرات المحلية بالبيانات المدمجة
     students = sanitizeEntityArray(mergedStudents);
     payments = sanitizeEntityArray(mergedPayments);
     expenses = sanitizeEntityArray(mergedExpenses);
     renewals = sanitizeEntityArray(mergedRenewals);
-    Object.keys(CLASSES || {}).forEach(function(k){ if (!Object.prototype.hasOwnProperty.call(mergedClasses, k)) delete CLASSES[k]; });
-    Object.assign(CLASSES, mergedClasses);
-    CLASSES_DATA = CLASSES;
     Object.keys(mergedAttLog).forEach(function(k){ attLog[k] = mergedAttLog[k]; });
     if (typeof deletedStudents !== 'undefined') deletedStudents = mergedDeleted;
     if (typeof deletedPayments !== 'undefined') deletedPayments = mergedDeletedPayments;
@@ -6006,11 +5949,8 @@ async function pushToFirebase() {
       tombstones.payments = mergedTombstones.payments;
       tombstones.expenses = mergedTombstones.expenses;
       tombstones.renewals = mergedTombstones.renewals;
-      tombstones.classes = mergedTombstones.classes;
       localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
     }
-    localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
-    localStorage.setItem('kp_deleted_classes', JSON.stringify(mergedDeletedClasses));
     resetPaymentMatchCache();
     refreshNextIds();
 
@@ -6079,7 +6019,7 @@ async function loadFromFirebase() {
 
     // دمج tombstones أولاً لأنها تُستخدم في الدمج
     if (data.tombstones && typeof tombstones !== 'undefined') {
-      ['students','payments','expenses','renewals','classes'].forEach(function(type){
+      ['students','payments','expenses','renewals'].forEach(function(type){
         const remote = (data.tombstones[type] && Array.isArray(data.tombstones[type])) ? data.tombstones[type] : [];
         const local = Array.isArray(tombstones[type]) ? tombstones[type] : [];
         tombstones[type] = local.concat(remote.filter(function(id){ return !local.includes(id); }));
@@ -6148,16 +6088,12 @@ async function loadFromFirebase() {
       deletedRenewals = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
     }
-    const mergedRemoteClasses = mergeClasses(CLASSES, data && data.CLASSES, tombstones.classes || []);
-    Object.keys(CLASSES || {}).forEach(function(k){ if (!Object.prototype.hasOwnProperty.call(mergedRemoteClasses, k)) delete CLASSES[k]; });
-    Object.assign(CLASSES, mergedRemoteClasses);
-    CLASSES_DATA = CLASSES;
-
     if (Array.isArray(data.deletedClasses) && typeof deletedClasses !== 'undefined') {
-      deletedClasses = mergeDeletedClasses(deletedClasses, data.deletedClasses, tombstones.classes || [], CLASSES);
+      deletedClasses = data.deletedClasses;
       localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
     }
     applyTombstones();
+    if (data.CLASSES)         Object.assign(CLASSES, data.CLASSES);
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
     if (data.kp_users && data.kp_users.length) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
     if (Array.isArray(data.kp_form_rows)) {
@@ -6171,8 +6107,6 @@ async function loadFromFirebase() {
     }
     localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
     persistCoreDataToLocalStorage();
-    populateClassDropdowns();
-    if (typeof renderAdminClasses === 'function') renderAdminClasses();
     updateLogoDisplay();
     refreshNextIds();
     lastSavedAt = data.savedAt || '';
