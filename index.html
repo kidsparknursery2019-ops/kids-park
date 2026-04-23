@@ -1252,6 +1252,24 @@ if (!tombstones.payments) tombstones.payments = [];
 if (!tombstones.expenses) tombstones.expenses = [];
 if (!tombstones.renewals) tombstones.renewals = [];
 if (!tombstones.classes) tombstones.classes = [];
+let trashPurges = JSON.parse(localStorage.getItem('kp_trash_purges') || '{"students":[],"payments":[],"expenses":[],"renewals":[],"classes":[]}');
+if (!trashPurges.students) trashPurges.students = [];
+if (!trashPurges.payments) trashPurges.payments = [];
+if (!trashPurges.expenses) trashPurges.expenses = [];
+if (!trashPurges.renewals) trashPurges.renewals = [];
+if (!trashPurges.classes) trashPurges.classes = [];
+
+function addTrashPurge(type, id) {
+  if (!trashPurges[type]) trashPurges[type] = [];
+  if (!trashPurges[type].includes(id)) trashPurges[type].push(id);
+  localStorage.setItem('kp_trash_purges', JSON.stringify(trashPurges));
+}
+
+function removeTrashPurge(type, id) {
+  if (!trashPurges || !trashPurges[type]) return;
+  trashPurges[type] = trashPurges[type].filter(function(x){ return x !== id; });
+  localStorage.setItem('kp_trash_purges', JSON.stringify(trashPurges));
+}
 let dismissedStudentSubAlerts = JSON.parse(localStorage.getItem('kp_dismissed_student_sub_alerts') || '[]');
 if (!Array.isArray(dismissedStudentSubAlerts)) dismissedStudentSubAlerts = [];
 
@@ -3075,6 +3093,7 @@ function delStudent(id){
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
   students = students.filter(x => x.id !== id);
   addTombstone('students', id);
+  removeTrashPurge('students', id);
   resetPaymentMatchCache();
   autoSave();
   renderStudents();
@@ -3101,6 +3120,7 @@ function restoreStudent(id) {
     tombstones.students = tombstones.students.filter(function(x){ return x !== id; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
+  removeTrashPurge('students', id);
   autoSave();
   renderStudents();
   renderDash();
@@ -3118,6 +3138,7 @@ function permanentDeleteStudent(id) {
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
   // تأكد من إضافة tombstone (في حال ما كان موجود)
   addTombstone('students', id);
+  addTrashPurge('students', id);
   // ✅ ارفع التغيير لـ Firebase ليصل للأجهزة الأخرى
   autoSave();
   renderDeletedStudents();
@@ -3150,6 +3171,7 @@ function restorePayment(id) {
     tombstones.payments = tombstones.payments.filter(function(x){ return x !== id; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
+  removeTrashPurge('payments', id);
   autoSave(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); renderDeletedStudents();
 }
 
@@ -3167,6 +3189,7 @@ function restoreExpense(id) {
     tombstones.expenses = tombstones.expenses.filter(function(x){ return x !== id; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
+  removeTrashPurge('expenses', id);
   autoSave(); renderExpenses(); renderDash(); renderDeletedStudents();
 }
 
@@ -3184,6 +3207,7 @@ function restoreRenewal(id) {
     tombstones.renewals = tombstones.renewals.filter(function(x){ return x !== id; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
+  removeTrashPurge('renewals', id);
   autoSave(); renderRenewals(); renderDeletedStudents();
 }
 
@@ -3199,6 +3223,7 @@ function restoreClass(name) {
     tombstones.classes = tombstones.classes.filter(function(x){ return x !== name; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
+  removeTrashPurge('classes', name);
   localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
   autoSave(); populateClassDropdowns(); renderAdminClasses(); renderStudents(); renderDash(); renderDeletedStudents();
 }
@@ -3209,18 +3234,22 @@ function permanentDeleteGeneric(type, key) {
     deletedPayments = deletedPayments.filter(function(x){ return x.id !== key; });
     localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
     addTombstone('payments', key);
+    addTrashPurge('payments', key);
   } else if (type === 'expenses') {
     deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== key; });
     localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
     addTombstone('expenses', key);
+    addTrashPurge('expenses', key);
   } else if (type === 'renewals') {
     deletedRenewals = deletedRenewals.filter(function(x){ return x.id !== key; });
     localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
     addTombstone('renewals', key);
+    addTrashPurge('renewals', key);
   } else if (type === 'classes') {
     deletedClasses = deletedClasses.filter(function(x){ return x.key !== key; });
     localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
     addTombstone('classes', key);
+    addTrashPurge('classes', key);
   }
   autoSave(); renderDeletedStudents();
 }
@@ -3685,6 +3714,7 @@ function deletePayment(){
   localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
   payments = payments.filter(x=>x.id!==delId);
   addTombstone('payments', delId);
+  removeTrashPurge('payments', delId);
   autoSave(); closeAll(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
 }
 
@@ -3866,6 +3896,7 @@ function delExpense(id){
   localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
   expenses=expenses.filter(e=>e.id!==delId);
   addTombstone('expenses', delId);
+  removeTrashPurge('expenses', delId);
   closeAll();
   autoSave(); renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
 }
@@ -4348,6 +4379,7 @@ function downloadBackup() {
     deletedRenewals: (typeof deletedRenewals !== 'undefined' ? deletedRenewals : []),
     deletedClasses: (typeof deletedClasses !== 'undefined' ? deletedClasses : []),
     tombstones: (typeof tombstones !== 'undefined' ? tombstones : {}),
+    trashPurges: (typeof trashPurges !== 'undefined' ? trashPurges : {}),
     CLASSES: CLASSES,
     nurserySettings: nurserySettings,
     kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
@@ -4386,6 +4418,7 @@ function restoreBackup(event) {
       if (backup.deletedRenewals) { deletedRenewals = backup.deletedRenewals; localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals)); }
       if (backup.deletedClasses) { deletedClasses = backup.deletedClasses; localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses)); }
       if (backup.tombstones) { tombstones = backup.tombstones; localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); }
+      if (backup.trashPurges) { trashPurges = backup.trashPurges; localStorage.setItem('kp_trash_purges', JSON.stringify(trashPurges)); }
       if (backup.CLASSES) Object.assign(CLASSES, backup.CLASSES);
       if (backup.nurserySettings) Object.assign(nurserySettings, backup.nurserySettings);
       if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(backup.kp_users));
@@ -4984,6 +5017,7 @@ function deleteClass(name) {
   });
   localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
   addTombstone('classes', name);
+  removeTrashPurge('classes', name);
   delete CLASSES[name];
   CLASSES_DATA = CLASSES;
   localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
@@ -5367,6 +5401,8 @@ function getAllData() {
     students, payments, expenses, attLog, CLASSES,
     nurserySettings: cleanSettings,
     renewals,
+    tombstones,
+    trashPurges,
     kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
     kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]'),
   };
@@ -5386,6 +5422,7 @@ function persistCoreDataToLocalStorage() {
     localStorage.setItem('kp_deleted_renewals', JSON.stringify(Array.isArray(deletedRenewals) ? deletedRenewals : []));
     localStorage.setItem('kp_deleted_classes', JSON.stringify(Array.isArray(deletedClasses) ? deletedClasses : []));
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones || {students:[],payments:[],expenses:[],renewals:[],classes:[]}));
+    localStorage.setItem('kp_trash_purges', JSON.stringify(trashPurges || {students:[],payments:[],expenses:[],renewals:[],classes:[]}));
   } catch (e) {
     console.warn('persistCoreDataToLocalStorage failed:', e);
   }
@@ -5405,6 +5442,7 @@ function loadCoreDataFromLocalStorage() {
     const localDeletedRenewals = JSON.parse(localStorage.getItem('kp_deleted_renewals') || 'null');
     const localDeletedClasses = JSON.parse(localStorage.getItem('kp_deleted_classes') || 'null');
     const localTombstones = JSON.parse(localStorage.getItem('kp_tombstones') || 'null');
+    const localTrashPurges = JSON.parse(localStorage.getItem('kp_trash_purges') || 'null');
 
     if (Array.isArray(localStudents)) students = sanitizeEntityArray(localStudents);
     if (Array.isArray(localPayments)) payments = sanitizeEntityArray(localPayments);
@@ -5427,6 +5465,14 @@ function loadCoreDataFromLocalStorage() {
       if (!tombstones.expenses) tombstones.expenses = [];
       if (!tombstones.renewals) tombstones.renewals = [];
       if (!tombstones.classes) tombstones.classes = [];
+    }
+    if (localTrashPurges && typeof localTrashPurges === 'object' && !Array.isArray(localTrashPurges)) {
+      trashPurges = localTrashPurges;
+      if (!trashPurges.students) trashPurges.students = [];
+      if (!trashPurges.payments) trashPurges.payments = [];
+      if (!trashPurges.expenses) trashPurges.expenses = [];
+      if (!trashPurges.renewals) trashPurges.renewals = [];
+      if (!trashPurges.classes) trashPurges.classes = [];
     }
 
     sanitizeCoreData();
@@ -5873,8 +5919,9 @@ function mergeClasses(localClasses, remoteClasses, classTombstones) {
   return merged;
 }
 
-function mergeDeletedClasses(localArr, remoteArr, classTombstones, currentClasses) {
+function mergeDeletedClasses(localArr, remoteArr, classTombstones, currentClasses, purgeIds) {
   const ts = Array.isArray(classTombstones) ? classTombstones : [];
+  const purges = Array.isArray(purgeIds) ? purgeIds : [];
   const current = currentClasses && typeof currentClasses === 'object' ? currentClasses : {};
   const localDeletedKeys = {};
   (Array.isArray(localArr) ? localArr : []).forEach(function(item){
@@ -5888,13 +5935,14 @@ function mergeDeletedClasses(localArr, remoteArr, classTombstones, currentClasse
     const key = item.key;
     if (Object.prototype.hasOwnProperty.call(current, key)) return false;
     if (localDeletedKeys[key]) return true;
-    if (ts.includes(key)) return false;
+    if (purges.includes(key)) return false;
     return true;
   });
 }
 
-function mergeDeletedByKey(localArr, remoteArr, keyField, tombstoneIds, activeArr) {
+function mergeDeletedByKey(localArr, remoteArr, keyField, tombstoneIds, activeArr, purgeIds) {
   const ts = Array.isArray(tombstoneIds) ? tombstoneIds : [];
+  const purges = Array.isArray(purgeIds) ? purgeIds : [];
   const activeKeys = {};
   const localDeletedKeys = {};
   (Array.isArray(activeArr) ? activeArr : []).forEach(function(item){
@@ -5915,9 +5963,21 @@ function mergeDeletedByKey(localArr, remoteArr, keyField, tombstoneIds, activeAr
     const key = item[keyField];
     if (activeKeys[key]) return false;
     if (localDeletedKeys[key]) return true;
-    if (ts.includes(key)) return false;
+    if (purges.includes(key)) return false;
     return true;
   });
+}
+
+// دمج trash purges — اتحاد الحذف النهائي من السلة بين الطرفين
+function mergeTrashPurges(localTs, remoteTs) {
+  const result = {};
+  ['students','payments','expenses','renewals','classes'].forEach(function(type) {
+    const local  = Array.isArray(localTs  && localTs[type])  ? localTs[type]  : [];
+    const remote = Array.isArray(remoteTs && remoteTs[type]) ? remoteTs[type] : [];
+    const combined = local.concat(remote.filter(function(id){ return !local.includes(id); }));
+    result[type] = combined;
+  });
+  return result;
 }
 
 // دمج tombstones — اتحاد المحذوفات من الطرفين
@@ -5952,6 +6012,17 @@ async function pushToFirebase() {
     // البيانات المحلية تأخذ الأولوية (هي الأحدث - تعديلات الجلسة الحالية)
     const localTombstones = typeof tombstones !== 'undefined' ? tombstones : {};
     const remoteTombstones = fullReplace ? {} : ((remoteData && remoteData.tombstones) ? remoteData.tombstones : {});
+    const localTrashPurges = typeof trashPurges !== 'undefined' ? trashPurges : {};
+    const remoteTrashPurges = fullReplace ? {} : ((remoteData && remoteData.trashPurges) ? remoteData.trashPurges : {});
+    const mergedTrashPurges = fullReplace
+      ? {
+          students: Array.isArray(localTrashPurges.students) ? localTrashPurges.students.slice() : [],
+          payments: Array.isArray(localTrashPurges.payments) ? localTrashPurges.payments.slice() : [],
+          expenses: Array.isArray(localTrashPurges.expenses) ? localTrashPurges.expenses.slice() : [],
+          renewals: Array.isArray(localTrashPurges.renewals) ? localTrashPurges.renewals.slice() : [],
+          classes: Array.isArray(localTrashPurges.classes) ? localTrashPurges.classes.slice() : []
+        }
+      : mergeTrashPurges(localTrashPurges, remoteTrashPurges);
     const mergedTombstones = fullReplace
       ? {
           students: Array.isArray(localTombstones.students) ? localTombstones.students.slice() : [],
@@ -6021,15 +6092,15 @@ async function pushToFirebase() {
     // البيانات المحلية تأخذ الأولوية (تشمل الحذف الجديد أو شطب الاستعادة)
     localDeleted.forEach(function(s){ if(s && s.id) deletedMap[s.id] = s; });
     // أي عنصر تمت استعادته محلياً (غير موجود في localDeleted لكن موجود في remoteDeleted) يُحذف
-    // أي عنصر tombstone يجب ألا يكون في deletedStudents أيضاً (حذف نهائي)
-    const finalTsStudents = mergedTombstones.students || [];
+    // الحذف النهائي من السلة يُدار عبر trashPurges وليس tombstones
+    const finalPurgeStudents = mergedTrashPurges.students || [];
     const mergedDeleted = Object.values(deletedMap).filter(function(s){
       const inLocal = localDeleted.some(function(x){ return x.id === s.id; });
-      const inTombstone = finalTsStudents.includes(s.id);
+      const inTrashPurge = finalPurgeStudents.includes(s.id);
       const restoredLocally = (typeof students !== 'undefined') && students.some(function(x){ return x.id === s.id; });
       if (restoredLocally) return false;
       if (inLocal) return true;
-      if (inTombstone) return false;
+      if (inTrashPurge) return false;
       return true;
     });
 
@@ -6038,27 +6109,31 @@ async function pushToFirebase() {
       remoteData && remoteData.deletedPayments,
       'id',
       mergedTombstones.payments,
-      mergedPayments
+      mergedPayments,
+      mergedTrashPurges.payments
     );
     const mergedDeletedExpenses = mergeDeletedByKey(
       typeof deletedExpenses !== 'undefined' ? deletedExpenses : [],
       remoteData && remoteData.deletedExpenses,
       'id',
       mergedTombstones.expenses,
-      mergedExpenses
+      mergedExpenses,
+      mergedTrashPurges.expenses
     );
     const mergedDeletedRenewals = mergeDeletedByKey(
       typeof deletedRenewals !== 'undefined' ? deletedRenewals : [],
       remoteData && remoteData.deletedRenewals,
       'id',
       mergedTombstones.renewals,
-      mergedRenewals
+      mergedRenewals,
+      mergedTrashPurges.renewals
     );
     const mergedDeletedClasses = mergeDeletedClasses(
       typeof deletedClasses !== 'undefined' ? deletedClasses : [],
       remoteData && remoteData.deletedClasses,
       mergedTombstones.classes,
-      mergedClasses
+      mergedClasses,
+      mergedTrashPurges.classes
     );
 
     // حدّث المتغيرات المحلية بالبيانات المدمجة
@@ -6082,6 +6157,14 @@ async function pushToFirebase() {
       tombstones.renewals = mergedTombstones.renewals;
       tombstones.classes = mergedTombstones.classes;
       localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+    }
+    if (typeof trashPurges !== 'undefined') {
+      trashPurges.students = mergedTrashPurges.students;
+      trashPurges.payments = mergedTrashPurges.payments;
+      trashPurges.expenses = mergedTrashPurges.expenses;
+      trashPurges.renewals = mergedTrashPurges.renewals;
+      trashPurges.classes = mergedTrashPurges.classes;
+      localStorage.setItem('kp_trash_purges', JSON.stringify(trashPurges));
     }
     localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
     localStorage.setItem('kp_deleted_classes', JSON.stringify(mergedDeletedClasses));
@@ -6109,6 +6192,7 @@ async function pushToFirebase() {
       deletedRenewals: mergedDeletedRenewals,
       deletedClasses:  mergedDeletedClasses,
       tombstones:      mergedTombstones,
+      trashPurges:     mergedTrashPurges,
     };
 
     const res = await fetch(FB_URL + '.json', {
@@ -6160,6 +6244,14 @@ async function loadFromFirebase() {
       });
       localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
     }
+    if (data.trashPurges && typeof trashPurges !== 'undefined') {
+      ['students','payments','expenses','renewals','classes'].forEach(function(type){
+        const remote = (data.trashPurges[type] && Array.isArray(data.trashPurges[type])) ? data.trashPurges[type] : [];
+        const local = Array.isArray(trashPurges[type]) ? trashPurges[type] : [];
+        trashPurges[type] = local.concat(remote.filter(function(id){ return !local.includes(id); }));
+      });
+      localStorage.setItem('kp_trash_purges', JSON.stringify(trashPurges));
+    }
 
     // دمج البيانات بدل الاستبدال — يحمي التعديلات المحلية غير المحفوظة
     if (Array.isArray(data.students)) {
@@ -6184,26 +6276,28 @@ async function loadFromFirebase() {
 
     // دمج سلة المحذوفات مع احترام tombstones
     const allTs = tombstones;
+    const allTrashPurges = trashPurges || {};
     if (Array.isArray(data.deletedStudents) && typeof deletedStudents !== 'undefined') {
       deletedStudents = mergeDeletedByKey(
         deletedStudents,
         data.deletedStudents,
         'id',
         allTs.students || [],
-        students
+        students,
+        allTrashPurges.students || []
       );
       localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
     }
     if (Array.isArray(data.deletedPayments) && typeof deletedPayments !== 'undefined') {
-      deletedPayments = mergeDeletedByKey(deletedPayments, data.deletedPayments, 'id', allTs.payments || [], payments);
+      deletedPayments = mergeDeletedByKey(deletedPayments, data.deletedPayments, 'id', allTs.payments || [], payments, allTrashPurges.payments || []);
       localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
     }
     if (Array.isArray(data.deletedExpenses) && typeof deletedExpenses !== 'undefined') {
-      deletedExpenses = mergeDeletedByKey(deletedExpenses, data.deletedExpenses, 'id', allTs.expenses || [], expenses);
+      deletedExpenses = mergeDeletedByKey(deletedExpenses, data.deletedExpenses, 'id', allTs.expenses || [], expenses, allTrashPurges.expenses || []);
       localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
     }
     if (Array.isArray(data.deletedRenewals) && typeof deletedRenewals !== 'undefined') {
-      deletedRenewals = mergeDeletedByKey(deletedRenewals, data.deletedRenewals, 'id', allTs.renewals || [], renewals);
+      deletedRenewals = mergeDeletedByKey(deletedRenewals, data.deletedRenewals, 'id', allTs.renewals || [], renewals, allTrashPurges.renewals || []);
       localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
     }
     const mergedRemoteClasses = mergeClasses(CLASSES, data && data.CLASSES, tombstones.classes || []);
@@ -6212,7 +6306,7 @@ async function loadFromFirebase() {
     CLASSES_DATA = CLASSES;
 
     if (Array.isArray(data.deletedClasses) && typeof deletedClasses !== 'undefined') {
-      deletedClasses = mergeDeletedClasses(deletedClasses, data.deletedClasses, tombstones.classes || [], CLASSES);
+      deletedClasses = mergeDeletedClasses(deletedClasses, data.deletedClasses, tombstones.classes || [], CLASSES, allTrashPurges.classes || []);
       localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
     }
     applyTombstones();
@@ -7121,6 +7215,7 @@ function deleteRenewal() {
   localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
   renewals = renewals.filter(x => x.id !== delId);
   addTombstone('renewals', delId);
+  removeTrashPurge('renewals', delId);
   autoSave();
   closeAll();
   renderRenewals();
