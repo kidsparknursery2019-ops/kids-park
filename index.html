@@ -1290,6 +1290,21 @@ function clearRestored(type, id) {
 let dismissedStudentSubAlerts = JSON.parse(localStorage.getItem('kp_dismissed_student_sub_alerts') || '[]');
 if (!Array.isArray(dismissedStudentSubAlerts)) dismissedStudentSubAlerts = [];
 
+// تنظيف أولي: شيل من restoredKeys أي id له tombstone محلي (إصلاح للسجلات الملوثة قديماً)
+(function cleanStaleRestoredKeys(){
+  let changed = false;
+  ['students','payments','expenses','renewals','classes'].forEach(function(type){
+    if (!Array.isArray(restoredKeys[type])) return;
+    const ts = Array.isArray((tombstones||{})[type]) ? tombstones[type] : [];
+    const before = restoredKeys[type].length;
+    restoredKeys[type] = restoredKeys[type].filter(function(id){
+      return !ts.some(function(tid){ return String(tid) === String(id); });
+    });
+    if (restoredKeys[type].length !== before) changed = true;
+  });
+  if (changed) localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
+})();
+
 
 function sanitizeEntityArray(arr) {
   if (!Array.isArray(arr)) return [];
@@ -6096,14 +6111,18 @@ async function pushToFirebase() {
     // الاستراتيجية: دائماً ادمج المحلي مع السحابي بناءً على الـ id
     // البيانات المحلية تأخذ الأولوية (هي الأحدث - تعديلات الجلسة الحالية)
 
-    // ادمج restoredKeys أولاً (اتحاد محلي + remote)
+    // ادمج restoredKeys (اتحاد محلي + remote) مع استبعاد أي id له tombstone محلي
+    // المحلي هو المصدر الأحدث: إذا السجل في localTombstones → محذوف، لا يكون مستعاد
     const localRestored = (typeof restoredKeys === 'object' && restoredKeys) ? restoredKeys : {};
     const remoteRestored = (!fullReplace && remoteData && remoteData.restoredKeys && typeof remoteData.restoredKeys === 'object') ? remoteData.restoredKeys : {};
     const mergedRestoredKeys = {};
     ['students','payments','expenses','renewals','classes'].forEach(function(type){
       const local = Array.isArray(localRestored[type]) ? localRestored[type] : [];
       const remote = Array.isArray(remoteRestored[type]) ? remoteRestored[type] : [];
-      mergedRestoredKeys[type] = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
+      const localTs = Array.isArray((typeof tombstones !== 'undefined' ? tombstones : {})[type]) ? tombstones[type] : [];
+      const combined = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
+      // استبعد أي id له tombstone محلي (الحذف المحلي أحدث من الاستعادة الـ remote)
+      mergedRestoredKeys[type] = combined.filter(function(id){ return !hasKey(localTs, id); });
     });
 
     const localTombstones = typeof tombstones !== 'undefined' ? tombstones : {};
@@ -6362,12 +6381,21 @@ async function loadFromFirebase() {
     const data = await res.json();
     if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
 
+    // احفظ نسخة من tombstones المحلية قبل أي تعديل (ستُستخدم كمرجع للحذف المحلي الأحدث)
+    const localTombstonesSnapshot = {};
+    ['students','payments','expenses','renewals','classes'].forEach(function(type){
+      localTombstonesSnapshot[type] = Array.isArray((tombstones||{})[type]) ? (tombstones[type].slice()) : [];
+    });
+
     // دمج restoredKeys أولاً من Firebase مع المحلي (الاتحاد)
+    // لكن استبعد أي id له tombstone محلي (الحذف المحلي أحدث من الاستعادة الـ remote)
     if (data.restoredKeys && typeof data.restoredKeys === 'object') {
       ['students','payments','expenses','renewals','classes'].forEach(function(type){
         const remote = Array.isArray(data.restoredKeys[type]) ? data.restoredKeys[type] : [];
         const local = Array.isArray(restoredKeys[type]) ? restoredKeys[type] : [];
-        restoredKeys[type] = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
+        const localTs = localTombstonesSnapshot[type] || [];
+        const combined = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
+        restoredKeys[type] = combined.filter(function(id){ return !hasKey(localTs, id); });
       });
       localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
     }
