@@ -1304,17 +1304,17 @@ function cleanupDeletedBuckets() {
   });
   if (typeof deletedPayments !== 'undefined') {
     deletedPayments = dedupeByKey(deletedPayments, 'id').filter(function(item){
-      return item && item.id != null && !payments.some(function(x){ return x && x.id === item.id; }) && !(tombstones.payments || []).includes(item.id);
+      return item && item.id != null && !payments.some(function(x){ return x && x.id === item.id; });
     });
   }
   if (typeof deletedExpenses !== 'undefined') {
     deletedExpenses = dedupeByKey(deletedExpenses, 'id').filter(function(item){
-      return item && item.id != null && !expenses.some(function(x){ return x && x.id === item.id; }) && !(tombstones.expenses || []).includes(item.id);
+      return item && item.id != null && !expenses.some(function(x){ return x && x.id === item.id; });
     });
   }
   if (typeof deletedRenewals !== 'undefined') {
     deletedRenewals = dedupeByKey(deletedRenewals, 'id').filter(function(item){
-      return item && item.id != null && !renewals.some(function(x){ return x && x.id === item.id; }) && !(tombstones.renewals || []).includes(item.id);
+      return item && item.id != null && !renewals.some(function(x){ return x && x.id === item.id; });
     });
   }
   if (typeof deletedClasses !== 'undefined') {
@@ -6048,14 +6048,12 @@ async function pushToFirebase() {
     });
 
     const mergeDeletedByKey = function(localArr, remoteArr, keyField, tombstoneArr, activeArr) {
-      const ts = Array.isArray(tombstoneArr) ? tombstoneArr : [];
       const activeKeys = new Set((Array.isArray(activeArr) ? activeArr : []).map(function(item){ return item && item[keyField]; }).filter(function(v){ return v !== undefined && v !== null; }));
       const map = {};
       (Array.isArray(remoteArr)?remoteArr:[]).forEach(function(item){ if(item && item[keyField] !== undefined) map[item[keyField]] = item; });
       (Array.isArray(localArr)?localArr:[]).forEach(function(item){ if(item && item[keyField] !== undefined) map[item[keyField]] = item; });
       return Object.values(map).filter(function(item){
         if (!item || item[keyField] === undefined || item[keyField] === null) return false;
-        if (ts.includes(item[keyField])) return false;
         if (activeKeys.has(item[keyField])) return false;
         return true;
       });
@@ -6208,37 +6206,34 @@ async function loadFromFirebase() {
       localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
     }
     if (Array.isArray(data.deletedPayments) && typeof deletedPayments !== 'undefined') {
-      const tsP = Array.isArray(allTs.payments) ? allTs.payments : [];
       const remoteMap = {};
       data.deletedPayments.filter(function(x){
-        return x && x.id != null && !tsP.includes(x.id) && !payments.some(function(p){ return p && p.id === x.id; });
+        return x && x.id != null && !payments.some(function(p){ return p && p.id === x.id; });
       }).forEach(function(x){ remoteMap[x.id] = x; });
       deletedPayments.forEach(function(x){
-        if (x && x.id != null && !tsP.includes(x.id) && !payments.some(function(p){ return p && p.id === x.id; })) remoteMap[x.id] = x;
+        if (x && x.id != null && !payments.some(function(p){ return p && p.id === x.id; })) remoteMap[x.id] = x;
       });
       deletedPayments = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
     }
     if (Array.isArray(data.deletedExpenses) && typeof deletedExpenses !== 'undefined') {
-      const tsE = Array.isArray(allTs.expenses) ? allTs.expenses : [];
       const remoteMap = {};
       data.deletedExpenses.filter(function(x){
-        return x && x.id != null && !tsE.includes(x.id) && !expenses.some(function(e){ return e && e.id === x.id; });
+        return x && x.id != null && !expenses.some(function(e){ return e && e.id === x.id; });
       }).forEach(function(x){ remoteMap[x.id] = x; });
       deletedExpenses.forEach(function(x){
-        if (x && x.id != null && !tsE.includes(x.id) && !expenses.some(function(e){ return e && e.id === x.id; })) remoteMap[x.id] = x;
+        if (x && x.id != null && !expenses.some(function(e){ return e && e.id === x.id; })) remoteMap[x.id] = x;
       });
       deletedExpenses = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
     }
     if (Array.isArray(data.deletedRenewals) && typeof deletedRenewals !== 'undefined') {
-      const tsR = Array.isArray(allTs.renewals) ? allTs.renewals : [];
       const remoteMap = {};
       data.deletedRenewals.filter(function(x){
-        return x && x.id != null && !tsR.includes(x.id) && !renewals.some(function(r){ return r && r.id === x.id; });
+        return x && x.id != null && !renewals.some(function(r){ return r && r.id === x.id; });
       }).forEach(function(x){ remoteMap[x.id] = x; });
       deletedRenewals.forEach(function(x){
-        if (x && x.id != null && !tsR.includes(x.id) && !renewals.some(function(r){ return r && r.id === x.id; })) remoteMap[x.id] = x;
+        if (x && x.id != null && !renewals.some(function(r){ return r && r.id === x.id; })) remoteMap[x.id] = x;
       });
       deletedRenewals = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
