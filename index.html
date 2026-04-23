@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260422-forms-merge-undo -->
+<!-- v20260423-trash-sync-hardening -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -5957,7 +5957,8 @@ async function pushToFirebase() {
           students: Array.isArray(localTombstones.students) ? localTombstones.students.slice() : [],
           payments: Array.isArray(localTombstones.payments) ? localTombstones.payments.slice() : [],
           expenses: Array.isArray(localTombstones.expenses) ? localTombstones.expenses.slice() : [],
-          renewals: Array.isArray(localTombstones.renewals) ? localTombstones.renewals.slice() : []
+          renewals: Array.isArray(localTombstones.renewals) ? localTombstones.renewals.slice() : [],
+          classes: Array.isArray(localTombstones.classes) ? localTombstones.classes.slice() : []
         }
       : mergeTombstones(localTombstones, remoteTombstones);
 
@@ -6183,18 +6184,14 @@ async function loadFromFirebase() {
 
     // دمج سلة المحذوفات مع احترام tombstones
     const allTs = tombstones;
-    if (data.deletedStudents && typeof deletedStudents !== 'undefined') {
-      const tsS = Array.isArray(allTs.students) ? allTs.students : [];
-      const remoteDs = data.deletedStudents.filter(function(s){
-        if (!s || !s.id) return false;
-        if (tsS.includes(s.id)) return false;
-        if (students.some(function(x){ return x.id === s.id; })) return false;
-        return true;
-      });
-      const localMap = {};
-      deletedStudents.forEach(function(s){ if(s && s.id) localMap[s.id] = s; });
-      remoteDs.forEach(function(s){ if(s && s.id && !localMap[s.id]) localMap[s.id] = s; });
-      deletedStudents = Object.values(localMap);
+    if (Array.isArray(data.deletedStudents) && typeof deletedStudents !== 'undefined') {
+      deletedStudents = mergeDeletedByKey(
+        deletedStudents,
+        data.deletedStudents,
+        'id',
+        allTs.students || [],
+        students
+      );
       localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
     }
     if (Array.isArray(data.deletedPayments) && typeof deletedPayments !== 'undefined') {
