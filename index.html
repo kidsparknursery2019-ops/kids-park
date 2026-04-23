@@ -1210,14 +1210,31 @@ function getSafeNextReceiptId() {
   return maxId + 1;
 }
 
+function getSafeNextExpenseId(){
+  const usedIds = new Set();
+  if (Array.isArray(expenses)) {
+    expenses.forEach(function(e){
+      const id = Number(e && e.id);
+      if (Number.isFinite(id) && id > 0) usedIds.add(id);
+    });
+  }
+  if (typeof tombstones !== 'undefined' && tombstones && Array.isArray(tombstones.expenses)) {
+    tombstones.expenses.forEach(function(id){
+      const n = Number(id);
+      if (Number.isFinite(n) && n > 0) usedIds.add(n);
+    });
+  }
+  let candidate = 600;
+  while (usedIds.has(candidate)) candidate++;
+  return candidate;
+}
+
 function refreshNextIds(){
   if (Array.isArray(students) && students.length) nextStuId = Math.max.apply(null, students.map(function(s){ return s.id || 0; }).concat([199])) + 1;
   else nextStuId = 200;
 
   nextPayId = getSafeNextReceiptId();
-
-  if (Array.isArray(expenses) && expenses.length) nextExpId = Math.max.apply(null, expenses.map(function(e){ return e.id || 0; }).concat([599])) + 1;
-  else nextExpId = 600;
+  nextExpId = getSafeNextExpenseId();
 
   if (Array.isArray(renewals) && renewals.length) nextRenId = Math.max.apply(null, renewals.map(function(r){ return r.id || 0; }).concat([50])) + 1;
   else nextRenId = 51;
@@ -3807,7 +3824,9 @@ function saveExpense(){
     autoSave(); alert('✅ تم تعديل المصروف بنجاح');
   } else {
     const expDate = document.getElementById('ne-date').value;
-    expenses.push({id:nextExpId++,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:expDate,exp_date:expDate,note:document.getElementById('ne-note').value||''});
+    const newExpenseId = getSafeNextExpenseId();
+    nextExpId = newExpenseId + 1;
+    expenses.push({id:newExpenseId,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:expDate,exp_date:expDate,note:document.getElementById('ne-note').value||''});
     closeAll();renderExpenses();renderDash();
     autoSave(); alert('✅ تم حفظ المصروف بنجاح');
   }
