@@ -3369,7 +3369,7 @@ function renderOtherDeletedItems() {
       return renderDeletedSectionCard('🧾', 'السند #' + p.id + ' — ' + (p.who||'—'),
         '💰 ' + (p.amt||'—') + ' | 📝 ' + (p.desc||'—') + '<br>🗑 حُذف في: ' + (p.deletedAt||'—'),
         '<button class="btn btn-g btn-sm" onclick="restorePayment(' + p.id + ')">♻️ استعادة</button>' +
-        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric('payments',' + p.id + ')">🗑 حذف نهائي</button>'
+        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'payments\',' + p.id + ')">🗑 حذف نهائي</button>'
       );
     }).join('');
   }
@@ -3379,7 +3379,7 @@ function renderOtherDeletedItems() {
       return renderDeletedSectionCard('💸', 'المصروف #' + x.id + ' — ' + (x.desc||'—'),
         '💰 ' + (x.amt||'—') + ' | 🗂 ' + (x.cat||'—') + '<br>🗑 حُذف في: ' + (x.deletedAt||'—'),
         '<button class="btn btn-g btn-sm" onclick="restoreExpense(' + x.id + ')">♻️ استعادة</button>' +
-        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric('expenses',' + x.id + ')">🗑 حذف نهائي</button>'
+        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'expenses\',' + x.id + ')">🗑 حذف نهائي</button>'
       );
     }).join('');
   }
@@ -3389,7 +3389,7 @@ function renderOtherDeletedItems() {
       return renderDeletedSectionCard('🔔', x.name || ('التجديد #' + x.id),
         '📅 ' + (x.date||'—') + ' | 💰 ' + (x.cost||'—') + '<br>🗑 حُذف في: ' + (x.deletedAt||'—'),
         '<button class="btn btn-g btn-sm" onclick="restoreRenewal(' + x.id + ')">♻️ استعادة</button>' +
-        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric('renewals',' + x.id + ')">🗑 حذف نهائي</button>'
+        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'renewals\',' + x.id + ')">🗑 حذف نهائي</button>'
       );
     }).join('');
   }
@@ -3400,7 +3400,7 @@ function renderOtherDeletedItems() {
       return renderDeletedSectionCard('🏫', x.name,
         '👩‍🏫 ' + ((x.data&&x.data.teacher)||'—') + ' | ' + ((x.data&&x.data.emoji)||'🏫') + '<br>🗑 حُذف في: ' + (x.deletedAt||'—'),
         '<button class="btn btn-g btn-sm" onclick="restoreClass(' + safeKey.replace(/"/g,'&quot;') + ')">♻️ استعادة</button>' +
-        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric('classes',' + safeKey.replace(/"/g,'&quot;') + ')">🗑 حذف نهائي</button>'
+        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'classes\',' + safeKey.replace(/"/g,'&quot;') + ')">🗑 حذف نهائي</button>'
       );
     }).join('');
   }
