@@ -4685,7 +4685,10 @@ function applyLogin() {
   const yfInit = document.getElementById('dash-year-filter');
   if (yfInit) yfInit.value = String(dashYear);
 
+  // تحميل الكاش المحلي فوراً (أسرع من Firebase)
+  if (typeof loadFromLocalCache === 'function') loadFromLocalCache();
   if (typeof applyTombstones === 'function') applyTombstones();
+  refreshNextIds();
   // اعتماد جماعي لمطابقات السندات المقترحة الحالية (مرة واحدة فقط)
   let bulkApprovedNow = runOneTimeBulkMatchApproval();
   // عرض البيانات المحلية فوراً
@@ -5325,8 +5328,34 @@ function getAllData() {
   };
 }
 
+function saveToLocalCache() {
+  try {
+    localStorage.setItem('kp_cache_students', JSON.stringify(students));
+    localStorage.setItem('kp_cache_payments', JSON.stringify(payments));
+    localStorage.setItem('kp_cache_expenses', JSON.stringify(expenses));
+    localStorage.setItem('kp_cache_renewals', JSON.stringify(renewals));
+    localStorage.setItem('kp_cache_attlog', JSON.stringify(attLog));
+  } catch(e) { console.warn('localStorage cache save failed:', e); }
+}
+
+function loadFromLocalCache() {
+  try {
+    const cs = localStorage.getItem('kp_cache_students');
+    const cp = localStorage.getItem('kp_cache_payments');
+    const ce = localStorage.getItem('kp_cache_expenses');
+    const cr = localStorage.getItem('kp_cache_renewals');
+    const ca = localStorage.getItem('kp_cache_attlog');
+    if (cs) { const arr = JSON.parse(cs); if (Array.isArray(arr) && arr.length) students = arr; }
+    if (cp) { const arr = JSON.parse(cp); if (Array.isArray(arr) && arr.length) payments = arr; }
+    if (ce) { const arr = JSON.parse(ce); if (Array.isArray(arr) && arr.length) expenses = arr; }
+    if (cr) { const arr = JSON.parse(cr); if (Array.isArray(arr) && arr.length) renewals = arr; }
+    if (ca) { const obj = JSON.parse(ca); if (obj && typeof obj === 'object') Object.assign(attLog, obj); }
+  } catch(e) { console.warn('localStorage cache load failed:', e); }
+}
+
 function autoSave() {
   hasUnsavedChanges = true;
+  saveToLocalCache();
   if (isSyncing) {
     pendingSync = true;
     return;
@@ -5611,6 +5640,8 @@ function mergeTombstones(localTs, remoteTs) {
 async function pushToFirebase() {
   if (isSyncing) return;
   isSyncing = true;
+  syncTimeout = null;
+  hasUnsavedChanges = false;
   try {
     const fullReplace = forceFullReplaceOnNextSync === true;
 
@@ -5814,22 +5845,23 @@ async function loadFromFirebase() {
       localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
     }
 
-    // دمج البيانات بدل الاستبدال — يحمي التعديلات المحلية غير المحفوظة
+    // عند التحميل من Firebase: Firebase يأخذ الأولوية (هو المصدر الموثوق)
+    // الكاش المحلي يُستخدم فقط لإضافة أي سجلات لم تصل لـ Firebase بعد
     if (Array.isArray(data.students)) {
-      students = mergeArrayById(students, data.students, tombstones.students || []);
+      students = mergeArrayById(data.students, students, tombstones.students || []);
       students = sanitizeEntityArray(students);
     }
     resetPaymentMatchCache();
     if (Array.isArray(data.payments)) {
-      payments = mergeArrayById(payments, data.payments, tombstones.payments || []);
+      payments = mergeArrayById(data.payments, payments, tombstones.payments || []);
       payments = sanitizeEntityArray(payments);
     }
     if (Array.isArray(data.expenses)) {
-      expenses = mergeArrayById(expenses, data.expenses, tombstones.expenses || []);
+      expenses = mergeArrayById(data.expenses, expenses, tombstones.expenses || []);
       expenses = sanitizeEntityArray(expenses);
     }
     if (Array.isArray(data.renewals)) {
-      renewals = mergeArrayById(renewals, data.renewals, tombstones.renewals || []);
+      renewals = mergeArrayById(data.renewals, renewals, tombstones.renewals || []);
       renewals = sanitizeEntityArray(renewals);
     }
     sanitizeCoreData();
@@ -5897,6 +5929,7 @@ async function loadFromFirebase() {
     refreshNextIds();
     lastSavedAt = data.savedAt || '';
     localStorage.setItem('kp_last_synced_at', lastSavedAt);
+    if (typeof saveToLocalCache === 'function') saveToLocalCache();
     renderDash();
     showSyncBadge('✅ تم التحميل');
   } catch(e) {
