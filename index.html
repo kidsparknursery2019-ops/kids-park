@@ -6033,31 +6033,6 @@ async function pushToFirebase() {
         }
       : mergeTombstones(localTombstones, remoteTombstones);
 
-    // عند الاستعادة يجب إزالة أثر الحذف من الدمج النهائي، لا عمل اتحاد فقط.
-    // أي سجل موجود حالياً في البيانات النشطة وغير موجود في سلة المحذوفات المحلية
-    // يُعتبر مُستعاداً محلياً ويجب سحب tombstone/trashPurge الخاص به قبل الرفع.
-    function pruneRestoredIds(type, activeArr, deletedArr, keyField) {
-      if (!Array.isArray(mergedTombstones[type])) mergedTombstones[type] = [];
-      if (!Array.isArray(mergedTrashPurges[type])) mergedTrashPurges[type] = [];
-      const activeKeys = new Set((Array.isArray(activeArr) ? activeArr : []).map(function(item){
-        return item && item[keyField] != null ? item[keyField] : null;
-      }).filter(function(v){ return v != null; }));
-      const deletedKeys = new Set((Array.isArray(deletedArr) ? deletedArr : []).map(function(item){
-        return item && item[keyField] != null ? item[keyField] : null;
-      }).filter(function(v){ return v != null; }));
-      mergedTombstones[type] = mergedTombstones[type].filter(function(id){
-        return !(activeKeys.has(id) && !deletedKeys.has(id));
-      });
-      mergedTrashPurges[type] = mergedTrashPurges[type].filter(function(id){
-        return !(activeKeys.has(id) && !deletedKeys.has(id));
-      });
-    }
-    pruneRestoredIds('students', students, (typeof deletedStudents !== 'undefined' ? deletedStudents : []), 'id');
-    pruneRestoredIds('payments', payments, (typeof deletedPayments !== 'undefined' ? deletedPayments : []), 'id');
-    pruneRestoredIds('expenses', expenses, (typeof deletedExpenses !== 'undefined' ? deletedExpenses : []), 'id');
-    pruneRestoredIds('renewals', renewals, (typeof deletedRenewals !== 'undefined' ? deletedRenewals : []), 'id');
-    pruneRestoredIds('classes', Object.keys(CLASSES || {}).map(function(key){ return { key:key }; }), (typeof deletedClasses !== 'undefined' ? deletedClasses : []), 'key');
-
     // دائماً ادمج المحلي مع السحابي — المحلي يأخذ الأولوية (الأحدث)
     const mergedStudents = mergeArrayById(
       students,
