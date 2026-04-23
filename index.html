@@ -3032,7 +3032,7 @@ function saveStudent(){
   resetPaymentMatchCache();
   closeAll();renderStudents();renderDash();
   if(typeof renderPayments==='function') renderPayments(); if(typeof renderReceipts==='function') renderReceipts();
-  autoSave(); alert(`✅ تم ${editingStuId?'تعديل':'إضافة'} الطالب "${name}" بنجاح`);
+  autoSave(); showSyncBadge(`✅ تم ${editingStuId?'تعديل':'إضافة'} الطالب "${name}" بنجاح`);
 }
 
 function delStudent(id){
@@ -3691,7 +3691,7 @@ function savePayment(){
     renderReceipts();
     renderDash();
     autoSave();
-    alert('✅ تم تعديل السند #' + p.id);
+    showSyncBadge('✅ تم تعديل السند #' + p.id);
   } else {
     let newId = nextPayId;
     if (currentUser && currentUser.role === 'admin') {
@@ -3724,7 +3724,7 @@ function savePayment(){
     renderReceipts();
     renderDash();
     autoSave();
-    alert('✅ تم تسجيل الدفعة بنجاح (#' + p.id + ')');
+    showSyncBadge('✅ تم تسجيل الدفعة بنجاح (#' + p.id + ')');
   }
 }
 
@@ -3804,12 +3804,12 @@ function saveExpense(){
     e.exp_date = document.getElementById('ne-date').value;
     e.note = document.getElementById('ne-note').value||'';
     closeAll();renderExpenses();renderDash();
-    autoSave(); alert('✅ تم تعديل المصروف بنجاح');
+    autoSave(); showSyncBadge('✅ تم تعديل المصروف بنجاح');
   } else {
     const expDate = document.getElementById('ne-date').value;
     expenses.push({id:nextExpId++,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:expDate,exp_date:expDate,note:document.getElementById('ne-note').value||''});
     closeAll();renderExpenses();renderDash();
-    autoSave(); alert('✅ تم حفظ المصروف بنجاح');
+    autoSave(); showSyncBadge('✅ تم حفظ المصروف بنجاح');
   }
 }
 
