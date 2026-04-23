@@ -4685,6 +4685,7 @@ function applyLogin() {
   const yfInit = document.getElementById('dash-year-filter');
   if (yfInit) yfInit.value = String(dashYear);
 
+  if (typeof loadCoreDataFromLocalStorage === 'function') loadCoreDataFromLocalStorage();
   if (typeof applyTombstones === 'function') applyTombstones();
   // اعتماد جماعي لمطابقات السندات المقترحة الحالية (مرة واحدة فقط)
   let bulkApprovedNow = runOneTimeBulkMatchApproval();
@@ -5325,8 +5326,46 @@ function getAllData() {
   };
 }
 
+function persistCoreDataToLocalStorage() {
+  try {
+    localStorage.setItem('kp_students_data', JSON.stringify(sanitizeEntityArray(students)));
+    localStorage.setItem('kp_payments_data', JSON.stringify(sanitizeEntityArray(payments)));
+    localStorage.setItem('kp_expenses_data', JSON.stringify(sanitizeEntityArray(expenses)));
+    localStorage.setItem('kp_renewals_data', JSON.stringify(sanitizeEntityArray(renewals)));
+    localStorage.setItem('kp_attlog_data', JSON.stringify(attLog || {}));
+    localStorage.setItem('kp_classes', JSON.stringify(CLASSES || {}));
+  } catch (e) {
+    console.warn('persistCoreDataToLocalStorage failed:', e);
+  }
+}
+
+function loadCoreDataFromLocalStorage() {
+  try {
+    const localStudents = JSON.parse(localStorage.getItem('kp_students_data') || 'null');
+    const localPayments = JSON.parse(localStorage.getItem('kp_payments_data') || 'null');
+    const localExpenses = JSON.parse(localStorage.getItem('kp_expenses_data') || 'null');
+    const localRenewals = JSON.parse(localStorage.getItem('kp_renewals_data') || 'null');
+    const localAttLog = JSON.parse(localStorage.getItem('kp_attlog_data') || 'null');
+    const localClasses = JSON.parse(localStorage.getItem('kp_classes') || 'null');
+
+    if (Array.isArray(localStudents)) students = sanitizeEntityArray(localStudents);
+    if (Array.isArray(localPayments)) payments = sanitizeEntityArray(localPayments);
+    if (Array.isArray(localExpenses)) expenses = sanitizeEntityArray(localExpenses);
+    if (Array.isArray(localRenewals)) renewals = sanitizeEntityArray(localRenewals);
+    if (localAttLog && typeof localAttLog === 'object' && !Array.isArray(localAttLog)) attLog = localAttLog;
+    if (localClasses && typeof localClasses === 'object' && !Array.isArray(localClasses)) CLASSES = localClasses;
+
+    sanitizeCoreData();
+    applyTombstones();
+    refreshNextIds();
+  } catch (e) {
+    console.warn('loadCoreDataFromLocalStorage failed:', e);
+  }
+}
+
 function autoSave() {
   hasUnsavedChanges = true;
+  persistCoreDataToLocalStorage();
   if (isSyncing) {
     pendingSync = true;
     return;
@@ -5929,6 +5968,7 @@ async function pushToFirebase() {
       try { await saveLogoToFirebaseSilent(); } catch(_) {}
       lastSavedAt = mergedData.savedAt;
       localStorage.setItem('kp_last_synced_at', mergedData.savedAt);
+      persistCoreDataToLocalStorage();
       forceFullReplaceOnNextSync = false;
       hasUnsavedChanges = false;
       showSyncBadge(fullReplace ? '✅ تم استبدال البيانات بالكامل' : '✅ محفوظ');
@@ -6047,6 +6087,7 @@ async function loadFromFirebase() {
       localStorage.setItem('kp_logo', logoDataUrl);
     }
     localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
+    persistCoreDataToLocalStorage();
     updateLogoDisplay();
     refreshNextIds();
     lastSavedAt = data.savedAt || '';
