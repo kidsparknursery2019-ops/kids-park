@@ -6049,9 +6049,10 @@ function mergeDeletedClasses(localArr, remoteArr, classTombstones, currentClasse
     const key = normKey(item.key);
     // إذا الفصل مستعاد محلياً، لا يظهر في سلة المحذوفات
     if (restoredSet.has(key)) return false;
+    // إذا كان في tombstone (حذف نهائي) لا يظهر في السلة حتى لو محذوف محلياً
+    if (hasKey(ts, item.key)) return false;
     // إذا محذوف محلياً، يظل في السلة
     if (localKeys.has(key)) return true;
-    if (hasKey(ts, item.key)) return false;
     if (Object.prototype.hasOwnProperty.call(current, item.key)) return false;
     return true;
   });
@@ -6236,10 +6237,11 @@ async function pushToFirebase() {
         const key = normKey(item[keyField]);
         // إذا السجل مستعاد محلياً، لا يظهر في سلة المحذوفات أبداً
         if (restoredSet.has(key)) return false;
+        // إذا كان tombstone (حذف نهائي) لا يظهر في سلة المحذوفات حتى لو محذوف محلياً
+        if (hasKey(tombstoneArr, item[keyField])) return false;
         // إذا السجل محذوف محلياً، يظل في سلة المحذوفات حتى لو كان في activeArr (عودة خاطئة من remote)
         if (localDeletedKeys.has(key)) return true;
         if (activeKeys.has(key)) return false;
-        if (hasKey(tombstoneArr, item[keyField])) return false;
         return true;
       });
     };
@@ -6452,7 +6454,10 @@ async function loadFromFirebase() {
         return true;
       });
       const localMap = {};
-      deletedStudents.forEach(function(s){ if(s && s.id) localMap[s.id] = s; });
+      // احتفظ بالسجلات المحلية فقط إذا لم تكن في tombstones (للحذف النهائي)
+      deletedStudents.forEach(function(s){
+        if (s && s.id && !hasKey(tombstones.students || [], s.id)) localMap[s.id] = s;
+      });
       remoteDs.forEach(function(s){ if(s && s.id && !localMap[s.id]) localMap[s.id] = s; });
       deletedStudents = Object.values(localMap);
       localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
@@ -6466,7 +6471,11 @@ async function loadFromFirebase() {
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
       deletedPayments.forEach(function(x){
-        if (x && x.id != null && !payments.some(function(p){ return p && normKey(p.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
+        if (x && x.id != null
+          && !payments.some(function(p){ return p && normKey(p.id) === normKey(x.id); })
+          && !hasKey(tombstones.payments || [], x.id)) {
+          remoteMap[normKey(x.id)] = x;
+        }
       });
       deletedPayments = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
@@ -6480,7 +6489,11 @@ async function loadFromFirebase() {
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
       deletedExpenses.forEach(function(x){
-        if (x && x.id != null && !expenses.some(function(e){ return e && normKey(e.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
+        if (x && x.id != null
+          && !expenses.some(function(e){ return e && normKey(e.id) === normKey(x.id); })
+          && !hasKey(tombstones.expenses || [], x.id)) {
+          remoteMap[normKey(x.id)] = x;
+        }
       });
       deletedExpenses = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
@@ -6494,7 +6507,11 @@ async function loadFromFirebase() {
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
       deletedRenewals.forEach(function(x){
-        if (x && x.id != null && !renewals.some(function(r){ return r && normKey(r.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
+        if (x && x.id != null
+          && !renewals.some(function(r){ return r && normKey(r.id) === normKey(x.id); })
+          && !hasKey(tombstones.renewals || [], x.id)) {
+          remoteMap[normKey(x.id)] = x;
+        }
       });
       deletedRenewals = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
