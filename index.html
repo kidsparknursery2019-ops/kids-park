@@ -1246,11 +1246,12 @@ let deletedExpenses = JSON.parse(localStorage.getItem('kp_deleted_expenses') || 
 let deletedRenewals = JSON.parse(localStorage.getItem('kp_deleted_renewals') || '[]');
 let deletedClasses = JSON.parse(localStorage.getItem('kp_deleted_classes') || '[]');
 setTimeout(function(){ try{ resetPaymentMatchCache(); }catch(e){} }, 0);
-let tombstones = JSON.parse(localStorage.getItem('kp_tombstones') || '{"students":[],"payments":[],"expenses":[],"renewals":[]}');
+let tombstones = JSON.parse(localStorage.getItem('kp_tombstones') || '{"students":[],"payments":[],"expenses":[],"renewals":[],"classes":[]}');
 if (!tombstones.students) tombstones.students = [];
 if (!tombstones.payments) tombstones.payments = [];
 if (!tombstones.expenses) tombstones.expenses = [];
 if (!tombstones.renewals) tombstones.renewals = [];
+if (!tombstones.classes) tombstones.classes = [];
 let dismissedStudentSubAlerts = JSON.parse(localStorage.getItem('kp_dismissed_student_sub_alerts') || '[]');
 if (!Array.isArray(dismissedStudentSubAlerts)) dismissedStudentSubAlerts = [];
 
@@ -1280,6 +1281,66 @@ function applyTombstones() {
   if (tombstones.payments && tombstones.payments.length) payments = payments.filter(function(p){ return !tombstones.payments.includes(p.id); });
   if (tombstones.expenses && tombstones.expenses.length) expenses = expenses.filter(function(e){ return !tombstones.expenses.includes(e.id); });
   if (tombstones.renewals && tombstones.renewals.length) renewals = renewals.filter(function(r){ return !tombstones.renewals.includes(r.id); });
+  if (tombstones.classes && tombstones.classes.length && CLASSES && typeof CLASSES === 'object') {
+    tombstones.classes.forEach(function(clsKey){
+      if (Object.prototype.hasOwnProperty.call(CLASSES, clsKey)) delete CLASSES[clsKey];
+    });
+    if (typeof CLASSES_DATA !== 'undefined') CLASSES_DATA = CLASSES;
+  }
+}
+
+
+function dedupeByKey(arr, keyField) {
+  const map = {};
+  (Array.isArray(arr) ? arr : []).forEach(function(item){
+    if (item && item[keyField] !== undefined && item[keyField] !== null) map[item[keyField]] = item;
+  });
+  return Object.values(map);
+}
+
+function cleanupDeletedBuckets() {
+  deletedStudents = dedupeByKey(deletedStudents, 'id').filter(function(item){
+    return item && item.id != null && !students.some(function(x){ return x && x.id === item.id; }) && !(tombstones.students || []).includes(item.id);
+  });
+  if (typeof deletedPayments !== 'undefined') {
+    deletedPayments = dedupeByKey(deletedPayments, 'id').filter(function(item){
+      return item && item.id != null && !payments.some(function(x){ return x && x.id === item.id; }) && !(tombstones.payments || []).includes(item.id);
+    });
+  }
+  if (typeof deletedExpenses !== 'undefined') {
+    deletedExpenses = dedupeByKey(deletedExpenses, 'id').filter(function(item){
+      return item && item.id != null && !expenses.some(function(x){ return x && x.id === item.id; }) && !(tombstones.expenses || []).includes(item.id);
+    });
+  }
+  if (typeof deletedRenewals !== 'undefined') {
+    deletedRenewals = dedupeByKey(deletedRenewals, 'id').filter(function(item){
+      return item && item.id != null && !renewals.some(function(x){ return x && x.id === item.id; }) && !(tombstones.renewals || []).includes(item.id);
+    });
+  }
+  if (typeof deletedClasses !== 'undefined') {
+    deletedClasses = dedupeByKey(deletedClasses, 'key').filter(function(item){
+      return item && item.key != null && !Object.prototype.hasOwnProperty.call(CLASSES || {}, item.key) && !(tombstones.classes || []).includes(item.key);
+    });
+  }
+  localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
+  if (typeof deletedPayments !== 'undefined') localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
+  if (typeof deletedExpenses !== 'undefined') localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
+  if (typeof deletedRenewals !== 'undefined') localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
+  if (typeof deletedClasses !== 'undefined') localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
+}
+
+function refreshAllViewsAfterSync() {
+  renderDash();
+  if (typeof renderStudents === 'function') renderStudents();
+  if (typeof renderPayments === 'function') renderPayments();
+  if (typeof renderExpenses === 'function') renderExpenses();
+  if (typeof renderReceipts === 'function') renderReceipts();
+  if (typeof renderRenewals === 'function') renderRenewals();
+  if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
+  if (typeof renderAtt === 'function') renderAtt();
+  if (typeof renderAdminClasses === 'function') renderAdminClasses();
+  if (typeof updateNotifications === 'function') updateNotifications();
+  if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
 }
 
 let students = [
@@ -3063,6 +3124,7 @@ function delStudent(id){
     deletionReason: reason,
     deletedBy: currentUser ? currentUser.name : 'نظام'
   });
+  deletedStudents = deletedStudents.filter(function(x){ return x.id !== id; });
   deletedStudents.unshift(deletedCopy);
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
   students = students.filter(x => x.id !== id);
@@ -3084,6 +3146,7 @@ function restoreStudent(id) {
   delete restored.deletedAt;
   delete restored.deletionReason;
   delete restored.deletedBy;
+  students = students.filter(function(x){ return x.id !== id; });
   students.push(restored);
   deletedStudents = deletedStudents.filter(x => x.id !== id);
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
@@ -3092,10 +3155,13 @@ function restoreStudent(id) {
     tombstones.students = tombstones.students.filter(function(x){ return x !== id; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
+  cleanupDeletedBuckets();
   autoSave();
   renderStudents();
   renderDash();
   renderDeletedStudents();
+  if (typeof updateNotifications === 'function') updateNotifications();
+  if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
   alert('✅ تم استعادة الطالب');
 }
 
@@ -3133,6 +3199,7 @@ function restorePayment(id) {
   if (!confirm('استعادة السند #' + id + '؟')) return;
   const restored = Object.assign({}, p);
   delete restored.deletedAt; delete restored.deletedBy;
+  payments = payments.filter(function(x){ return x.id !== id; });
   payments.push(restored);
   deletedPayments = deletedPayments.filter(function(x){ return x.id !== id; });
   localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
@@ -3140,7 +3207,10 @@ function restorePayment(id) {
     tombstones.payments = tombstones.payments.filter(function(x){ return x !== id; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
+  cleanupDeletedBuckets();
   autoSave(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); renderDeletedStudents();
+  if (typeof updateNotifications === 'function') updateNotifications();
+  if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
 }
 
 function restoreExpense(id) {
@@ -3149,6 +3219,7 @@ function restoreExpense(id) {
   if (!confirm('استعادة المصروف #' + id + '؟')) return;
   const restored = Object.assign({}, e);
   delete restored.deletedAt; delete restored.deletedBy;
+  expenses = expenses.filter(function(x){ return x.id !== id; });
   expenses.push(restored);
   deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== id; });
   localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
@@ -3156,7 +3227,9 @@ function restoreExpense(id) {
     tombstones.expenses = tombstones.expenses.filter(function(x){ return x !== id; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
+  cleanupDeletedBuckets();
   autoSave(); renderExpenses(); renderDash(); renderDeletedStudents();
+  if (typeof updateNotifications === 'function') updateNotifications();
 }
 
 function restoreRenewal(id) {
@@ -3165,6 +3238,7 @@ function restoreRenewal(id) {
   if (!confirm('استعادة التجديد #' + id + '؟')) return;
   const restored = Object.assign({}, r);
   delete restored.deletedAt; delete restored.deletedBy;
+  renewals = renewals.filter(function(x){ return x.id !== id; });
   renewals.push(restored);
   deletedRenewals = deletedRenewals.filter(function(x){ return x.id !== id; });
   localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
@@ -3172,7 +3246,9 @@ function restoreRenewal(id) {
     tombstones.renewals = tombstones.renewals.filter(function(x){ return x !== id; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
+  cleanupDeletedBuckets();
   autoSave(); renderRenewals(); renderDeletedStudents();
+  if (typeof updateNotifications === 'function') updateNotifications();
 }
 
 function restoreClass(name) {
@@ -3183,7 +3259,12 @@ function restoreClass(name) {
   CLASSES_DATA = CLASSES;
   deletedClasses = deletedClasses.filter(function(x){ return x.key !== name; });
   localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
+  if (tombstones && tombstones.classes) {
+    tombstones.classes = tombstones.classes.filter(function(x){ return x !== name; });
+    localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+  }
   localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
+  cleanupDeletedBuckets();
   autoSave(); populateClassDropdowns(); renderAdminClasses(); renderStudents(); renderDash(); renderDeletedStudents();
 }
 
@@ -3201,6 +3282,7 @@ function permanentDeleteGeneric(type, key) {
   } else if (type === 'classes') {
     deletedClasses = deletedClasses.filter(function(x){ return x.key !== key; });
     localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
+    addTombstone('classes', key);
   }
   autoSave(); renderDeletedStudents();
 }
@@ -4903,9 +4985,12 @@ function deleteUser(username) {
 // CLASSES_DATA = CLASSES (defined above)
 
 function saveClasses() {
-  localStorage.setItem('kp_classes', JSON.stringify(CLASSES_DATA));
-  // Sync CLASSES global
-  Object.assign(CLASSES, CLASSES_DATA);
+  const nextClasses = JSON.parse(JSON.stringify(CLASSES_DATA || {}));
+  Object.keys(CLASSES || {}).forEach(function(key){ if (!Object.prototype.hasOwnProperty.call(nextClasses, key)) delete CLASSES[key]; });
+  Object.assign(CLASSES, nextClasses);
+  CLASSES_DATA = CLASSES;
+  localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
+  autoSave();
 }
 
 function renderAdminClasses() {
@@ -4949,6 +5034,7 @@ function editClass(name) {
 function deleteClass(name) {
   if (!confirm('حذف فصل "' + name + '"؟ سيتأثر الطلاب المسجلين فيه.')) return;
   const clsData = CLASSES[name] ? Object.assign({}, CLASSES[name]) : null;
+  deletedClasses = deletedClasses.filter(function(x){ return x.key !== name; });
   deletedClasses.unshift({
     key: name,
     name: name,
@@ -4957,6 +5043,7 @@ function deleteClass(name) {
     deletedBy: currentUser ? currentUser.name : 'نظام'
   });
   localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
+  addTombstone('classes', name);
   delete CLASSES[name];
   CLASSES_DATA = CLASSES;
   localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
@@ -5372,7 +5459,10 @@ function loadCoreDataFromLocalStorage() {
     if (Array.isArray(localExpenses)) expenses = sanitizeEntityArray(localExpenses);
     if (Array.isArray(localRenewals)) renewals = sanitizeEntityArray(localRenewals);
     if (localAttLog && typeof localAttLog === 'object' && !Array.isArray(localAttLog)) attLog = localAttLog;
-    if (localClasses && typeof localClasses === 'object' && !Array.isArray(localClasses)) CLASSES = localClasses;
+    if (localClasses && typeof localClasses === 'object' && !Array.isArray(localClasses)) {
+      CLASSES = localClasses;
+      if (typeof CLASSES_DATA !== 'undefined') CLASSES_DATA = CLASSES;
+    }
 
     sanitizeCoreData();
     applyTombstones();
@@ -5390,7 +5480,10 @@ function autoSave() {
     return;
   }
   clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(pushToFirebase, 300);
+  syncTimeout = setTimeout(function(){
+    syncTimeout = null;
+    pushToFirebase();
+  }, 300);
 }
 
 async function saveLogoToFirebaseSilent() {
@@ -5808,10 +5901,34 @@ function mergeAttLog(localLog, remoteLog) {
   return result;
 }
 
+function mergeClasses(localClasses, remoteClasses, classTombstones) {
+  const ts = Array.isArray(classTombstones) ? classTombstones : [];
+  const merged = Object.assign({}, (remoteClasses && typeof remoteClasses === 'object' && !Array.isArray(remoteClasses)) ? remoteClasses : {});
+  if (localClasses && typeof localClasses === 'object' && !Array.isArray(localClasses)) {
+    Object.keys(localClasses).forEach(function(key){ merged[key] = localClasses[key]; });
+  }
+  ts.forEach(function(key){ if (Object.prototype.hasOwnProperty.call(merged, key)) delete merged[key]; });
+  return merged;
+}
+
+function mergeDeletedClasses(localArr, remoteArr, classTombstones, currentClasses) {
+  const ts = Array.isArray(classTombstones) ? classTombstones : [];
+  const current = currentClasses && typeof currentClasses === 'object' ? currentClasses : {};
+  const map = {};
+  (Array.isArray(remoteArr) ? remoteArr : []).forEach(function(item){ if (item && item.key != null) map[item.key] = item; });
+  (Array.isArray(localArr) ? localArr : []).forEach(function(item){ if (item && item.key != null) map[item.key] = item; });
+  return Object.values(map).filter(function(item){
+    if (!item || item.key == null) return false;
+    if (ts.includes(item.key)) return false;
+    if (Object.prototype.hasOwnProperty.call(current, item.key)) return false;
+    return true;
+  });
+}
+
 // دمج tombstones — اتحاد المحذوفات من الطرفين
 function mergeTombstones(localTs, remoteTs) {
   const result = {};
-  ['students','payments','expenses','renewals'].forEach(function(type) {
+  ['students','payments','expenses','renewals','classes'].forEach(function(type) {
     const local  = Array.isArray(localTs  && localTs[type])  ? localTs[type]  : [];
     const remote = Array.isArray(remoteTs && remoteTs[type]) ? remoteTs[type] : [];
     const combined = local.concat(remote.filter(function(id){ return !local.includes(id); }));
@@ -5821,9 +5938,14 @@ function mergeTombstones(localTs, remoteTs) {
 }
 
 async function pushToFirebase() {
+  if (syncTimeout) {
+    clearTimeout(syncTimeout);
+    syncTimeout = null;
+  }
   if (isSyncing) return;
   isSyncing = true;
   try {
+    cleanupDeletedBuckets();
     const fullReplace = forceFullReplaceOnNextSync === true;
 
     // ── الخطوة 1: اقرأ البيانات الحالية من Firebase ──────────────────
@@ -5874,6 +5996,11 @@ async function pushToFirebase() {
       attLog,
       remoteData && remoteData.attLog
     );
+    const mergedClasses = mergeClasses(
+      CLASSES,
+      remoteData && remoteData.CLASSES,
+      mergedTombstones.classes
+    );
 
     // دمج سجلات النماذج (بدون تكرار بناءً على timestamp)
     const localFormRows = JSON.parse(localStorage.getItem('kp_form_rows') || '[]');
@@ -5920,24 +6047,37 @@ async function pushToFirebase() {
       return true;
     });
 
-    const mergeDeletedByKey = function(localArr, remoteArr, keyField, tombstoneArr) {
+    const mergeDeletedByKey = function(localArr, remoteArr, keyField, tombstoneArr, activeArr) {
       const ts = Array.isArray(tombstoneArr) ? tombstoneArr : [];
+      const activeKeys = new Set((Array.isArray(activeArr) ? activeArr : []).map(function(item){ return item && item[keyField]; }).filter(function(v){ return v !== undefined && v !== null; }));
       const map = {};
       (Array.isArray(remoteArr)?remoteArr:[]).forEach(function(item){ if(item && item[keyField] !== undefined) map[item[keyField]] = item; });
       (Array.isArray(localArr)?localArr:[]).forEach(function(item){ if(item && item[keyField] !== undefined) map[item[keyField]] = item; });
-      // أزل أي عنصر tombstone (محذوف نهائياً)
-      return Object.values(map).filter(function(item){ return !ts.includes(item[keyField]); });
+      return Object.values(map).filter(function(item){
+        if (!item || item[keyField] === undefined || item[keyField] === null) return false;
+        if (ts.includes(item[keyField])) return false;
+        if (activeKeys.has(item[keyField])) return false;
+        return true;
+      });
     };
-    const mergedDeletedPayments = mergeDeletedByKey(typeof deletedPayments !== 'undefined' ? deletedPayments : [], remoteData && remoteData.deletedPayments, 'id', mergedTombstones.payments);
-    const mergedDeletedExpenses = mergeDeletedByKey(typeof deletedExpenses !== 'undefined' ? deletedExpenses : [], remoteData && remoteData.deletedExpenses, 'id', mergedTombstones.expenses);
-    const mergedDeletedRenewals = mergeDeletedByKey(typeof deletedRenewals !== 'undefined' ? deletedRenewals : [], remoteData && remoteData.deletedRenewals, 'id', mergedTombstones.renewals);
-    const mergedDeletedClasses  = mergeDeletedByKey(typeof deletedClasses  !== 'undefined' ? deletedClasses  : [], remoteData && remoteData.deletedClasses, 'key', []);
+    const mergedDeletedPayments = mergeDeletedByKey(typeof deletedPayments !== 'undefined' ? deletedPayments : [], remoteData && remoteData.deletedPayments, 'id', mergedTombstones.payments, mergedPayments);
+    const mergedDeletedExpenses = mergeDeletedByKey(typeof deletedExpenses !== 'undefined' ? deletedExpenses : [], remoteData && remoteData.deletedExpenses, 'id', mergedTombstones.expenses, mergedExpenses);
+    const mergedDeletedRenewals = mergeDeletedByKey(typeof deletedRenewals !== 'undefined' ? deletedRenewals : [], remoteData && remoteData.deletedRenewals, 'id', mergedTombstones.renewals, mergedRenewals);
+    const mergedDeletedClasses = mergeDeletedClasses(
+      typeof deletedClasses !== 'undefined' ? deletedClasses : [],
+      remoteData && remoteData.deletedClasses,
+      mergedTombstones.classes,
+      mergedClasses
+    );
 
     // حدّث المتغيرات المحلية بالبيانات المدمجة
     students = sanitizeEntityArray(mergedStudents);
     payments = sanitizeEntityArray(mergedPayments);
     expenses = sanitizeEntityArray(mergedExpenses);
     renewals = sanitizeEntityArray(mergedRenewals);
+    Object.keys(CLASSES || {}).forEach(function(k){ if (!Object.prototype.hasOwnProperty.call(mergedClasses, k)) delete CLASSES[k]; });
+    Object.assign(CLASSES, mergedClasses);
+    CLASSES_DATA = CLASSES;
     Object.keys(mergedAttLog).forEach(function(k){ attLog[k] = mergedAttLog[k]; });
     if (typeof deletedStudents !== 'undefined') deletedStudents = mergedDeleted;
     if (typeof deletedPayments !== 'undefined') deletedPayments = mergedDeletedPayments;
@@ -5949,8 +6089,11 @@ async function pushToFirebase() {
       tombstones.payments = mergedTombstones.payments;
       tombstones.expenses = mergedTombstones.expenses;
       tombstones.renewals = mergedTombstones.renewals;
+      tombstones.classes = mergedTombstones.classes;
       localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
     }
+    localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
+    localStorage.setItem('kp_deleted_classes', JSON.stringify(mergedDeletedClasses));
     resetPaymentMatchCache();
     refreshNextIds();
 
@@ -6019,7 +6162,7 @@ async function loadFromFirebase() {
 
     // دمج tombstones أولاً لأنها تُستخدم في الدمج
     if (data.tombstones && typeof tombstones !== 'undefined') {
-      ['students','payments','expenses','renewals'].forEach(function(type){
+      ['students','payments','expenses','renewals','classes'].forEach(function(type){
         const remote = (data.tombstones[type] && Array.isArray(data.tombstones[type])) ? data.tombstones[type] : [];
         const local = Array.isArray(tombstones[type]) ? tombstones[type] : [];
         tombstones[type] = local.concat(remote.filter(function(id){ return !local.includes(id); }));
@@ -6067,33 +6210,50 @@ async function loadFromFirebase() {
     if (Array.isArray(data.deletedPayments) && typeof deletedPayments !== 'undefined') {
       const tsP = Array.isArray(allTs.payments) ? allTs.payments : [];
       const remoteMap = {};
-      data.deletedPayments.filter(function(x){ return x && !tsP.includes(x.id); }).forEach(function(x){ remoteMap[x.id] = x; });
-      deletedPayments.forEach(function(x){ if(x && x.id) remoteMap[x.id] = x; });
+      data.deletedPayments.filter(function(x){
+        return x && x.id != null && !tsP.includes(x.id) && !payments.some(function(p){ return p && p.id === x.id; });
+      }).forEach(function(x){ remoteMap[x.id] = x; });
+      deletedPayments.forEach(function(x){
+        if (x && x.id != null && !tsP.includes(x.id) && !payments.some(function(p){ return p && p.id === x.id; })) remoteMap[x.id] = x;
+      });
       deletedPayments = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
     }
     if (Array.isArray(data.deletedExpenses) && typeof deletedExpenses !== 'undefined') {
       const tsE = Array.isArray(allTs.expenses) ? allTs.expenses : [];
       const remoteMap = {};
-      data.deletedExpenses.filter(function(x){ return x && !tsE.includes(x.id); }).forEach(function(x){ remoteMap[x.id] = x; });
-      deletedExpenses.forEach(function(x){ if(x && x.id) remoteMap[x.id] = x; });
+      data.deletedExpenses.filter(function(x){
+        return x && x.id != null && !tsE.includes(x.id) && !expenses.some(function(e){ return e && e.id === x.id; });
+      }).forEach(function(x){ remoteMap[x.id] = x; });
+      deletedExpenses.forEach(function(x){
+        if (x && x.id != null && !tsE.includes(x.id) && !expenses.some(function(e){ return e && e.id === x.id; })) remoteMap[x.id] = x;
+      });
       deletedExpenses = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
     }
     if (Array.isArray(data.deletedRenewals) && typeof deletedRenewals !== 'undefined') {
       const tsR = Array.isArray(allTs.renewals) ? allTs.renewals : [];
       const remoteMap = {};
-      data.deletedRenewals.filter(function(x){ return x && !tsR.includes(x.id); }).forEach(function(x){ remoteMap[x.id] = x; });
-      deletedRenewals.forEach(function(x){ if(x && x.id) remoteMap[x.id] = x; });
+      data.deletedRenewals.filter(function(x){
+        return x && x.id != null && !tsR.includes(x.id) && !renewals.some(function(r){ return r && r.id === x.id; });
+      }).forEach(function(x){ remoteMap[x.id] = x; });
+      deletedRenewals.forEach(function(x){
+        if (x && x.id != null && !tsR.includes(x.id) && !renewals.some(function(r){ return r && r.id === x.id; })) remoteMap[x.id] = x;
+      });
       deletedRenewals = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
     }
+    const mergedRemoteClasses = mergeClasses(CLASSES, data && data.CLASSES, tombstones.classes || []);
+    Object.keys(CLASSES || {}).forEach(function(k){ if (!Object.prototype.hasOwnProperty.call(mergedRemoteClasses, k)) delete CLASSES[k]; });
+    Object.assign(CLASSES, mergedRemoteClasses);
+    CLASSES_DATA = CLASSES;
+
     if (Array.isArray(data.deletedClasses) && typeof deletedClasses !== 'undefined') {
-      deletedClasses = data.deletedClasses;
+      deletedClasses = mergeDeletedClasses(deletedClasses, data.deletedClasses, tombstones.classes || [], CLASSES);
       localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
     }
     applyTombstones();
-    if (data.CLASSES)         Object.assign(CLASSES, data.CLASSES);
+    cleanupDeletedBuckets();
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
     if (data.kp_users && data.kp_users.length) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
     if (Array.isArray(data.kp_form_rows)) {
@@ -6107,6 +6267,8 @@ async function loadFromFirebase() {
     }
     localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
     persistCoreDataToLocalStorage();
+    populateClassDropdowns();
+    if (typeof renderAdminClasses === 'function') renderAdminClasses();
     updateLogoDisplay();
     refreshNextIds();
     lastSavedAt = data.savedAt || '';
@@ -6122,19 +6284,13 @@ async function loadFromFirebase() {
   }
 }
 
+let syncPollCounter = 0;
+
 async function manualRefreshFromFirebase() {
   showSyncBadge('⏳ جاري التحديث...');
   try {
     await loadFromFirebase();
-    renderDash();
-    if (typeof renderStudents === 'function') renderStudents();
-    if (typeof renderPayments === 'function') renderPayments();
-    if (typeof renderExpenses === 'function') renderExpenses();
-    if (typeof renderReceipts === 'function') renderReceipts();
-    if (typeof renderRenewals === 'function') renderRenewals();
-    if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
-    if (typeof renderAtt === 'function') renderAtt();
-    if (typeof updateNotifications === 'function') updateNotifications();
+    refreshAllViewsAfterSync();
     showSyncBadge('🔄 تم جلب أحدث البيانات من Firebase');
   } catch (e) {
     showSyncBadge('⚠️ تعذر التحديث من Firebase');
@@ -6143,21 +6299,21 @@ async function manualRefreshFromFirebase() {
 }
 
 async function checkForUpdates() {
-  // لا تحمّل إذا كانت هناك تغييرات غير محفوظة أو حفظ جارٍ
   if (isSyncing || hasUnsavedChanges || syncTimeout) return;
   try {
+    syncPollCounter++;
+    const forceFullRefresh = (syncPollCounter % 12 === 0);
+    if (forceFullRefresh) {
+      await loadFromFirebase();
+      refreshAllViewsAfterSync();
+      showSyncBadge('🔄 تم تحديث البيانات تلقائياً');
+      return;
+    }
     const res = await fetch(FB_URL + '/savedAt.json', { cache: 'no-store' });
     const time = await res.json();
     if (time && time !== lastSavedAt) {
       await loadFromFirebase();
-      renderDash();
-      if (typeof renderStudents === 'function') renderStudents();
-      if (typeof renderPayments === 'function') renderPayments();
-      if (typeof renderExpenses === 'function') renderExpenses();
-      if (typeof renderReceipts === 'function') renderReceipts();
-      if (typeof renderRenewals === 'function') renderRenewals();
-      if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
-      if (typeof updateNotifications === 'function') updateNotifications();
+      refreshAllViewsAfterSync();
       showSyncBadge('🔄 تم تحديث البيانات تلقائياً');
     }
   } catch(e) { /* offline */ }
