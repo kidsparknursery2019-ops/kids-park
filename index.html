@@ -5882,20 +5882,52 @@ function exportFinReport() {
 
 // دمج مصفوفة محلية مع مصفوفة من Firebase بناءً على الـ id
 // يضيف السجلات الجديدة ويحافظ على السجلات الموجودة في كلا الطرفين
-function mergeArrayById(localArr, remoteArr, localTombstones) {
+
+function collectKeys(arr, keyField) {
+  const out = [];
+  const seen = {};
+  (Array.isArray(arr) ? arr : []).forEach(function(item){
+    if (!item || item[keyField] == null) return;
+    const key = item[keyField];
+    if (seen[key]) return;
+    seen[key] = true;
+    out.push(key);
+  });
+  return out;
+}
+
+function buildExcludedKeys(keyField, localDeletedArr, remoteDeletedArr, tombstoneIds, restoredIds) {
+  const seen = {};
+  const out = [];
+  function addAll(list) {
+    (Array.isArray(list) ? list : []).forEach(function(val){
+      if (val == null || seen[val]) return;
+      seen[val] = true;
+      out.push(val);
+    });
+  }
+  addAll(collectKeys(localDeletedArr, keyField));
+  addAll(collectKeys(remoteDeletedArr, keyField));
+  addAll(Array.isArray(tombstoneIds) ? tombstoneIds : []);
+  addAll(Array.isArray(restoredIds) ? restoredIds : []);
+  return out;
+}
+
+function mergeArrayById(localArr, remoteArr, localTombstones, excludedIds) {
   if (!Array.isArray(remoteArr)) return Array.isArray(localArr) ? localArr : [];
   if (!Array.isArray(localArr)) return remoteArr;
   const ts = Array.isArray(localTombstones) ? localTombstones : [];
+  const excluded = Array.isArray(excludedIds) ? excludedIds : [];
   const merged = {};
   // أضف جميع السجلات من Firebase أولاً
   remoteArr.forEach(function(item) {
-    if (item && item.id != null && !ts.includes(item.id)) {
+    if (item && item.id != null && !ts.includes(item.id) && !excluded.includes(item.id)) {
       merged[item.id] = item;
     }
   });
   // أضف/اكتب فوق بالسجلات المحلية (أحدث - تغييرات الجلسة الحالية)
   localArr.forEach(function(item) {
-    if (item && item.id != null && !ts.includes(item.id)) {
+    if (item && item.id != null && !ts.includes(item.id) && !excluded.includes(item.id)) {
       merged[item.id] = item;
     }
   });
@@ -6020,26 +6052,39 @@ async function pushToFirebase() {
         }
       : mergeTombstones(localTombstones, remoteTombstones);
 
+    const restoredStudents = Array.isArray(_restoredTombstones && _restoredTombstones.students) ? _restoredTombstones.students : [];
+    const restoredPayments = Array.isArray(_restoredTombstones && _restoredTombstones.payments) ? _restoredTombstones.payments : [];
+    const restoredExpenses = Array.isArray(_restoredTombstones && _restoredTombstones.expenses) ? _restoredTombstones.expenses : [];
+    const restoredRenewals = Array.isArray(_restoredTombstones && _restoredTombstones.renewals) ? _restoredTombstones.renewals : [];
+    const excludedStudentIds = buildExcludedKeys('id', typeof deletedStudents !== 'undefined' ? deletedStudents : [], remoteData && remoteData.deletedStudents, mergedTombstones.students, restoredStudents);
+    const excludedPaymentIds = buildExcludedKeys('id', typeof deletedPayments !== 'undefined' ? deletedPayments : [], remoteData && remoteData.deletedPayments, mergedTombstones.payments, restoredPayments);
+    const excludedExpenseIds = buildExcludedKeys('id', typeof deletedExpenses !== 'undefined' ? deletedExpenses : [], remoteData && remoteData.deletedExpenses, mergedTombstones.expenses, restoredExpenses);
+    const excludedRenewalIds = buildExcludedKeys('id', typeof deletedRenewals !== 'undefined' ? deletedRenewals : [], remoteData && remoteData.deletedRenewals, mergedTombstones.renewals, restoredRenewals);
+
     // دائماً ادمج المحلي مع السحابي — المحلي يأخذ الأولوية (الأحدث)
     const mergedStudents = mergeArrayById(
       students,
       remoteData && remoteData.students,
-      mergedTombstones.students
+      mergedTombstones.students,
+      excludedStudentIds
     );
     const mergedPayments = mergeArrayById(
       payments,
       remoteData && remoteData.payments,
-      mergedTombstones.payments
+      mergedTombstones.payments,
+      excludedPaymentIds
     );
     const mergedExpenses = mergeArrayById(
       expenses,
       remoteData && remoteData.expenses,
-      mergedTombstones.expenses
+      mergedTombstones.expenses,
+      excludedExpenseIds
     );
     const mergedRenewals = mergeArrayById(
       renewals,
       remoteData && remoteData.renewals,
-      mergedTombstones.renewals
+      mergedTombstones.renewals,
+      excludedRenewalIds
     );
     const mergedAttLog = mergeAttLog(
       attLog,
@@ -6259,21 +6304,29 @@ async function loadFromFirebase() {
     }
 
     // دمج البيانات بدل الاستبدال — يحمي التعديلات المحلية غير المحفوظة
+    const restoredStudents = Array.isArray(_restoredTombstones && _restoredTombstones.students) ? _restoredTombstones.students : [];
+    const restoredPayments = Array.isArray(_restoredTombstones && _restoredTombstones.payments) ? _restoredTombstones.payments : [];
+    const restoredExpenses = Array.isArray(_restoredTombstones && _restoredTombstones.expenses) ? _restoredTombstones.expenses : [];
+    const restoredRenewals = Array.isArray(_restoredTombstones && _restoredTombstones.renewals) ? _restoredTombstones.renewals : [];
+    const excludedStudentIds = buildExcludedKeys('id', typeof deletedStudents !== 'undefined' ? deletedStudents : [], data.deletedStudents, tombstones.students || [], restoredStudents);
+    const excludedPaymentIds = buildExcludedKeys('id', typeof deletedPayments !== 'undefined' ? deletedPayments : [], data.deletedPayments, tombstones.payments || [], restoredPayments);
+    const excludedExpenseIds = buildExcludedKeys('id', typeof deletedExpenses !== 'undefined' ? deletedExpenses : [], data.deletedExpenses, tombstones.expenses || [], restoredExpenses);
+    const excludedRenewalIds = buildExcludedKeys('id', typeof deletedRenewals !== 'undefined' ? deletedRenewals : [], data.deletedRenewals, tombstones.renewals || [], restoredRenewals);
     if (Array.isArray(data.students)) {
-      students = mergeArrayById(students, data.students, tombstones.students || []);
+      students = mergeArrayById(students, data.students, tombstones.students || [], excludedStudentIds);
       students = sanitizeEntityArray(students);
     }
     resetPaymentMatchCache();
     if (Array.isArray(data.payments)) {
-      payments = mergeArrayById(payments, data.payments, tombstones.payments || []);
+      payments = mergeArrayById(payments, data.payments, tombstones.payments || [], excludedPaymentIds);
       payments = sanitizeEntityArray(payments);
     }
     if (Array.isArray(data.expenses)) {
-      expenses = mergeArrayById(expenses, data.expenses, tombstones.expenses || []);
+      expenses = mergeArrayById(expenses, data.expenses, tombstones.expenses || [], excludedExpenseIds);
       expenses = sanitizeEntityArray(expenses);
     }
     if (Array.isArray(data.renewals)) {
-      renewals = mergeArrayById(renewals, data.renewals, tombstones.renewals || []);
+      renewals = mergeArrayById(renewals, data.renewals, tombstones.renewals || [], excludedRenewalIds);
       renewals = sanitizeEntityArray(renewals);
     }
     sanitizeCoreData();
