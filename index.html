@@ -3189,12 +3189,9 @@ function restoreExpense(id) {
   if (!e) return;
   if (!confirm('استعادة المصروف #' + id + '؟')) return;
   const restored = Object.assign({}, e);
-  delete restored.deletedAt;
-  delete restored.deletedBy;
+  delete restored.deletedAt; delete restored.deletedBy;
   expenses = expenses.filter(function(x){ return x.id !== id; });
   expenses.push(restored);
-  expenses = sanitizeEntityArray(expenses);
-  localStorage.setItem('kp_expenses', JSON.stringify(expenses));
   deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== id; });
   localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
   if (tombstones && tombstones.expenses) {
@@ -3915,6 +3912,7 @@ function delExpense(id){
   }));
   localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
   expenses=expenses.filter(e=>e.id!==delId);
+  addTombstone('expenses', delId);
   closeAll();
   autoSave(); renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
 }
