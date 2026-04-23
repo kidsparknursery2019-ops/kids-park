@@ -3299,7 +3299,43 @@ function renderDeletedSectionCard(icon, title, subtitle, actionsHtml) {
   '</div>';
 }
 
+function ensureTrashActionDelegation() {
+  if (window.__trashActionDelegationBound) return;
+  window.__trashActionDelegationBound = true;
+  document.addEventListener('click', function(e){
+    const btn = e.target.closest('[data-trash-action]');
+    if (!btn) return;
+    const action = btn.getAttribute('data-trash-action');
+    const type = btn.getAttribute('data-trash-type') || '';
+    const rawId = btn.getAttribute('data-trash-id');
+    const rawKey = btn.getAttribute('data-trash-key');
+    const id = rawId !== null && rawId !== '' && !isNaN(Number(rawId)) ? Number(rawId) : rawId;
+    const key = rawKey ? decodeURIComponent(rawKey) : '';
+
+    try {
+      if (action === 'view-student') {
+        viewDeletedStudent(id);
+      } else if (action === 'restore-student') {
+        restoreStudent(id);
+      } else if (action === 'delete-student') {
+        permanentDeleteStudent(id);
+      } else if (action === 'restore-generic') {
+        if (type === 'payments') restorePayment(id);
+        else if (type === 'expenses') restoreExpense(id);
+        else if (type === 'renewals') restoreRenewal(id);
+        else if (type === 'classes') restoreClass(key);
+      } else if (action === 'delete-generic') {
+        permanentDeleteGeneric(type, type === 'classes' ? key : id);
+      }
+    } catch (err) {
+      console.error('Trash action failed:', action, type, id, key, err);
+      alert('⚠️ تعذر تنفيذ العملية. تم تسجيل الخطأ في وحدة التحكم.');
+    }
+  });
+}
+
 function renderDeletedStudents() {
+  ensureTrashActionDelegation();
   const el = document.getElementById('deleted-list');
   if (!el) return;
   const totalStudents = deletedStudents.length;
@@ -3323,9 +3359,9 @@ function renderDeletedStudents() {
         '<span style="color:#e74c3c">🗑 حُذف في: ' + (s.deletedAt||'—') + '</span>' +
         (s.deletionReason ? '<br>📝 السبب: ' + s.deletionReason : '') +
         (s.deletedBy ? '<br>👤 بواسطة: ' + s.deletedBy : ''),
-        '<button class="btn btn-out btn-sm" onclick="viewDeletedStudent(' + s.id + ')">👁 عرض</button>' +
-        '<button class="btn btn-g btn-sm" onclick="restoreStudent(' + s.id + ')">♻️ استعادة</button>' +
-        '<button class="btn btn-r btn-sm" onclick="permanentDeleteStudent(' + s.id + ')">🗑 حذف نهائي</button>'
+        '<button class="btn btn-out btn-sm" data-trash-action="view-student" data-trash-id="' + s.id + '">👁 عرض</button>' +
+        '<button class="btn btn-g btn-sm" data-trash-action="restore-student" data-trash-id="' + s.id + '">♻️ استعادة</button>' +
+        '<button class="btn btn-r btn-sm" data-trash-action="delete-student" data-trash-id="' + s.id + '">🗑 حذف نهائي</button>'
       );
     }).join('');
   }
@@ -3334,8 +3370,8 @@ function renderDeletedStudents() {
     html += deletedPayments.map(function(p){
       return renderDeletedSectionCard('🧾', 'السند #' + p.id + ' — ' + (p.who||'—'),
         '💰 ' + (p.amt||'—') + ' | 📝 ' + (p.desc||'—') + '<br>🗑 حُذف في: ' + (p.deletedAt||'—'),
-        '<button class="btn btn-g btn-sm" onclick="restorePayment(' + p.id + ')">♻️ استعادة</button>' +
-        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'payments\',' + p.id + ')">🗑 حذف نهائي</button>'
+        '<button class="btn btn-g btn-sm" data-trash-action="restore-generic" data-trash-type="payments" data-trash-id="' + p.id + '">♻️ استعادة</button>' +
+        '<button class="btn btn-r btn-sm" data-trash-action="delete-generic" data-trash-type="payments" data-trash-id="' + p.id + '">🗑 حذف نهائي</button>'
       );
     }).join('');
   }
@@ -3344,8 +3380,8 @@ function renderDeletedStudents() {
     html += deletedExpenses.map(function(x){
       return renderDeletedSectionCard('💸', 'المصروف #' + x.id + ' — ' + (x.desc||'—'),
         '💰 ' + (x.amt||'—') + ' | 🗂 ' + (x.cat||'—') + '<br>🗑 حُذف في: ' + (x.deletedAt||'—'),
-        '<button class="btn btn-g btn-sm" onclick="restoreExpense(' + x.id + ')">♻️ استعادة</button>' +
-        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'expenses\',' + x.id + ')">🗑 حذف نهائي</button>'
+        '<button class="btn btn-g btn-sm" data-trash-action="restore-generic" data-trash-type="expenses" data-trash-id="' + x.id + '">♻️ استعادة</button>' +
+        '<button class="btn btn-r btn-sm" data-trash-action="delete-generic" data-trash-type="expenses" data-trash-id="' + x.id + '">🗑 حذف نهائي</button>'
       );
     }).join('');
   }
@@ -3354,25 +3390,24 @@ function renderDeletedStudents() {
     html += deletedRenewals.map(function(x){
       return renderDeletedSectionCard('🔔', x.name || ('التجديد #' + x.id),
         '📅 ' + (x.date||'—') + ' | 💰 ' + (x.cost||'—') + '<br>🗑 حُذف في: ' + (x.deletedAt||'—'),
-        '<button class="btn btn-g btn-sm" onclick="restoreRenewal(' + x.id + ')">♻️ استعادة</button>' +
-        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'renewals\',' + x.id + ')">🗑 حذف نهائي</button>'
+        '<button class="btn btn-g btn-sm" data-trash-action="restore-generic" data-trash-type="renewals" data-trash-id="' + x.id + '">♻️ استعادة</button>' +
+        '<button class="btn btn-r btn-sm" data-trash-action="delete-generic" data-trash-type="renewals" data-trash-id="' + x.id + '">🗑 حذف نهائي</button>'
       );
     }).join('');
   }
   if (deletedClasses.length) {
     html += '<div style="font-weight:800;color:var(--g1);margin:16px 0 12px">🏫 الفصول</div>';
     html += deletedClasses.map(function(x){
-      var safeKey = JSON.stringify(String(x.key || ''));
+      var encKey = encodeURIComponent(String(x.key || ''));
       return renderDeletedSectionCard('🏫', x.name,
         '👩‍🏫 ' + ((x.data&&x.data.teacher)||'—') + ' | ' + ((x.data&&x.data.emoji)||'🏫') + '<br>🗑 حُذف في: ' + (x.deletedAt||'—'),
-        '<button class="btn btn-g btn-sm" onclick="restoreClass(' + safeKey.replace(/"/g,'&quot;') + ')">♻️ استعادة</button>' +
-        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'classes\',' + safeKey.replace(/"/g,'&quot;') + ')">🗑 حذف نهائي</button>'
+        '<button class="btn btn-g btn-sm" data-trash-action="restore-generic" data-trash-type="classes" data-trash-key="' + encKey + '">♻️ استعادة</button>' +
+        '<button class="btn btn-r btn-sm" data-trash-action="delete-generic" data-trash-type="classes" data-trash-key="' + encKey + '">🗑 حذف نهائي</button>'
       );
     }).join('');
   }
   el.innerHTML = html;
 }
-
 
 function transliterateArabicName(name){
   const map = {
