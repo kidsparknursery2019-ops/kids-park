@@ -1252,6 +1252,42 @@ function sanitizeCoreData() {
   renewals = sanitizeEntityArray(renewals);
 }
 
+function persistCoreDataLocally() {
+  try {
+    sanitizeCoreData();
+    localStorage.setItem('kp_students_data', JSON.stringify(students));
+    localStorage.setItem('kp_payments_data', JSON.stringify(payments));
+    localStorage.setItem('kp_expenses_data', JSON.stringify(expenses));
+    localStorage.setItem('kp_renewals_data', JSON.stringify(renewals));
+    localStorage.setItem('kp_attlog_data', JSON.stringify(attLog || {}));
+  } catch (e) {
+    console.warn('persistCoreDataLocally failed:', e);
+  }
+}
+
+function hydrateCoreDataFromLocalStorage() {
+  try {
+    const lsStudents = JSON.parse(localStorage.getItem('kp_students_data') || 'null');
+    const lsPayments = JSON.parse(localStorage.getItem('kp_payments_data') || 'null');
+    const lsExpenses = JSON.parse(localStorage.getItem('kp_expenses_data') || 'null');
+    const lsRenewals = JSON.parse(localStorage.getItem('kp_renewals_data') || 'null');
+    const lsAttLog = JSON.parse(localStorage.getItem('kp_attlog_data') || 'null');
+
+    if (Array.isArray(lsStudents) && lsStudents.length) students = lsStudents;
+    if (Array.isArray(lsPayments) && lsPayments.length) payments = lsPayments;
+    if (Array.isArray(lsExpenses) && lsExpenses.length) expenses = lsExpenses;
+    if (Array.isArray(lsRenewals) && lsRenewals.length) renewals = lsRenewals;
+    if (lsAttLog && typeof lsAttLog === 'object' && !Array.isArray(lsAttLog)) {
+      attLog = Object.assign({}, attLog || {}, lsAttLog);
+    }
+    sanitizeCoreData();
+    applyTombstones();
+    refreshNextIds();
+  } catch (e) {
+    console.warn('hydrateCoreDataFromLocalStorage failed:', e);
+  }
+}
+
 function addTombstone(type, id) {
   if (!tombstones[type]) tombstones[type] = [];
   if (!tombstones[type].includes(id)) tombstones[type].push(id);
@@ -3032,7 +3068,7 @@ function saveStudent(){
   resetPaymentMatchCache();
   closeAll();renderStudents();renderDash();
   if(typeof renderPayments==='function') renderPayments(); if(typeof renderReceipts==='function') renderReceipts();
-  autoSave(); showSyncBadge(`✅ تم ${editingStuId?'تعديل':'إضافة'} الطالب "${name}" بنجاح`);
+  autoSave(); alert(`✅ تم ${editingStuId?'تعديل':'إضافة'} الطالب "${name}" بنجاح`);
 }
 
 function delStudent(id){
@@ -3691,7 +3727,7 @@ function savePayment(){
     renderReceipts();
     renderDash();
     autoSave();
-    showSyncBadge('✅ تم تعديل السند #' + p.id);
+    alert('✅ تم تعديل السند #' + p.id);
   } else {
     let newId = nextPayId;
     if (currentUser && currentUser.role === 'admin') {
@@ -3724,7 +3760,7 @@ function savePayment(){
     renderReceipts();
     renderDash();
     autoSave();
-    showSyncBadge('✅ تم تسجيل الدفعة بنجاح (#' + p.id + ')');
+    alert('✅ تم تسجيل الدفعة بنجاح (#' + p.id + ')');
   }
 }
 
@@ -3804,12 +3840,12 @@ function saveExpense(){
     e.exp_date = document.getElementById('ne-date').value;
     e.note = document.getElementById('ne-note').value||'';
     closeAll();renderExpenses();renderDash();
-    autoSave(); showSyncBadge('✅ تم تعديل المصروف بنجاح');
+    autoSave(); alert('✅ تم تعديل المصروف بنجاح');
   } else {
     const expDate = document.getElementById('ne-date').value;
     expenses.push({id:nextExpId++,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:expDate,exp_date:expDate,note:document.getElementById('ne-note').value||''});
     closeAll();renderExpenses();renderDash();
-    autoSave(); showSyncBadge('✅ تم حفظ المصروف بنجاح');
+    autoSave(); alert('✅ تم حفظ المصروف بنجاح');
   }
 }
 
@@ -4685,10 +4721,7 @@ function applyLogin() {
   const yfInit = document.getElementById('dash-year-filter');
   if (yfInit) yfInit.value = String(dashYear);
 
-  // تحميل الكاش المحلي فوراً (أسرع من Firebase)
-  if (typeof loadFromLocalCache === 'function') loadFromLocalCache();
   if (typeof applyTombstones === 'function') applyTombstones();
-  refreshNextIds();
   // اعتماد جماعي لمطابقات السندات المقترحة الحالية (مرة واحدة فقط)
   let bulkApprovedNow = runOneTimeBulkMatchApproval();
   // عرض البيانات المحلية فوراً
@@ -4733,6 +4766,7 @@ function doLogout() {
 }
 
 function checkSession() {
+  hydrateCoreDataFromLocalStorage();
   const saved = sessionStorage.getItem('kp_session');
   if (saved) { currentUser = JSON.parse(saved); applyLogin(); }
   else document.getElementById('login-screen').style.display = 'flex';
@@ -5328,34 +5362,9 @@ function getAllData() {
   };
 }
 
-function saveToLocalCache() {
-  try {
-    localStorage.setItem('kp_cache_students', JSON.stringify(students));
-    localStorage.setItem('kp_cache_payments', JSON.stringify(payments));
-    localStorage.setItem('kp_cache_expenses', JSON.stringify(expenses));
-    localStorage.setItem('kp_cache_renewals', JSON.stringify(renewals));
-    localStorage.setItem('kp_cache_attlog', JSON.stringify(attLog));
-  } catch(e) { console.warn('localStorage cache save failed:', e); }
-}
-
-function loadFromLocalCache() {
-  try {
-    const cs = localStorage.getItem('kp_cache_students');
-    const cp = localStorage.getItem('kp_cache_payments');
-    const ce = localStorage.getItem('kp_cache_expenses');
-    const cr = localStorage.getItem('kp_cache_renewals');
-    const ca = localStorage.getItem('kp_cache_attlog');
-    if (cs) { const arr = JSON.parse(cs); if (Array.isArray(arr) && arr.length) students = arr; }
-    if (cp) { const arr = JSON.parse(cp); if (Array.isArray(arr) && arr.length) payments = arr; }
-    if (ce) { const arr = JSON.parse(ce); if (Array.isArray(arr) && arr.length) expenses = arr; }
-    if (cr) { const arr = JSON.parse(cr); if (Array.isArray(arr) && arr.length) renewals = arr; }
-    if (ca) { const obj = JSON.parse(ca); if (obj && typeof obj === 'object') Object.assign(attLog, obj); }
-  } catch(e) { console.warn('localStorage cache load failed:', e); }
-}
-
 function autoSave() {
   hasUnsavedChanges = true;
-  saveToLocalCache();
+  persistCoreDataLocally();
   if (isSyncing) {
     pendingSync = true;
     return;
@@ -5640,8 +5649,6 @@ function mergeTombstones(localTs, remoteTs) {
 async function pushToFirebase() {
   if (isSyncing) return;
   isSyncing = true;
-  syncTimeout = null;
-  hasUnsavedChanges = false;
   try {
     const fullReplace = forceFullReplaceOnNextSync === true;
 
@@ -5772,6 +5779,7 @@ async function pushToFirebase() {
     }
     resetPaymentMatchCache();
     refreshNextIds();
+    persistCoreDataLocally();
 
     // ── الخطوة 3: اكتب البيانات المدمجة إلى Firebase ────────────────
     const cleanSettings = Object.assign({}, nurserySettings);
@@ -5845,23 +5853,22 @@ async function loadFromFirebase() {
       localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
     }
 
-    // عند التحميل من Firebase: Firebase يأخذ الأولوية (هو المصدر الموثوق)
-    // الكاش المحلي يُستخدم فقط لإضافة أي سجلات لم تصل لـ Firebase بعد
+    // دمج البيانات بدل الاستبدال — يحمي التعديلات المحلية غير المحفوظة
     if (Array.isArray(data.students)) {
-      students = mergeArrayById(data.students, students, tombstones.students || []);
+      students = mergeArrayById(students, data.students, tombstones.students || []);
       students = sanitizeEntityArray(students);
     }
     resetPaymentMatchCache();
     if (Array.isArray(data.payments)) {
-      payments = mergeArrayById(data.payments, payments, tombstones.payments || []);
+      payments = mergeArrayById(payments, data.payments, tombstones.payments || []);
       payments = sanitizeEntityArray(payments);
     }
     if (Array.isArray(data.expenses)) {
-      expenses = mergeArrayById(data.expenses, expenses, tombstones.expenses || []);
+      expenses = mergeArrayById(expenses, data.expenses, tombstones.expenses || []);
       expenses = sanitizeEntityArray(expenses);
     }
     if (Array.isArray(data.renewals)) {
-      renewals = mergeArrayById(data.renewals, renewals, tombstones.renewals || []);
+      renewals = mergeArrayById(renewals, data.renewals, tombstones.renewals || []);
       renewals = sanitizeEntityArray(renewals);
     }
     sanitizeCoreData();
@@ -5927,9 +5934,9 @@ async function loadFromFirebase() {
     localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
     updateLogoDisplay();
     refreshNextIds();
+    persistCoreDataLocally();
     lastSavedAt = data.savedAt || '';
     localStorage.setItem('kp_last_synced_at', lastSavedAt);
-    if (typeof saveToLocalCache === 'function') saveToLocalCache();
     renderDash();
     showSyncBadge('✅ تم التحميل');
   } catch(e) {
