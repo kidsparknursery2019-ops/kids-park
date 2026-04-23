@@ -5876,13 +5876,19 @@ function mergeClasses(localClasses, remoteClasses, classTombstones) {
 function mergeDeletedClasses(localArr, remoteArr, classTombstones, currentClasses) {
   const ts = Array.isArray(classTombstones) ? classTombstones : [];
   const current = currentClasses && typeof currentClasses === 'object' ? currentClasses : {};
+  const localDeletedKeys = {};
+  (Array.isArray(localArr) ? localArr : []).forEach(function(item){
+    if (item && item.key != null) localDeletedKeys[item.key] = true;
+  });
   const map = {};
   (Array.isArray(remoteArr) ? remoteArr : []).forEach(function(item){ if (item && item.key != null) map[item.key] = item; });
   (Array.isArray(localArr) ? localArr : []).forEach(function(item){ if (item && item.key != null) map[item.key] = item; });
   return Object.values(map).filter(function(item){
     if (!item || item.key == null) return false;
-    if (ts.includes(item.key)) return false;
-    if (Object.prototype.hasOwnProperty.call(current, item.key)) return false;
+    const key = item.key;
+    if (Object.prototype.hasOwnProperty.call(current, key)) return false;
+    if (localDeletedKeys[key]) return true;
+    if (ts.includes(key)) return false;
     return true;
   });
 }
@@ -5890,8 +5896,12 @@ function mergeDeletedClasses(localArr, remoteArr, classTombstones, currentClasse
 function mergeDeletedByKey(localArr, remoteArr, keyField, tombstoneIds, activeArr) {
   const ts = Array.isArray(tombstoneIds) ? tombstoneIds : [];
   const activeKeys = {};
+  const localDeletedKeys = {};
   (Array.isArray(activeArr) ? activeArr : []).forEach(function(item){
     if (item && item[keyField] != null) activeKeys[item[keyField]] = true;
+  });
+  (Array.isArray(localArr) ? localArr : []).forEach(function(item){
+    if (item && item[keyField] != null) localDeletedKeys[item[keyField]] = true;
   });
   const map = {};
   (Array.isArray(remoteArr) ? remoteArr : []).forEach(function(item){
@@ -5902,8 +5912,10 @@ function mergeDeletedByKey(localArr, remoteArr, keyField, tombstoneIds, activeAr
   });
   return Object.values(map).filter(function(item){
     if (!item || item[keyField] == null) return false;
-    if (ts.includes(item[keyField])) return false;
-    if (activeKeys[item[keyField]]) return false;
+    const key = item[keyField];
+    if (activeKeys[key]) return false;
+    if (localDeletedKeys[key]) return true;
+    if (ts.includes(key)) return false;
     return true;
   });
 }
@@ -6011,17 +6023,12 @@ async function pushToFirebase() {
     // أي عنصر tombstone يجب ألا يكون في deletedStudents أيضاً (حذف نهائي)
     const finalTsStudents = mergedTombstones.students || [];
     const mergedDeleted = Object.values(deletedMap).filter(function(s){
-      // إذا لم يعد في القائمة المحلية وكان قد استُعيد (ليس في tombstones) فلا نُدرجه
       const inLocal = localDeleted.some(function(x){ return x.id === s.id; });
       const inTombstone = finalTsStudents.includes(s.id);
-      // إذا كان في tombstone (حذف نهائي) لا يظهر في سلة المحذوفات
+      const restoredLocally = (typeof students !== 'undefined') && students.some(function(x){ return x.id === s.id; });
+      if (restoredLocally) return false;
+      if (inLocal) return true;
       if (inTombstone) return false;
-      // إذا لم يكن في البيانات المحلية وقد جاء فقط من Firebase، تحقق أنه لم يُستعد محلياً
-      // (أي أن students المحلي يحتوي عليه — إذاً قد استُعيد)
-      if (!inLocal) {
-        const restoredLocally = (typeof students !== 'undefined') && students.some(function(x){ return x.id === s.id; });
-        if (restoredLocally) return false;
-      }
       return true;
     });
 
