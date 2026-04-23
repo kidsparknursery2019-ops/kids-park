@@ -1252,42 +1252,6 @@ function sanitizeCoreData() {
   renewals = sanitizeEntityArray(renewals);
 }
 
-function persistCoreDataLocally() {
-  try {
-    sanitizeCoreData();
-    localStorage.setItem('kp_students_data', JSON.stringify(students));
-    localStorage.setItem('kp_payments_data', JSON.stringify(payments));
-    localStorage.setItem('kp_expenses_data', JSON.stringify(expenses));
-    localStorage.setItem('kp_renewals_data', JSON.stringify(renewals));
-    localStorage.setItem('kp_attlog_data', JSON.stringify(attLog || {}));
-  } catch (e) {
-    console.warn('persistCoreDataLocally failed:', e);
-  }
-}
-
-function hydrateCoreDataFromLocalStorage() {
-  try {
-    const lsStudents = JSON.parse(localStorage.getItem('kp_students_data') || 'null');
-    const lsPayments = JSON.parse(localStorage.getItem('kp_payments_data') || 'null');
-    const lsExpenses = JSON.parse(localStorage.getItem('kp_expenses_data') || 'null');
-    const lsRenewals = JSON.parse(localStorage.getItem('kp_renewals_data') || 'null');
-    const lsAttLog = JSON.parse(localStorage.getItem('kp_attlog_data') || 'null');
-
-    if (Array.isArray(lsStudents) && lsStudents.length) students = lsStudents;
-    if (Array.isArray(lsPayments) && lsPayments.length) payments = lsPayments;
-    if (Array.isArray(lsExpenses) && lsExpenses.length) expenses = lsExpenses;
-    if (Array.isArray(lsRenewals) && lsRenewals.length) renewals = lsRenewals;
-    if (lsAttLog && typeof lsAttLog === 'object' && !Array.isArray(lsAttLog)) {
-      attLog = Object.assign({}, attLog || {}, lsAttLog);
-    }
-    sanitizeCoreData();
-    applyTombstones();
-    refreshNextIds();
-  } catch (e) {
-    console.warn('hydrateCoreDataFromLocalStorage failed:', e);
-  }
-}
-
 function addTombstone(type, id) {
   if (!tombstones[type]) tombstones[type] = [];
   if (!tombstones[type].includes(id)) tombstones[type].push(id);
@@ -4766,7 +4730,6 @@ function doLogout() {
 }
 
 function checkSession() {
-  hydrateCoreDataFromLocalStorage();
   const saved = sessionStorage.getItem('kp_session');
   if (saved) { currentUser = JSON.parse(saved); applyLogin(); }
   else document.getElementById('login-screen').style.display = 'flex';
@@ -5364,7 +5327,6 @@ function getAllData() {
 
 function autoSave() {
   hasUnsavedChanges = true;
-  persistCoreDataLocally();
   if (isSyncing) {
     pendingSync = true;
     return;
@@ -5413,20 +5375,174 @@ async function loadLogoFromFirebase() {
 // FINANCIAL REPORTS
 let lastFinReportData = null;
 
-function printFinancialReport() {
-  // تأكد من تحديث التقرير أولاً
-  generateFinReport();
-  // أضف class على body للـ print CSS
-  document.body.classList.add('print-finreport');
-  window.print();
-  // أزل الـ class بعد انتهاء الطباعة فعلياً
-  function removePrintClass() {
-    document.body.classList.remove('print-finreport');
-    window.removeEventListener('afterprint', removePrintClass);
+function buildFinancialReportPrintHtml(d) {
+  const generatedAt = new Date().toLocaleString('ar-AE');
+  const incEntries = Object.entries(d.incByType || {}).sort(function(a,b){ return (b[1]?.amt || 0) - (a[1]?.amt || 0); });
+  const expEntries = Object.entries(d.expByCat || {}).sort(function(a,b){ return (b[1]?.amt || 0) - (a[1]?.amt || 0); });
+  const monthEntries = Object.keys(d.monthly || {}).filter(function(m){ return m; }).sort();
+  const logoSrc = (typeof logoDataUrl === 'string' && logoDataUrl) || (nurserySettings && nurserySettings.logoDataUrl) || '';
+
+  const incRows = incEntries.length
+    ? incEntries.map(function(entry){
+        const name = entry[0] || 'غير محدد';
+        const data = entry[1] || {};
+        const pct = d.totalInc > 0 ? (((data.amt || 0) / d.totalInc) * 100).toFixed(1) : '0.0';
+        return '<tr><td>' + escapeHtml(name) + '</td><td>' + (data.count || 0) + '</td><td class="money in">' + (data.amt || 0).toLocaleString() + ' د.إ</td><td>' + pct + '%</td></tr>';
+      }).join('')
+    : '<tr><td colspan="4" class="empty">لا توجد واردات</td></tr>';
+
+  const expRows = expEntries.length
+    ? expEntries.map(function(entry){
+        const name = entry[0] || 'غير محدد';
+        const data = entry[1] || {};
+        const pct = d.totalExp > 0 ? (((data.amt || 0) / d.totalExp) * 100).toFixed(1) : '0.0';
+        return '<tr><td>' + escapeHtml(name) + '</td><td>' + (data.count || 0) + '</td><td class="money out">' + (data.amt || 0).toLocaleString() + ' د.إ</td><td>' + pct + '%</td></tr>';
+      }).join('')
+    : '<tr><td colspan="4" class="empty">لا توجد صادرات</td></tr>';
+
+  const monthRows = monthEntries.length
+    ? monthEntries.map(function(month){
+        const item = d.monthly[month] || { inc: 0, exp: 0 };
+        const net = (item.inc || 0) - (item.exp || 0);
+        return '<tr><td><b>' + escapeHtml(month) + '</b></td><td class="money in">+' + (item.inc || 0).toLocaleString() + '</td><td class="money out">-' + (item.exp || 0).toLocaleString() + '</td><td class="money ' + (net >= 0 ? 'in' : 'neg') + '">' + net.toLocaleString() + ' د.إ</td></tr>';
+      }).join('')
+    : '<tr><td colspan="4" class="empty">لا توجد بيانات</td></tr>';
+
+  const detailRows = (d.rows || []).length
+    ? d.rows.map(function(row, idx){
+        const positive = row.sign > 0;
+        return '<tr>' +
+          '<td>' + (idx + 1) + '</td>' +
+          '<td class="' + (positive ? 'in' : 'out') + '">' + (positive ? 'وارد' : 'صادر') + '</td>' +
+          '<td>' + escapeHtml(row.date || '') + '</td>' +
+          '<td class="text-right">' + escapeHtml(row.desc || '') + '</td>' +
+          '<td class="text-right">' + escapeHtml(row.who || '') + '</td>' +
+          '<td class="money ' + (positive ? 'in' : 'out') + '">' + (positive ? '+' : '-') + (row.amt || 0).toLocaleString() + ' د.إ</td>' +
+        '</tr>';
+      }).join('')
+    : '<tr><td colspan="6" class="empty">لا توجد حركات</td></tr>';
+
+  return `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>التقرير المالي</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root{--g:#1e6b3f;--g2:#2d9156;--in:#1f8f4d;--out:#d46b08;--neg:#c0392b;--bd:#d9e7d9;--muted:#657565;}
+  *{box-sizing:border-box}
+  body{font-family:'Tajawal',Arial,sans-serif;margin:0;background:#f3f6f3;color:#182618}
+  .page{max-width:1080px;margin:0 auto;background:#fff;padding:18px 22px 26px}
+  .head{border:2px solid var(--g);border-radius:16px;overflow:hidden;margin-bottom:14px}
+  .head-top{background:linear-gradient(135deg,var(--g),var(--g2));color:#fff;padding:18px 20px;text-align:center}
+  .logo-wrap{display:flex;justify-content:center;align-items:center;margin-bottom:10px}
+  .logo{max-height:72px;max-width:160px;object-fit:contain}
+  .title{font-size:28px;font-weight:900;margin-bottom:6px}
+  .sub{font-size:14px;opacity:.95}
+  .meta{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-top:1px solid rgba(255,255,255,.15);background:#f8fbf8;color:#183018}
+  .meta div{padding:10px 12px;border-left:1px solid var(--bd);font-size:13px}
+  .meta div:last-child{border-left:none}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0}
+  .stat{border:1.5px solid var(--bd);border-radius:14px;padding:14px 12px;background:#fbfdfb;text-align:center}
+  .stat .label{font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px}
+  .stat .value{font-size:26px;font-weight:900}
+  .stat .subv{font-size:12px;color:var(--muted);margin-top:5px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+  .card{border:1.5px solid var(--bd);border-radius:14px;overflow:hidden;background:#fff;margin-bottom:14px;page-break-inside:avoid}
+  .card h3{margin:0;background:#f2f8f2;color:var(--g);padding:12px 14px;font-size:16px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{border:1px solid #e5ece5;padding:8px 9px;text-align:center;vertical-align:middle}
+  th{background:#f8fbf8;font-weight:800}
+  .text-right{text-align:right}
+  .money{font-weight:800}
+  .in{color:var(--in)}
+  .out{color:var(--out)}
+  .neg{color:var(--neg)}
+  .empty{padding:18px;color:var(--muted);text-align:center}
+  .tfoot td{background:#f3fbf4;font-size:15px;font-weight:900}
+  .foot{margin-top:12px;padding-top:10px;border-top:1px solid var(--bd);text-align:center;font-size:12px;color:var(--muted)}
+  @media print{
+    body{background:#fff}
+    .page{max-width:none;padding:8mm 8mm 10mm}
+    @page{size:A4;margin:10mm}
   }
-  window.addEventListener('afterprint', removePrintClass);
-  // احتياطي لو afterprint ما دعمه المتصفح
-  setTimeout(removePrintClass, 3000);
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="head">
+      <div class="head-top">
+        ${logoSrc ? `<div class="logo-wrap"><img src="${logoSrc}" class="logo" alt="شعار الحضانة"></div>` : ''}
+        <div class="title">📊 التقرير المالي</div>
+        <div class="sub">حضانة حديقة الأطفال</div>
+      </div>
+      <div class="meta">
+        <div><b>الفترة:</b> من ${escapeHtml(d.from)} إلى ${escapeHtml(d.to)}</div>
+        <div><b>تاريخ الإنشاء:</b> ${escapeHtml(generatedAt)}</div>
+        <div><b>عدد الحركات:</b> ${(d.rows || []).length}</div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="label">إجمالي الواردات</div><div class="value in">${d.totalInc.toLocaleString()} د.إ</div><div class="subv">${Object.values(d.incByType || {}).reduce(function(s,x){ return s + (x.count || 0); },0)} سند</div></div>
+      <div class="stat"><div class="label">إجمالي الصادرات</div><div class="value out">${d.totalExp.toLocaleString()} د.إ</div><div class="subv">${Object.values(d.expByCat || {}).reduce(function(s,x){ return s + (x.count || 0); },0)} مصروف</div></div>
+      <div class="stat"><div class="label">الصافي</div><div class="value ${d.net >= 0 ? 'in' : 'neg'}">${d.net.toLocaleString()} د.إ</div><div class="subv">${d.net >= 0 ? 'فائض' : 'عجز'}</div></div>
+      <div class="stat"><div class="label">عدد الأيام</div><div class="value">${Math.round((new Date(d.to) - new Date(d.from)) / 86400000) + 1}</div><div class="subv">خلال الفترة</div></div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h3>💰 الواردات حسب النوع</h3>
+        <table>
+          <thead><tr><th>النوع</th><th>العدد</th><th>المبلغ</th><th>%</th></tr></thead>
+          <tbody>${incRows}</tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h3>🧾 الصادرات حسب الفئة</h3>
+        <table>
+          <thead><tr><th>الفئة</th><th>العدد</th><th>المبلغ</th><th>%</th></tr></thead>
+          <tbody>${expRows}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>📅 التوزيع الشهري</h3>
+      <table>
+        <thead><tr><th>الشهر</th><th>الواردات</th><th>الصادرات</th><th>الصافي</th></tr></thead>
+        <tbody>${monthRows}</tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>📋 التفصيل الكامل</h3>
+      <table>
+        <thead><tr><th>#</th><th>النوع</th><th>التاريخ</th><th>البيان</th><th>الجهة / الفئة</th><th>المبلغ</th></tr></thead>
+        <tbody>${detailRows}</tbody>
+        <tfoot class="tfoot"><tr><td colspan="5" class="text-right">📊 الصافي</td><td class="money ${d.net >= 0 ? 'in' : 'neg'}">${d.net.toLocaleString()} د.إ</td></tr></tfoot>
+      </table>
+    </div>
+
+    <div class="foot">حضانة حديقة الأطفال — تقرير مالي تم إنشاؤه في ${escapeHtml(generatedAt)}</div>
+  </div>
+  <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
+</body>
+</html>`;
+}
+
+function printFinancialReport() {
+  generateFinReport();
+  if (!lastFinReportData) { alert('قم بإنشاء التقرير أولاً'); return; }
+  const printWindow = window.open('', '_blank', 'width=1100,height=850');
+  if (!printWindow) {
+    alert('تعذر فتح نافذة الطباعة. تأكد من السماح بالنوافذ المنبثقة لهذا الموقع.');
+    return;
+  }
+  printWindow.document.open();
+  printWindow.document.write(buildFinancialReportPrintHtml(lastFinReportData));
+  printWindow.document.close();
 }
 
 function renderFinReport() {
@@ -5779,7 +5895,6 @@ async function pushToFirebase() {
     }
     resetPaymentMatchCache();
     refreshNextIds();
-    persistCoreDataLocally();
 
     // ── الخطوة 3: اكتب البيانات المدمجة إلى Firebase ────────────────
     const cleanSettings = Object.assign({}, nurserySettings);
@@ -5934,7 +6049,6 @@ async function loadFromFirebase() {
     localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
     updateLogoDisplay();
     refreshNextIds();
-    persistCoreDataLocally();
     lastSavedAt = data.savedAt || '';
     localStorage.setItem('kp_last_synced_at', lastSavedAt);
     renderDash();
