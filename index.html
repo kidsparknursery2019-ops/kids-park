@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260424-trash-sync-expense-soft-delete-fix -->
+<!-- v20260422-forms-merge-undo -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -373,8 +373,7 @@ textarea{resize:vertical;min-height:65px}
     <div class="nav"     onclick="go('forms')">      <span class="ni">📋</span><span>طلبات التسجيل</span></div>
     <div class="nav"     onclick="go('renewals')">   <span class="ni">🔔</span><span>التجديدات</span></div>
     <div class="nav"     onclick="go('finreport')"> <span class="ni">📈</span><span>التقارير المالية</span></div>
-    <div class="nav" id="nav-deleted" onclick="go('deleted')">    <span class="ni">👶</span><span>الطلاب المحذوفون</span></div>
-    <div class="nav" id="nav-other-deleted" onclick="go('otherdeleted')">    <span class="ni">🗂️</span><span>باقي المحذوفات</span></div>
+    <div class="nav" id="nav-recyclebin" onclick="go('recyclebin')"><span class="ni">🗑️</span><span>سلة المحذوفات</span><span id="bin-nav-badge" style="margin-right:auto;background:#e74c3c;color:#fff;font-size:11px;font-weight:800;padding:1px 7px;border-radius:10px;display:none">0</span></div>
     <div class="side-sep"></div>
     <div class="nav" id="nav-admin" onclick="go('admin')" style="display:none"><span class="ni">⚙️</span><span>الإعدادات</span></div>
   </nav>
@@ -592,38 +591,100 @@ textarea{resize:vertical;min-height:65px}
 
     
 
-    <!-- DELETED STUDENTS PAGE -->
-    <div class="pg" id="pg-deleted">
-      <div class="pt">👶 الطلاب المحذوفون</div>
-      <div class="sg" style="grid-template-columns:repeat(2,1fr)">
-        <div class="sc r"><div class="sl">إجمالي الطلاب المحذوفين</div><div class="sv" id="del-count">—</div></div>
-        <div class="sc"><div class="sl">جاهزون للاستعادة</div><div class="sv" id="del-students-count">—</div></div>
+    <!-- UNIFIED RECYCLE BIN PAGE -->
+    <div class="pg" id="pg-recyclebin">
+      <div class="pt">
+        🗑️ سلة المحذوفات
+        <span style="flex:1"></span>
+        <button class="btn btn-out btn-sm" onclick="refreshBinNow()" title="جلب آخر التحديثات من السيرفر">🔄 تحديث فوري</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('deleted')">⬇ تصدير الطلاب</button>
       </div>
-      <div class="card">
-        <div class="ct">
-          <div style="font-size:13px;color:var(--muted)">هذه الصفحة مخصصة فقط للطلاب المحذوفين. الحذف النهائي لا يمكن التراجع عنه.</div>
-          <button class="btn btn-out btn-sm" onclick="openExport('deleted')">⬇ تصدير</button>
+
+      <!-- Summary cards -->
+      <div class="sg" style="grid-template-columns:repeat(5,1fr)">
+        <div class="sc r"><div class="sl">إجمالي المحذوفات</div><div class="sv" id="bin-total-count">—</div><div class="ss">جميع الأنواع</div></div>
+        <div class="sc"><div class="sl">👶 طلاب</div><div class="sv" id="bin-students-count">—</div></div>
+        <div class="sc b"><div class="sl">🧾 سندات/مدفوعات</div><div class="sv" id="bin-payments-count">—</div></div>
+        <div class="sc y"><div class="sl">💸 مصاريف</div><div class="sv" id="bin-expenses-count">—</div></div>
+        <div class="sc o"><div class="sl">🔔 تجديدات + 🏫 فصول</div><div class="sv" id="bin-misc-count">—</div></div>
+      </div>
+
+      <!-- Live sync indicator -->
+      <div id="bin-sync-info" style="background:#eaf6ef;border:1.5px solid #4db87a;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--g1);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:16px">🔄</span>
+        <span style="font-weight:700">المزامنة اللحظية مفعّلة</span>
+        <span style="color:var(--muted)">— أي تغيير ينعكس تلقائياً عند جميع الموظفين خلال ثوانٍ</span>
+        <span style="flex:1"></span>
+        <span id="bin-last-sync" style="font-size:11.5px;color:var(--muted)"></span>
+      </div>
+
+      <!-- Toolbar: filter tabs + search -->
+      <div class="card" style="padding:14px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+          <div id="bin-tabs" style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-sm bin-tab-on" data-type="all" onclick="setBinFilter('all')">🗂 الكل <span id="bin-tab-all">0</span></button>
+            <button class="btn btn-out btn-sm" data-type="students" onclick="setBinFilter('students')">👶 طلاب <span id="bin-tab-students">0</span></button>
+            <button class="btn btn-out btn-sm" data-type="payments" onclick="setBinFilter('payments')">🧾 سندات <span id="bin-tab-payments">0</span></button>
+            <button class="btn btn-out btn-sm" data-type="expenses" onclick="setBinFilter('expenses')">💸 مصاريف <span id="bin-tab-expenses">0</span></button>
+            <button class="btn btn-out btn-sm" data-type="renewals" onclick="setBinFilter('renewals')">🔔 تجديدات <span id="bin-tab-renewals">0</span></button>
+            <button class="btn btn-out btn-sm" data-type="classes" onclick="setBinFilter('classes')">🏫 فصول <span id="bin-tab-classes">0</span></button>
+          </div>
+          <span style="flex:1"></span>
+          <input type="search" id="bin-search" placeholder="🔎 بحث بالاسم/الوصف/السبب..." oninput="renderRecycleBin()" style="max-width:280px">
         </div>
-        <div id="deleted-list"></div>
+
+        <!-- Select all + empty bin -->
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 0;border-bottom:1.5px solid var(--border);margin-bottom:10px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:700;color:var(--g1)">
+            <input type="checkbox" id="bin-select-all" onchange="toggleBinAll()" style="width:16px;height:16px;cursor:pointer">
+            تحديد الكل المعروض
+          </label>
+          <span id="bin-selected-info" style="font-size:12px;color:var(--muted)">لم يتم تحديد أي عنصر</span>
+          <span style="flex:1"></span>
+          <button class="btn btn-r btn-sm" onclick="emptyRecycleBin()" title="حذف نهائي لكل محتويات السلة">🧹 تفريغ السلة بالكامل</button>
+        </div>
+
+        <!-- Bulk actions bar (shown only when items selected) -->
+        <div id="bin-bulk-bar" style="display:none;background:linear-gradient(135deg,#1e6b3f,#2d8f56);color:#fff;padding:10px 14px;border-radius:10px;margin-bottom:12px;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-weight:800;font-size:14px">✓ <span id="bin-bulk-count">0</span> عنصر محدّد</span>
+          <span style="flex:1"></span>
+          <button class="btn btn-sm" style="background:#fff;color:#1e6b3f" onclick="bulkRestoreBin()">♻ استعادة المحددين</button>
+          <button class="btn btn-sm" style="background:#c0392b;color:#fff" onclick="bulkPermanentDeleteBin()">🗑 حذف نهائي للمحددين</button>
+          <button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.5)" onclick="clearBinSelection()">إلغاء التحديد</button>
+        </div>
+
+        <!-- The actual list -->
+        <div id="bin-list"></div>
       </div>
+
+      <!-- Legacy containers kept hidden for any old code that queries them -->
+      <div id="deleted-list" style="display:none"></div>
+      <div id="other-deleted-list" style="display:none"></div>
+      <span id="del-count" style="display:none"></span>
+      <span id="del-students-count" style="display:none"></span>
+      <span id="other-del-count" style="display:none"></span>
+      <span id="other-del-payments-count" style="display:none"></span>
+      <span id="other-del-expenses-count" style="display:none"></span>
+      <span id="other-del-misc-count" style="display:none"></span>
     </div>
 
-    <!-- OTHER DELETED ITEMS PAGE -->
-    <div class="pg" id="pg-otherdeleted">
-      <div class="pt">🗂️ باقي المحذوفات</div>
-      <div class="sg" style="grid-template-columns:repeat(4,1fr)">
-        <div class="sc r"><div class="sl">إجمالي العناصر</div><div class="sv" id="other-del-count">—</div></div>
-        <div class="sc"><div class="sl">السندات / المدفوعات</div><div class="sv" id="other-del-payments-count">—</div></div>
-        <div class="sc y"><div class="sl">المصاريف</div><div class="sv" id="other-del-expenses-count">—</div></div>
-        <div class="sc b"><div class="sl">التجديدات والفصول</div><div class="sv" id="other-del-misc-count">—</div></div>
-      </div>
-      <div class="card">
-        <div class="ct">
-          <div style="font-size:13px;color:var(--muted)">هذه الصفحة مخصصة للسندات والمدفوعات والمصاريف والتجديدات والفصول وأي سجل غير الطلاب.</div>
-        </div>
-        <div id="other-deleted-list"></div>
-      </div>
-    </div>
+    <style>
+      .bin-tab-on{background:var(--g2)!important;color:#fff!important;border-color:var(--g2)!important}
+      .bin-item-row{background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start;transition:all .15s}
+      .bin-item-row:hover{border-color:var(--g2);box-shadow:0 2px 10px rgba(30,107,63,.08)}
+      .bin-item-row.selected{background:var(--gp);border-color:var(--g2)}
+      .bin-item-check{width:18px;height:18px;cursor:pointer;margin-top:3px;flex-shrink:0}
+      .bin-item-body{flex:1;min-width:0}
+      .bin-item-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+      .bin-type-chip{display:inline-block;padding:2px 9px;border-radius:14px;font-size:11px;font-weight:800;margin-left:6px}
+      .bin-type-students{background:#d0f0e0;color:#0e5e30}
+      .bin-type-payments{background:#eaf3fc;color:#1a5fa8}
+      .bin-type-expenses{background:#fff0c0;color:#7a5500}
+      .bin-type-renewals{background:#fef3ea;color:#c0550a}
+      .bin-type-classes{background:#e8deff;color:#5b3a9e}
+      .bin-empty{text-align:center;padding:50px 20px;color:var(--muted)}
+      .bin-empty .ico{font-size:54px;opacity:.35;margin-bottom:10px}
+    </style>
 
         <!-- FINANCIAL REPORT PAGE -->
     <div class="pg" id="pg-finreport">
@@ -1325,18 +1386,6 @@ function addTombstone(type, id) {
   }
 }
 
-function stripRestoredKeysBlockedByLocalTombstones(restoredObj, localTsObj) {
-  const result = restoredObj && typeof restoredObj === 'object' ? restoredObj : {};
-  const localTs = localTsObj && typeof localTsObj === 'object' ? localTsObj : {};
-  ['students','payments','expenses','renewals','classes'].forEach(function(type){
-    if (!Array.isArray(result[type])) result[type] = [];
-    const blocking = Array.isArray(localTs[type]) ? localTs[type] : [];
-    // الأهم: إذا هذا الجهاز حذف السجل الآن، لا تسمح لـ restoredKeys قديمة من جهاز آخر أن تلغي الحذف.
-    result[type] = result[type].filter(function(id){ return !hasKey(blocking, id); });
-  });
-  return result;
-}
-
 function applyTombstones() {
   if (tombstones.students && tombstones.students.length) students = students.filter(function(s){ return !hasKey(tombstones.students, s && s.id); });
   if (tombstones.payments && tombstones.payments.length) payments = payments.filter(function(p){ return !hasKey(tombstones.payments, p && p.id); });
@@ -1441,6 +1490,7 @@ function refreshAllViewsAfterSync() {
   if (typeof renderRenewals === 'function') renderRenewals();
   if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
   if (typeof renderOtherDeletedItems === 'function') renderOtherDeletedItems();
+  if (typeof renderRecycleBin === 'function') renderRecycleBin();
   if (typeof renderAtt === 'function') renderAtt();
   if (typeof renderAdminClasses === 'function') renderAdminClasses();
   if (typeof updateNotifications === 'function') updateNotifications();
@@ -3320,14 +3370,14 @@ function restorePayment(id) {
 }
 
 function restoreExpense(id) {
-  const e = deletedExpenses.find(function(x){ return x && normKey(x.id) === normKey(id); });
+  const e = deletedExpenses.find(function(x){ return x.id === id; });
   if (!e) return;
   if (!confirm('استعادة المصروف #' + id + '؟')) return;
   const restored = Object.assign({}, e);
   delete restored.deletedAt; delete restored.deletedBy;
-  expenses = expenses.filter(function(x){ return !(x && normKey(x.id) === normKey(id)); });
+  expenses = expenses.filter(function(x){ return x.id !== id; });
   expenses.push(restored);
-  deletedExpenses = deletedExpenses.filter(function(x){ return !(x && normKey(x.id) === normKey(id)); });
+  deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== id; });
   localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
   if (tombstones && tombstones.expenses) {
     tombstones.expenses = tombstones.expenses.filter(function(x){ return normKey(x) !== normKey(id); });
@@ -3383,7 +3433,7 @@ function permanentDeleteGeneric(type, key) {
     localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
     addTombstone('payments', key);
   } else if (type === 'expenses') {
-    deletedExpenses = deletedExpenses.filter(function(x){ return !(x && normKey(x.id) === normKey(key)); });
+    deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== key; });
     localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
     addTombstone('expenses', key);
   } else if (type === 'renewals') {
@@ -3411,93 +3461,410 @@ function renderDeletedSectionCard(icon, title, subtitle, actionsHtml) {
   '</div>';
 }
 
-function renderDeletedStudents() {
-  const el = document.getElementById('deleted-list');
-  if (!el) return;
-  const totalStudents = deletedStudents.length;
-  document.getElementById('del-count').textContent = totalStudents;
-  const sEl = document.getElementById('del-students-count'); if (sEl) sEl.textContent = totalStudents;
-  if (!totalStudents) {
-    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">🗑 لا يوجد طلاب محذوفون</div>';
-    return;
-  }
-  let html = '<div style="font-weight:800;color:var(--g1);margin:8px 0 12px">👶 الطلاب</div>';
-  html += deletedStudents.map(function(s){
-    return renderDeletedSectionCard('👶', s.name,
-      '📅 تاريخ الميلاد: ' + (s.dob||'—') + ' | 🏫 الفصل: ' + (s.cls||'—') + '<br>' +
-      '👨 ' + (s.dad||'—') + ' | 📱 ' + (s.dph||'—') + '<br>' +
-      '👩 ' + (s.mom||'—') + ' | 📱 ' + (s.mph||'—') + '<br>' +
-      '<span style="color:#e74c3c">🗑 حُذف في: ' + (s.deletedAt||'—') + '</span>' +
-      (s.deletionReason ? '<br>📝 السبب: ' + s.deletionReason : '') +
-      (s.deletedBy ? '<br>👤 بواسطة: ' + s.deletedBy : ''),
-      '<button class="btn btn-out btn-sm" onclick="viewDeletedStudent(' + s.id + ')">👁 عرض</button>' +
-      '<button class="btn btn-g btn-sm" onclick="restoreStudent(' + s.id + ')">♻️ استعادة</button>' +
-      '<button class="btn btn-r btn-sm" onclick="permanentDeleteStudent(' + s.id + ')">🗑 حذف نهائي</button>'
-    );
-  }).join('');
-  el.innerHTML = html;
+// ============================================================
+// UNIFIED RECYCLE BIN — جميع المحذوفات في سلة واحدة
+// ============================================================
+// Shims: keep old callers working by routing to the unified renderer.
+function renderDeletedStudents(){ renderRecycleBin(); }
+function renderOtherDeletedItems(){ renderRecycleBin(); }
+
+// State for the unified bin page
+var _binFilter = 'all';
+var _binSelected = { students:{}, payments:{}, expenses:{}, renewals:{}, classes:{} };
+
+function setBinFilter(type){
+  _binFilter = type;
+  // Update tab styles
+  document.querySelectorAll('#bin-tabs button').forEach(function(b){
+    if(b.getAttribute('data-type') === type){
+      b.classList.add('bin-tab-on');
+      b.classList.remove('btn-out');
+    } else {
+      b.classList.remove('bin-tab-on');
+      b.classList.add('btn-out');
+    }
+  });
+  renderRecycleBin();
 }
 
-function renderOtherDeletedItems() {
-  const el = document.getElementById('other-deleted-list');
-  if (!el) return;
-  const paymentsCount = deletedPayments.length;
-  const expensesCount = deletedExpenses.length;
-  const renewalsCount = deletedRenewals.length;
-  const classesCount = deletedClasses.length;
-  const miscCount = renewalsCount + classesCount;
-  const total = paymentsCount + expensesCount + miscCount;
-  const totalEl = document.getElementById('other-del-count'); if (totalEl) totalEl.textContent = total;
-  const pEl = document.getElementById('other-del-payments-count'); if (pEl) pEl.textContent = paymentsCount;
-  const eEl = document.getElementById('other-del-expenses-count'); if (eEl) eEl.textContent = expensesCount;
-  const mEl = document.getElementById('other-del-misc-count'); if (mEl) mEl.textContent = miscCount;
-  if (!total) {
-    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">🗑 لا يوجد عناصر محذوفة هنا</div>';
-    return;
+function clearBinSelection(){
+  _binSelected = { students:{}, payments:{}, expenses:{}, renewals:{}, classes:{} };
+  renderRecycleBin();
+}
+
+function _binSelectedCount(){
+  return Object.keys(_binSelected.students).length
+       + Object.keys(_binSelected.payments).length
+       + Object.keys(_binSelected.expenses).length
+       + Object.keys(_binSelected.renewals).length
+       + Object.keys(_binSelected.classes).length;
+}
+
+function toggleBinItem(type, key, checked){
+  var k = String(key);
+  if(checked){
+    _binSelected[type][k] = true;
+  } else {
+    delete _binSelected[type][k];
   }
-  let html = '';
-  if (deletedPayments.length) {
-    html += '<div style="font-weight:800;color:var(--g1);margin:16px 0 12px">🧾 السندات / المدفوعات</div>';
-    html += deletedPayments.map(function(p){
-      return renderDeletedSectionCard('🧾', 'السند #' + p.id + ' — ' + (p.who||'—'),
-        '💰 ' + (p.amt||'—') + ' | 📝 ' + (p.desc||'—') + '<br>🗑 حُذف في: ' + (p.deletedAt||'—'),
-        '<button class="btn btn-g btn-sm" onclick="restorePayment(' + p.id + ')">♻️ استعادة</button>' +
-        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'payments\',' + p.id + ')">🗑 حذف نهائي</button>'
-      );
-    }).join('');
+  _updateBinBulkBar();
+  // Update row visual
+  var row = document.querySelector('.bin-item-row[data-type="'+type+'"][data-key="'+k.replace(/"/g,'\\"')+'"]');
+  if(row){ row.classList.toggle('selected', !!checked); }
+}
+
+function toggleBinAll(){
+  var checked = document.getElementById('bin-select-all').checked;
+  var items = _collectBinItems();
+  var matching = items.filter(_matchesBinFilterAndSearch);
+  matching.forEach(function(it){
+    if(checked) _binSelected[it.type][String(it.key)] = true;
+    else delete _binSelected[it.type][String(it.key)];
+  });
+  renderRecycleBin();
+}
+
+function _updateBinBulkBar(){
+  var n = _binSelectedCount();
+  var bar = document.getElementById('bin-bulk-bar');
+  var cnt = document.getElementById('bin-bulk-count');
+  var info = document.getElementById('bin-selected-info');
+  if(bar) bar.style.display = n > 0 ? 'flex' : 'none';
+  if(cnt) cnt.textContent = n;
+  if(info) info.textContent = n ? ('تم تحديد ' + n + ' عنصر') : 'لم يتم تحديد أي عنصر';
+}
+
+// Build a uniform item list from all 5 deleted arrays
+function _collectBinItems(){
+  var items = [];
+  (deletedStudents||[]).forEach(function(s){
+    items.push({
+      type:'students', key:s.id, icon:'👶', typeLabel:'طالب',
+      title: s.name || ('طالب #' + s.id),
+      subtitle: '📅 ' + (s.dob||'—') + ' · 🏫 ' + (s.cls||'—') +
+                (s.dad ? ' · 👨 ' + s.dad : '') +
+                (s.mom ? ' · 👩 ' + s.mom : ''),
+      reason: s.deletionReason || '',
+      deletedAt: s.deletedAt || '',
+      deletedBy: s.deletedBy || '',
+      raw: s,
+      searchText: [s.name, s.dad, s.mom, s.cls, s.nat, s.addr, s.deletionReason].join(' ').toLowerCase()
+    });
+  });
+  (deletedPayments||[]).forEach(function(p){
+    items.push({
+      type:'payments', key:p.id, icon:'🧾', typeLabel:'سند/مدفوعة',
+      title: 'سند #' + p.id + ' — ' + (p.who||'—'),
+      subtitle: '💰 ' + (p.amt||'—') + ' · 📝 ' + (p.desc||'—') + (p.date ? ' · 📅 ' + p.date : ''),
+      reason: '',
+      deletedAt: p.deletedAt || '',
+      deletedBy: p.deletedBy || '',
+      raw: p,
+      searchText: [p.who, p.desc, p.amt, p.id].join(' ').toLowerCase()
+    });
+  });
+  (deletedExpenses||[]).forEach(function(x){
+    items.push({
+      type:'expenses', key:x.id, icon:'💸', typeLabel:'مصروف',
+      title: 'مصروف #' + x.id + ' — ' + (x.desc||'—'),
+      subtitle: '💰 ' + (x.amt||'—') + ' · 🗂 ' + (x.cat||'—') + (x.date ? ' · 📅 ' + x.date : ''),
+      reason: '',
+      deletedAt: x.deletedAt || '',
+      deletedBy: x.deletedBy || '',
+      raw: x,
+      searchText: [x.desc, x.cat, x.amt, x.id].join(' ').toLowerCase()
+    });
+  });
+  (deletedRenewals||[]).forEach(function(x){
+    items.push({
+      type:'renewals', key:x.id, icon:'🔔', typeLabel:'تجديد',
+      title: x.name || ('تجديد #' + x.id),
+      subtitle: '📅 ' + (x.date||'—') + ' · 💰 ' + (x.cost||'—'),
+      reason: '',
+      deletedAt: x.deletedAt || '',
+      deletedBy: x.deletedBy || '',
+      raw: x,
+      searchText: [x.name, x.date, x.cost, x.id].join(' ').toLowerCase()
+    });
+  });
+  (deletedClasses||[]).forEach(function(x){
+    items.push({
+      type:'classes', key:x.key, icon:'🏫', typeLabel:'فصل',
+      title: x.name || x.key,
+      subtitle: '👩‍🏫 ' + ((x.data&&x.data.teacher)||'—') + ' · ' + ((x.data&&x.data.emoji)||'🏫'),
+      reason: '',
+      deletedAt: x.deletedAt || '',
+      deletedBy: x.deletedBy || '',
+      raw: x,
+      searchText: [x.name, x.key, (x.data&&x.data.teacher)].join(' ').toLowerCase()
+    });
+  });
+  // Sort by deletedAt desc (newest first)
+  items.sort(function(a,b){ return (b.deletedAt||'').localeCompare(a.deletedAt||''); });
+  return items;
+}
+
+function _matchesBinFilterAndSearch(it){
+  if(_binFilter !== 'all' && it.type !== _binFilter) return false;
+  var q = (document.getElementById('bin-search')||{}).value || '';
+  q = q.trim().toLowerCase();
+  if(q && it.searchText.indexOf(q) === -1) return false;
+  return true;
+}
+
+function renderRecycleBin(){
+  var listEl = document.getElementById('bin-list');
+  if(!listEl) return;
+
+  var items = _collectBinItems();
+
+  // Counts per type
+  var counts = { students:0, payments:0, expenses:0, renewals:0, classes:0 };
+  items.forEach(function(it){ counts[it.type]++; });
+  var total = items.length;
+
+  // Update summary cards
+  var set = function(id, v){ var e = document.getElementById(id); if(e) e.textContent = v; };
+  set('bin-total-count', total);
+  set('bin-students-count', counts.students);
+  set('bin-payments-count', counts.payments);
+  set('bin-expenses-count', counts.expenses);
+  set('bin-misc-count', counts.renewals + counts.classes);
+
+  // Update tab counters
+  set('bin-tab-all', total);
+  set('bin-tab-students', counts.students);
+  set('bin-tab-payments', counts.payments);
+  set('bin-tab-expenses', counts.expenses);
+  set('bin-tab-renewals', counts.renewals);
+  set('bin-tab-classes', counts.classes);
+
+  // Update nav badge
+  var badge = document.getElementById('bin-nav-badge');
+  if(badge){
+    if(total > 0){ badge.style.display = 'inline-block'; badge.textContent = total; }
+    else { badge.style.display = 'none'; }
   }
-  if (deletedExpenses.length) {
-    html += '<div style="font-weight:800;color:var(--g1);margin:16px 0 12px">💸 المصاريف</div>';
-    html += deletedExpenses.map(function(x){
-      return renderDeletedSectionCard('💸', 'المصروف #' + x.id + ' — ' + (x.desc||'—'),
-        '💰 ' + (x.amt||'—') + ' | 🗂 ' + (x.cat||'—') + '<br>🗑 حُذف في: ' + (x.deletedAt||'—'),
-        '<button class="btn btn-g btn-sm" onclick="restoreExpense(' + x.id + ')">♻️ استعادة</button>' +
-        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'expenses\',' + x.id + ')">🗑 حذف نهائي</button>'
-      );
-    }).join('');
+
+  // Update last sync timestamp
+  var syncEl = document.getElementById('bin-last-sync');
+  if(syncEl){
+    var d = new Date();
+    syncEl.textContent = 'آخر تحديث للعرض: ' + d.toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
   }
-  if (deletedRenewals.length) {
-    html += '<div style="font-weight:800;color:var(--g1);margin:16px 0 12px">🔔 التجديدات</div>';
-    html += deletedRenewals.map(function(x){
-      return renderDeletedSectionCard('🔔', x.name || ('التجديد #' + x.id),
-        '📅 ' + (x.date||'—') + ' | 💰 ' + (x.cost||'—') + '<br>🗑 حُذف في: ' + (x.deletedAt||'—'),
-        '<button class="btn btn-g btn-sm" onclick="restoreRenewal(' + x.id + ')">♻️ استعادة</button>' +
-        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'renewals\',' + x.id + ')">🗑 حذف نهائي</button>'
-      );
-    }).join('');
+
+  // Apply filter + search
+  var filtered = items.filter(_matchesBinFilterAndSearch);
+
+  // Build list
+  if(filtered.length === 0){
+    var msg = total === 0 ? 'السلة فارغة' : 'لا يوجد عناصر تطابق التصفية أو البحث';
+    listEl.innerHTML = '<div class="bin-empty"><div class="ico">🗑️</div><div style="font-size:15px;font-weight:700;margin-bottom:4px">' + msg + '</div>'
+      + (total === 0 ? '<div style="font-size:13px">عند حذف أي سجل من النظام سيظهر هنا مع إمكانية الاسترجاع.</div>' : '') + '</div>';
+  } else {
+    var html = '';
+    filtered.forEach(function(it){
+      var keyStr = String(it.key);
+      var keyJs = JSON.stringify(keyStr).replace(/"/g,'&quot;');
+      var isSelected = !!_binSelected[it.type][keyStr];
+      var chipClass = 'bin-type-' + it.type;
+      var escName = String(it.title||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      var escSub = String(it.subtitle||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      var escReason = String(it.reason||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      var escBy = String(it.deletedBy||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      var escAt = String(it.deletedAt||'—').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+      // Individual action buttons per type
+      var actions = '';
+      if(it.type === 'students'){
+        actions = '<button class="btn btn-out btn-sm" onclick="viewDeletedStudent('+ keyStr +')">👁 عرض</button>'
+                + '<button class="btn btn-g btn-sm" onclick="restoreStudent('+ keyStr +')">♻ استعادة</button>'
+                + '<button class="btn btn-r btn-sm" onclick="permanentDeleteStudent('+ keyStr +')">🗑 حذف نهائي</button>';
+      } else if(it.type === 'payments'){
+        actions = '<button class="btn btn-g btn-sm" onclick="restorePayment('+ keyStr +')">♻ استعادة</button>'
+                + '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'payments\','+ keyStr +')">🗑 حذف نهائي</button>';
+      } else if(it.type === 'expenses'){
+        actions = '<button class="btn btn-g btn-sm" onclick="restoreExpense('+ keyStr +')">♻ استعادة</button>'
+                + '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'expenses\','+ keyStr +')">🗑 حذف نهائي</button>';
+      } else if(it.type === 'renewals'){
+        actions = '<button class="btn btn-g btn-sm" onclick="restoreRenewal('+ keyStr +')">♻ استعادة</button>'
+                + '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'renewals\','+ keyStr +')">🗑 حذف نهائي</button>';
+      } else if(it.type === 'classes'){
+        actions = '<button class="btn btn-g btn-sm" onclick="restoreClass('+ keyJs +')">♻ استعادة</button>'
+                + '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'classes\','+ keyJs +')">🗑 حذف نهائي</button>';
+      }
+
+      html += '<div class="bin-item-row' + (isSelected?' selected':'') + '" data-type="' + it.type + '" data-key="' + keyStr.replace(/"/g,'&quot;') + '">'
+            +   '<input type="checkbox" class="bin-item-check" ' + (isSelected?'checked':'') + ' onchange="toggleBinItem(\'' + it.type + '\',' + keyJs + ',this.checked)">'
+            +   '<div class="bin-item-body">'
+            +     '<div style="font-size:14px;font-weight:800;margin-bottom:4px">'
+            +       it.icon + ' ' + escName
+            +       '<span class="bin-type-chip ' + chipClass + '">' + it.typeLabel + '</span>'
+            +     '</div>'
+            +     '<div style="font-size:12.5px;color:var(--muted);line-height:1.7">' + escSub + '</div>'
+            +     '<div style="font-size:12px;color:#c0392b;margin-top:6px">🗑 حُذف في: ' + escAt
+            +       (escBy ? ' · 👤 بواسطة: ' + escBy : '')
+            +       (escReason ? '<br>📝 السبب: ' + escReason : '')
+            +     '</div>'
+            +   '</div>'
+            +   '<div class="bin-item-actions">' + actions + '</div>'
+            + '</div>';
+    });
+    listEl.innerHTML = html;
   }
-  if (deletedClasses.length) {
-    html += '<div style="font-weight:800;color:var(--g1);margin:16px 0 12px">🏫 الفصول</div>';
-    html += deletedClasses.map(function(x){
-      var safeKey = JSON.stringify(String(x.key || ''));
-      return renderDeletedSectionCard('🏫', x.name,
-        '👩‍🏫 ' + ((x.data&&x.data.teacher)||'—') + ' | ' + ((x.data&&x.data.emoji)||'🏫') + '<br>🗑 حُذف في: ' + (x.deletedAt||'—'),
-        '<button class="btn btn-g btn-sm" onclick="restoreClass(' + safeKey.replace(/"/g,'&quot;') + ')">♻️ استعادة</button>' +
-        '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'classes\',' + safeKey.replace(/"/g,'&quot;') + ')">🗑 حذف نهائي</button>'
-      );
-    }).join('');
+
+  // Sync select-all checkbox state
+  var selAll = document.getElementById('bin-select-all');
+  if(selAll){
+    var visibleCount = filtered.length;
+    var selectedVisible = filtered.filter(function(it){ return _binSelected[it.type][String(it.key)]; }).length;
+    selAll.checked = visibleCount > 0 && selectedVisible === visibleCount;
+    selAll.indeterminate = selectedVisible > 0 && selectedVisible < visibleCount;
   }
-  el.innerHTML = html;
+
+  _updateBinBulkBar();
+}
+
+// Manual refresh — pull latest from Firebase immediately
+async function refreshBinNow(){
+  if(typeof manualRefreshFromFirebase === 'function'){
+    try { await manualRefreshFromFirebase(); } catch(e){ console.error(e); }
+  }
+  renderRecycleBin();
+}
+
+// Bulk restore: uses existing individual restore functions for safety,
+// but suppresses their confirm() dialogs by temporarily overriding confirm.
+function bulkRestoreBin(){
+  var n = _binSelectedCount();
+  if(!n){ alert('لم يتم تحديد أي عنصر'); return; }
+  if(!confirm('استعادة ' + n + ' عنصر محدّد؟')) return;
+
+  var originalConfirm = window.confirm;
+  window.confirm = function(){ return true; };
+
+  try {
+    // Snapshot selections (they get cleared as items are restored)
+    var sel = {
+      students: Object.keys(_binSelected.students).slice(),
+      payments: Object.keys(_binSelected.payments).slice(),
+      expenses: Object.keys(_binSelected.expenses).slice(),
+      renewals: Object.keys(_binSelected.renewals).slice(),
+      classes:  Object.keys(_binSelected.classes).slice()
+    };
+
+    sel.students.forEach(function(k){
+      var id = _coerceKey(deletedStudents, k);
+      if(id !== null && typeof restoreStudent === 'function') restoreStudent(id);
+    });
+    sel.payments.forEach(function(k){
+      var id = _coerceKey(deletedPayments, k);
+      if(id !== null && typeof restorePayment === 'function') restorePayment(id);
+    });
+    sel.expenses.forEach(function(k){
+      var id = _coerceKey(deletedExpenses, k);
+      if(id !== null && typeof restoreExpense === 'function') restoreExpense(id);
+    });
+    sel.renewals.forEach(function(k){
+      var id = _coerceKey(deletedRenewals, k);
+      if(id !== null && typeof restoreRenewal === 'function') restoreRenewal(id);
+    });
+    sel.classes.forEach(function(k){
+      if(typeof restoreClass === 'function') restoreClass(k);
+    });
+  } finally {
+    window.confirm = originalConfirm;
+  }
+
+  clearBinSelection();
+  if(typeof autoSave === 'function') autoSave(); // push merged result to Firebase
+  renderRecycleBin();
+  alert('✅ تمت الاستعادة — المزامنة جارية لباقي الأجهزة');
+}
+
+function bulkPermanentDeleteBin(){
+  var n = _binSelectedCount();
+  if(!n){ alert('لم يتم تحديد أي عنصر'); return; }
+  if(!confirm('⚠️ حذف نهائي لـ ' + n + ' عنصر محدّد؟\nلا يمكن التراجع!')) return;
+  if(!confirm('تأكيد أخير: حذف نهائي لـ ' + n + ' عنصر؟')) return;
+
+  var originalConfirm = window.confirm;
+  window.confirm = function(){ return true; };
+
+  try {
+    // Students — need full tombstone handling, use permanentDeleteStudent
+    Object.keys(_binSelected.students).forEach(function(k){
+      var id = _coerceKey(deletedStudents, k);
+      if(id !== null && typeof permanentDeleteStudent === 'function') permanentDeleteStudent(id);
+    });
+    // Payments / Expenses / Renewals / Classes — use permanentDeleteGeneric
+    Object.keys(_binSelected.payments).forEach(function(k){
+      var id = _coerceKey(deletedPayments, k);
+      if(id !== null && typeof permanentDeleteGeneric === 'function') permanentDeleteGeneric('payments', id);
+    });
+    Object.keys(_binSelected.expenses).forEach(function(k){
+      var id = _coerceKey(deletedExpenses, k);
+      if(id !== null && typeof permanentDeleteGeneric === 'function') permanentDeleteGeneric('expenses', id);
+    });
+    Object.keys(_binSelected.renewals).forEach(function(k){
+      var id = _coerceKey(deletedRenewals, k);
+      if(id !== null && typeof permanentDeleteGeneric === 'function') permanentDeleteGeneric('renewals', id);
+    });
+    Object.keys(_binSelected.classes).forEach(function(k){
+      if(typeof permanentDeleteGeneric === 'function') permanentDeleteGeneric('classes', k);
+    });
+  } finally {
+    window.confirm = originalConfirm;
+  }
+
+  clearBinSelection();
+  if(typeof autoSave === 'function') autoSave();
+  renderRecycleBin();
+  alert('🗑 تم الحذف النهائي — تمت المزامنة');
+}
+
+// Helper: item keys are stored as strings, but deletedX arrays use numbers for ids.
+// Coerce a string key back to whatever type matches inside the array.
+function _coerceKey(arr, strKey){
+  if(!arr || !arr.length) return null;
+  var item = arr.find(function(x){
+    var k = (x && (x.id !== undefined ? x.id : x.key));
+    return String(k) === String(strKey);
+  });
+  if(!item) return null;
+  return (item.id !== undefined) ? item.id : item.key;
+}
+
+function emptyRecycleBin(){
+  var total = (deletedStudents||[]).length + (deletedPayments||[]).length
+            + (deletedExpenses||[]).length + (deletedRenewals||[]).length + (deletedClasses||[]).length;
+  if(!total){ alert('السلة فارغة أصلاً'); return; }
+  if(!confirm('⚠️ تفريغ السلة بالكامل؟\nسيتم حذف ' + total + ' عنصر حذفاً نهائياً.\nلا يمكن التراجع عن هذه العملية!')) return;
+  if(!confirm('🚨 تأكيد نهائي!\nاكتب/اضغط موافق فقط إذا كنت متأكداً 100%')) return;
+
+  // Add tombstones so other devices also see the deletion
+  (deletedStudents||[]).forEach(function(s){ if(s && s.id !== undefined && typeof addTombstone === 'function') addTombstone('students', s.id); });
+  (deletedPayments||[]).forEach(function(p){ if(p && p.id !== undefined && typeof addTombstone === 'function') addTombstone('payments', p.id); });
+  (deletedExpenses||[]).forEach(function(x){ if(x && x.id !== undefined && typeof addTombstone === 'function') addTombstone('expenses', x.id); });
+  (deletedRenewals||[]).forEach(function(x){ if(x && x.id !== undefined && typeof addTombstone === 'function') addTombstone('renewals', x.id); });
+  (deletedClasses||[]).forEach(function(x){ if(x && x.key !== undefined && typeof addTombstone === 'function') addTombstone('classes', x.key); });
+
+  deletedStudents = [];
+  deletedPayments = [];
+  deletedExpenses = [];
+  deletedRenewals = [];
+  deletedClasses  = [];
+  localStorage.setItem('kp_deleted_students', '[]');
+  localStorage.setItem('kp_deleted_payments', '[]');
+  localStorage.setItem('kp_deleted_expenses', '[]');
+  localStorage.setItem('kp_deleted_renewals', '[]');
+  localStorage.setItem('kp_deleted_classes',  '[]');
+
+  clearBinSelection();
+  if(typeof cleanupDeletedBuckets === 'function') cleanupDeletedBuckets();
+  if(typeof autoSave === 'function') autoSave();
+  renderRecycleBin();
+  alert('🧹 تم تفريغ السلة بالكامل — تمت المزامنة مع باقي الأجهزة');
 }
 
 
@@ -4045,19 +4412,14 @@ function saveExpense(){
 function delExpense(id){
   const delId = id || editingExpId;
   if(!delId) return;
-  const exp = expenses.find(function(e){ return e && normKey(e.id) === normKey(delId); });
+  const exp = expenses.find(function(e){ return e.id===delId; });
   if(!exp || !confirm('حذف هذا المصروف؟'))return;
-
-  // حذف عادي: انقل المصروف إلى سلة باقي المحذوفات أولاً، ثم ضع tombstone فقط لمنع عودته للقائمة النشطة من Firebase.
-  // لا يجوز تفسير هذا tombstone كحذف نهائي طالما السجل موجود في deletedExpenses.
-  deletedExpenses = deletedExpenses.filter(function(x){ return !(x && normKey(x.id) === normKey(delId)); });
   deletedExpenses.unshift(Object.assign({}, exp, {
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
     deletedBy: currentUser ? currentUser.name : 'نظام'
   }));
-  expenses = expenses.filter(function(e){ return !(e && normKey(e.id) === normKey(delId)); });
   localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
-  persistCoreDataToLocalStorage();
+  expenses=expenses.filter(e=>e.id!==delId);
   addTombstone('expenses', delId);
   closeAll();
   autoSave(); renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
@@ -4944,6 +5306,20 @@ function applyLogin() {
       setTimeout(function(){ alert('✅ تم اعتماد ' + approvedAfterSync + ' عملية ربط إضافية بعد مزامنة البيانات'); }, 500);
     }
   });
+  // Adaptive polling: 2s when viewing the recycle bin (near-real-time),
+  // 5s elsewhere. Keeps Firebase load reasonable while giving the bin
+  // page a live-sync feel.
+  var _fastPollTick = 0;
+  setInterval(function(){
+    var binPage = document.getElementById('pg-recyclebin');
+    var binActive = binPage && binPage.classList.contains('on');
+    if(binActive){
+      // Every tick (2s) when on the recycle bin
+      checkForUpdates();
+    }
+    // Otherwise the 5s baseline below handles it
+  }, 2000);
+  // Baseline poll for all other pages
   setInterval(checkForUpdates, 5000);
   startAutoSync();
 }
@@ -5395,17 +5771,24 @@ function go(page) {
     alert('هذا القسم للمدير فقط');
     return;
   }
+  // Alias legacy trash routes to the unified recycle bin
+  const pageAliases = { deleted:'recyclebin', otherdeleted:'recyclebin' };
+  const pgId = pageAliases[page] || page;
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.nav').forEach(n=>n.classList.remove('on'));
-  const pgEl = document.getElementById('pg-'+page);
+  const pgEl = document.getElementById('pg-'+pgId);
   if(pgEl) pgEl.classList.add('on');
-  document.querySelectorAll('.nav').forEach(n=>{if(n.getAttribute('onclick')===`go('${page}')`)n.classList.add('on');});
+  document.querySelectorAll('.nav').forEach(n=>{
+    const oc = n.getAttribute('onclick') || '';
+    if(oc===`go('${page}')` || oc===`go('${pgId}')`) n.classList.add('on');
+  });
 
   const renders = {
     dash:renderDash, students:renderStudents, att:renderAtt,
     payments:renderPayments, expenses:renderExpenses,
     receipts:renderReceipts, finance:renderFinance,
-    worksheets:renderWorksheets, forms:renderFormRequests, renewals:renderRenewals, finreport:renderFinReport, deleted:renderDeletedStudents, otherdeleted:renderOtherDeletedItems,
+    worksheets:renderWorksheets, forms:renderFormRequests, renewals:renderRenewals, finreport:renderFinReport,
+    recyclebin:renderRecycleBin, deleted:renderRecycleBin, otherdeleted:renderRecycleBin,
     admin:()=>{renderAdminUsers();renderAdminClasses();}
   };
   if(renders[page]) renders[page]();
@@ -6058,9 +6441,6 @@ function mergeDeletedClasses(localArr, remoteArr, classTombstones, currentClasse
   const localKeys = new Set((Array.isArray(localArr) ? localArr : [])
     .map(function(item){ return item && normKey(item.key); })
     .filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
-  const remoteKeys = new Set((Array.isArray(remoteArr) ? remoteArr : [])
-    .map(function(item){ return item && normKey(item.key); })
-    .filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
   const map = {};
   (Array.isArray(remoteArr) ? remoteArr : []).forEach(function(item){ if (item && item.key != null) map[item.key] = item; });
   (Array.isArray(localArr) ? localArr : []).forEach(function(item){ if (item && item.key != null) map[item.key] = item; });
@@ -6069,8 +6449,8 @@ function mergeDeletedClasses(localArr, remoteArr, classTombstones, currentClasse
     const key = normKey(item.key);
     // إذا الفصل مستعاد محلياً، لا يظهر في سلة المحذوفات
     if (restoredSet.has(key)) return false;
-    // إذا محذوف محلياً، يظل في السلة فقط إذا لم يتحول لحذف نهائي على Firebase.
-    if (localKeys.has(key)) return !hasKey(ts, item.key) || remoteKeys.has(key);
+    // إذا محذوف محلياً، يظل في السلة
+    if (localKeys.has(key)) return true;
     if (hasKey(ts, item.key)) return false;
     if (Object.prototype.hasOwnProperty.call(current, item.key)) return false;
     return true;
@@ -6126,7 +6506,6 @@ async function pushToFirebase() {
     });
 
     const localTombstones = typeof tombstones !== 'undefined' ? tombstones : {};
-    stripRestoredKeysBlockedByLocalTombstones(mergedRestoredKeys, localTombstones);
     const remoteTombstones = fullReplace ? {} : ((remoteData && remoteData.tombstones) ? remoteData.tombstones : {});
     // دمج tombstones مع استبعاد المستعادين (من restoredKeys المدمج)
     const mergedTombstones = fullReplace
@@ -6227,16 +6606,12 @@ async function pushToFirebase() {
     // أي عنصر تمت استعادته محلياً (غير موجود في localDeleted لكن موجود في remoteDeleted) يُحذف
     // أي عنصر tombstone يجب ألا يكون في deletedStudents أيضاً (حذف نهائي)
     const finalTsStudents = mergedTombstones.students || [];
-    const remoteDeletedStudentKeys = new Set(remoteDeleted.map(function(x){ return x && x.id != null ? normKey(x.id) : null; }).filter(Boolean));
     const mergedDeleted = Object.values(deletedMap).filter(function(s){
       // إذا لم يعد في القائمة المحلية وكان قد استُعيد (ليس في tombstones) فلا نُدرجه
       const inLocal = localDeleted.some(function(x){ return x && normKey(x.id) === normKey(s.id); });
       const inTombstone = hasKey(finalTsStudents, s.id);
-      const inLocalTombstone = hasKey(localTombstones.students || [], s.id);
-      // tombstone محلي بدون وجوده في سلة محلية = حذف نهائي من هذا الجهاز، ولا يجوز أن يعيده remote القديم.
-      if (inLocalTombstone && !inLocal) return false;
-      // tombstone بدون سجل deleted مقابل في Firebase يعني حذف نهائي وصل من جهاز آخر.
-      if (inTombstone && !inLocal && !remoteDeletedStudentKeys.has(normKey(s.id))) return false;
+      // إذا كان في tombstone (حذف نهائي) لا يظهر في سلة المحذوفات
+      if (inTombstone) return false;
       // إذا لم يكن في البيانات المحلية وقد جاء فقط من Firebase، تحقق أنه لم يُستعد محلياً
       // (أي أن students المحلي يحتوي عليه — إذاً قد استُعيد)
       if (!inLocal) {
@@ -6248,7 +6623,6 @@ async function pushToFirebase() {
 
     const mergeDeletedByKey = function(localArr, remoteArr, keyField, tombstoneArr, activeArr, restoredArr) {
       const localDeletedKeys = new Set((Array.isArray(localArr) ? localArr : []).map(function(item){ return item && normKey(item[keyField]); }).filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
-      const remoteDeletedKeys = new Set((Array.isArray(remoteArr) ? remoteArr : []).map(function(item){ return item && normKey(item[keyField]); }).filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
       const restoredSet = new Set((Array.isArray(restoredArr) ? restoredArr : []).map(function(x){ return normKey(x); }));
       // المفاتيح النشطة فقط التي لم تكن محذوفة محلياً
       const activeKeys = new Set((Array.isArray(activeArr) ? activeArr : [])
@@ -6262,12 +6636,10 @@ async function pushToFirebase() {
         const key = normKey(item[keyField]);
         // إذا السجل مستعاد محلياً، لا يظهر في سلة المحذوفات أبداً
         if (restoredSet.has(key)) return false;
-        // إذا السجل محذوف محلياً، يجب أن يبقى في سلة المحذوفات حتى لو وُجد tombstone.
-        // الـ tombstone هنا يعني: لا تُرجِع السجل للقائمة النشطة من Firebase، وليس حذفاً نهائياً.
-        // الحذف النهائي يُعرف فقط عندما لا يعود السجل موجوداً في localDeleted ولا remoteDeleted.
+        // إذا السجل محذوف محلياً، يظل في سلة المحذوفات حتى لو كان في activeArr (عودة خاطئة من remote)
         if (localDeletedKeys.has(key)) return true;
         if (activeKeys.has(key)) return false;
-        if (hasKey(tombstoneArr, item[keyField]) && !remoteDeletedKeys.has(key)) return false;
+        if (hasKey(tombstoneArr, item[keyField])) return false;
         return true;
       });
     };
@@ -6395,7 +6767,6 @@ async function loadFromFirebase() {
         const local = Array.isArray(restoredKeys[type]) ? restoredKeys[type] : [];
         restoredKeys[type] = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
       });
-      stripRestoredKeysBlockedByLocalTombstones(restoredKeys, tombstones);
       localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
     }
 
@@ -6481,10 +6852,7 @@ async function loadFromFirebase() {
         return true;
       });
       const localMap = {};
-      const remoteDeletedStudentKeys2 = new Set(remoteDs.map(function(s){ return s && s.id != null ? normKey(s.id) : null; }).filter(Boolean));
-      deletedStudents.forEach(function(s){
-        if(s && s.id && (!hasKey(tombstones.students || [], s.id) || remoteDeletedStudentKeys2.has(normKey(s.id)))) localMap[s.id] = s;
-      });
+      deletedStudents.forEach(function(s){ if(s && s.id) localMap[s.id] = s; });
       remoteDs.forEach(function(s){ if(s && s.id && !localMap[s.id]) localMap[s.id] = s; });
       deletedStudents = Object.values(localMap);
       localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
@@ -6497,8 +6865,6 @@ async function loadFromFirebase() {
         if (payments.some(function(p){ return p && normKey(p.id) === normKey(x.id); })) return false;
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
-      // السجلات المحذوفة محلياً تبقى في سلة المحذوفات حتى مع وجود tombstone.
-      // الـ tombstone يمنع عودة السجل للقائمة النشطة، ولا يعني حذفاً نهائياً إلا إذا لم يعد موجوداً في deletedPayments.
       deletedPayments.forEach(function(x){
         if (x && x.id != null && !payments.some(function(p){ return p && normKey(p.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
       });
@@ -6513,8 +6879,6 @@ async function loadFromFirebase() {
         if (expenses.some(function(e){ return e && normKey(e.id) === normKey(x.id); })) return false;
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
-      // السجلات المحذوفة محلياً تبقى في سلة المحذوفات حتى مع وجود tombstone.
-      // الـ tombstone يمنع عودة السجل للقائمة النشطة، ولا يعني حذفاً نهائياً إلا إذا لم يعد موجوداً في deletedExpenses.
       deletedExpenses.forEach(function(x){
         if (x && x.id != null && !expenses.some(function(e){ return e && normKey(e.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
       });
@@ -6529,8 +6893,6 @@ async function loadFromFirebase() {
         if (renewals.some(function(r){ return r && normKey(r.id) === normKey(x.id); })) return false;
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
-      // السجلات المحذوفة محلياً تبقى في سلة المحذوفات حتى مع وجود tombstone.
-      // الـ tombstone يمنع عودة السجل للقائمة النشطة، ولا يعني حذفاً نهائياً إلا إذا لم يعد موجوداً في deletedRenewals.
       deletedRenewals.forEach(function(x){
         if (x && x.id != null && !renewals.some(function(r){ return r && normKey(r.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
       });
