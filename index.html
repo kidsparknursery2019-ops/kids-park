@@ -612,8 +612,8 @@ textarea{resize:vertical;min-height:65px}
       <!-- Live sync indicator -->
       <div id="bin-sync-info" style="background:#eaf6ef;border:1.5px solid #4db87a;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--g1);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span id="bin-stream-dot" style="width:10px;height:10px;border-radius:50%;background:#4db87a;box-shadow:0 0 0 3px rgba(77,184,122,.25);display:inline-block;flex-shrink:0"></span>
-        <span style="font-weight:700" id="bin-stream-label">متصل بالمزامنة اللحظية</span>
-        <span style="color:var(--muted)">— التحديثات تصل فوراً لجميع الموظفين (~200ms)</span>
+        <span style="font-weight:700" id="bin-stream-label">متصل بالمزامنة السريعة</span>
+        <span style="color:var(--muted)">— التحديثات تظهر خلال أقل من ثانية عند جميع الموظفين</span>
         <span style="flex:1"></span>
         <span id="bin-last-sync" style="font-size:11.5px;color:var(--muted)"></span>
       </div>
@@ -5310,108 +5310,50 @@ function applyLogin() {
     }
   });
   // ============================================================
-  // REAL-TIME SYNC: Firebase Server-Sent Events (SSE) streaming
+  // FAST SYNC: aggressive polling of `savedAt` timestamp only
   // ------------------------------------------------------------
-  // Instead of polling every 2-5s, we open a single persistent
-  // connection to Firebase. The server PUSHES any change to all
-  // connected devices within ~100-300ms. This is how the official
-  // Firebase SDK works under the hood.
+  // Why this and not SSE? Firebase REST streaming requires
+  // following HTTP 307 redirects, which browsers' EventSource
+  // cannot reliably do cross-origin. Fast polling of the tiny
+  // savedAt endpoint (a single timestamp, ~30 bytes) works on
+  // every browser and gives sub-second perceived latency.
+  //
+  // Adaptive intervals:
+  //   - Recycle bin open:  600ms  (near-real-time)
+  //   - Other pages:       1200ms (still very fast)
+  //   - Tab hidden:        paused until visible again
   // ============================================================
-  startFirebaseStreaming();
-  // Slow polling stays as a safety net in case SSE drops silently
-  setInterval(checkForUpdates, 15000);
+  startFastSync();
   startAutoSync();
 }
 
 // ============================================================
-// Firebase Realtime Database streaming (REST + SSE)
+// FAST SYNC via savedAt polling
 // ============================================================
-var _fbEventSource = null;
-var _fbStreamReconnectDelay = 1000;
-var _fbStreamDebounce = null;
-var _fbStreamLastEvent = 0;
+var _fastSyncTimer = null;
 
-function startFirebaseStreaming() {
-  if (!window.EventSource) {
-    console.warn('EventSource not supported — falling back to polling');
-    setInterval(checkForUpdates, 3000);
-    return;
-  }
-  stopFirebaseStreaming(); // clean up any previous
-  try {
-    // Firebase REST API supports SSE when you just open an EventSource
-    // to any .json endpoint. Events: put, patch, keep-alive, cancel.
-    _fbEventSource = new EventSource(FB_URL + '.json');
-
-    _fbEventSource.addEventListener('put', handleFirebaseStreamEvent);
-    _fbEventSource.addEventListener('patch', handleFirebaseStreamEvent);
-
-    _fbEventSource.addEventListener('keep-alive', function(){
-      _fbStreamLastEvent = Date.now();
-      _setStreamStatus('connected');
-    });
-
-    _fbEventSource.addEventListener('cancel', function(){
-      console.warn('Firebase stream cancelled — reconnecting');
-      _setStreamStatus('reconnecting');
-      stopFirebaseStreaming();
-      setTimeout(startFirebaseStreaming, 2000);
-    });
-
-    _fbEventSource.addEventListener('auth_revoked', function(){
-      console.warn('Firebase auth revoked');
-      _setStreamStatus('disconnected');
-      stopFirebaseStreaming();
-    });
-
-    _fbEventSource.onopen = function(){
-      _fbStreamReconnectDelay = 1000; // reset backoff
-      _fbStreamLastEvent = Date.now();
-      _setStreamStatus('connected');
-      console.log('✅ Firebase stream connected — real-time sync active');
-    };
-
-    _fbEventSource.onerror = function(){
-      _setStreamStatus('reconnecting');
-      if (_fbEventSource && _fbEventSource.readyState === EventSource.CLOSED) {
-        console.warn('Firebase stream closed — reconnecting in ' + _fbStreamReconnectDelay + 'ms');
-        stopFirebaseStreaming();
-        setTimeout(startFirebaseStreaming, _fbStreamReconnectDelay);
-        _fbStreamReconnectDelay = Math.min(_fbStreamReconnectDelay * 2, 30000);
-      }
-    };
-  } catch(e) {
-    console.error('startFirebaseStreaming failed:', e);
-    _setStreamStatus('disconnected');
-  }
+function startFastSync() {
+  stopFastSync();
+  _fastSyncTimer = setInterval(function(){
+    if (document.hidden) return; // don't poll when tab is hidden
+    checkForUpdates();
+  }, _fastSyncInterval());
 }
 
-function stopFirebaseStreaming() {
-  if (_fbEventSource) {
-    try { _fbEventSource.close(); } catch(_) {}
-    _fbEventSource = null;
-  }
+function stopFastSync() {
+  if (_fastSyncTimer) { clearInterval(_fastSyncTimer); _fastSyncTimer = null; }
 }
 
-function handleFirebaseStreamEvent(e) {
-  _fbStreamLastEvent = Date.now();
-  _setStreamStatus('connected');
-  // If we're currently pushing or have pending writes, ignore the event —
-  // the push will complete and trigger our own render anyway.
-  if (isSyncing || hasUnsavedChanges || syncTimeout) return;
-  // Debounce rapid-fire events (e.g., burst of changes during sync)
-  clearTimeout(_fbStreamDebounce);
-  _fbStreamDebounce = setTimeout(function(){
-    _fbStreamDebounce = null;
-    if (isSyncing || hasUnsavedChanges || syncTimeout) return;
-    // Pull the latest, merged snapshot and refresh all views
-    loadFromFirebase().then(function(){
-      refreshAllViewsAfterSync();
-      showSyncBadge('🔄 تحديث لحظي');
-    }).catch(function(err){
-      console.warn('loadFromFirebase after stream event failed:', err);
-    });
-  }, 150);
+function _fastSyncInterval() {
+  var binPage = document.getElementById('pg-recyclebin');
+  var binActive = binPage && binPage.classList.contains('on');
+  return binActive ? 600 : 1200;
+}
+
+// Re-tune the interval whenever the user navigates to/from the bin
+function retuneFastSync() {
+  stopFastSync();
+  startFastSync();
 }
 
 function _setStreamStatus(status) {
@@ -5422,15 +5364,15 @@ function _setStreamStatus(status) {
   if (status === 'connected') {
     dot.style.background = '#4db87a';
     dot.style.boxShadow = '0 0 0 3px rgba(77,184,122,.25)';
-    label.textContent = 'متصل بالمزامنة اللحظية';
+    label.textContent = 'متصل بالمزامنة السريعة';
   } else if (status === 'reconnecting') {
     dot.style.background = '#e8a800';
     dot.style.boxShadow = '0 0 0 3px rgba(232,168,0,.25)';
-    label.textContent = 'إعادة الاتصال...';
+    label.textContent = 'جاري الاتصال...';
   } else {
     dot.style.background = '#c0392b';
     dot.style.boxShadow = '0 0 0 3px rgba(192,57,43,.25)';
-    label.textContent = 'غير متصل — polling فقط';
+    label.textContent = 'غير متصل';
   }
 }
 
@@ -5450,8 +5392,8 @@ function doLogout() {
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
   document.getElementById('login-err').textContent = '';
-  // Stop real-time stream when logging out
-  stopFirebaseStreaming();
+  // Stop fast-sync polling on logout
+  stopFastSync();
 }
 
 function checkSession() {
@@ -5904,6 +5846,8 @@ function go(page) {
     admin:()=>{renderAdminUsers();renderAdminClasses();}
   };
   if(renders[page]) renders[page]();
+  // Re-tune polling interval: bin page gets 600ms, others 1200ms
+  if (typeof retuneFastSync === 'function' && currentUser) retuneFastSync();
 }
 
 // ============================================================
@@ -7085,21 +7029,24 @@ async function checkForUpdates() {
   if (isSyncing || hasUnsavedChanges || syncTimeout) return;
   try {
     syncPollCounter++;
-    const forceFullRefresh = (syncPollCounter % 12 === 0);
+    const forceFullRefresh = (syncPollCounter % 30 === 0);
     if (forceFullRefresh) {
       await loadFromFirebase();
       refreshAllViewsAfterSync();
-      showSyncBadge('🔄 تم تحديث البيانات تلقائياً');
+      if (typeof _setStreamStatus === 'function') _setStreamStatus('connected');
       return;
     }
     const res = await fetch(FB_URL + '/savedAt.json', { cache: 'no-store' });
     const time = await res.json();
+    if (typeof _setStreamStatus === 'function') _setStreamStatus('connected');
     if (time && time !== lastSavedAt) {
       await loadFromFirebase();
       refreshAllViewsAfterSync();
-      showSyncBadge('🔄 تم تحديث البيانات تلقائياً');
+      showSyncBadge('🔄 تحديث مزامنة');
     }
-  } catch(e) { /* offline */ }
+  } catch(e) {
+    if (typeof _setStreamStatus === 'function') _setStreamStatus('disconnected');
+  }
 }
 
 function showSyncBadge(msg) {
@@ -8153,20 +8100,16 @@ document.addEventListener('click', function(e) {
 
 window.addEventListener('focus', function(){
   if (typeof checkForUpdates === 'function' && currentUser) checkForUpdates();
-  // Reconnect SSE if connection was lost while tab was backgrounded
-  if (currentUser && typeof startFirebaseStreaming === 'function') {
-    if (!_fbEventSource || _fbEventSource.readyState === EventSource.CLOSED) {
-      startFirebaseStreaming();
-    }
+  // Ensure fast-sync is running after the tab regains focus
+  if (currentUser && typeof startFastSync === 'function' && !_fastSyncTimer) {
+    startFastSync();
   }
 });
 document.addEventListener('visibilitychange', function(){
   if (!document.hidden && typeof checkForUpdates === 'function' && currentUser) checkForUpdates();
-  // When tab becomes visible again, make sure the stream is alive
-  if (!document.hidden && currentUser && typeof startFirebaseStreaming === 'function') {
-    if (!_fbEventSource || _fbEventSource.readyState === EventSource.CLOSED) {
-      startFirebaseStreaming();
-    }
+  // Resume fast-sync when tab becomes visible again
+  if (!document.hidden && currentUser && typeof startFastSync === 'function' && !_fastSyncTimer) {
+    startFastSync();
   }
 });
 
