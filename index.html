@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260422-forms-merge-undo -->
+<!-- v20260424-trash-sync-expense-soft-delete-fix -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -3320,14 +3320,14 @@ function restorePayment(id) {
 }
 
 function restoreExpense(id) {
-  const e = deletedExpenses.find(function(x){ return x.id === id; });
+  const e = deletedExpenses.find(function(x){ return x && normKey(x.id) === normKey(id); });
   if (!e) return;
   if (!confirm('استعادة المصروف #' + id + '؟')) return;
   const restored = Object.assign({}, e);
   delete restored.deletedAt; delete restored.deletedBy;
-  expenses = expenses.filter(function(x){ return x.id !== id; });
+  expenses = expenses.filter(function(x){ return !(x && normKey(x.id) === normKey(id)); });
   expenses.push(restored);
-  deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== id; });
+  deletedExpenses = deletedExpenses.filter(function(x){ return !(x && normKey(x.id) === normKey(id)); });
   localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
   if (tombstones && tombstones.expenses) {
     tombstones.expenses = tombstones.expenses.filter(function(x){ return normKey(x) !== normKey(id); });
@@ -3383,7 +3383,7 @@ function permanentDeleteGeneric(type, key) {
     localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
     addTombstone('payments', key);
   } else if (type === 'expenses') {
-    deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== key; });
+    deletedExpenses = deletedExpenses.filter(function(x){ return !(x && normKey(x.id) === normKey(key)); });
     localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
     addTombstone('expenses', key);
   } else if (type === 'renewals') {
@@ -4045,14 +4045,19 @@ function saveExpense(){
 function delExpense(id){
   const delId = id || editingExpId;
   if(!delId) return;
-  const exp = expenses.find(function(e){ return e.id===delId; });
+  const exp = expenses.find(function(e){ return e && normKey(e.id) === normKey(delId); });
   if(!exp || !confirm('حذف هذا المصروف؟'))return;
+
+  // حذف عادي: انقل المصروف إلى سلة باقي المحذوفات أولاً، ثم ضع tombstone فقط لمنع عودته للقائمة النشطة من Firebase.
+  // لا يجوز تفسير هذا tombstone كحذف نهائي طالما السجل موجود في deletedExpenses.
+  deletedExpenses = deletedExpenses.filter(function(x){ return !(x && normKey(x.id) === normKey(delId)); });
   deletedExpenses.unshift(Object.assign({}, exp, {
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
     deletedBy: currentUser ? currentUser.name : 'نظام'
   }));
+  expenses = expenses.filter(function(e){ return !(e && normKey(e.id) === normKey(delId)); });
   localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
-  expenses=expenses.filter(e=>e.id!==delId);
+  persistCoreDataToLocalStorage();
   addTombstone('expenses', delId);
   closeAll();
   autoSave(); renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
@@ -6257,11 +6262,12 @@ async function pushToFirebase() {
         const key = normKey(item[keyField]);
         // إذا السجل مستعاد محلياً، لا يظهر في سلة المحذوفات أبداً
         if (restoredSet.has(key)) return false;
-        // إذا السجل محذوف محلياً، يظل في السلة فقط إذا لم يتحول لحذف نهائي على Firebase.
-        // وجود tombstone بدون سجل مقابل في deletedXxx السحابي يعني أن جهازاً آخر نفّذ حذفاً نهائياً.
-        if (localDeletedKeys.has(key)) return !hasKey(tombstoneArr, item[keyField]) || remoteDeletedKeys.has(key);
+        // إذا السجل محذوف محلياً، يجب أن يبقى في سلة المحذوفات حتى لو وُجد tombstone.
+        // الـ tombstone هنا يعني: لا تُرجِع السجل للقائمة النشطة من Firebase، وليس حذفاً نهائياً.
+        // الحذف النهائي يُعرف فقط عندما لا يعود السجل موجوداً في localDeleted ولا remoteDeleted.
+        if (localDeletedKeys.has(key)) return true;
         if (activeKeys.has(key)) return false;
-        if (hasKey(tombstoneArr, item[keyField])) return false;
+        if (hasKey(tombstoneArr, item[keyField]) && !remoteDeletedKeys.has(key)) return false;
         return true;
       });
     };
@@ -6491,9 +6497,10 @@ async function loadFromFirebase() {
         if (payments.some(function(p){ return p && normKey(p.id) === normKey(x.id); })) return false;
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
-      const remoteDeletedPaymentKeys = new Set(Object.keys(remoteMap));
+      // السجلات المحذوفة محلياً تبقى في سلة المحذوفات حتى مع وجود tombstone.
+      // الـ tombstone يمنع عودة السجل للقائمة النشطة، ولا يعني حذفاً نهائياً إلا إذا لم يعد موجوداً في deletedPayments.
       deletedPayments.forEach(function(x){
-        if (x && x.id != null && !payments.some(function(p){ return p && normKey(p.id) === normKey(x.id); }) && (!hasKey(tombstones.payments || [], x.id) || remoteDeletedPaymentKeys.has(normKey(x.id)))) remoteMap[normKey(x.id)] = x;
+        if (x && x.id != null && !payments.some(function(p){ return p && normKey(p.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
       });
       deletedPayments = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
@@ -6506,9 +6513,10 @@ async function loadFromFirebase() {
         if (expenses.some(function(e){ return e && normKey(e.id) === normKey(x.id); })) return false;
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
-      const remoteDeletedExpenseKeys = new Set(Object.keys(remoteMap));
+      // السجلات المحذوفة محلياً تبقى في سلة المحذوفات حتى مع وجود tombstone.
+      // الـ tombstone يمنع عودة السجل للقائمة النشطة، ولا يعني حذفاً نهائياً إلا إذا لم يعد موجوداً في deletedExpenses.
       deletedExpenses.forEach(function(x){
-        if (x && x.id != null && !expenses.some(function(e){ return e && normKey(e.id) === normKey(x.id); }) && (!hasKey(tombstones.expenses || [], x.id) || remoteDeletedExpenseKeys.has(normKey(x.id)))) remoteMap[normKey(x.id)] = x;
+        if (x && x.id != null && !expenses.some(function(e){ return e && normKey(e.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
       });
       deletedExpenses = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
@@ -6521,9 +6529,10 @@ async function loadFromFirebase() {
         if (renewals.some(function(r){ return r && normKey(r.id) === normKey(x.id); })) return false;
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
-      const remoteDeletedRenewalKeys = new Set(Object.keys(remoteMap));
+      // السجلات المحذوفة محلياً تبقى في سلة المحذوفات حتى مع وجود tombstone.
+      // الـ tombstone يمنع عودة السجل للقائمة النشطة، ولا يعني حذفاً نهائياً إلا إذا لم يعد موجوداً في deletedRenewals.
       deletedRenewals.forEach(function(x){
-        if (x && x.id != null && !renewals.some(function(r){ return r && normKey(r.id) === normKey(x.id); }) && (!hasKey(tombstones.renewals || [], x.id) || remoteDeletedRenewalKeys.has(normKey(x.id)))) remoteMap[normKey(x.id)] = x;
+        if (x && x.id != null && !renewals.some(function(r){ return r && normKey(r.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
       });
       deletedRenewals = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
