@@ -611,9 +611,9 @@ textarea{resize:vertical;min-height:65px}
 
       <!-- Live sync indicator -->
       <div id="bin-sync-info" style="background:#eaf6ef;border:1.5px solid #4db87a;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--g1);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span style="font-size:16px">🔄</span>
-        <span style="font-weight:700">المزامنة اللحظية مفعّلة</span>
-        <span style="color:var(--muted)">— أي تغيير ينعكس تلقائياً عند جميع الموظفين خلال ثوانٍ</span>
+        <span id="bin-stream-dot" style="width:10px;height:10px;border-radius:50%;background:#4db87a;box-shadow:0 0 0 3px rgba(77,184,122,.25);display:inline-block;flex-shrink:0"></span>
+        <span style="font-weight:700" id="bin-stream-label">متصل بالمزامنة اللحظية</span>
+        <span style="color:var(--muted)">— التحديثات تصل فوراً لجميع الموظفين (~200ms)</span>
         <span style="flex:1"></span>
         <span id="bin-last-sync" style="font-size:11.5px;color:var(--muted)"></span>
       </div>
@@ -3777,7 +3777,8 @@ function bulkRestoreBin(){
   }
 
   clearBinSelection();
-  if(typeof autoSave === 'function') autoSave(); // push merged result to Firebase
+  if(typeof autoSaveNow === 'function') autoSaveNow();
+  else if(typeof autoSave === 'function') autoSave();
   renderRecycleBin();
   alert('✅ تمت الاستعادة — المزامنة جارية لباقي الأجهزة');
 }
@@ -3818,7 +3819,8 @@ function bulkPermanentDeleteBin(){
   }
 
   clearBinSelection();
-  if(typeof autoSave === 'function') autoSave();
+  if(typeof autoSaveNow === 'function') autoSaveNow();
+  else if(typeof autoSave === 'function') autoSave();
   renderRecycleBin();
   alert('🗑 تم الحذف النهائي — تمت المزامنة');
 }
@@ -3862,7 +3864,8 @@ function emptyRecycleBin(){
 
   clearBinSelection();
   if(typeof cleanupDeletedBuckets === 'function') cleanupDeletedBuckets();
-  if(typeof autoSave === 'function') autoSave();
+  if(typeof autoSaveNow === 'function') autoSaveNow();
+  else if(typeof autoSave === 'function') autoSave();
   renderRecycleBin();
   alert('🧹 تم تفريغ السلة بالكامل — تمت المزامنة مع باقي الأجهزة');
 }
@@ -5306,22 +5309,129 @@ function applyLogin() {
       setTimeout(function(){ alert('✅ تم اعتماد ' + approvedAfterSync + ' عملية ربط إضافية بعد مزامنة البيانات'); }, 500);
     }
   });
-  // Adaptive polling: 2s when viewing the recycle bin (near-real-time),
-  // 5s elsewhere. Keeps Firebase load reasonable while giving the bin
-  // page a live-sync feel.
-  var _fastPollTick = 0;
-  setInterval(function(){
-    var binPage = document.getElementById('pg-recyclebin');
-    var binActive = binPage && binPage.classList.contains('on');
-    if(binActive){
-      // Every tick (2s) when on the recycle bin
-      checkForUpdates();
-    }
-    // Otherwise the 5s baseline below handles it
-  }, 2000);
-  // Baseline poll for all other pages
-  setInterval(checkForUpdates, 5000);
+  // ============================================================
+  // REAL-TIME SYNC: Firebase Server-Sent Events (SSE) streaming
+  // ------------------------------------------------------------
+  // Instead of polling every 2-5s, we open a single persistent
+  // connection to Firebase. The server PUSHES any change to all
+  // connected devices within ~100-300ms. This is how the official
+  // Firebase SDK works under the hood.
+  // ============================================================
+  startFirebaseStreaming();
+  // Slow polling stays as a safety net in case SSE drops silently
+  setInterval(checkForUpdates, 15000);
   startAutoSync();
+}
+
+// ============================================================
+// Firebase Realtime Database streaming (REST + SSE)
+// ============================================================
+var _fbEventSource = null;
+var _fbStreamReconnectDelay = 1000;
+var _fbStreamDebounce = null;
+var _fbStreamLastEvent = 0;
+
+function startFirebaseStreaming() {
+  if (!window.EventSource) {
+    console.warn('EventSource not supported — falling back to polling');
+    setInterval(checkForUpdates, 3000);
+    return;
+  }
+  stopFirebaseStreaming(); // clean up any previous
+  try {
+    // Firebase REST API supports SSE when you just open an EventSource
+    // to any .json endpoint. Events: put, patch, keep-alive, cancel.
+    _fbEventSource = new EventSource(FB_URL + '.json');
+
+    _fbEventSource.addEventListener('put', handleFirebaseStreamEvent);
+    _fbEventSource.addEventListener('patch', handleFirebaseStreamEvent);
+
+    _fbEventSource.addEventListener('keep-alive', function(){
+      _fbStreamLastEvent = Date.now();
+      _setStreamStatus('connected');
+    });
+
+    _fbEventSource.addEventListener('cancel', function(){
+      console.warn('Firebase stream cancelled — reconnecting');
+      _setStreamStatus('reconnecting');
+      stopFirebaseStreaming();
+      setTimeout(startFirebaseStreaming, 2000);
+    });
+
+    _fbEventSource.addEventListener('auth_revoked', function(){
+      console.warn('Firebase auth revoked');
+      _setStreamStatus('disconnected');
+      stopFirebaseStreaming();
+    });
+
+    _fbEventSource.onopen = function(){
+      _fbStreamReconnectDelay = 1000; // reset backoff
+      _fbStreamLastEvent = Date.now();
+      _setStreamStatus('connected');
+      console.log('✅ Firebase stream connected — real-time sync active');
+    };
+
+    _fbEventSource.onerror = function(){
+      _setStreamStatus('reconnecting');
+      if (_fbEventSource && _fbEventSource.readyState === EventSource.CLOSED) {
+        console.warn('Firebase stream closed — reconnecting in ' + _fbStreamReconnectDelay + 'ms');
+        stopFirebaseStreaming();
+        setTimeout(startFirebaseStreaming, _fbStreamReconnectDelay);
+        _fbStreamReconnectDelay = Math.min(_fbStreamReconnectDelay * 2, 30000);
+      }
+    };
+  } catch(e) {
+    console.error('startFirebaseStreaming failed:', e);
+    _setStreamStatus('disconnected');
+  }
+}
+
+function stopFirebaseStreaming() {
+  if (_fbEventSource) {
+    try { _fbEventSource.close(); } catch(_) {}
+    _fbEventSource = null;
+  }
+}
+
+function handleFirebaseStreamEvent(e) {
+  _fbStreamLastEvent = Date.now();
+  _setStreamStatus('connected');
+  // If we're currently pushing or have pending writes, ignore the event —
+  // the push will complete and trigger our own render anyway.
+  if (isSyncing || hasUnsavedChanges || syncTimeout) return;
+  // Debounce rapid-fire events (e.g., burst of changes during sync)
+  clearTimeout(_fbStreamDebounce);
+  _fbStreamDebounce = setTimeout(function(){
+    _fbStreamDebounce = null;
+    if (isSyncing || hasUnsavedChanges || syncTimeout) return;
+    // Pull the latest, merged snapshot and refresh all views
+    loadFromFirebase().then(function(){
+      refreshAllViewsAfterSync();
+      showSyncBadge('🔄 تحديث لحظي');
+    }).catch(function(err){
+      console.warn('loadFromFirebase after stream event failed:', err);
+    });
+  }, 150);
+}
+
+function _setStreamStatus(status) {
+  // status: 'connected' | 'reconnecting' | 'disconnected'
+  var dot = document.getElementById('bin-stream-dot');
+  var label = document.getElementById('bin-stream-label');
+  if (!dot || !label) return;
+  if (status === 'connected') {
+    dot.style.background = '#4db87a';
+    dot.style.boxShadow = '0 0 0 3px rgba(77,184,122,.25)';
+    label.textContent = 'متصل بالمزامنة اللحظية';
+  } else if (status === 'reconnecting') {
+    dot.style.background = '#e8a800';
+    dot.style.boxShadow = '0 0 0 3px rgba(232,168,0,.25)';
+    label.textContent = 'إعادة الاتصال...';
+  } else {
+    dot.style.background = '#c0392b';
+    dot.style.boxShadow = '0 0 0 3px rgba(192,57,43,.25)';
+    label.textContent = 'غير متصل — polling فقط';
+  }
 }
 
 function doLogout() {
@@ -5340,6 +5450,8 @@ function doLogout() {
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
   document.getElementById('login-err').textContent = '';
+  // Stop real-time stream when logging out
+  stopFirebaseStreaming();
 }
 
 function checkSession() {
@@ -5999,10 +6111,25 @@ function autoSave() {
     return;
   }
   clearTimeout(syncTimeout);
+  // 80ms debounce (was 300ms) — faster reflection on other devices
   syncTimeout = setTimeout(function(){
     syncTimeout = null;
     pushToFirebase();
-  }, 300);
+  }, 80);
+}
+
+// Immediate push — zero debounce. Use for critical/user-triggered actions
+// where instant visibility on other devices matters (bin ops, deletions).
+function autoSaveNow() {
+  hasUnsavedChanges = true;
+  persistCoreDataToLocalStorage();
+  clearTimeout(syncTimeout);
+  syncTimeout = null;
+  if (isSyncing) {
+    pendingSync = true;
+    return;
+  }
+  pushToFirebase();
 }
 
 async function saveLogoToFirebaseSilent() {
@@ -8026,9 +8153,21 @@ document.addEventListener('click', function(e) {
 
 window.addEventListener('focus', function(){
   if (typeof checkForUpdates === 'function' && currentUser) checkForUpdates();
+  // Reconnect SSE if connection was lost while tab was backgrounded
+  if (currentUser && typeof startFirebaseStreaming === 'function') {
+    if (!_fbEventSource || _fbEventSource.readyState === EventSource.CLOSED) {
+      startFirebaseStreaming();
+    }
+  }
 });
 document.addEventListener('visibilitychange', function(){
   if (!document.hidden && typeof checkForUpdates === 'function' && currentUser) checkForUpdates();
+  // When tab becomes visible again, make sure the stream is alive
+  if (!document.hidden && currentUser && typeof startFirebaseStreaming === 'function') {
+    if (!_fbEventSource || _fbEventSource.readyState === EventSource.CLOSED) {
+      startFirebaseStreaming();
+    }
+  }
 });
 
 // renderDash is called by applyLogin after login
