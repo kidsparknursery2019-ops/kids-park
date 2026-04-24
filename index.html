@@ -27,7 +27,7 @@
 <script>
   // ⚠️ AI: UPDATE THIS TIMESTAMP ON EVERY EDIT (ISO 8601 format)
   // ⚠️ الذكاء الاصطناعي: حدّث هذا التاريخ في كل تعديل
-  window.APP_LAST_MODIFIED = "2026-04-24T17:00:00";
+  window.APP_LAST_MODIFIED = "2026-04-24T17:30:00";
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -4639,6 +4639,7 @@ function downloadBackup() {
     deletedRenewals: (typeof deletedRenewals !== 'undefined' ? deletedRenewals : []),
     deletedClasses: (typeof deletedClasses !== 'undefined' ? deletedClasses : []),
     tombstones: (typeof tombstones !== 'undefined' ? tombstones : {}),
+    restoredKeys: (typeof restoredKeys !== 'undefined' ? restoredKeys : {}),
     CLASSES: CLASSES,
     nurserySettings: nurserySettings,
     kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
@@ -6331,16 +6332,22 @@ async function pushToFirebase() {
     // الخطوة 4: دمج سلال المحذوفات
     // القاعدة: إذا في deleted bucket محلي أو remote ومش في tombstone ومش مستعاد → في السلة
     // ═══════════════════════════════════════════════════════════════════
-    function mergeDeletedBucket(localArr, remoteArr, keyField, tombstoneArr, restoredArr) {
-      const ts = Array.isArray(tombstoneArr) ? tombstoneArr : [];
+    // المنطق:
+    // - إذا السجل في local.deletedXxx أو remote.deletedXxx → عرضه في السلة (حذف عادي)
+    // - استثناء: إذا remote قرر حذفه نهائياً (له tombstone في remote ومش في remote.deletedXxx)
+    //   → حذف نهائي، شيله من السلة
+    // - استثناء: إذا المحلي قرر حذفه نهائياً (له tombstone محلي ومش في local.deletedXxx أو remote.deletedXxx)
+    //   → حذف نهائي، شيله من السلة
+    // - إذا في restoredKeys → لا يظهر في السلة
+    function mergeDeletedBucket(localArr, remoteArr, keyField, localTsArr, remoteTsArr, restoredArr) {
       const restoredSet = new Set((Array.isArray(restoredArr) ? restoredArr : []).map(normKey));
+      const localTs = Array.isArray(localTsArr) ? localTsArr : [];
+      const remoteTs = Array.isArray(remoteTsArr) ? remoteTsArr : [];
       const map = {};
-      // ابدأ من remote
       (Array.isArray(remoteArr) ? remoteArr : []).forEach(function(item){
         if (!item || item[keyField] == null) return;
         map[normKey(item[keyField])] = item;
       });
-      // المحلي يكتب فوق (قد يحتوي معلومات حذف أحدث)
       (Array.isArray(localArr) ? localArr : []).forEach(function(item){
         if (!item || item[keyField] == null) return;
         map[normKey(item[keyField])] = item;
@@ -6348,26 +6355,26 @@ async function pushToFirebase() {
       return Object.values(map).filter(function(item){
         if (!item || item[keyField] == null) return false;
         const k = normKey(item[keyField]);
-        // مستعاد → ما يظهر
         if (restoredSet.has(k)) return false;
-        // موجود في deleted bucket (من أي طرف) → سؤال: هل حُذف نهائياً من أحد الأطراف؟
         const inLocal = (Array.isArray(localArr) ? localArr : []).some(function(x){ return x && normKey(x[keyField]) === k; });
         const inRemote = (Array.isArray(remoteArr) ? remoteArr : []).some(function(x){ return x && normKey(x[keyField]) === k; });
-        // إذا محذوف نهائياً من أحد الأطراف (له tombstone + مش في deleted bucket عنده):
-        // المحلي: محلي له tombstone + مش في localArr = حذف نهائي محلي
-        // remote: remote له tombstone + مش في remoteArr = حذف نهائي remote
-        // في هذه الحالة لا يُعرض
-        if (!inLocal && hasKey(ts, item[keyField])) return false;
-        if (!inRemote && hasKey(ts, item[keyField])) return false;
+        const hasLocalTs = hasKey(localTs, item[keyField]);
+        const hasRemoteTs = hasKey(remoteTs, item[keyField]);
+        // حذف نهائي من remote: له tombstone في remote + مش في remote.deletedXxx
+        if (hasRemoteTs && !inRemote) return false;
+        // حذف نهائي محلي: له tombstone محلي + مش في local.deletedXxx + مش في remote.deletedXxx
+        if (hasLocalTs && !inLocal && !inRemote) return false;
         return true;
       });
     }
 
-    const mergedDeletedStudents = mergeDeletedBucket(deletedStudents, rData.deletedStudents, 'id', mergedTombstones.students, mergedRestoredKeys.students);
-    const mergedDeletedPayments = mergeDeletedBucket(deletedPayments, rData.deletedPayments, 'id', mergedTombstones.payments, mergedRestoredKeys.payments);
-    const mergedDeletedExpenses = mergeDeletedBucket(deletedExpenses, rData.deletedExpenses, 'id', mergedTombstones.expenses, mergedRestoredKeys.expenses);
-    const mergedDeletedRenewals = mergeDeletedBucket(deletedRenewals, rData.deletedRenewals, 'id', mergedTombstones.renewals, mergedRestoredKeys.renewals);
-    const mergedDeletedClasses = mergeDeletedBucket(deletedClasses, rData.deletedClasses, 'key', mergedTombstones.classes, mergedRestoredKeys.classes);
+    const remoteTsData = (remoteData && remoteData.tombstones) ? remoteData.tombstones : {};
+    const localTsData = (typeof tombstones === 'object' && tombstones) ? tombstones : {};
+    const mergedDeletedStudents = mergeDeletedBucket(deletedStudents, rData.deletedStudents, 'id', localTsData.students, remoteTsData.students, mergedRestoredKeys.students);
+    const mergedDeletedPayments = mergeDeletedBucket(deletedPayments, rData.deletedPayments, 'id', localTsData.payments, remoteTsData.payments, mergedRestoredKeys.payments);
+    const mergedDeletedExpenses = mergeDeletedBucket(deletedExpenses, rData.deletedExpenses, 'id', localTsData.expenses, remoteTsData.expenses, mergedRestoredKeys.expenses);
+    const mergedDeletedRenewals = mergeDeletedBucket(deletedRenewals, rData.deletedRenewals, 'id', localTsData.renewals, remoteTsData.renewals, mergedRestoredKeys.renewals);
+    const mergedDeletedClasses = mergeDeletedBucket(deletedClasses, rData.deletedClasses, 'key', localTsData.classes, remoteTsData.classes, mergedRestoredKeys.classes);
 
     // ═══════════════════════════════════════════════════════════════════
     // الخطوة 5: دمج سجلات النماذج (form rows)
@@ -6591,9 +6598,10 @@ async function loadFromFirebase() {
     // القاعدة: في السلة إذا موجود في local أو remote deleted bucket
     //          ومش في restored ومش محذوف نهائياً (tombstone من طرف مع غياب من نفس الطرف)
     // ═══════════════════════════════════════════════════════════════════
-    function mergeDeletedBucket(localArr, remoteArr, keyField, tombstoneArr, restoredArr) {
-      const ts = Array.isArray(tombstoneArr) ? tombstoneArr : [];
+    function mergeDeletedBucket(localArr, remoteArr, keyField, localTsArr, remoteTsArr, restoredArr) {
       const restoredSet = new Set((Array.isArray(restoredArr) ? restoredArr : []).map(normKey));
+      const localTs = Array.isArray(localTsArr) ? localTsArr : [];
+      const remoteTs = Array.isArray(remoteTsArr) ? remoteTsArr : [];
       const map = {};
       (Array.isArray(remoteArr) ? remoteArr : []).forEach(function(item){
         if (!item || item[keyField] == null) return;
@@ -6609,18 +6617,23 @@ async function loadFromFirebase() {
         if (restoredSet.has(k)) return false;
         const inLocal = (Array.isArray(localArr) ? localArr : []).some(function(x){ return x && normKey(x[keyField]) === k; });
         const inRemote = (Array.isArray(remoteArr) ? remoteArr : []).some(function(x){ return x && normKey(x[keyField]) === k; });
-        // حذف نهائي: له tombstone ومش في أي deleted bucket من الطرف المقابل
-        if (!inLocal && hasKey(ts, item[keyField])) return false;
-        if (!inRemote && hasKey(ts, item[keyField])) return false;
+        const hasLocalTs = hasKey(localTs, item[keyField]);
+        const hasRemoteTs = hasKey(remoteTs, item[keyField]);
+        // حذف نهائي من remote: له tombstone في remote + مش في remote.deletedXxx
+        if (hasRemoteTs && !inRemote) return false;
+        // حذف نهائي محلي: له tombstone محلي + مش في local.deletedXxx + مش في remote.deletedXxx
+        if (hasLocalTs && !inLocal && !inRemote) return false;
         return true;
       });
     }
 
-    deletedStudents = mergeDeletedBucket(deletedStudents, data.deletedStudents, 'id', tombstones.students, restoredKeys.students);
-    deletedPayments = mergeDeletedBucket(deletedPayments, data.deletedPayments, 'id', tombstones.payments, restoredKeys.payments);
-    deletedExpenses = mergeDeletedBucket(deletedExpenses, data.deletedExpenses, 'id', tombstones.expenses, restoredKeys.expenses);
-    deletedRenewals = mergeDeletedBucket(deletedRenewals, data.deletedRenewals, 'id', tombstones.renewals, restoredKeys.renewals);
-    deletedClasses = mergeDeletedBucket(deletedClasses, data.deletedClasses, 'key', tombstones.classes, restoredKeys.classes);
+    // استخدم الـ snapshots الأصلية لتفريق tombstone محلي جديد من remote
+    const remoteTsRaw = (data.tombstones && typeof data.tombstones === 'object') ? data.tombstones : {};
+    deletedStudents = mergeDeletedBucket(deletedStudents, data.deletedStudents, 'id', localTsSnap.students, remoteTsRaw.students, restoredKeys.students);
+    deletedPayments = mergeDeletedBucket(deletedPayments, data.deletedPayments, 'id', localTsSnap.payments, remoteTsRaw.payments, restoredKeys.payments);
+    deletedExpenses = mergeDeletedBucket(deletedExpenses, data.deletedExpenses, 'id', localTsSnap.expenses, remoteTsRaw.expenses, restoredKeys.expenses);
+    deletedRenewals = mergeDeletedBucket(deletedRenewals, data.deletedRenewals, 'id', localTsSnap.renewals, remoteTsRaw.renewals, restoredKeys.renewals);
+    deletedClasses = mergeDeletedBucket(deletedClasses, data.deletedClasses, 'key', localTsSnap.classes, remoteTsRaw.classes, restoredKeys.classes);
 
     // ═══════════════════════════════════════════════════════════════════
     // الخطوة 5: حفظ ومعالجة البيانات الإضافية
