@@ -1269,41 +1269,8 @@ if (!tombstones.payments) tombstones.payments = [];
 if (!tombstones.expenses) tombstones.expenses = [];
 if (!tombstones.renewals) tombstones.renewals = [];
 if (!tombstones.classes) tombstones.classes = [];
-
-// متتبع للسجلات المستعادة — يمنع عودة tombstone من remote أو عودة السجل لسلة المحذوفات
-let restoredKeys = JSON.parse(localStorage.getItem('kp_restored_keys') || '{"students":[],"payments":[],"expenses":[],"renewals":[],"classes":[]}');
-['students','payments','expenses','renewals','classes'].forEach(function(t){
-  if (!Array.isArray(restoredKeys[t])) restoredKeys[t] = [];
-});
-
-function markRestored(type, id) {
-  if (!restoredKeys[type]) restoredKeys[type] = [];
-  if (!hasKey(restoredKeys[type], id)) restoredKeys[type].push(id);
-  localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-}
-
-function clearRestored(type, id) {
-  if (!restoredKeys[type]) return;
-  restoredKeys[type] = restoredKeys[type].filter(function(x){ return normKey(x) !== normKey(id); });
-  localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-}
 let dismissedStudentSubAlerts = JSON.parse(localStorage.getItem('kp_dismissed_student_sub_alerts') || '[]');
 if (!Array.isArray(dismissedStudentSubAlerts)) dismissedStudentSubAlerts = [];
-
-// تنظيف أولي: شيل من restoredKeys أي id له tombstone محلي (إصلاح للسجلات الملوثة قديماً)
-(function cleanStaleRestoredKeys(){
-  let changed = false;
-  ['students','payments','expenses','renewals','classes'].forEach(function(type){
-    if (!Array.isArray(restoredKeys[type])) return;
-    const ts = Array.isArray((tombstones||{})[type]) ? tombstones[type] : [];
-    const before = restoredKeys[type].length;
-    restoredKeys[type] = restoredKeys[type].filter(function(id){
-      return !ts.some(function(tid){ return String(tid) === String(id); });
-    });
-    if (restoredKeys[type].length !== before) changed = true;
-  });
-  if (changed) localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-})();
 
 
 function sanitizeEntityArray(arr) {
@@ -1333,11 +1300,6 @@ function addTombstone(type, id) {
   if (!tombstones[type]) tombstones[type] = [];
   if (!hasKey(tombstones[type], id)) tombstones[type].push(id);
   localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
-  // لو كان السجل مستعاد سابقاً ثم أعيد حذفه، أزل من قائمة المستعادين
-  if (restoredKeys && restoredKeys[type]) {
-    restoredKeys[type] = restoredKeys[type].filter(function(x){ return normKey(x) !== normKey(id); });
-    localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-  }
 }
 
 function applyTombstones() {
@@ -1363,71 +1325,39 @@ function dedupeByKey(arr, keyField) {
 }
 
 function cleanupDeletedBuckets() {
-  // المنطق الجديد: الـ deleted bucket هو الـ source of truth
-  // إذا سجل في deletedXxx، نشيله من المصفوفة النشطة (حماية من عودة remote غير مرغوبة)
-  // ونضيف tombstone للتأكيد
-
-  deletedStudents = dedupeByKey(deletedStudents, 'id');
-  const delStudentIds = new Set(deletedStudents.map(function(x){ return normKey(x && x.id); }));
-  students = students.filter(function(x){
-    if (x && delStudentIds.has(normKey(x.id))) {
-      addTombstone('students', x.id);
-      return false;
-    }
-    return true;
+  deletedStudents = dedupeByKey(deletedStudents, 'id').filter(function(item){
+    return item && item.id != null &&
+      !students.some(function(x){ return x && normKey(x.id) === normKey(item.id); }) &&
+      !hasKey((tombstones && tombstones.students) || [], item.id);
   });
-
   if (typeof deletedPayments !== 'undefined') {
-    deletedPayments = dedupeByKey(deletedPayments, 'id');
-    const delPayIds = new Set(deletedPayments.map(function(x){ return normKey(x && x.id); }));
-    payments = payments.filter(function(x){
-      if (x && delPayIds.has(normKey(x.id))) {
-        addTombstone('payments', x.id);
-        return false;
-      }
-      return true;
+    deletedPayments = dedupeByKey(deletedPayments, 'id').filter(function(item){
+      return item && item.id != null &&
+        !payments.some(function(x){ return x && normKey(x.id) === normKey(item.id); }) &&
+        !hasKey((tombstones && tombstones.payments) || [], item.id);
     });
   }
-
   if (typeof deletedExpenses !== 'undefined') {
-    deletedExpenses = dedupeByKey(deletedExpenses, 'id');
-    const delExpIds = new Set(deletedExpenses.map(function(x){ return normKey(x && x.id); }));
-    expenses = expenses.filter(function(x){
-      if (x && delExpIds.has(normKey(x.id))) {
-        addTombstone('expenses', x.id);
-        return false;
-      }
-      return true;
+    deletedExpenses = dedupeByKey(deletedExpenses, 'id').filter(function(item){
+      return item && item.id != null &&
+        !expenses.some(function(x){ return x && normKey(x.id) === normKey(item.id); }) &&
+        !hasKey((tombstones && tombstones.expenses) || [], item.id);
     });
   }
-
   if (typeof deletedRenewals !== 'undefined') {
-    deletedRenewals = dedupeByKey(deletedRenewals, 'id');
-    const delRenIds = new Set(deletedRenewals.map(function(x){ return normKey(x && x.id); }));
-    renewals = renewals.filter(function(x){
-      if (x && delRenIds.has(normKey(x.id))) {
-        addTombstone('renewals', x.id);
-        return false;
-      }
-      return true;
+    deletedRenewals = dedupeByKey(deletedRenewals, 'id').filter(function(item){
+      return item && item.id != null &&
+        !renewals.some(function(x){ return x && normKey(x.id) === normKey(item.id); }) &&
+        !hasKey((tombstones && tombstones.renewals) || [], item.id);
     });
   }
-
   if (typeof deletedClasses !== 'undefined') {
-    deletedClasses = dedupeByKey(deletedClasses, 'key');
-    const delClsKeys = new Set(deletedClasses.map(function(x){ return normKey(x && x.key); }));
-    if (CLASSES && typeof CLASSES === 'object') {
-      Object.keys(CLASSES).forEach(function(k){
-        if (delClsKeys.has(normKey(k))) {
-          addTombstone('classes', k);
-          delete CLASSES[k];
-        }
-      });
-      if (typeof CLASSES_DATA !== 'undefined') CLASSES_DATA = CLASSES;
-      localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
-    }
+    deletedClasses = dedupeByKey(deletedClasses, 'key').filter(function(item){
+      return item && item.key != null &&
+        !Object.prototype.hasOwnProperty.call(CLASSES || {}, item.key) &&
+        !hasKey((tombstones && tombstones.classes) || [], item.key);
+    });
   }
-
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
   if (typeof deletedPayments !== 'undefined') localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
   if (typeof deletedExpenses !== 'undefined') localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
@@ -3312,11 +3242,10 @@ function restorePayment(id) {
   deletedPayments = deletedPayments.filter(function(x){ return x.id !== id; });
   localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
   if (tombstones && tombstones.payments) {
-    tombstones.payments = tombstones.payments.filter(function(x){ return normKey(x) !== normKey(id); });
+    tombstones.payments = tombstones.payments.filter(function(x){ return x !== id; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
-  markRestored('payments', id);
-  persistCoreDataToLocalStorage();
+  cleanupDeletedBuckets();
   autoSave(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
   if (typeof updateNotifications === 'function') updateNotifications();
   if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
@@ -3333,11 +3262,10 @@ function restoreExpense(id) {
   deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== id; });
   localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
   if (tombstones && tombstones.expenses) {
-    tombstones.expenses = tombstones.expenses.filter(function(x){ return normKey(x) !== normKey(id); });
+    tombstones.expenses = tombstones.expenses.filter(function(x){ return x !== id; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
-  markRestored('expenses', id);
-  persistCoreDataToLocalStorage();
+  cleanupDeletedBuckets();
   autoSave(); renderExpenses(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
   if (typeof updateNotifications === 'function') updateNotifications();
 }
@@ -3353,11 +3281,10 @@ function restoreRenewal(id) {
   deletedRenewals = deletedRenewals.filter(function(x){ return x.id !== id; });
   localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
   if (tombstones && tombstones.renewals) {
-    tombstones.renewals = tombstones.renewals.filter(function(x){ return normKey(x) !== normKey(id); });
+    tombstones.renewals = tombstones.renewals.filter(function(x){ return x !== id; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
-  markRestored('renewals', id);
-  persistCoreDataToLocalStorage();
+  cleanupDeletedBuckets();
   autoSave(); renderRenewals(); renderDeletedStudents(); renderOtherDeletedItems();
   if (typeof updateNotifications === 'function') updateNotifications();
 }
@@ -3371,11 +3298,11 @@ function restoreClass(name) {
   deletedClasses = deletedClasses.filter(function(x){ return x.key !== name; });
   localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
   if (tombstones && tombstones.classes) {
-    tombstones.classes = tombstones.classes.filter(function(x){ return normKey(x) !== normKey(name); });
+    tombstones.classes = tombstones.classes.filter(function(x){ return x !== name; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
-  markRestored('classes', name);
   localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
+  cleanupDeletedBuckets();
   autoSave(); populateClassDropdowns(); renderAdminClasses(); renderStudents(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
 }
 
@@ -6008,24 +5935,20 @@ function exportFinReport() {
 
 // دمج مصفوفة محلية مع مصفوفة من Firebase بناءً على الـ id
 // يضيف السجلات الجديدة ويحافظ على السجلات الموجودة في كلا الطرفين
-function mergeArrayById(localArr, remoteArr, localTombstones, localDeletedBucket) {
+function mergeArrayById(localArr, remoteArr, localTombstones) {
   if (!Array.isArray(remoteArr)) return Array.isArray(localArr) ? localArr : [];
   if (!Array.isArray(localArr)) return remoteArr;
   const ts = Array.isArray(localTombstones) ? localTombstones : [];
-  // السجلات المحذوفة محلياً (سلة المحذوفات) تُعامَل كـ tombstone افتراضي
-  const deletedIds = new Set((Array.isArray(localDeletedBucket) ? localDeletedBucket : [])
-    .map(function(x){ return x && x.id != null ? normKey(x.id) : null; })
-    .filter(function(v){ return v !== null; }));
   const merged = {};
   // أضف جميع السجلات من Firebase أولاً
   remoteArr.forEach(function(item) {
-    if (item && item.id != null && !hasKey(ts, item.id) && !deletedIds.has(normKey(item.id))) {
+    if (item && item.id != null && !hasKey(ts, item.id)) {
       merged[normKey(item.id)] = item;
     }
   });
   // أضف/اكتب فوق بالسجلات المحلية (أحدث - تغييرات الجلسة الحالية)
   localArr.forEach(function(item) {
-    if (item && item.id != null && !hasKey(ts, item.id) && !deletedIds.has(normKey(item.id))) {
+    if (item && item.id != null && !hasKey(ts, item.id)) {
       merged[normKey(item.id)] = item;
     }
   });
@@ -6049,40 +5972,28 @@ function mergeClasses(localClasses, remoteClasses, classTombstones) {
   return merged;
 }
 
-function mergeDeletedClasses(localArr, remoteArr, classTombstones, currentClasses, restoredArr) {
+function mergeDeletedClasses(localArr, remoteArr, classTombstones, currentClasses) {
   const ts = Array.isArray(classTombstones) ? classTombstones : [];
-  const restoredSet = new Set((Array.isArray(restoredArr) ? restoredArr : []).map(function(x){ return normKey(x); }));
   const current = currentClasses && typeof currentClasses === 'object' ? currentClasses : {};
-  const localKeys = new Set((Array.isArray(localArr) ? localArr : [])
-    .map(function(item){ return item && normKey(item.key); })
-    .filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
   const map = {};
   (Array.isArray(remoteArr) ? remoteArr : []).forEach(function(item){ if (item && item.key != null) map[item.key] = item; });
   (Array.isArray(localArr) ? localArr : []).forEach(function(item){ if (item && item.key != null) map[item.key] = item; });
   return Object.values(map).filter(function(item){
     if (!item || item.key == null) return false;
-    const key = normKey(item.key);
-    // إذا الفصل مستعاد محلياً، لا يظهر في سلة المحذوفات
-    if (restoredSet.has(key)) return false;
-    // إذا كان في tombstone (حذف نهائي) لا يظهر في السلة حتى لو محذوف محلياً
     if (hasKey(ts, item.key)) return false;
-    // إذا محذوف محلياً، يظل في السلة
-    if (localKeys.has(key)) return true;
     if (Object.prototype.hasOwnProperty.call(current, item.key)) return false;
     return true;
   });
 }
 
-// دمج tombstones — اتحاد المحذوفات من الطرفين مع احترام المستعادين
+// دمج tombstones — اتحاد المحذوفات من الطرفين
 function mergeTombstones(localTs, remoteTs) {
   const result = {};
   ['students','payments','expenses','renewals','classes'].forEach(function(type) {
     const local  = Array.isArray(localTs  && localTs[type])  ? localTs[type]  : [];
     const remote = Array.isArray(remoteTs && remoteTs[type]) ? remoteTs[type] : [];
-    const restored = (restoredKeys && Array.isArray(restoredKeys[type])) ? restoredKeys[type] : [];
     const combined = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
-    // استبعد أي سجل تم استعادته محلياً من tombstones
-    result[type] = combined.filter(function(id){ return !hasKey(restored, id); });
+    result[type] = combined;
   });
   return result;
 }
@@ -6110,81 +6021,37 @@ async function pushToFirebase() {
     // ── الخطوة 2: دمج البيانات المحلية مع السحابية ───────────────────
     // الاستراتيجية: دائماً ادمج المحلي مع السحابي بناءً على الـ id
     // البيانات المحلية تأخذ الأولوية (هي الأحدث - تعديلات الجلسة الحالية)
-
-    // ادمج restoredKeys (اتحاد محلي + remote) مع استبعاد أي id له tombstone محلي
-    // المحلي هو المصدر الأحدث: إذا السجل في localTombstones → محذوف، لا يكون مستعاد
-    const localRestored = (typeof restoredKeys === 'object' && restoredKeys) ? restoredKeys : {};
-    const remoteRestored = (!fullReplace && remoteData && remoteData.restoredKeys && typeof remoteData.restoredKeys === 'object') ? remoteData.restoredKeys : {};
-    const mergedRestoredKeys = {};
-    ['students','payments','expenses','renewals','classes'].forEach(function(type){
-      const local = Array.isArray(localRestored[type]) ? localRestored[type] : [];
-      const remote = Array.isArray(remoteRestored[type]) ? remoteRestored[type] : [];
-      const localTs = Array.isArray((typeof tombstones !== 'undefined' ? tombstones : {})[type]) ? tombstones[type] : [];
-      const combined = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
-      // استبعد أي id له tombstone محلي (الحذف المحلي أحدث من الاستعادة الـ remote)
-      mergedRestoredKeys[type] = combined.filter(function(id){ return !hasKey(localTs, id); });
-    });
-
     const localTombstones = typeof tombstones !== 'undefined' ? tombstones : {};
     const remoteTombstones = fullReplace ? {} : ((remoteData && remoteData.tombstones) ? remoteData.tombstones : {});
-    // دمج tombstones مع استبعاد المستعادين (من restoredKeys المدمج)
     const mergedTombstones = fullReplace
       ? {
           students: Array.isArray(localTombstones.students) ? localTombstones.students.slice() : [],
           payments: Array.isArray(localTombstones.payments) ? localTombstones.payments.slice() : [],
           expenses: Array.isArray(localTombstones.expenses) ? localTombstones.expenses.slice() : [],
-          renewals: Array.isArray(localTombstones.renewals) ? localTombstones.renewals.slice() : [],
-          classes:  Array.isArray(localTombstones.classes) ? localTombstones.classes.slice() : []
+          renewals: Array.isArray(localTombstones.renewals) ? localTombstones.renewals.slice() : []
         }
-      : (function(){
-          const result = {};
-          ['students','payments','expenses','renewals','classes'].forEach(function(type){
-            const local  = Array.isArray(localTombstones[type])  ? localTombstones[type]  : [];
-            const remote = Array.isArray(remoteTombstones[type]) ? remoteTombstones[type] : [];
-            const restored = Array.isArray(mergedRestoredKeys[type]) ? mergedRestoredKeys[type] : [];
-            const combined = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
-            result[type] = combined.filter(function(id){ return !hasKey(restored, id); });
-          });
-          return result;
-        })();
-
-    // نظّف mergedRestoredKeys: أي id له tombstone حقيقي في remote (ومش في remote.restoredKeys) = حُذف مجدداً
-    if (!fullReplace && remoteData && remoteData.tombstones) {
-      ['students','payments','expenses','renewals','classes'].forEach(function(type){
-        const remoteTs = Array.isArray(remoteData.tombstones[type]) ? remoteData.tombstones[type] : [];
-        const remoteR = Array.isArray(remoteRestored[type]) ? remoteRestored[type] : [];
-        const localR = Array.isArray(localRestored[type]) ? localRestored[type] : [];
-        // id في remote tombstones ومش في remote restoredKeys ومش في local restoredKeys = حُذف نهائياً
-        const reDeleted = remoteTs.filter(function(id){ return !hasKey(remoteR, id) && !hasKey(localR, id); });
-        mergedRestoredKeys[type] = mergedRestoredKeys[type].filter(function(id){ return !hasKey(reDeleted, id); });
-        reDeleted.forEach(function(id){ if (!hasKey(mergedTombstones[type], id)) mergedTombstones[type].push(id); });
-      });
-    }
+      : mergeTombstones(localTombstones, remoteTombstones);
 
     // دائماً ادمج المحلي مع السحابي — المحلي يأخذ الأولوية (الأحدث)
     const mergedStudents = mergeArrayById(
       students,
       remoteData && remoteData.students,
-      mergedTombstones.students,
-      typeof deletedStudents !== 'undefined' ? deletedStudents : []
+      mergedTombstones.students
     );
     const mergedPayments = mergeArrayById(
       payments,
       remoteData && remoteData.payments,
-      mergedTombstones.payments,
-      typeof deletedPayments !== 'undefined' ? deletedPayments : []
+      mergedTombstones.payments
     );
     const mergedExpenses = mergeArrayById(
       expenses,
       remoteData && remoteData.expenses,
-      mergedTombstones.expenses,
-      typeof deletedExpenses !== 'undefined' ? deletedExpenses : []
+      mergedTombstones.expenses
     );
     const mergedRenewals = mergeArrayById(
       renewals,
       remoteData && remoteData.renewals,
-      mergedTombstones.renewals,
-      typeof deletedRenewals !== 'undefined' ? deletedRenewals : []
+      mergedTombstones.renewals
     );
     const mergedAttLog = mergeAttLog(
       attLog,
@@ -6241,59 +6108,37 @@ async function pushToFirebase() {
       return true;
     });
 
-    const mergeDeletedByKey = function(localArr, remoteArr, keyField, tombstoneArr, activeArr, restoredArr) {
+    const mergeDeletedByKey = function(localArr, remoteArr, keyField, tombstoneArr, activeArr) {
+      const activeKeys = new Set((Array.isArray(activeArr) ? activeArr : []).map(function(item){ return item && normKey(item[keyField]); }).filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
       const localDeletedKeys = new Set((Array.isArray(localArr) ? localArr : []).map(function(item){ return item && normKey(item[keyField]); }).filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
-      const restoredSet = new Set((Array.isArray(restoredArr) ? restoredArr : []).map(function(x){ return normKey(x); }));
-      // المفاتيح النشطة فقط التي لم تكن محذوفة محلياً
-      const activeKeys = new Set((Array.isArray(activeArr) ? activeArr : [])
-        .map(function(item){ return item && normKey(item[keyField]); })
-        .filter(function(v){ return v !== undefined && v !== null && v !== '' && !localDeletedKeys.has(v); }));
       const map = {};
       (Array.isArray(remoteArr)?remoteArr:[]).forEach(function(item){ if(item && item[keyField] !== undefined) map[normKey(item[keyField])] = item; });
       (Array.isArray(localArr)?localArr:[]).forEach(function(item){ if(item && item[keyField] !== undefined) map[normKey(item[keyField])] = item; });
       return Object.values(map).filter(function(item){
         if (!item || item[keyField] === undefined || item[keyField] === null) return false;
         const key = normKey(item[keyField]);
-        // إذا السجل مستعاد محلياً، لا يظهر في سلة المحذوفات أبداً
-        if (restoredSet.has(key)) return false;
-        // إذا كان tombstone (حذف نهائي) لا يظهر في سلة المحذوفات حتى لو محذوف محلياً
-        if (hasKey(tombstoneArr, item[keyField])) return false;
-        // إذا السجل محذوف محلياً، يظل في سلة المحذوفات حتى لو كان في activeArr (عودة خاطئة من remote)
-        if (localDeletedKeys.has(key)) return true;
         if (activeKeys.has(key)) return false;
+        if (hasKey(tombstoneArr, item[keyField])) return false;
         return true;
       });
     };
-    const mergedDeletedPayments = mergeDeletedByKey(typeof deletedPayments !== 'undefined' ? deletedPayments : [], remoteData && remoteData.deletedPayments, 'id', mergedTombstones.payments, mergedPayments, mergedRestoredKeys.payments);
-    const mergedDeletedExpenses = mergeDeletedByKey(typeof deletedExpenses !== 'undefined' ? deletedExpenses : [], remoteData && remoteData.deletedExpenses, 'id', mergedTombstones.expenses, mergedExpenses, mergedRestoredKeys.expenses);
-    const mergedDeletedRenewals = mergeDeletedByKey(typeof deletedRenewals !== 'undefined' ? deletedRenewals : [], remoteData && remoteData.deletedRenewals, 'id', mergedTombstones.renewals, mergedRenewals, mergedRestoredKeys.renewals);
+    const mergedDeletedPayments = mergeDeletedByKey(typeof deletedPayments !== 'undefined' ? deletedPayments : [], remoteData && remoteData.deletedPayments, 'id', mergedTombstones.payments, mergedPayments);
+    const mergedDeletedExpenses = mergeDeletedByKey(typeof deletedExpenses !== 'undefined' ? deletedExpenses : [], remoteData && remoteData.deletedExpenses, 'id', mergedTombstones.expenses, mergedExpenses);
+    const mergedDeletedRenewals = mergeDeletedByKey(typeof deletedRenewals !== 'undefined' ? deletedRenewals : [], remoteData && remoteData.deletedRenewals, 'id', mergedTombstones.renewals, mergedRenewals);
     const mergedDeletedClasses = mergeDeletedClasses(
       typeof deletedClasses !== 'undefined' ? deletedClasses : [],
       remoteData && remoteData.deletedClasses,
       mergedTombstones.classes,
-      mergedClasses,
-      mergedRestoredKeys.classes
+      mergedClasses
     );
 
     // حدّث المتغيرات المحلية بالبيانات المدمجة
-    // حماية إضافية: شِل من المصفوفات النشطة أي سجل موجود في سلة المحذوفات المدمجة
-    const finalDelStudentIds = new Set(mergedDeleted.map(function(x){ return x && x.id != null ? normKey(x.id) : null; }).filter(Boolean));
-    const finalDelPayIds = new Set(mergedDeletedPayments.map(function(x){ return x && x.id != null ? normKey(x.id) : null; }).filter(Boolean));
-    const finalDelExpIds = new Set(mergedDeletedExpenses.map(function(x){ return x && x.id != null ? normKey(x.id) : null; }).filter(Boolean));
-    const finalDelRenIds = new Set(mergedDeletedRenewals.map(function(x){ return x && x.id != null ? normKey(x.id) : null; }).filter(Boolean));
-    const finalDelClsKeys = new Set(mergedDeletedClasses.map(function(x){ return x && x.key != null ? normKey(x.key) : null; }).filter(Boolean));
-
-    const filteredStudents = mergedStudents.filter(function(x){ return !(x && finalDelStudentIds.has(normKey(x.id))); });
-    const filteredPayments = mergedPayments.filter(function(x){ return !(x && finalDelPayIds.has(normKey(x.id))); });
-    const filteredExpenses = mergedExpenses.filter(function(x){ return !(x && finalDelExpIds.has(normKey(x.id))); });
-    const filteredRenewals = mergedRenewals.filter(function(x){ return !(x && finalDelRenIds.has(normKey(x.id))); });
-
-    students = sanitizeEntityArray(filteredStudents);
-    payments = sanitizeEntityArray(filteredPayments);
-    expenses = sanitizeEntityArray(filteredExpenses);
-    renewals = sanitizeEntityArray(filteredRenewals);
-    Object.keys(CLASSES || {}).forEach(function(k){ if (!Object.prototype.hasOwnProperty.call(mergedClasses, k) || finalDelClsKeys.has(normKey(k))) delete CLASSES[k]; });
-    Object.keys(mergedClasses || {}).forEach(function(k){ if (!finalDelClsKeys.has(normKey(k))) CLASSES[k] = mergedClasses[k]; });
+    students = sanitizeEntityArray(mergedStudents);
+    payments = sanitizeEntityArray(mergedPayments);
+    expenses = sanitizeEntityArray(mergedExpenses);
+    renewals = sanitizeEntityArray(mergedRenewals);
+    Object.keys(CLASSES || {}).forEach(function(k){ if (!Object.prototype.hasOwnProperty.call(mergedClasses, k)) delete CLASSES[k]; });
+    Object.assign(CLASSES, mergedClasses);
     CLASSES_DATA = CLASSES;
     Object.keys(mergedAttLog).forEach(function(k){ attLog[k] = mergedAttLog[k]; });
     if (typeof deletedStudents !== 'undefined') deletedStudents = mergedDeleted;
@@ -6315,9 +6160,6 @@ async function pushToFirebase() {
     refreshNextIds();
 
     // ── الخطوة 3: اكتب البيانات المدمجة إلى Firebase ────────────────
-    restoredKeys = mergedRestoredKeys;
-    localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-
     const cleanSettings = Object.assign({}, nurserySettings);
     delete cleanSettings.logoDataUrl;
     const mergedData = {
@@ -6338,7 +6180,6 @@ async function pushToFirebase() {
       deletedRenewals: mergedDeletedRenewals,
       deletedClasses:  mergedDeletedClasses,
       tombstones:      mergedTombstones,
-      restoredKeys:    mergedRestoredKeys,
     };
 
     const res = await fetch(FB_URL + '.json', {
@@ -6381,87 +6222,32 @@ async function loadFromFirebase() {
     const data = await res.json();
     if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
 
-    // احفظ نسخة من tombstones المحلية قبل أي تعديل (ستُستخدم كمرجع للحذف المحلي الأحدث)
-    const localTombstonesSnapshot = {};
-    ['students','payments','expenses','renewals','classes'].forEach(function(type){
-      localTombstonesSnapshot[type] = Array.isArray((tombstones||{})[type]) ? (tombstones[type].slice()) : [];
-    });
-
-    // دمج restoredKeys أولاً من Firebase مع المحلي (الاتحاد)
-    // لكن استبعد أي id له tombstone محلي (الحذف المحلي أحدث من الاستعادة الـ remote)
-    if (data.restoredKeys && typeof data.restoredKeys === 'object') {
-      ['students','payments','expenses','renewals','classes'].forEach(function(type){
-        const remote = Array.isArray(data.restoredKeys[type]) ? data.restoredKeys[type] : [];
-        const local = Array.isArray(restoredKeys[type]) ? restoredKeys[type] : [];
-        const localTs = localTombstonesSnapshot[type] || [];
-        const combined = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
-        restoredKeys[type] = combined.filter(function(id){ return !hasKey(localTs, id); });
-      });
-      localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-    }
-
-    // دمج tombstones — مع احترام restoredKeys (سواء المحلي أو remote)
+    // دمج tombstones أولاً لأنها تُستخدم في الدمج
     if (data.tombstones && typeof tombstones !== 'undefined') {
       ['students','payments','expenses','renewals','classes'].forEach(function(type){
         const remote = (data.tombstones[type] && Array.isArray(data.tombstones[type])) ? data.tombstones[type] : [];
         const local = Array.isArray(tombstones[type]) ? tombstones[type] : [];
-        const restored = Array.isArray(restoredKeys[type]) ? restoredKeys[type] : [];
-        // استبعد السجلات المستعادة من tombstones
-        const combined = local.concat(remote.filter(function(id){ return !local.includes(id); }));
-        tombstones[type] = combined.filter(function(id){ return !hasKey(restored, id); });
+        tombstones[type] = local.concat(remote.filter(function(id){ return !local.includes(id); }));
       });
       localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
     }
-
-    // الآن: نظّف restoredKeys من أي id صار له tombstone حقيقي (حُذف مجدداً بعد الاستعادة)
-    // لكن هذا يتم فقط لو الـ remote tombstones فيها الـ id، وremote restoredKeys ما فيها
-    if (data.tombstones && data.restoredKeys) {
-      ['students','payments','expenses','renewals','classes'].forEach(function(type){
-        const remoteTs = Array.isArray(data.tombstones[type]) ? data.tombstones[type] : [];
-        const remoteR = Array.isArray(data.restoredKeys[type]) ? data.restoredKeys[type] : [];
-        // أي id في remote tombstones ومش في remote restoredKeys = حُذف مجدداً
-        const reDeleted = remoteTs.filter(function(id){ return !hasKey(remoteR, id); });
-        if (reDeleted.length && Array.isArray(restoredKeys[type])) {
-          restoredKeys[type] = restoredKeys[type].filter(function(id){ return !hasKey(reDeleted, id); });
-        }
-        // وأضف الـ reDeleted للـ tombstones المحلية
-        reDeleted.forEach(function(id){
-          if (!hasKey(tombstones[type], id)) tombstones[type].push(id);
-        });
-      });
-      localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-      localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
-    }
-
-    // قبل دمج البيانات النشطة، شطب السجلات المستعادة من deleted buckets المحلية
-    // لكي mergeArrayById لا يرفض السجل المستعاد
-    const _preRestoredStudents = new Set((restoredKeys.students||[]).map(function(x){return normKey(x);}));
-    const _preRestoredPayments = new Set((restoredKeys.payments||[]).map(function(x){return normKey(x);}));
-    const _preRestoredExpenses = new Set((restoredKeys.expenses||[]).map(function(x){return normKey(x);}));
-    const _preRestoredRenewals = new Set((restoredKeys.renewals||[]).map(function(x){return normKey(x);}));
-    const _preRestoredClasses = new Set((restoredKeys.classes||[]).map(function(x){return normKey(x);}));
-    if (deletedStudents.length) deletedStudents = deletedStudents.filter(function(s){ return !(s && _preRestoredStudents.has(normKey(s.id))); });
-    if (deletedPayments.length) deletedPayments = deletedPayments.filter(function(s){ return !(s && _preRestoredPayments.has(normKey(s.id))); });
-    if (deletedExpenses.length) deletedExpenses = deletedExpenses.filter(function(s){ return !(s && _preRestoredExpenses.has(normKey(s.id))); });
-    if (deletedRenewals.length) deletedRenewals = deletedRenewals.filter(function(s){ return !(s && _preRestoredRenewals.has(normKey(s.id))); });
-    if (deletedClasses.length) deletedClasses = deletedClasses.filter(function(c){ return !(c && _preRestoredClasses.has(normKey(c.key))); });
 
     // دمج البيانات بدل الاستبدال — يحمي التعديلات المحلية غير المحفوظة
     if (Array.isArray(data.students)) {
-      students = mergeArrayById(students, data.students, tombstones.students || [], deletedStudents);
+      students = mergeArrayById(students, data.students, tombstones.students || []);
       students = sanitizeEntityArray(students);
     }
     resetPaymentMatchCache();
     if (Array.isArray(data.payments)) {
-      payments = mergeArrayById(payments, data.payments, tombstones.payments || [], deletedPayments);
+      payments = mergeArrayById(payments, data.payments, tombstones.payments || []);
       payments = sanitizeEntityArray(payments);
     }
     if (Array.isArray(data.expenses)) {
-      expenses = mergeArrayById(expenses, data.expenses, tombstones.expenses || [], deletedExpenses);
+      expenses = mergeArrayById(expenses, data.expenses, tombstones.expenses || []);
       expenses = sanitizeEntityArray(expenses);
     }
     if (Array.isArray(data.renewals)) {
-      renewals = mergeArrayById(renewals, data.renewals, tombstones.renewals || [], deletedRenewals);
+      renewals = mergeArrayById(renewals, data.renewals, tombstones.renewals || []);
       renewals = sanitizeEntityArray(renewals);
     }
     sanitizeCoreData();
@@ -6469,77 +6255,61 @@ async function loadFromFirebase() {
 
     // دمج سلة المحذوفات مع احترام tombstones
     const allTs = tombstones;
-    const restoredStudentsSet = _preRestoredStudents;
-    const restoredPaymentsSet = _preRestoredPayments;
-    const restoredExpensesSet = _preRestoredExpenses;
-    const restoredRenewalsSet = _preRestoredRenewals;
-    const restoredClassesSet = _preRestoredClasses;
     if (data.deletedStudents && typeof deletedStudents !== 'undefined') {
+      const tsS = Array.isArray(allTs.students) ? allTs.students : [];
       const remoteDs = data.deletedStudents.filter(function(s){
         if (!s || !s.id) return false;
-        if (restoredStudentsSet.has(normKey(s.id))) return false;
+        if (hasKey(tsS, s.id)) return false;
         if (students.some(function(x){ return x.id === s.id; })) return false;
         return true;
       });
       const localMap = {};
-      // احتفظ بالسجلات المحلية فقط إذا لم تكن في tombstones (للحذف النهائي)
-      deletedStudents.forEach(function(s){
-        if (s && s.id && !hasKey(tombstones.students || [], s.id)) localMap[s.id] = s;
-      });
+      deletedStudents.forEach(function(s){ if(s && s.id) localMap[s.id] = s; });
       remoteDs.forEach(function(s){ if(s && s.id && !localMap[s.id]) localMap[s.id] = s; });
       deletedStudents = Object.values(localMap);
       localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
     }
     if (Array.isArray(data.deletedPayments) && typeof deletedPayments !== 'undefined') {
       const remoteMap = {};
+      const localDeletedKeys = new Set((deletedPayments || []).map(function(x){ return x && normKey(x.id); }).filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
       data.deletedPayments.filter(function(x){
         if (!x || x.id == null) return false;
-        if (restoredPaymentsSet.has(normKey(x.id))) return false;
         if (payments.some(function(p){ return p && normKey(p.id) === normKey(x.id); })) return false;
+        if (hasKey((allTs.payments || []), x.id)) return false;
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
       deletedPayments.forEach(function(x){
-        if (x && x.id != null
-          && !payments.some(function(p){ return p && normKey(p.id) === normKey(x.id); })
-          && !hasKey(tombstones.payments || [], x.id)) {
-          remoteMap[normKey(x.id)] = x;
-        }
+        if (x && x.id != null && !payments.some(function(p){ return p && normKey(p.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
       });
       deletedPayments = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
     }
     if (Array.isArray(data.deletedExpenses) && typeof deletedExpenses !== 'undefined') {
       const remoteMap = {};
+      const localDeletedKeys = new Set((deletedExpenses || []).map(function(x){ return x && normKey(x.id); }).filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
       data.deletedExpenses.filter(function(x){
         if (!x || x.id == null) return false;
-        if (restoredExpensesSet.has(normKey(x.id))) return false;
         if (expenses.some(function(e){ return e && normKey(e.id) === normKey(x.id); })) return false;
+        if (hasKey((allTs.expenses || []), x.id)) return false;
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
       deletedExpenses.forEach(function(x){
-        if (x && x.id != null
-          && !expenses.some(function(e){ return e && normKey(e.id) === normKey(x.id); })
-          && !hasKey(tombstones.expenses || [], x.id)) {
-          remoteMap[normKey(x.id)] = x;
-        }
+        if (x && x.id != null && !expenses.some(function(e){ return e && normKey(e.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
       });
       deletedExpenses = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
     }
     if (Array.isArray(data.deletedRenewals) && typeof deletedRenewals !== 'undefined') {
       const remoteMap = {};
+      const localDeletedKeys = new Set((deletedRenewals || []).map(function(x){ return x && normKey(x.id); }).filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
       data.deletedRenewals.filter(function(x){
         if (!x || x.id == null) return false;
-        if (restoredRenewalsSet.has(normKey(x.id))) return false;
         if (renewals.some(function(r){ return r && normKey(r.id) === normKey(x.id); })) return false;
+        if (hasKey((allTs.renewals || []), x.id)) return false;
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
       deletedRenewals.forEach(function(x){
-        if (x && x.id != null
-          && !renewals.some(function(r){ return r && normKey(r.id) === normKey(x.id); })
-          && !hasKey(tombstones.renewals || [], x.id)) {
-          remoteMap[normKey(x.id)] = x;
-        }
+        if (x && x.id != null && !renewals.some(function(r){ return r && normKey(r.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
       });
       deletedRenewals = Object.values(remoteMap);
       localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
@@ -6550,7 +6320,7 @@ async function loadFromFirebase() {
     CLASSES_DATA = CLASSES;
 
     if (Array.isArray(data.deletedClasses) && typeof deletedClasses !== 'undefined') {
-      deletedClasses = mergeDeletedClasses(deletedClasses, data.deletedClasses, tombstones.classes || [], CLASSES, restoredKeys.classes);
+      deletedClasses = mergeDeletedClasses(deletedClasses, data.deletedClasses, tombstones.classes || [], CLASSES);
       localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
     }
     applyTombstones();
