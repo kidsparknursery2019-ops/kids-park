@@ -27,7 +27,7 @@
 <script>
   // ⚠️ AI: UPDATE THIS TIMESTAMP ON EVERY EDIT (ISO 8601 format)
   // ⚠️ الذكاء الاصطناعي: حدّث هذا التاريخ في كل تعديل
-  window.APP_LAST_MODIFIED = "2026-04-24T16:00:00";
+  window.APP_LAST_MODIFIED = "2026-04-24T16:30:00";
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -6331,6 +6331,11 @@ async function pushToFirebase() {
     if (typeof deletedExpenses !== 'undefined') deletedExpenses = mergedDeletedExpenses;
     if (typeof deletedRenewals !== 'undefined') deletedRenewals = mergedDeletedRenewals;
     if (typeof deletedClasses !== 'undefined') deletedClasses = mergedDeletedClasses;
+    // احفظ السلال المدمجة في localStorage (كانت هذه خطوة مفقودة تسبب عودة السجلات المستعادة)
+    localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents || []));
+    localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments || []));
+    localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses || []));
+    localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals || []));
     if (typeof tombstones !== 'undefined') {
       tombstones.students = mergedTombstones.students;
       tombstones.payments = mergedTombstones.payments;
@@ -6410,26 +6415,30 @@ async function loadFromFirebase() {
     const data = await res.json();
     if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
 
-    // احفظ نسخة من tombstones المحلية قبل أي تعديل (ستُستخدم كمرجع للحذف المحلي الأحدث)
+    // احفظ نسخة من tombstones المحلية قبل أي تعديل
     const localTombstonesSnapshot = {};
     ['students','payments','expenses','renewals','classes'].forEach(function(type){
       localTombstonesSnapshot[type] = Array.isArray((tombstones||{})[type]) ? (tombstones[type].slice()) : [];
     });
+    // احفظ نسخة من restoredKeys المحلية قبل أي تعديل
+    const localRestoredSnapshot = {};
+    ['students','payments','expenses','renewals','classes'].forEach(function(type){
+      localRestoredSnapshot[type] = Array.isArray((restoredKeys||{})[type]) ? (restoredKeys[type].slice()) : [];
+    });
 
-    // دمج restoredKeys أولاً (لأنها تستثني من tombstones)
-    // لكن استبعد أي id له tombstone محلي
+    // دمج restoredKeys: الـ remote.restoredKeys يتفوق على local.tombstones
+    // (remote يمثل آخر حالة عبر الأجهزة، فإن قال "مستعاد" فهو مستعاد)
     if (data.restoredKeys && typeof data.restoredKeys === 'object') {
       ['students','payments','expenses','renewals','classes'].forEach(function(type){
         const remote = Array.isArray(data.restoredKeys[type]) ? data.restoredKeys[type] : [];
         const local = Array.isArray(restoredKeys[type]) ? restoredKeys[type] : [];
-        const localTs = localTombstonesSnapshot[type] || [];
-        const combined = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
-        restoredKeys[type] = combined.filter(function(id){ return !hasKey(localTs, id); });
+        // اتحاد محلي + remote بدون فلترة ضد tombstones (remote هو المرجع)
+        restoredKeys[type] = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
       });
       localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
     }
 
-    // دمج tombstones مع احترام restoredKeys
+    // دمج tombstones: نشيل أي tombstone لسجل في restoredKeys المدمج
     if (data.tombstones && typeof tombstones !== 'undefined') {
       ['students','payments','expenses','renewals','classes'].forEach(function(type){
         const remote = (data.tombstones[type] && Array.isArray(data.tombstones[type])) ? data.tombstones[type] : [];
@@ -6441,12 +6450,17 @@ async function loadFromFirebase() {
       localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
     }
 
-    // كشف الحذف النهائي من remote: id في remote.tombstones ومش في remote.restoredKeys ومش في local.restoredKeys الأصلية
+    // كشف الحذف النهائي من remote:
+    // id في remote.tombstones ومش في remote.restoredKeys ومش في local.restoredKeys الأصلية = حُذف نهائياً
+    // (نستخدم local.restoredKeys الأصلية لا المدمجة — للتفريق بين "استعدته الآن" و "كان مستعاد من قبل")
     if (data.tombstones && data.restoredKeys) {
       ['students','payments','expenses','renewals','classes'].forEach(function(type){
         const remoteTs = Array.isArray(data.tombstones[type]) ? data.tombstones[type] : [];
         const remoteR = Array.isArray(data.restoredKeys[type]) ? data.restoredKeys[type] : [];
-        const reDeleted = remoteTs.filter(function(id){ return !hasKey(remoteR, id); });
+        const origLocalR = localRestoredSnapshot[type] || [];
+        const reDeleted = remoteTs.filter(function(id){
+          return !hasKey(remoteR, id) && !hasKey(origLocalR, id);
+        });
         if (reDeleted.length && Array.isArray(restoredKeys[type])) {
           restoredKeys[type] = restoredKeys[type].filter(function(id){ return !hasKey(reDeleted, id); });
         }
