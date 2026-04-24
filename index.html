@@ -10,6 +10,9 @@
 <!-- v20260422-forms-merge-undo -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<!-- Firebase Realtime Database SDK — true real-time sync via persistent WebSocket -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
 // إغلاق dropdown البحث عند النقر خارجه
 document.addEventListener('click', function(e) {
@@ -5296,7 +5299,7 @@ function applyLogin() {
     setTimeout(function(){ alert('✅ تم اعتماد ' + bulkApprovedNow + ' عملية ربط بين السندات وملفات الطلاب'); }, 300);
   }
   setTimeout(function(){ updateNotifications(); updateRegExpiryNotifications(); }, 500);
-  // تحميل من Firebase وتحديث عند الانتهاء
+  // تحميل من Firebase وتحديث عند الانتهاء (READ-first — قبل أي WRITE)
   loadFromFirebase().then(() => {
     const approvedAfterSync = runOneTimeBulkMatchApproval();
     // إعادة تهيئة الفلتر بعد التحميل
@@ -5308,27 +5311,19 @@ function applyLogin() {
     if (approvedAfterSync > 0) {
       setTimeout(function(){ alert('✅ تم اعتماد ' + approvedAfterSync + ' عملية ربط إضافية بعد مزامنة البيانات'); }, 500);
     }
+    // ════════════════════════════════════════════════════════════
+    // After initial READ completes, start the real-time Sync Engine v2
+    // ════════════════════════════════════════════════════════════
+    initSyncV2();
   });
-  // ============================================================
-  // FAST SYNC: aggressive polling of `savedAt` timestamp only
-  // ------------------------------------------------------------
-  // Why this and not SSE? Firebase REST streaming requires
-  // following HTTP 307 redirects, which browsers' EventSource
-  // cannot reliably do cross-origin. Fast polling of the tiny
-  // savedAt endpoint (a single timestamp, ~30 bytes) works on
-  // every browser and gives sub-second perceived latency.
-  //
-  // Adaptive intervals:
-  //   - Recycle bin open:  600ms  (near-real-time)
-  //   - Other pages:       1200ms (still very fast)
-  //   - Tab hidden:        paused until visible again
-  // ============================================================
-  startFastSync();
+
+  // Safety-net slow poll (30s) in case WebSocket drops silently
+  setInterval(function(){ if (!document.hidden && _syncV2Enabled === false) checkForUpdates(); }, 30000);
   startAutoSync();
 }
 
 // ============================================================
-// FAST SYNC via savedAt polling
+// Legacy fast-sync polling — kept as fallback only
 // ============================================================
 var _fastSyncTimer = null;
 
@@ -5392,8 +5387,9 @@ function doLogout() {
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
   document.getElementById('login-err').textContent = '';
-  // Stop fast-sync polling on logout
+  // Stop sync listeners on logout
   stopFastSync();
+  stopSyncV2();
 }
 
 function checkSession() {
@@ -6050,30 +6046,228 @@ function loadCoreDataFromLocalStorage() {
 function autoSave() {
   hasUnsavedChanges = true;
   persistCoreDataToLocalStorage();
-  if (isSyncing) {
-    pendingSync = true;
+  // Sync v2 path: push everything that changed via record-level writes.
+  // This is safe to call on every edit because _flushWriteQueue is debounced.
+  if (_syncV2Enabled) {
+    _queueFullStateDelta();
     return;
   }
+  if (isSyncing) { pendingSync = true; return; }
   clearTimeout(syncTimeout);
-  // 80ms debounce (was 300ms) — faster reflection on other devices
   syncTimeout = setTimeout(function(){
     syncTimeout = null;
     pushToFirebase();
   }, 80);
 }
 
-// Immediate push — zero debounce. Use for critical/user-triggered actions
-// where instant visibility on other devices matters (bin ops, deletions).
+// Immediate push — zero debounce. Use for critical/user-triggered actions.
 function autoSaveNow() {
   hasUnsavedChanges = true;
   persistCoreDataToLocalStorage();
-  clearTimeout(syncTimeout);
-  syncTimeout = null;
-  if (isSyncing) {
-    pendingSync = true;
+  if (_syncV2Enabled) {
+    _queueFullStateDelta();
+    // Force immediate flush (skip debounce)
+    if (_writeQueueTimer) { clearTimeout(_writeQueueTimer); _writeQueueTimer = null; }
+    _flushWriteQueue();
     return;
   }
+  clearTimeout(syncTimeout);
+  syncTimeout = null;
+  if (isSyncing) { pendingSync = true; return; }
   pushToFirebase();
+}
+
+// ===================================================================
+// CHANGE DETECTION — the heart of true record-level sync
+// -------------------------------------------------------------------
+// `_syncSnapshots` holds the hash of each record at the moment of the
+// last successful flush. On autoSave(), we compute the current hash
+// of every record and queue ONLY the records whose hash changed (or
+// records that disappeared entirely — those become hard deletes).
+//
+// This turns every autoSave() call — no matter which code path
+// triggered it — into a precise diff against the server state,
+// writing only the exact records that changed. Two employees editing
+// different records can never overwrite each other, because each
+// device only writes its own dirty records.
+// ===================================================================
+
+// Snapshots of record hashes at last successful flush: { students:{id:hash}, payments:{id:hash}, ... }
+var _syncSnapshots = { students:{}, payments:{}, expenses:{}, renewals:{}, CLASSES:{}, deletedClasses:{} };
+var _snapshotsInitialized = false;
+
+// Fields that shouldn't participate in the hash (they change on every
+// stamp and would produce false positives).
+var _VOLATILE_FIELDS = { updatedAt:1, updatedOn:1, version:1 };
+
+function _hashRecord(rec) {
+  if (!rec || typeof rec !== 'object') return '';
+  var keys = Object.keys(rec).filter(function(k){ return !_VOLATILE_FIELDS[k]; });
+  keys.sort();
+  var parts = [];
+  for (var i = 0; i < keys.length; i++) {
+    var v = rec[keys[i]];
+    parts.push(keys[i] + '=' + (v === null ? 'null' : (typeof v === 'object' ? JSON.stringify(v) : String(v))));
+  }
+  return parts.join('|');
+}
+
+// Build the "current logical state" of one collection from live + deleted arrays.
+// A record in `deletedX` gets isDeleted:true flag. Records missing from both arrays
+// are considered hard-deleted and will be DELETE-d from Firebase.
+function _buildCollectionMap(coll) {
+  var liveArr, delArr;
+  if (coll === 'students')      { liveArr = students;     delArr = deletedStudents; }
+  else if (coll === 'payments') { liveArr = payments;     delArr = deletedPayments; }
+  else if (coll === 'expenses') { liveArr = expenses;     delArr = deletedExpenses; }
+  else if (coll === 'renewals') { liveArr = renewals;     delArr = deletedRenewals; }
+  else return {};
+  var map = {};
+  (liveArr || []).forEach(function(r){
+    if (r && r.id !== undefined) {
+      var copy = Object.assign({}, r);
+      delete copy.isDeleted; delete copy.deletedAt; delete copy.deletedBy; delete copy.deletionReason;
+      map[String(r.id)] = copy;
+    }
+  });
+  (delArr || []).forEach(function(r){
+    if (r && r.id !== undefined) {
+      var copy = Object.assign({}, r, { isDeleted: true });
+      if (!copy.deletedAt) copy.deletedAt = _nowIso();
+      if (!copy.deletedBy) copy.deletedBy = _currentUserName();
+      map[String(r.id)] = copy;
+    }
+  });
+  return map;
+}
+
+// Initialize snapshots after first load from Firebase. All subsequent
+// autoSave() calls will compare against this baseline.
+function _initializeSyncSnapshots() {
+  ['students','payments','expenses','renewals'].forEach(function(coll){
+    var map = _buildCollectionMap(coll);
+    _syncSnapshots[coll] = {};
+    Object.keys(map).forEach(function(id){ _syncSnapshots[coll][id] = _hashRecord(map[id]); });
+  });
+  _syncSnapshots.CLASSES = {};
+  if (typeof CLASSES === 'object' && CLASSES) {
+    Object.keys(CLASSES).forEach(function(k){ _syncSnapshots.CLASSES[k] = _hashRecord(CLASSES[k]); });
+  }
+  _syncSnapshots.deletedClasses = {};
+  (deletedClasses || []).forEach(function(c){
+    if (c && c.key !== undefined) _syncSnapshots.deletedClasses[String(c.key)] = _hashRecord(c);
+  });
+  _snapshotsInitialized = true;
+  console.log('[SyncV2] 📸 Change-detection snapshots initialized');
+}
+
+// Queue ONLY dirty records by diffing current state vs. last snapshot.
+// This replaces the old _queueFullStateDelta (which pushed everything).
+function _queueDirtyRecords() {
+  if (!_snapshotsInitialized) {
+    // First call — just establish the baseline; don't push anything yet.
+    // (Records already match server state.)
+    _initializeSyncSnapshots();
+    return;
+  }
+  var anyDirty = false;
+
+  // Per-collection diff for students/payments/expenses/renewals
+  ['students','payments','expenses','renewals'].forEach(function(coll){
+    var current = _buildCollectionMap(coll);
+    var prev = _syncSnapshots[coll] || {};
+    _writeQueue[coll] = _writeQueue[coll] || {};
+
+    // Upserts (new or modified records)
+    Object.keys(current).forEach(function(id){
+      var h = _hashRecord(current[id]);
+      if (prev[id] !== h) {
+        _writeQueue[coll][id] = _stampRecord(current[id]);
+        _recentLocalWrites[coll + ':' + id] = Date.now();
+        anyDirty = true;
+      }
+    });
+
+    // Hard deletes: ids that were in snapshot but vanished from current
+    Object.keys(prev).forEach(function(id){
+      if (!(id in current)) {
+        _writeQueue[coll][id] = null; // null = DELETE in multi-path update
+        _recentLocalWrites[coll + ':' + id] = Date.now();
+        anyDirty = true;
+      }
+    });
+  });
+
+  // CLASSES diff
+  if (typeof CLASSES === 'object' && CLASSES) {
+    var prevC = _syncSnapshots.CLASSES || {};
+    var currentClassKeys = Object.keys(CLASSES);
+    _writeQueue.CLASSES = _writeQueue.CLASSES || {};
+    currentClassKeys.forEach(function(k){
+      var h = _hashRecord(CLASSES[k]);
+      if (prevC[k] !== h) { _writeQueue.CLASSES[k] = CLASSES[k]; anyDirty = true; }
+    });
+    Object.keys(prevC).forEach(function(k){
+      if (!(k in CLASSES)) { _writeQueue.CLASSES[k] = null; anyDirty = true; }
+    });
+  }
+
+  // deletedClasses — full node (it's small) — diff by hash of whole array
+  var dcHash = _hashRecord({list: deletedClasses || []});
+  if (_syncSnapshots.deletedClasses_full !== dcHash) {
+    _writeQueue.deletedClasses_full = deletedClasses || [];
+    _syncSnapshots.deletedClasses_full_pending = dcHash;
+    anyDirty = true;
+  }
+
+  // Tombstones & settings — small, push as single nodes when changed
+  var tsHash = _hashRecord({ts: tombstones || {}});
+  if (_syncSnapshots.tombstones_full !== tsHash) {
+    _writeQueue.tombstones = tombstones;
+    _syncSnapshots.tombstones_full_pending = tsHash;
+    anyDirty = true;
+  }
+
+  if (anyDirty) {
+    // Diagnostic: count per-collection dirty records so devs can verify
+    // real record-level sync is happening (open DevTools to see)
+    var diag = {};
+    ['students','payments','expenses','renewals','CLASSES'].forEach(function(c){
+      var q = _writeQueue[c]; if (!q) return;
+      var n = Object.keys(q).length;
+      if (n > 0) diag[c] = n;
+    });
+    console.log('[SyncV2] 📤 Dirty records queued:', diag);
+    _scheduleFlush();
+  }
+}
+
+// Legacy alias — code used to call _queueFullStateDelta; now it does
+// precise diffing instead of full replacement.
+function _queueFullStateDelta() { _queueDirtyRecords(); }
+
+// Called by _flushWriteQueue() after a successful write to advance the
+// snapshots (so the next diff is against what we just persisted).
+function _advanceSnapshotsAfterFlush(writtenUpdate) {
+  if (!writtenUpdate) return;
+  ['students','payments','expenses','renewals','CLASSES'].forEach(function(coll){
+    var currentMap = (coll === 'CLASSES') ? (CLASSES || {}) : _buildCollectionMap(coll);
+    _syncSnapshots[coll] = _syncSnapshots[coll] || {};
+    // Reset snapshot to match current state
+    var newSnap = {};
+    Object.keys(currentMap).forEach(function(id){
+      newSnap[id] = _hashRecord(currentMap[id]);
+    });
+    _syncSnapshots[coll] = newSnap;
+  });
+  if (_syncSnapshots.deletedClasses_full_pending !== undefined) {
+    _syncSnapshots.deletedClasses_full = _syncSnapshots.deletedClasses_full_pending;
+    delete _syncSnapshots.deletedClasses_full_pending;
+  }
+  if (_syncSnapshots.tombstones_full_pending !== undefined) {
+    _syncSnapshots.tombstones_full = _syncSnapshots.tombstones_full_pending;
+    delete _syncSnapshots.tombstones_full_pending;
+  }
 }
 
 async function saveLogoToFirebaseSilent() {
@@ -6542,6 +6736,426 @@ function mergeTombstones(localTs, remoteTs) {
   return result;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// SYNC ENGINE v2 — Record-level real-time sync via Firebase SDK
+// ═══════════════════════════════════════════════════════════════════
+// Architecture:
+//   • WebSocket listener on each collection root (students, payments,
+//     expenses, renewals, CLASSES) — changes propagate in ~100ms
+//   • Writes go to per-record paths (e.g. nursery_data/payments/{id})
+//     via multi-path atomic updates — no more full-tree PUT
+//   • Debounced write queue (250ms) — batches rapid edits into one RTT
+//   • READ-first on login — we pull before we push, so a new device
+//     never overwrites existing data
+//   • Soft delete via isDeleted flag on the record itself (kept in
+//     sync with the legacy deletedX arrays for UI compatibility)
+//   • Conflict resolution: each record carries updatedAt + updatedBy;
+//     last-write-wins by timestamp, but writes from other devices
+//     never clobber a record we're actively editing
+// ═══════════════════════════════════════════════════════════════════
+
+var _fbApp = null, _fbDb = null;
+var _fbConnected = false;
+var _fbFirstSnapshot = { students:true, payments:true, expenses:true, renewals:true, CLASSES:true };
+var _fbListeners = {};
+var _writeQueue = { students:{}, payments:{}, expenses:{}, renewals:{}, CLASSES:{}, deletedClasses:{}, nurserySettings:null, tombstones:null };
+var _writeQueueTimer = null;
+var _writeInFlight = false;
+var _currentDeviceId = null;
+var _syncV2Enabled = false;
+var _activeEditRecord = null; // {collection, id} — currently being edited; ignore remote updates to it
+var _recentLocalWrites = {}; // key: 'collection:id' → timestamp of last local write (ignore echo)
+
+function _getDeviceId() {
+  if (_currentDeviceId) return _currentDeviceId;
+  var d = localStorage.getItem('kp_device_id');
+  if (!d) { d = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8); localStorage.setItem('kp_device_id', d); }
+  _currentDeviceId = d;
+  return d;
+}
+
+function _nowIso() { return new Date().toISOString(); }
+function _currentUserName() { try { return (currentUser && currentUser.username) || 'unknown'; } catch(_) { return 'unknown'; } }
+
+// Stamp a record with sync metadata before writing
+function _stampRecord(rec) {
+  if (!rec || typeof rec !== 'object') return rec;
+  rec.updatedAt = _nowIso();
+  rec.updatedBy = _currentUserName();
+  rec.updatedOn = _getDeviceId();
+  rec.version = (typeof rec.version === 'number' ? rec.version : 0) + 1;
+  return rec;
+}
+
+function initSyncV2() {
+  if (_syncV2Enabled) return;
+  if (typeof firebase === 'undefined') {
+    console.warn('[SyncV2] Firebase SDK not loaded — falling back to legacy polling');
+    return;
+  }
+  try {
+    if (!firebase.apps || !firebase.apps.length) {
+      firebase.initializeApp({ databaseURL: 'https://kids-park-nursery-default-rtdb.firebaseio.com' });
+    }
+    _fbDb = firebase.database();
+
+    // Connection monitor
+    _fbDb.ref('.info/connected').on('value', function(snap){
+      _fbConnected = snap.val() === true;
+      _setStreamStatus(_fbConnected ? 'connected' : 'reconnecting');
+      console.log('[SyncV2]', _fbConnected ? '✅ WebSocket connected' : '⚠️ WebSocket disconnected');
+    });
+
+    // Subscribe to each collection root
+    _subscribeCollection('students');
+    _subscribeCollection('payments');
+    _subscribeCollection('expenses');
+    _subscribeCollection('renewals');
+    _subscribeCollection('CLASSES');
+    _subscribeNode('deletedClasses');
+    _subscribeNode('nurserySettings');
+    _subscribeNode('tombstones');
+
+    _syncV2Enabled = true;
+    console.log('[SyncV2] ✅ Real-time sync active (record-level)');
+  } catch(e) {
+    console.error('[SyncV2] init failed:', e);
+  }
+}
+
+function _subscribeCollection(coll) {
+  var ref = _fbDb.ref('nursery_data/' + coll);
+  _fbListeners[coll] = ref.on('value', function(snap){
+    var remoteData = snap.val() || {};
+    // First snapshot on subscribe = current server state. We already
+    // loaded everything via loadFromFirebase() during login, so the
+    // first fire is redundant — skip it to avoid redundant re-renders.
+    if (_fbFirstSnapshot[coll]) { _fbFirstSnapshot[coll] = false; return; }
+    _applyRemoteCollection(coll, remoteData);
+  });
+}
+
+function _subscribeNode(nodeName) {
+  var ref = _fbDb.ref('nursery_data/' + nodeName);
+  _fbListeners[nodeName] = ref.on('value', function(snap){
+    var val = snap.val();
+    if (nodeName === 'nurserySettings') {
+      if (val && typeof val === 'object') {
+        // Preserve logoDataUrl from local storage
+        var savedLogo = nurserySettings && nurserySettings.logoDataUrl;
+        nurserySettings = Object.assign({}, val);
+        if (savedLogo) nurserySettings.logoDataUrl = savedLogo;
+        try { localStorage.setItem('kp_nursery_settings', JSON.stringify(nurserySettings)); } catch(_) {}
+      }
+    } else if (nodeName === 'tombstones') {
+      if (val && typeof val === 'object') {
+        tombstones = val;
+        localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+      }
+    } else if (nodeName === 'deletedClasses') {
+      if (Array.isArray(val)) {
+        deletedClasses = val;
+        localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
+      }
+    }
+    if (typeof refreshAllViewsAfterSync === 'function') refreshAllViewsAfterSync();
+  });
+}
+
+// Apply remote collection update to local state, merging intelligently
+function _applyRemoteCollection(coll, remoteMap) {
+  if (!remoteMap) remoteMap = {};
+  var stateArr;
+  if (coll === 'students') stateArr = students;
+  else if (coll === 'payments') stateArr = payments;
+  else if (coll === 'expenses') stateArr = expenses;
+  else if (coll === 'renewals') stateArr = renewals;
+  else if (coll === 'CLASSES') { _applyRemoteClasses(remoteMap); return; }
+  else return;
+
+  var remoteIds = Object.keys(remoteMap);
+  var remoteSet = {};
+  remoteIds.forEach(function(id){ remoteSet[id] = true; });
+  var now = Date.now();
+
+  // --- Upserts & soft-deletes from remote ---
+  remoteIds.forEach(function(id){
+    var rr = remoteMap[id];
+    if (!rr || typeof rr !== 'object') return;
+    var echoKey = coll + ':' + id;
+    // Ignore echo of our own recent write (within 3s, same device)
+    if (_recentLocalWrites[echoKey] && (now - _recentLocalWrites[echoKey]) < 3000 && rr.updatedOn === _getDeviceId()) {
+      return;
+    }
+    // Skip if we're actively editing this record (a modal is open on it)
+    if (_activeEditRecord && _activeEditRecord.collection === coll && String(_activeEditRecord.id) === String(id)) {
+      return;
+    }
+
+    var idx = stateArr.findIndex(function(x){ return String(x.id) === String(id); });
+    var localRec = idx >= 0 ? stateArr[idx] : null;
+    // Conflict resolution: skip if local is strictly newer
+    if (localRec && localRec.updatedAt && rr.updatedAt && rr.updatedAt < localRec.updatedAt) {
+      return;
+    }
+
+    if (rr.isDeleted) {
+      // Soft-deleted remotely — move to deletedX array
+      if (idx >= 0) stateArr.splice(idx, 1);
+      _ensureInDeletedArray(coll, rr);
+    } else {
+      // Live record
+      if (idx >= 0) stateArr[idx] = rr;
+      else stateArr.push(rr);
+      _removeFromDeletedArray(coll, id);
+    }
+  });
+
+  // --- Hard-deletes: ids that exist locally but vanished from remote ---
+  // A remote `null` (from multi-path update) arrives here as "missing key".
+  // But we must be careful: the listener fires on every change, and the
+  // remoteMap may be a partial snapshot for a child-changed event.
+  // Strategy: only remove a local record if it has an id AND was previously synced
+  // (i.e. we have a snapshot entry for it). We rely on the sync snapshot to know
+  // what we had last time the server saw it.
+  var snapPrev = (_syncSnapshots && _syncSnapshots[coll]) || {};
+  // Remove from LIVE array: any local record previously in remote but now absent
+  for (var i = stateArr.length - 1; i >= 0; i--) {
+    var rec = stateArr[i];
+    if (!rec || rec.id === undefined) continue;
+    var sid = String(rec.id);
+    if (snapPrev[sid] && !remoteSet[sid]) {
+      // This record WAS on server, NOW it's gone → hard-deleted by another device
+      stateArr.splice(i, 1);
+    }
+  }
+  // Same for deleted arrays
+  var delArr;
+  if (coll === 'students') delArr = deletedStudents;
+  else if (coll === 'payments') delArr = deletedPayments;
+  else if (coll === 'expenses') delArr = deletedExpenses;
+  else if (coll === 'renewals') delArr = deletedRenewals;
+  if (delArr) {
+    for (var j = delArr.length - 1; j >= 0; j--) {
+      var drec = delArr[j];
+      if (!drec || drec.id === undefined) continue;
+      var dsid = String(drec.id);
+      if (snapPrev[dsid] && !remoteSet[dsid]) {
+        delArr.splice(j, 1);
+      }
+    }
+  }
+
+  // Update snapshot to match new remote state
+  var newSnap = {};
+  remoteIds.forEach(function(id){
+    var rr = remoteMap[id];
+    if (rr && typeof rr === 'object') newSnap[id] = _hashRecord(rr);
+  });
+  _syncSnapshots[coll] = newSnap;
+
+  // Persist to localStorage
+  _persistCollectionToLocalStorage(coll);
+  if (typeof refreshAllViewsAfterSync === 'function') refreshAllViewsAfterSync();
+  else if (typeof renderRecycleBin === 'function') renderRecycleBin();
+}
+
+function _applyRemoteClasses(remoteMap) {
+  if (!remoteMap || typeof remoteMap !== 'object') return;
+  if (typeof CLASSES === 'object') {
+    Object.keys(remoteMap).forEach(function(k){ CLASSES[k] = remoteMap[k]; });
+    // Remove classes that are in tombstones
+    if (tombstones && Array.isArray(tombstones.classes)) {
+      tombstones.classes.forEach(function(k){ delete CLASSES[k]; });
+    }
+    if (typeof CLASSES_DATA !== 'undefined') CLASSES_DATA = CLASSES;
+    try { localStorage.setItem('kp_classes', JSON.stringify(CLASSES)); } catch(_) {}
+    if (typeof populateClassDropdowns === 'function') populateClassDropdowns();
+  }
+}
+
+function _ensureInDeletedArray(coll, rec) {
+  var arr;
+  if (coll === 'students') arr = deletedStudents;
+  else if (coll === 'payments') arr = deletedPayments;
+  else if (coll === 'expenses') arr = deletedExpenses;
+  else if (coll === 'renewals') arr = deletedRenewals;
+  else return;
+  var exists = arr.some(function(x){ return String(x.id) === String(rec.id); });
+  if (!exists) arr.push(rec);
+  var storageKey = 'kp_deleted_' + coll;
+  try { localStorage.setItem(storageKey, JSON.stringify(arr)); } catch(_) {}
+}
+
+function _removeFromDeletedArray(coll, id) {
+  var arr, setArr;
+  if (coll === 'students') { arr = deletedStudents; setArr = function(a){ deletedStudents = a; }; }
+  else if (coll === 'payments') { arr = deletedPayments; setArr = function(a){ deletedPayments = a; }; }
+  else if (coll === 'expenses') { arr = deletedExpenses; setArr = function(a){ deletedExpenses = a; }; }
+  else if (coll === 'renewals') { arr = deletedRenewals; setArr = function(a){ deletedRenewals = a; }; }
+  else return;
+  var filtered = arr.filter(function(x){ return String(x.id) !== String(id); });
+  if (filtered.length !== arr.length) {
+    setArr(filtered);
+    var storageKey = 'kp_deleted_' + coll;
+    try { localStorage.setItem(storageKey, JSON.stringify(filtered)); } catch(_) {}
+  }
+}
+
+function _persistCollectionToLocalStorage(coll) {
+  try {
+    if (coll === 'students') localStorage.setItem('kp_students', JSON.stringify(students));
+    else if (coll === 'payments') localStorage.setItem('kp_payments', JSON.stringify(payments));
+    else if (coll === 'expenses') localStorage.setItem('kp_expenses', JSON.stringify(expenses));
+    else if (coll === 'renewals') localStorage.setItem('kp_renewals', JSON.stringify(renewals));
+  } catch(_) {}
+}
+
+// ── Public API: queue a single record write ────────────────────────
+function queueRecordWrite(collection, record) {
+  if (!_syncV2Enabled) { if (typeof autoSave === 'function') autoSave(); return; }
+  if (!record || record.id === undefined) return;
+  _stampRecord(record);
+  _writeQueue[collection] = _writeQueue[collection] || {};
+  _writeQueue[collection][String(record.id)] = record;
+  _recentLocalWrites[collection + ':' + record.id] = Date.now();
+  _scheduleFlush();
+}
+
+// Queue a soft-delete: keep the record, flip isDeleted=true
+function queueSoftDelete(collection, id, reason) {
+  if (!_syncV2Enabled) { if (typeof autoSave === 'function') autoSave(); return; }
+  // Find the record in the live array or in the deleted array
+  var rec = _findRecord(collection, id);
+  if (!rec) return;
+  rec.isDeleted = true;
+  rec.deletedAt = _nowIso();
+  rec.deletedBy = _currentUserName();
+  if (reason) rec.deletionReason = reason;
+  _stampRecord(rec);
+  _writeQueue[collection] = _writeQueue[collection] || {};
+  _writeQueue[collection][String(id)] = rec;
+  _recentLocalWrites[collection + ':' + id] = Date.now();
+  _scheduleFlush();
+}
+
+// Queue a restore: flip isDeleted=false
+function queueRestore(collection, id) {
+  if (!_syncV2Enabled) { if (typeof autoSave === 'function') autoSave(); return; }
+  var rec = _findRecord(collection, id);
+  if (!rec) return;
+  delete rec.isDeleted; delete rec.deletedAt; delete rec.deletedBy; delete rec.deletionReason;
+  _stampRecord(rec);
+  _writeQueue[collection] = _writeQueue[collection] || {};
+  _writeQueue[collection][String(id)] = rec;
+  _recentLocalWrites[collection + ':' + id] = Date.now();
+  _scheduleFlush();
+}
+
+// Queue a hard delete (removes the record entirely)
+function queueHardDelete(collection, id) {
+  if (!_syncV2Enabled) { if (typeof autoSave === 'function') autoSave(); return; }
+  _writeQueue[collection] = _writeQueue[collection] || {};
+  _writeQueue[collection][String(id)] = null; // null means DELETE in multi-path update
+  _recentLocalWrites[collection + ':' + id] = Date.now();
+  _scheduleFlush();
+}
+
+function _findRecord(collection, id) {
+  var arrs;
+  if (collection === 'students') arrs = [students, deletedStudents];
+  else if (collection === 'payments') arrs = [payments, deletedPayments];
+  else if (collection === 'expenses') arrs = [expenses, deletedExpenses];
+  else if (collection === 'renewals') arrs = [renewals, deletedRenewals];
+  else return null;
+  for (var i = 0; i < arrs.length; i++) {
+    var found = arrs[i].find(function(x){ return String(x.id) === String(id); });
+    if (found) return found;
+  }
+  return null;
+}
+
+function _scheduleFlush() {
+  if (_writeQueueTimer) return;
+  _writeQueueTimer = setTimeout(_flushWriteQueue, 250); // 250ms debounce
+}
+
+async function _flushWriteQueue() {
+  _writeQueueTimer = null;
+  if (_writeInFlight) { _scheduleFlush(); return; } // retry
+  if (!_fbConnected) { _scheduleFlush(); return; }
+
+  // Build multi-path update — only the dirty paths are populated
+  var update = {};
+  var hasAny = false;
+  var recordCount = 0;
+
+  ['students','payments','expenses','renewals','CLASSES'].forEach(function(coll){
+    var q = _writeQueue[coll];
+    if (!q) return;
+    Object.keys(q).forEach(function(id){
+      update['nursery_data/' + coll + '/' + id] = q[id]; // value or null (delete)
+      hasAny = true;
+      recordCount++;
+    });
+    _writeQueue[coll] = {};
+  });
+
+  // Single-node updates (small nodes replaced in one go)
+  if (_writeQueue.tombstones !== null && _writeQueue.tombstones !== undefined) {
+    update['nursery_data/tombstones'] = _writeQueue.tombstones;
+    hasAny = true;
+    _writeQueue.tombstones = null;
+  }
+  if (_writeQueue.deletedClasses_full !== null && _writeQueue.deletedClasses_full !== undefined) {
+    update['nursery_data/deletedClasses'] = _writeQueue.deletedClasses_full;
+    hasAny = true;
+    _writeQueue.deletedClasses_full = null;
+  }
+  if (_writeQueue.nurserySettings !== null && _writeQueue.nurserySettings !== undefined) {
+    update['nursery_data/nurserySettings'] = _writeQueue.nurserySettings;
+    hasAny = true;
+    _writeQueue.nurserySettings = null;
+  }
+
+  // Always bump savedAt so legacy polling clients pick up activity too
+  if (hasAny) update['nursery_data/savedAt'] = _nowIso();
+  if (!hasAny) return;
+
+  _writeInFlight = true;
+  try {
+    await _fbDb.ref().update(update);
+    showSyncBadge(recordCount > 0 ? ('✅ ' + recordCount + ' تعديل') : '✅ محفوظ');
+    lastSavedAt = update['nursery_data/savedAt'];
+    try { localStorage.setItem('kp_last_synced_at', lastSavedAt); } catch(_) {}
+    // Advance change-detection snapshots so the next diff is against what we just persisted
+    _advanceSnapshotsAfterFlush(update);
+  } catch(e) {
+    console.error('[SyncV2] flush failed:', e);
+    showSyncBadge('⚠️ خطأ في الحفظ');
+    // Retry in 1s by re-queueing via diff (which will re-detect dirty records)
+    setTimeout(function(){ if (typeof _queueDirtyRecords === 'function') _queueDirtyRecords(); }, 1000);
+  } finally {
+    _writeInFlight = false;
+  }
+}
+
+function stopSyncV2() {
+  if (!_syncV2Enabled || !_fbDb) return;
+  try {
+    ['students','payments','expenses','renewals','CLASSES','deletedClasses','nurserySettings','tombstones'].forEach(function(n){
+      try { _fbDb.ref('nursery_data/' + n).off(); } catch(_) {}
+    });
+    try { _fbDb.ref('.info/connected').off(); } catch(_) {}
+  } catch(_) {}
+  _syncV2Enabled = false;
+  _fbFirstSnapshot = { students:true, payments:true, expenses:true, renewals:true, CLASSES:true };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// End of Sync Engine v2
+// ═══════════════════════════════════════════════════════════════════
+
 async function pushToFirebase() {
   if (syncTimeout) {
     clearTimeout(syncTimeout);
@@ -7001,6 +7615,8 @@ async function loadFromFirebase() {
     lastSavedAt = data.savedAt || '';
     localStorage.setItem('kp_last_synced_at', lastSavedAt);
     renderDash();
+    // Reset change-detection snapshots — we are now in sync with the server
+    if (typeof _initializeSyncSnapshots === 'function') _initializeSyncSnapshots();
     showSyncBadge('✅ تم التحميل');
   } catch(e) {
     const msg = (e && e.message) ? e.message : 'unknown';
