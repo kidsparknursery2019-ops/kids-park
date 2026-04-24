@@ -6165,8 +6165,13 @@ function _initializeSyncSnapshots() {
 // This replaces the old _queueFullStateDelta (which pushed everything).
 function _queueDirtyRecords() {
   if (!_snapshotsInitialized) {
-    // First call — just establish the baseline; don't push anything yet.
-    // (Records already match server state.)
+    // First call without a baseline — we can't diff safely. Fall back to
+    // legacy full push so no change is ever silently dropped.
+    console.log('[SyncV2] ⚠️ snapshots not initialized — falling back to legacy pushToFirebase');
+    if (typeof pushToFirebase === 'function') {
+      try { pushToFirebase(); } catch(e) { console.error(e); }
+    }
+    // Establish baseline for next time
     _initializeSyncSnapshots();
     return;
   }
@@ -7083,7 +7088,16 @@ function _scheduleFlush() {
 async function _flushWriteQueue() {
   _writeQueueTimer = null;
   if (_writeInFlight) { _scheduleFlush(); return; } // retry
-  if (!_fbConnected) { _scheduleFlush(); return; }
+  if (!_fbConnected) {
+    // WebSocket is down. Don't spin forever — use the legacy REST push
+    // so the data actually gets saved. Clear the queue so we don't double-write.
+    console.log('[SyncV2] ⚠️ WebSocket down — falling back to REST push');
+    _writeQueue = { students:{}, payments:{}, expenses:{}, renewals:{}, CLASSES:{}, deletedClasses:{}, nurserySettings:null, tombstones:null };
+    if (typeof pushToFirebase === 'function') {
+      try { await pushToFirebase(); } catch(e) { console.error('REST fallback failed:', e); }
+    }
+    return;
+  }
 
   // Build multi-path update — only the dirty paths are populated
   var update = {};
