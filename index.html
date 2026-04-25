@@ -6690,19 +6690,41 @@ function mergeArrayById(localArr, remoteArr, localTombstones, localDeletedBucket
   const deletedIds = new Set((Array.isArray(localDeletedBucket) ? localDeletedBucket : [])
     .map(function(x){ return x && x.id != null ? normKey(x.id) : null; })
     .filter(function(v){ return v !== null; }));
+  // CRITICAL: track ids that arrive from remote with isDeleted:true so we can
+  // (a) NOT include them in the live array, and (b) ensure they end up in
+  // the local deleted bucket so they show in the recycle bin everywhere.
+  const remoteSoftDeleted = [];
   const merged = {};
   // أضف جميع السجلات من Firebase أولاً
   remoteArr.forEach(function(item) {
-    if (item && item.id != null && !hasKey(ts, item.id) && !deletedIds.has(normKey(item.id))) {
-      merged[normKey(item.id)] = item;
+    if (!item || item.id == null) return;
+    if (hasKey(ts, item.id)) return;
+    if (deletedIds.has(normKey(item.id))) return;
+    // FIX: skip records flagged as soft-deleted on the server.
+    // They belong in the recycle bin, not the live list.
+    if (item.isDeleted === true || item.isDeleted === 'true') {
+      remoteSoftDeleted.push(item);
+      return;
     }
+    merged[normKey(item.id)] = item;
   });
   // أضف/اكتب فوق بالسجلات المحلية (أحدث - تغييرات الجلسة الحالية)
   localArr.forEach(function(item) {
-    if (item && item.id != null && !hasKey(ts, item.id) && !deletedIds.has(normKey(item.id))) {
-      merged[normKey(item.id)] = item;
-    }
+    if (!item || item.id == null) return;
+    if (hasKey(ts, item.id)) return;
+    if (deletedIds.has(normKey(item.id))) return;
+    if (item.isDeleted === true || item.isDeleted === 'true') return; // safety
+    merged[normKey(item.id)] = item;
   });
+  // Side-effect: stash the soft-deleted-on-remote records on the function
+  // so the caller can fold them into the local deleted bucket. We attach
+  // them to a global hand-off because mergeArrayById is called many times.
+  if (remoteSoftDeleted.length) {
+    window.__remoteSoftDeletedHandoff = window.__remoteSoftDeletedHandoff || {};
+    // Use the array reference itself as a key — caller knows which collection
+    // it is by which array it passed in.
+    window.__remoteSoftDeletedLast = remoteSoftDeleted;
+  }
   return Object.values(merged).sort(function(a,b){ return (a.id||0)-(b.id||0); });
 }
 
@@ -6889,6 +6911,36 @@ function _subscribeNode(nodeName) {
 // Apply remote collection update to local state, merging intelligently
 function _applyRemoteCollection(coll, remoteMap) {
   if (!remoteMap) remoteMap = {};
+  // CRITICAL: Firebase may deliver data as either:
+  //   - object with id keys: { "999": {...}, "1000": {...} }
+  //   - array with index keys: [ {id:999,...}, {id:1000,...} ]
+  // Normalize to id-keyed object so the rest of the function works regardless.
+  if (Array.isArray(remoteMap)) {
+    var normalized = {};
+    remoteMap.forEach(function(item){
+      if (item && item.id !== undefined && item.id !== null) {
+        normalized[String(item.id)] = item;
+      }
+    });
+    remoteMap = normalized;
+  } else if (remoteMap && typeof remoteMap === 'object') {
+    // If keys look like array indices (0,1,2,...) but values have an .id field,
+    // re-key by id. This happens when Firebase auto-converts a sparse object back
+    // to an array internally then sends it back to us.
+    var keys = Object.keys(remoteMap);
+    var allNumeric = keys.length > 0 && keys.every(function(k){ return /^\d+$/.test(k); });
+    var hasIdField = keys.some(function(k){ return remoteMap[k] && remoteMap[k].id !== undefined; });
+    if (allNumeric && hasIdField) {
+      var rekeyed = {};
+      keys.forEach(function(k){
+        var item = remoteMap[k];
+        if (item && item.id !== undefined && item.id !== null) {
+          rekeyed[String(item.id)] = item;
+        }
+      });
+      remoteMap = rekeyed;
+    }
+  }
   var stateArr;
   if (coll === 'students') stateArr = students;
   else if (coll === 'payments') stateArr = payments;
@@ -7534,6 +7586,19 @@ async function loadFromFirebase() {
     if (deletedRenewals.length) deletedRenewals = deletedRenewals.filter(function(s){ return !(s && _preRestoredRenewals.has(normKey(s.id))); });
     if (deletedClasses.length) deletedClasses = deletedClasses.filter(function(c){ return !(c && _preRestoredClasses.has(normKey(c.key))); });
 
+    // CRITICAL: Firebase may return collections as objects (not arrays) when
+    // SyncV2 writes individual paths like expenses/2577. Convert object → array
+    // before merging so we never silently skip the merge.
+    function _toArray(v) {
+      if (Array.isArray(v)) return v;
+      if (v && typeof v === 'object') return Object.keys(v).map(function(k){ return v[k]; }).filter(function(x){ return x && typeof x === 'object'; });
+      return [];
+    }
+    data.students = _toArray(data.students);
+    data.payments = _toArray(data.payments);
+    data.expenses = _toArray(data.expenses);
+    data.renewals = _toArray(data.renewals);
+
     // دمج البيانات بدل الاستبدال — يحمي التعديلات المحلية غير المحفوظة
     if (Array.isArray(data.students)) {
       students = mergeArrayById(students, data.students, tombstones.students || [], deletedStudents);
@@ -7552,6 +7617,37 @@ async function loadFromFirebase() {
       renewals = mergeArrayById(renewals, data.renewals, tombstones.renewals || [], deletedRenewals);
       renewals = sanitizeEntityArray(renewals);
     }
+
+    // CRITICAL: any record we received from remote with isDeleted:true that
+    // isn't already in our local deleted bucket — fold it in now, so the
+    // recycle bin shows it on every device immediately.
+    function _foldRemoteSoftDeletes(remoteArr, localDeleted, lsKey) {
+      if (!Array.isArray(remoteArr)) return localDeleted;
+      var added = false;
+      var byId = {};
+      (localDeleted || []).forEach(function(x){ if (x && x.id != null) byId[normKey(x.id)] = x; });
+      remoteArr.forEach(function(item){
+        if (!item || item.id == null) return;
+        if (item.isDeleted !== true && item.isDeleted !== 'true') return;
+        var k = normKey(item.id);
+        if (!byId[k]) {
+          // Strip the isDeleted flag — locally we represent it by being in the deleted bucket
+          var copy = Object.assign({}, item);
+          delete copy.isDeleted;
+          if (!copy.deletedAt) copy.deletedAt = new Date().toISOString().slice(0,19).replace('T',' ');
+          if (!copy.deletedBy) copy.deletedBy = 'مزامنة';
+          byId[k] = copy;
+          added = true;
+        }
+      });
+      var out = Object.values(byId);
+      if (added) localStorage.setItem(lsKey, JSON.stringify(out));
+      return out;
+    }
+    deletedStudents = _foldRemoteSoftDeletes(data.students, deletedStudents, 'kp_deleted_students');
+    deletedPayments = _foldRemoteSoftDeletes(data.payments, deletedPayments, 'kp_deleted_payments');
+    deletedExpenses = _foldRemoteSoftDeletes(data.expenses, deletedExpenses, 'kp_deleted_expenses');
+    deletedRenewals = _foldRemoteSoftDeletes(data.renewals, deletedRenewals, 'kp_deleted_renewals');
     sanitizeCoreData();
     if (data.attLog) { Object.keys(data.attLog).forEach(function(k){ attLog[k] = data.attLog[k]; }); }
 
