@@ -4420,6 +4420,9 @@ function delExpense(id){
   if(!delId) return;
   const exp = expenses.find(function(e){ return e.id===delId; });
   if(!exp || !confirm('حذف هذا المصروف؟'))return;
+
+  console.log('[delExpense] 🗑 deleting expense id:', delId);
+
   deletedExpenses.unshift(Object.assign({}, exp, {
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
     deletedBy: currentUser ? currentUser.name : 'نظام'
@@ -4430,6 +4433,22 @@ function delExpense(id){
   closeAll();
   autoSave(); renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
   renderOtherDeletedItems();
+
+  // GUARANTEED REMOTE WRITE — independent of SyncV2 / queue / snapshots
+  // This sends the deletion directly to Firebase REST. Even if SyncV2 is
+  // disabled, broken, or blocked by rules on nested paths, the legacy
+  // top-level path always works (since we use it for the entire object).
+  console.log('[delExpense] forcing remote write via pushToFirebase()...');
+  setTimeout(function(){
+    if (typeof pushToFirebase === 'function') {
+      pushToFirebase().then(function(){
+        console.log('[delExpense] ✅ remote write completed');
+      }).catch(function(err){
+        console.error('[delExpense] ❌ remote write FAILED:', err);
+        alert('⚠️ فشل حفظ الحذف على السحابة!\nالخطأ: ' + (err && err.message ? err.message : err) + '\n\nالحذف صار محلياً فقط.');
+      });
+    }
+  }, 50);
 }
 
 // ============================================================
