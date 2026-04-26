@@ -1213,37 +1213,74 @@ var nextPayId = 1;
 var nextExpId = 600;
 var nextRenId = 51;
 
-function getSafeNextReceiptId() {
-  if (!Array.isArray(payments) || !payments.length) return 1;
-  const ids = payments
-    .map(function(p){ return parseInt(p.id, 10) || 0; })
-    .filter(function(id){ return id > 0; })
-    .sort(function(a,b){ return a - b; });
-  if (!ids.length) return 1;
-  const maxId = ids[ids.length - 1];
-  const prevId = ids.length > 1 ? ids[ids.length - 2] : 0;
-  // حماية من قفز غير منطقي مثل 2031 -> 3001 بسبب رقم شاذ وحيد
-  if (prevId > 0 && maxId - prevId >= 500) return prevId + 1;
-  return maxId + 1;
-}
 
-function getSafeNextExpenseId(){
-  const usedIds = new Set();
-  if (Array.isArray(expenses)) {
-    expenses.forEach(function(e){
-      const id = Number(e && e.id);
+function collectFinancialUsedIdsFromArray(source, usedIds) {
+  if (!usedIds) usedIds = new Set();
+  if (Array.isArray(source)) {
+    source.forEach(function(item){
+      const rawId = (item && typeof item === 'object') ? item.id : item;
+      const id = Number(rawId);
+      if (Number.isFinite(id) && id > 0) usedIds.add(id);
+    });
+  } else if (source && typeof source === 'object') {
+    Object.keys(source).forEach(function(k){
+      const item = source[k];
+      const rawId = (item && typeof item === 'object' && item.id != null) ? item.id : k;
+      const id = Number(rawId);
       if (Number.isFinite(id) && id > 0) usedIds.add(id);
     });
   }
-  if (typeof tombstones !== 'undefined' && tombstones && Array.isArray(tombstones.expenses)) {
-    tombstones.expenses.forEach(function(id){
-      const n = Number(id);
-      if (Number.isFinite(n) && n > 0) usedIds.add(n);
-    });
+  return usedIds;
+}
+
+function collectAllFinancialUsedIds(extraUsedIds) {
+  const usedIds = new Set(Array.isArray(extraUsedIds) ? extraUsedIds.map(Number).filter(function(n){return Number.isFinite(n)&&n>0;}) : []);
+
+  // الأرقام المالية مشتركة عملياً بين السندات والمصاريف، لذلك نمنع إعادة استخدام أي رقم
+  // موجود أو محذوف مؤقتاً أو محذوف نهائياً في أي قسم مالي.
+  collectFinancialUsedIdsFromArray(typeof payments !== 'undefined' ? payments : [], usedIds);
+  collectFinancialUsedIdsFromArray(typeof expenses !== 'undefined' ? expenses : [], usedIds);
+  collectFinancialUsedIdsFromArray(typeof deletedPayments !== 'undefined' ? deletedPayments : [], usedIds);
+  collectFinancialUsedIdsFromArray(typeof deletedExpenses !== 'undefined' ? deletedExpenses : [], usedIds);
+
+  if (typeof tombstones !== 'undefined' && tombstones) {
+    collectFinancialUsedIdsFromArray(tombstones.payments, usedIds);
+    collectFinancialUsedIdsFromArray(tombstones.expenses, usedIds);
   }
-  let candidate = 600;
+  if (typeof restoredKeys !== 'undefined' && restoredKeys) {
+    collectFinancialUsedIdsFromArray(restoredKeys.payments, usedIds);
+    collectFinancialUsedIdsFromArray(restoredKeys.expenses, usedIds);
+  }
+
+  // حماية من بيانات محفوظة محلياً أو محذوفات لم تُحمّل بعد من Firebase.
+  try {
+    collectFinancialUsedIdsFromArray(JSON.parse(localStorage.getItem('kp_payments_data') || '[]'), usedIds);
+    collectFinancialUsedIdsFromArray(JSON.parse(localStorage.getItem('kp_expenses_data') || '[]'), usedIds);
+    collectFinancialUsedIdsFromArray(JSON.parse(localStorage.getItem('kp_deleted_payments') || '[]'), usedIds);
+    collectFinancialUsedIdsFromArray(JSON.parse(localStorage.getItem('kp_deleted_expenses') || '[]'), usedIds);
+    const localTombstones = JSON.parse(localStorage.getItem('kp_tombstones') || '{}');
+    collectFinancialUsedIdsFromArray(localTombstones && localTombstones.payments, usedIds);
+    collectFinancialUsedIdsFromArray(localTombstones && localTombstones.expenses, usedIds);
+  } catch(_) {}
+
+  return usedIds;
+}
+
+function getNextUnusedFinancialId(minStart, extraUsedIds) {
+  const usedIds = collectAllFinancialUsedIds(extraUsedIds);
+  let maxId = minStart || 1;
+  usedIds.forEach(function(id){ if (id > maxId) maxId = id; });
+  let candidate = Math.max(minStart || 1, maxId + 1);
   while (usedIds.has(candidate)) candidate++;
   return candidate;
+}
+
+function getSafeNextReceiptId() {
+  return getNextUnusedFinancialId(1);
+}
+
+function getSafeNextExpenseId(){
+  return getNextUnusedFinancialId(600);
 }
 
 function collectStudentUsedIds(source, usedIds) {
