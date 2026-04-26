@@ -4137,6 +4137,7 @@ async function delExpense(id){
   deletedExpenses.unshift(trashExp);
   localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
   expenses=expenses.filter(e=>e.id!==delId);
+  removeRestoredKeyLocal('expenses', delId);
   addTombstone('expenses', delId);
   cleanupDeletedBuckets();
   closeAll();
@@ -5847,6 +5848,7 @@ async function syncStudentRecordQuick(student, actionLabel) {
 async function syncStudentDeleteQuick(student, permanent) {
   if (!student || student.id == null) return false;
   const idKey = quickSyncKey(student.id);
+  removeRestoredKeyLocal('students', student.id);
   try {
     showSyncBadge('⏳ إرسال حذف الطالب إلى Firebase...');
     await quickFirebaseDelete('studentsById/' + idKey).catch(function(){});
@@ -5867,7 +5869,7 @@ async function syncStudentDeleteQuick(student, permanent) {
     // مهم جداً: إذا كان السجل مستعاداً سابقاً وبقي له restoredKeysById في Firebase
     // فإن التحديث التلقائي سيعتبره "مستعاد" ويرجعه من مصفوفة expenses/payments القديمة.
     // لذلك عند أي حذف، احذف علامة الاستعادة السحابية.
-    await quickFirebaseDelete('restoredKeysById/' + type + '/' + idKey).catch(function(){});
+    await quickFirebaseDelete('restoredKeysById/students/' + idKey).catch(function(){});
     const __syncNow = new Date().toISOString();
     await quickFirebasePatch('savedAt', __syncNow).catch(function(){});
     await quickFirebasePatch('meta/savedAt', __syncNow).catch(function(){});
@@ -5959,6 +5961,7 @@ async function syncRecordDeleteQuick(type, record, permanent) {
   const cfg = map[type];
   if (!cfg) return false;
   const idKey = quickSyncKey(record.id);
+  removeRestoredKeyLocal(type, record.id);
   try {
     showSyncBadge('⏳ إرسال حذف ' + cfg.label + ' إلى Firebase...');
 
@@ -6825,6 +6828,30 @@ async function loadFromFirebase() {
     let data = normalizeFirebaseByIdData(await res.json());
     if (!data || (!data.version && !data.studentsById && !data.deletedStudentsById)) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
 
+    // حاسم: وجود السجل في المحذوفات أقوى من أي restoredKey قديم.
+    // هذا يمنع رجوع المصروف/السند من المصفوفات القديمة بعد أن يظهر في سلة المحذوفات.
+    (function deletedWinsOverOldRestoredMarkers(){
+      const cfg = {
+        students: data.deletedStudents,
+        payments: data.deletedPayments,
+        expenses: data.deletedExpenses,
+        renewals: data.deletedRenewals
+      };
+      Object.keys(cfg).forEach(function(type){
+        const delSet = deletedIdsFromBucket(cfg[type], 'id');
+        if (!delSet.size) return;
+        if (!restoredKeys[type]) restoredKeys[type] = [];
+        restoredKeys[type] = restoredKeys[type].filter(function(id){ return !delSet.has(normKey(id)); });
+        if (data.restoredKeys && Array.isArray(data.restoredKeys[type])) {
+          data.restoredKeys[type] = data.restoredKeys[type].filter(function(id){ return !delSet.has(normKey(id)); });
+        }
+        if (!tombstones[type]) tombstones[type] = [];
+        delSet.forEach(function(id){ if (!hasKey(tombstones[type], id)) tombstones[type].push(id); });
+      });
+      localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
+      localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+    })();
+
     // دمج restoredKeys أولاً من Firebase مع المحلي (الاتحاد)
     if (data.restoredKeys && typeof data.restoredKeys === 'object') {
       ['students','payments','expenses','renewals','classes'].forEach(function(type){
@@ -6931,9 +6958,12 @@ async function loadFromFirebase() {
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
       deletedPayments.forEach(function(x){
-        if (x && x.id != null && !payments.some(function(p){ return p && normKey(p.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
+        // المحلي في سلة المحذوفات أقوى من وجود نسخة قديمة في payments
+        if (x && x.id != null) remoteMap[normKey(x.id)] = x;
       });
       deletedPayments = Object.values(remoteMap);
+      const __delPayIdsNow = deletedIdsFromBucket(deletedPayments, 'id');
+      payments = payments.filter(function(p){ return !(p && __delPayIdsNow.has(normKey(p.id))); });
       localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
     }
     if (Array.isArray(data.deletedExpenses) && typeof deletedExpenses !== 'undefined') {
@@ -6945,9 +6975,12 @@ async function loadFromFirebase() {
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
       deletedExpenses.forEach(function(x){
-        if (x && x.id != null && !expenses.some(function(e){ return e && normKey(e.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
+        // المحلي في سلة المحذوفات أقوى من وجود نسخة قديمة في expenses
+        if (x && x.id != null) remoteMap[normKey(x.id)] = x;
       });
       deletedExpenses = Object.values(remoteMap);
+      const __delExpIdsNow = deletedIdsFromBucket(deletedExpenses, 'id');
+      expenses = expenses.filter(function(e){ return !(e && __delExpIdsNow.has(normKey(e.id))); });
       localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
     }
     if (Array.isArray(data.deletedRenewals) && typeof deletedRenewals !== 'undefined') {
