@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260426-student-id-safe-sync -->
+<!-- v20260426-record-level-patch-sync -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -1206,6 +1206,60 @@ function getStudentHealthSummary(student) {
       return true;
     })
     .join('، ');
+}
+
+
+// يحمي الحالة الصحية من الاختلاف بين الأجهزة:
+// عند دمج بيانات الطلاب من Firebase، لا نسمح لنسخة محلية قديمة وفارغة أن تطمس حالة صحية أحدث محفوظة سحابياً.
+function getStudentHealthChangedAt(student) {
+  if (!student || typeof student !== 'object') return 0;
+  const raw = student.healthUpdatedAt || student.healthChangedAt || student.updatedAt || student.modifiedAt || '';
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function hasStudentHealthMarker(student) {
+  if (!student || typeof student !== 'object') return false;
+  return !!(
+    String(student.health || '').trim() ||
+    String(student.healthStatus || '').trim() ||
+    String(student.healthOverride || '').trim() ||
+    student.healthDeleted === true ||
+    student.healthUpdatedAt ||
+    student.healthChangedAt
+  );
+}
+
+function copyStudentHealthFields(target, source) {
+  if (!target || !source) return target;
+  target.health = source.health || '';
+  target.healthStatus = source.healthStatus || '';
+  target.healthOverride = source.healthOverride || '';
+  target.healthDeleted = source.healthDeleted === true;
+  target.healthUpdatedAt = source.healthUpdatedAt || source.healthChangedAt || target.healthUpdatedAt || '';
+  return target;
+}
+
+function mergeStudentRecordSafely(localItem, remoteItem) {
+  const output = Object.assign({}, remoteItem || {}, localItem || {});
+  if (!localItem || !remoteItem) return output;
+
+  const localHealthTime = getStudentHealthChangedAt(localItem);
+  const remoteHealthTime = getStudentHealthChangedAt(remoteItem);
+  const localHasHealth = hasStudentHealthMarker(localItem);
+  const remoteHasHealth = hasStudentHealthMarker(remoteItem);
+
+  // إذا Firebase عنده حالة صحية أحدث، احفظها حتى لو الجهاز المحلي حفظ حقلاً آخر للطالب.
+  if (remoteHealthTime > localHealthTime) return copyStudentHealthFields(output, remoteItem);
+
+  // إذا الجهاز الحالي عدّل الحالة الصحية فعلاً، خليه هو الأحدث.
+  if (localHealthTime > remoteHealthTime) return copyStudentHealthFields(output, localItem);
+
+  // حماية للبيانات القديمة التي لا تحتوي timestamp:
+  // لا تجعل جهازاً فارغ الحالة الصحية يمسح حالة صحية موجودة على جهاز/سحابة أخرى.
+  if (remoteHasHealth && !localHasHealth) return copyStudentHealthFields(output, remoteItem);
+
+  return output;
 }
 
 var nextStuId = 200;
@@ -3288,6 +3342,8 @@ function quickEditStudentHealth(id){
   target.healthStatus = value;
   target.healthOverride = value;
   target.healthDeleted = false;
+  target.healthUpdatedAt = new Date().toISOString();
+  target.updatedAt = target.healthUpdatedAt;
   if (restoreStudentsSnapshotIfNeeded(beforeCount)) return;
   resetPaymentMatchCache();
   autoSave();
@@ -3314,6 +3370,8 @@ function clearStudentHealth(id){
   target.healthStatus = '';
   target.healthOverride = '';
   target.healthDeleted = true;
+  target.healthUpdatedAt = new Date().toISOString();
+  target.updatedAt = target.healthUpdatedAt;
   if (restoreStudentsSnapshotIfNeeded(beforeCount)) return;
   resetPaymentMatchCache();
   autoSave();
@@ -3360,7 +3418,11 @@ async function saveStudent(){
   if(!name){alert('اسم الطالب مطلوب');return;}
   const manualHealthValue = document.getElementById('ns-health').value.trim();
   const nameEnInput = (document.getElementById('ns-name-en').value || '').trim();
-  const data={name,nameEn:(nameEnInput || transliterateArabicName(name)),dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,addr:document.getElementById('ns-addr').value,idNo:document.getElementById('ns-idno').value,health:manualHealthValue,healthOverride:manualHealthValue,healthDeleted:false,note:document.getElementById('ns-note').value,internalNote:document.getElementById('ns-internal-note').value,sub_end:(document.getElementById('ns-sub-end')||{}).value||''};
+  const existingStudent = editingStuId ? students.find(function(x){ return x.id === editingStuId; }) : null;
+  const previousHealthValue = existingStudent ? String(existingStudent.healthOverride || existingStudent.health || existingStudent.healthStatus || '').trim() : '';
+  const healthChanged = !editingStuId || previousHealthValue !== manualHealthValue;
+  const healthStamp = healthChanged ? new Date().toISOString() : (existingStudent && (existingStudent.healthUpdatedAt || existingStudent.healthChangedAt)) || '';
+  const data={name,nameEn:(nameEnInput || transliterateArabicName(name)),dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,addr:document.getElementById('ns-addr').value,idNo:document.getElementById('ns-idno').value,health:manualHealthValue,healthStatus:manualHealthValue,healthOverride:manualHealthValue,healthDeleted:false,healthUpdatedAt:healthStamp,note:document.getElementById('ns-note').value,internalNote:document.getElementById('ns-internal-note').value,sub_end:(document.getElementById('ns-sub-end')||{}).value||'',updatedAt:new Date().toISOString()};
   if(editingStuId){
     const i=students.findIndex(x=>x.id===editingStuId);
     if(i>=0)students[i]={...students[i],...data};
@@ -6191,9 +6253,21 @@ function mergeArrayById(localArr, remoteArr, localTombstones, localDeletedBucket
     }
   });
   // أضف/اكتب فوق بالسجلات المحلية (أحدث - تغييرات الجلسة الحالية)
+  // مع استثناء مهم: حقول الحالة الصحية للطلاب تُدمج بذكاء حتى لا تختلف بين الأجهزة.
   localArr.forEach(function(item) {
     if (item && item.id != null && !hasKey(ts, item.id) && !deletedIds.has(normKey(item.id))) {
-      merged[normKey(item.id)] = item;
+      const key = normKey(item.id);
+      const remoteOrExisting = merged[key];
+      if (remoteOrExisting && (
+          hasStudentHealthMarker(item) ||
+          hasStudentHealthMarker(remoteOrExisting) ||
+          Object.prototype.hasOwnProperty.call(item, 'health') ||
+          Object.prototype.hasOwnProperty.call(remoteOrExisting, 'health')
+        )) {
+        merged[key] = mergeStudentRecordSafely(item, remoteOrExisting);
+      } else {
+        merged[key] = item;
+      }
     }
   });
   return Object.values(merged).sort(function(a,b){ return (a.id||0)-(b.id||0); });
@@ -6502,10 +6576,35 @@ async function pushToFirebase() {
       restoredKeys:    mergedRestoredKeys,
     };
 
+    // ✅ حفظ آمن للمزامنة اليومية:
+    // - عند استرجاع نسخة احتياطية: PUT كامل كما هو مطلوب ليستبدل كل البيانات.
+    // - عند الإضافة/التعديل العادي: PATCH بدل PUT لجذر القاعدة،
+    //   حتى لا يطغى جهاز على كامل قاعدة البيانات عند عمل أكثر من مستخدم بنفس الوقت.
+    const writePayload = fullReplace ? mergedData : {
+      version:         mergedData.version,
+      savedAt:         mergedData.savedAt,
+      students:        mergedData.students,
+      payments:        mergedData.payments,
+      expenses:        mergedData.expenses,
+      attLog:          mergedData.attLog,
+      CLASSES:         mergedData.CLASSES,
+      nurserySettings: mergedData.nurserySettings,
+      renewals:        mergedData.renewals,
+      kp_users:        mergedData.kp_users,
+      kp_form_rows:    mergedData.kp_form_rows,
+      deletedStudents: mergedData.deletedStudents,
+      deletedPayments: mergedData.deletedPayments,
+      deletedExpenses: mergedData.deletedExpenses,
+      deletedRenewals: mergedData.deletedRenewals,
+      deletedClasses:  mergedData.deletedClasses,
+      tombstones:      mergedData.tombstones,
+      restoredKeys:    mergedData.restoredKeys
+    };
+
     const res = await fetch(FB_URL + '.json', {
-      method: 'PUT',
+      method: fullReplace ? 'PUT' : 'PATCH',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(mergedData)
+      body: JSON.stringify(writePayload)
     });
 
     if (res.ok) {
