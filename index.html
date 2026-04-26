@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260426-quick-per-record-students-payments-expenses-sync -->
+<!-- v20260426-per-record-core-fixed-trial -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -2588,15 +2588,7 @@ function printStudentsSelectedReport(){
     .meals-grid td.blank-cell{height:30px;width:70px}
   </style>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
-  <script>window.onload=()=>{setTimeout(()=>window.print(),250)}<\/script>
-<script>
-window.PER_RECORD_ONLY_CORE_SECTIONS = true;
-// تعطيل الحفظ الشامل للأقسام الأساسية:
-// students + payments + expenses
-// مع الإبقاء على النسخ الاحتياطي والاستعادة الكاملة كما هي.
-</script>
-
-</body></html>`);
+  <script>window.onload=()=>{setTimeout(()=>window.print(),250)}<\/script></body></html>`);
   w.document.close();
 }
 
@@ -2909,15 +2901,7 @@ function printStudentPayments(studentId) {
       '<button class="btn" onclick="window.print()">🖨 طباعة</button>' +
       '<button class="btn" onclick="window.close()" style="background:#888">إغلاق</button>' +
     '</div>' +
-    '
-<script>
-window.PER_RECORD_ONLY_CORE_SECTIONS = true;
-// تعطيل الحفظ الشامل للأقسام الأساسية:
-// students + payments + expenses
-// مع الإبقاء على النسخ الاحتياطي والاستعادة الكاملة كما هي.
-</script>
-
-</body></html>'
+    '</body></html>'
   );
   w.document.close();
 }
@@ -3026,15 +3010,7 @@ function printStudentFullFile(studentId) {
     '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+total.toLocaleString()+' د.إ — عدد السندات: '+pays.length+'</div></div>'+
     '<div class="sec"><h2>المرفقات والوثائق</h2><div class="docs">'+docCards+'</div></div>'+
     '<div class="actions"><button class="btn" onclick="window.print()">🖨 طباعة</button><button class="btn gray" onclick="window.close()">إغلاق</button></div>'+
-  '
-<script>
-window.PER_RECORD_ONLY_CORE_SECTIONS = true;
-// تعطيل الحفظ الشامل للأقسام الأساسية:
-// students + payments + expenses
-// مع الإبقاء على النسخ الاحتياطي والاستعادة الكاملة كما هي.
-</script>
-
-</body></html>');
+  '</body></html>');
   w.document.close();
 }
 
@@ -4940,15 +4916,7 @@ function doPrintExport(){
     d.rows.forEach(r=>{html+=`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`;});
     html+='</tbody>';
   }
-  html+='</table>
-<script>
-window.PER_RECORD_ONLY_CORE_SECTIONS = true;
-// تعطيل الحفظ الشامل للأقسام الأساسية:
-// students + payments + expenses
-// مع الإبقاء على النسخ الاحتياطي والاستعادة الكاملة كما هي.
-</script>
-
-</body></html>';
+  html+='</table></body></html>';
   const w=window.open('','_blank');
   w.document.write(html);
   w.document.close();
@@ -5476,15 +5444,7 @@ function printAllWorksheets() {
 </div>`;
   });
 
-  printHtml += `
-<script>
-window.PER_RECORD_ONLY_CORE_SECTIONS = true;
-// تعطيل الحفظ الشامل للأقسام الأساسية:
-// students + payments + expenses
-// مع الإبقاء على النسخ الاحتياطي والاستعادة الكاملة كما هي.
-</script>
-
-</body></html>`;
+  printHtml += `</body></html>`;
 
   const win = window.open('', '_blank');
   if(!win) { alert('يرجى السماح بالنوافذ المنبثقة في المتصفح'); return; }
@@ -5660,6 +5620,7 @@ window.addEventListener('DOMContentLoaded', () => {
 // ============================================================
 // FIREBASE REST API — بدون SDK، يشتغل من أي مكان
 // ============================================================
+window.PER_RECORD_ONLY_CORE_SECTIONS = true;
 const FB_URL = 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data';
 const FB_LOGO_URL = FB_URL + '/branding/logoDataUrl';
 let isSyncing = false;
@@ -5834,7 +5795,9 @@ async function syncStudentRecordQuick(student, actionLabel) {
     }));
     await quickFirebaseDelete('deletedStudentsById/' + idKey).catch(function(){});
     await quickFirebaseDelete('tombstonesById/students/' + idKey).catch(function(){});
-    await quickFirebasePatch('meta/savedAt', new Date().toISOString()).catch(function(){});
+    const __syncNow = new Date().toISOString();
+    await quickFirebasePatch('savedAt', __syncNow).catch(function(){});
+    await quickFirebasePatch('meta/savedAt', __syncNow).catch(function(){});
     persistCoreDataToLocalStorage();
     hasUnsavedChanges = false;
     showSyncBadge('✅ تم إرسال الطالب إلى Firebase');
@@ -5868,7 +5831,9 @@ async function syncStudentDeleteQuick(student, permanent) {
       }));
       await quickFirebaseDelete('tombstonesById/students/' + idKey).catch(function(){});
     }
-    await quickFirebasePatch('meta/savedAt', new Date().toISOString()).catch(function(){});
+    const __syncNow = new Date().toISOString();
+    await quickFirebasePatch('savedAt', __syncNow).catch(function(){});
+    await quickFirebasePatch('meta/savedAt', __syncNow).catch(function(){});
     persistCoreDataToLocalStorage();
     hasUnsavedChanges = false;
     showSyncBadge(permanent ? '✅ تم إرسال الحذف النهائي إلى Firebase' : '✅ تم إرسال الحذف إلى Firebase');
@@ -5898,7 +5863,9 @@ async function syncStudentRestoreQuick(student) {
       restoredAt: new Date().toISOString(),
       restoredBy: currentUser ? currentUser.name : 'نظام'
     }).catch(function(){});
-    await quickFirebasePatch('meta/savedAt', new Date().toISOString()).catch(function(){});
+    const __syncNow = new Date().toISOString();
+    await quickFirebasePatch('savedAt', __syncNow).catch(function(){});
+    await quickFirebasePatch('meta/savedAt', __syncNow).catch(function(){});
     persistCoreDataToLocalStorage();
     hasUnsavedChanges = false;
     showSyncBadge('✅ تم إرسال الاستعادة إلى Firebase');
@@ -5930,7 +5897,9 @@ async function syncRecordQuick(type, record, actionLabel) {
     }));
     await quickFirebaseDelete(cfg.deleted + '/' + idKey).catch(function(){});
     await quickFirebaseDelete('tombstonesById/' + type + '/' + idKey).catch(function(){});
-    await quickFirebasePatch('meta/savedAt', new Date().toISOString()).catch(function(){});
+    const __syncNow = new Date().toISOString();
+    await quickFirebasePatch('savedAt', __syncNow).catch(function(){});
+    await quickFirebasePatch('meta/savedAt', __syncNow).catch(function(){});
     persistCoreDataToLocalStorage();
     hasUnsavedChanges = false;
     showSyncBadge('✅ تم إرسال ' + cfg.label + ' إلى Firebase');
@@ -5970,7 +5939,9 @@ async function syncRecordDeleteQuick(type, record, permanent) {
       }));
       await quickFirebaseDelete('tombstonesById/' + type + '/' + idKey).catch(function(){});
     }
-    await quickFirebasePatch('meta/savedAt', new Date().toISOString()).catch(function(){});
+    const __syncNow = new Date().toISOString();
+    await quickFirebasePatch('savedAt', __syncNow).catch(function(){});
+    await quickFirebasePatch('meta/savedAt', __syncNow).catch(function(){});
     persistCoreDataToLocalStorage();
     hasUnsavedChanges = false;
     showSyncBadge(permanent ? '✅ تم إرسال الحذف النهائي إلى Firebase' : '✅ تم إرسال الحذف إلى Firebase');
@@ -6006,7 +5977,9 @@ async function syncRecordRestoreQuick(type, record) {
       restoredAt: new Date().toISOString(),
       restoredBy: currentUser ? currentUser.name : 'نظام'
     }).catch(function(){});
-    await quickFirebasePatch('meta/savedAt', new Date().toISOString()).catch(function(){});
+    const __syncNow = new Date().toISOString();
+    await quickFirebasePatch('savedAt', __syncNow).catch(function(){});
+    await quickFirebasePatch('meta/savedAt', __syncNow).catch(function(){});
     persistCoreDataToLocalStorage();
     hasUnsavedChanges = false;
     showSyncBadge('✅ تم إرسال الاستعادة إلى Firebase');
@@ -6214,14 +6187,6 @@ function buildFinancialReportPrintHtml(d) {
     <div class="foot">حضانة حديقة الأطفال — تقرير مالي تم إنشاؤه في ${escapeHtml(generatedAt)}</div>
   </div>
   <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
-
-<script>
-window.PER_RECORD_ONLY_CORE_SECTIONS = true;
-// تعطيل الحفظ الشامل للأقسام الأساسية:
-// students + payments + expenses
-// مع الإبقاء على النسخ الاحتياطي والاستعادة الكاملة كما هي.
-</script>
-
 </body>
 </html>`;
 }
@@ -6744,11 +6709,31 @@ async function pushToFirebase() {
       restoredKeys:    mergedRestoredKeys,
     };
 
-    const res = await fetch(FB_URL + '.json', {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(mergedData)
-    });
+    let res;
+    if (!fullReplace && window.PER_RECORD_ONLY_CORE_SECTIONS === true) {
+      // وضع الحفظ الفردي للأقسام الأساسية:
+      // لا نكتب students/payments/expenses ولا سلالها كتابة شاملة على الجذر.
+      // نترك الكتابة الفردية لدوال syncStudentRecordQuick / syncRecordQuick.
+      const patchData = Object.assign({}, mergedData);
+      delete patchData.students;
+      delete patchData.payments;
+      delete patchData.expenses;
+      delete patchData.deletedStudents;
+      delete patchData.deletedPayments;
+      delete patchData.deletedExpenses;
+      // نبقي tombstones/restoredKeys لأنها خفيفة وتحتاجها الأقسام الأخرى أيضاً.
+      res = await fetch(FB_URL + '.json', {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(patchData)
+      });
+    } else {
+      res = await fetch(FB_URL + '.json', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(mergedData)
+      });
+    }
 
     if (res.ok) {
       try { await saveLogoToFirebaseSilent(); } catch(_) {}
@@ -8082,13 +8067,5 @@ document.addEventListener('click', function(e) {
   }
 })();
 </script>
-
-<script>
-window.PER_RECORD_ONLY_CORE_SECTIONS = true;
-// تعطيل الحفظ الشامل للأقسام الأساسية:
-// students + payments + expenses
-// مع الإبقاء على النسخ الاحتياطي والاستعادة الكاملة كما هي.
-</script>
-
 </body>
 </html>
