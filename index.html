@@ -1056,7 +1056,6 @@ textarea{resize:vertical;min-height:65px}
       <div class="fl fgr"><label>البيان / الوصف *</label><input id="ne-desc" placeholder="راتب / كهرباء / قرطاسية..."></div>
       <div class="fl"><label>المبلغ (درهم) *</label><input id="ne-amt" type="number" placeholder="0"></div>
       <div class="fl"><label>التاريخ</label><input id="ne-date" type="date"></div>
-      <div class="fl"><label>رقم المصروف</label><input id="ne-id" type="number" placeholder="تلقائي" disabled></div>
       <div class="fl"><label>الفئة</label>
         <select id="ne-cat"><option>رواتب</option><option>كهرباء وإنترنت</option><option>قرطاسية ومستلزمات</option><option>صيانة</option><option>مواصلات</option><option>فعاليات</option><option>أخرى</option></select>
       </div>
@@ -1230,18 +1229,23 @@ function getSafeNextReceiptId() {
 
 function getSafeNextExpenseId(){
   const usedIds = new Set();
-  if (Array.isArray(expenses)) {
-    expenses.forEach(function(e){
-      const id = Number(e && e.id);
+  function addUsedFromArray(arr){
+    if (!Array.isArray(arr)) return;
+    arr.forEach(function(e){
+      const raw = (e && typeof e === 'object') ? e.id : e;
+      const id = Number(raw);
       if (Number.isFinite(id) && id > 0) usedIds.add(id);
     });
   }
-  if (typeof tombstones !== 'undefined' && tombstones && Array.isArray(tombstones.expenses)) {
-    tombstones.expenses.forEach(function(id){
-      const n = Number(id);
-      if (Number.isFinite(n) && n > 0) usedIds.add(n);
-    });
-  }
+  addUsedFromArray(typeof expenses !== 'undefined' ? expenses : []);
+  addUsedFromArray(typeof deletedExpenses !== 'undefined' ? deletedExpenses : []);
+  if (typeof tombstones !== 'undefined' && tombstones) addUsedFromArray(tombstones.expenses);
+  try {
+    addUsedFromArray(JSON.parse(localStorage.getItem('kp_expenses_data') || '[]'));
+    addUsedFromArray(JSON.parse(localStorage.getItem('kp_deleted_expenses') || '[]'));
+    const localTs = JSON.parse(localStorage.getItem('kp_tombstones') || '{}');
+    addUsedFromArray(localTs && localTs.expenses);
+  } catch(_) {}
   let candidate = 600;
   while (usedIds.has(candidate)) candidate++;
   return candidate;
@@ -3862,9 +3866,9 @@ function openAddPay(){
   const info = document.getElementById('np-stuinfo');
   if (info) info.style.display = 'none';
   document.getElementById('np-id').value = nextPayId;
-  document.getElementById('np-id').disabled = !(currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager'));
+  document.getElementById('np-id').disabled = !(currentUser && currentUser.role === 'admin');
   const amtWordsEl = document.getElementById('np-amtwords');
-  if (amtWordsEl) amtWordsEl.disabled = !(currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager'));
+  if (amtWordsEl) amtWordsEl.disabled = !(currentUser && currentUser.role === 'admin');
   document.getElementById('mo-pay-title').textContent = '💰 تسجيل دفعة جديدة';
   document.getElementById('pay-del-btn').style.display = 'none';
   document.getElementById('pay-save-btn').textContent = '💾 تسجيل';
@@ -3879,11 +3883,11 @@ function openEditPay(id){
   const amtWordsEl = document.getElementById('np-amtwords');
   if (amtWordsEl) {
     amtWordsEl.value = p.amtWords || amtToWords(+p.amt||0);
-    amtWordsEl.disabled = !(currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager'));
+    amtWordsEl.disabled = !(currentUser && currentUser.role === 'admin');
   }
   document.getElementById('np-desc').value  = p.desc;
   document.getElementById('np-id').value    = p.id;
-  document.getElementById('np-id').disabled = !(currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager'));
+  document.getElementById('np-id').disabled = !(currentUser && currentUser.role === 'admin');
   document.getElementById('np-date').value  = normalizeDate(p.date);
   document.getElementById('np-rcvr').value  = p.rcvr||'';
   document.getElementById('np-note').value  = p.note||'';
@@ -3952,7 +3956,7 @@ function savePayment(){
     p.stuId = parseInt((document.getElementById('np-stuid')||{}).value) || null;
     if (p.stuId && p.sub_end) { const sp = students.find(function(x){ return x.id === p.stuId; }); if (sp) sp.sub_end = p.sub_end; }
 
-    if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager')) {
+    if (currentUser && currentUser.role === 'admin') {
       const requestedId = parseInt(idInput && idInput.value);
       if (requestedId && requestedId !== oldId) {
         if (payments.some(function(x){ return x.id === requestedId && x !== p; })) { alert('رقم الإيصال مستخدم مسبقاً'); return; }
@@ -3969,7 +3973,7 @@ function savePayment(){
     alert('✅ تم تعديل السند #' + p.id);
   } else {
     let newId = nextPayId;
-    if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager')) {
+    if (currentUser && currentUser.role === 'admin') {
       const requestedId = parseInt(idInput && idInput.value);
       if (requestedId) newId = requestedId;
     }
@@ -4042,11 +4046,6 @@ function openAddExp(){
   editingExpId = null;
   document.getElementById('ne-date').value=new Date().toISOString().slice(0,10);
   ['ne-desc','ne-amt','ne-note'].forEach(id=>document.getElementById(id).value='');
-  const neIdEl = document.getElementById('ne-id');
-  if (neIdEl) {
-    neIdEl.value = (typeof getSafeNextExpenseId === 'function') ? getSafeNextExpenseId() : nextExpId;
-    neIdEl.disabled = !(currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager'));
-  }
   document.getElementById('ne-cat').value = 'رواتب';
   document.getElementById('ne-method').value = 'نقدي';
   document.getElementById('mo-exp-title').textContent = '🧾 إضافة مصروف جديد';
@@ -4061,11 +4060,6 @@ function openEditExp(id){
   document.getElementById('ne-desc').value = e.desc||'';
   document.getElementById('ne-amt').value = e.amt||'';
   document.getElementById('ne-date').value = normalizeDate(e.exp_date || e.date);
-  const neIdEl = document.getElementById('ne-id');
-  if (neIdEl) {
-    neIdEl.value = e.id || '';
-    neIdEl.disabled = !(currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager'));
-  }
   document.getElementById('ne-cat').value = e.cat||'أخرى';
   document.getElementById('ne-method').value = e.method||'نقدي';
   document.getElementById('ne-note').value = e.note||'';
@@ -4078,34 +4072,9 @@ function openEditExp(id){
 function saveExpense(){
   const desc=document.getElementById('ne-desc').value.trim();
   const amt=+document.getElementById('ne-amt').value;
-  const idInput = document.getElementById('ne-id');
-  const canEditFinancialId = !!(currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager'));
   if(!desc||!amt){alert('يرجى تعبئة الحقول المطلوبة');return;}
-
-  function expenseIdUsedAnywhere(checkId, currentObj){
-    checkId = Number(checkId);
-    if (!Number.isFinite(checkId) || checkId <= 0) return true;
-    if ((expenses||[]).some(function(x){ return Number(x && x.id) === checkId && x !== currentObj; })) return true;
-    if ((deletedExpenses||[]).some(function(x){ return Number(x && x.id) === checkId; })) return true;
-    try {
-      if (tombstones && Array.isArray(tombstones.expenses) && tombstones.expenses.map(Number).includes(checkId)) return true;
-    } catch(e) {}
-    return false;
-  }
-
   if (editingExpId) {
     const e = expenses.find(x=>x.id===editingExpId); if(!e) return;
-    const oldId = e.id;
-    if (canEditFinancialId && idInput && idInput.value) {
-      const requestedId = parseInt(idInput.value, 10);
-      if (!requestedId || requestedId <= 0) { alert('رقم المصروف غير صالح'); return; }
-      if (requestedId !== oldId && expenseIdUsedAnywhere(requestedId, e)) { alert('رقم المصروف مستخدم مسبقاً أو محذوف سابقاً'); return; }
-      e.id = requestedId;
-      editingExpId = requestedId;
-      if (requestedId !== oldId) {
-        removeTombstone && removeTombstone('expenses', requestedId);
-      }
-    }
     e.desc = desc;
     e.amt = amt;
     e.cat = document.getElementById('ne-cat').value;
@@ -4113,40 +4082,84 @@ function saveExpense(){
     e.date = document.getElementById('ne-date').value;
     e.exp_date = document.getElementById('ne-date').value;
     e.note = document.getElementById('ne-note').value||'';
-    refreshNextIds();
     closeAll();renderExpenses();renderDash();
     autoSave(); alert('✅ تم تعديل المصروف بنجاح');
   } else {
     const expDate = document.getElementById('ne-date').value;
-    let newExpenseId = (typeof getSafeNextExpenseId === 'function') ? getSafeNextExpenseId() : nextExpId;
-    if (canEditFinancialId && idInput && idInput.value) {
-      const requestedId = parseInt(idInput.value, 10);
-      if (requestedId) newExpenseId = requestedId;
-    }
-    if (expenseIdUsedAnywhere(newExpenseId, null)) { alert('رقم المصروف مستخدم مسبقاً أو محذوف سابقاً'); return; }
+    const newExpenseId = getSafeNextExpenseId();
     nextExpId = newExpenseId + 1;
     expenses.push({id:newExpenseId,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:expDate,exp_date:expDate,note:document.getElementById('ne-note').value||''});
-    refreshNextIds();
     closeAll();renderExpenses();renderDash();
     autoSave(); alert('✅ تم حفظ المصروف بنجاح');
   }
 }
 
-function delExpense(id){
+async function delExpense(id){
   const delId = id || editingExpId;
   if(!delId) return;
-  const exp = expenses.find(function(e){ return e.id===delId; });
+  const exp = expenses.find(function(e){ return normKey(e && e.id) === normKey(delId); });
   if(!exp || !confirm('حذف هذا المصروف؟'))return;
-  deletedExpenses.unshift(Object.assign({}, exp, {
+
+  const deletedItem = Object.assign({}, exp, {
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
     deletedBy: currentUser ? currentUser.name : 'نظام'
-  }));
-  localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
-  expenses=expenses.filter(e=>e.id!==delId);
+  });
+
+  // 1) حدّث الذاكرة المحلية فوراً
+  deletedExpenses = (deletedExpenses || []).filter(function(x){ return normKey(x && x.id) !== normKey(delId); });
+  deletedExpenses.unshift(deletedItem);
+  expenses = expenses.filter(function(e){ return normKey(e && e.id) !== normKey(delId); });
+  clearRestored('expenses', delId);
   addTombstone('expenses', delId);
+  localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
+  persistCoreDataToLocalStorage();
+
   closeAll();
-  autoSave(); renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
+  renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
   renderOtherDeletedItems();
+
+  // 2) اكتب نفس الحركة على Firebase مباشرة: حذف من expenses + إضافة إلى deletedExpenses
+  try {
+    showSyncBadge('⏳ جاري نقل المصروف إلى سلة المحذوفات...');
+    let remoteData = null;
+    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (fetchRes.ok) remoteData = await fetchRes.json();
+    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
+
+    const remoteExpenses = Array.isArray(remoteData.expenses) ? remoteData.expenses : [];
+    const remoteDeletedExpenses = Array.isArray(remoteData.deletedExpenses) ? remoteData.deletedExpenses : [];
+    const remoteTombstones = (remoteData.tombstones && typeof remoteData.tombstones === 'object') ? remoteData.tombstones : {};
+    if (!Array.isArray(remoteTombstones.expenses)) remoteTombstones.expenses = [];
+    const remoteRestored = (remoteData.restoredKeys && typeof remoteData.restoredKeys === 'object') ? remoteData.restoredKeys : {};
+    if (!Array.isArray(remoteRestored.expenses)) remoteRestored.expenses = [];
+
+    remoteData.expenses = remoteExpenses.filter(function(e){ return normKey(e && e.id) !== normKey(delId); });
+    remoteData.deletedExpenses = [deletedItem].concat(remoteDeletedExpenses.filter(function(e){ return normKey(e && e.id) !== normKey(delId); }));
+    remoteTombstones.expenses = remoteTombstones.expenses.filter(function(x){ return normKey(x) !== normKey(delId); });
+    remoteTombstones.expenses.push(delId);
+    remoteRestored.expenses = remoteRestored.expenses.filter(function(x){ return normKey(x) !== normKey(delId); });
+    remoteData.tombstones = remoteTombstones;
+    remoteData.restoredKeys = remoteRestored;
+    remoteData.savedAt = new Date().toISOString();
+    remoteData.version = remoteData.version || 2;
+
+    const putRes = await fetch(FB_URL + '.json', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(remoteData)
+    });
+    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+
+    showSyncBadge('✅ تم نقل المصروف إلى سلة المحذوفات');
+    hasUnsavedChanges = false;
+    lastSavedAt = remoteData.savedAt;
+    localStorage.setItem('kp_last_synced_at', remoteData.savedAt);
+  } catch(e) {
+    console.error('delExpense remote move failed:', e);
+    showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل حذف المصروف إلى Firebase');
+    // اترك autoSave يحاول لاحقاً بالمسار العام
+    autoSave();
+  }
 }
 
 // ============================================================
@@ -6520,6 +6533,28 @@ async function loadFromFirebase() {
     if (deletedRenewals.length) deletedRenewals = deletedRenewals.filter(function(s){ return !(s && _preRestoredRenewals.has(normKey(s.id))); });
     if (deletedClasses.length) deletedClasses = deletedClasses.filter(function(c){ return !(c && _preRestoredClasses.has(normKey(c.key))); });
 
+    // مهم جداً: ادمج سلة المحذوفات المالية قبل دمج القوائم النشطة.
+    // بدون هذه الخطوة، إذا كان السجل موجوداً في expenses القديمة وفي deletedExpenses بنفس الوقت،
+    // كانت القوائم النشطة تفوز ويرجع المصروف مثل #2533.
+    function mergeRemoteDeletedFirst(localArr, remoteArr, keyField, restoredSet) {
+      const map = {};
+      (Array.isArray(remoteArr) ? remoteArr : []).forEach(function(item){
+        if (item && item[keyField] != null && !restoredSet.has(normKey(item[keyField]))) map[normKey(item[keyField])] = item;
+      });
+      (Array.isArray(localArr) ? localArr : []).forEach(function(item){
+        if (item && item[keyField] != null && !restoredSet.has(normKey(item[keyField]))) map[normKey(item[keyField])] = item;
+      });
+      return Object.values(map);
+    }
+    if (Array.isArray(data.deletedPayments) && typeof deletedPayments !== 'undefined') {
+      deletedPayments = mergeRemoteDeletedFirst(deletedPayments, data.deletedPayments, 'id', _preRestoredPayments);
+      localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
+    }
+    if (Array.isArray(data.deletedExpenses) && typeof deletedExpenses !== 'undefined') {
+      deletedExpenses = mergeRemoteDeletedFirst(deletedExpenses, data.deletedExpenses, 'id', _preRestoredExpenses);
+      localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
+    }
+
     // دمج البيانات بدل الاستبدال — يحمي التعديلات المحلية غير المحفوظة
     if (Array.isArray(data.students)) {
       students = mergeArrayById(students, data.students, tombstones.students || [], deletedStudents);
@@ -6532,7 +6567,8 @@ async function loadFromFirebase() {
     }
     if (Array.isArray(data.expenses)) {
       expenses = mergeArrayById(expenses, data.expenses, tombstones.expenses || [], deletedExpenses);
-      expenses = sanitizeEntityArray(expenses);
+      const _deletedExpenseIdsNow = new Set((deletedExpenses || []).map(function(x){ return x && x.id != null ? normKey(x.id) : null; }).filter(Boolean));
+      expenses = sanitizeEntityArray(expenses).filter(function(e){ return !(e && _deletedExpenseIdsNow.has(normKey(e.id))); });
     }
     if (Array.isArray(data.renewals)) {
       renewals = mergeArrayById(renewals, data.renewals, tombstones.renewals || [], deletedRenewals);
