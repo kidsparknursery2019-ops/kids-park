@@ -1482,6 +1482,112 @@ function cleanupDeletedBuckets() {
   if (typeof deletedClasses !== 'undefined') localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
 }
 
+
+
+// ============================================================
+// DELETE-TO-TRASH SAFE SYNC — all deletable sections
+// يجعل المحذوفات هي صاحبة الأولوية: يكتب السجل في سلة المحذوفات + tombstone
+// ويزيل أي restoredKey قبل حذف النسخة النشطة حتى لا يرجع السجل بعد التحديث التلقائي.
+// ============================================================
+async function moveRecordToTrashRemoteAware(config) {
+  const type = config.type;
+  const id = config.id;
+  const deletedItem = config.deletedItem;
+  const activeArrayName = config.activeArrayName;
+  const deletedArrayName = config.deletedArrayName;
+  const keyField = config.keyField || 'id';
+  const label = config.label || 'السجل';
+
+  try {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري نقل ' + label + ' إلى سلة المحذوفات...');
+    let remoteData = null;
+    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (fetchRes.ok) remoteData = await fetchRes.json();
+    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
+
+    const active = Array.isArray(remoteData[activeArrayName]) ? remoteData[activeArrayName] : [];
+    const deleted = Array.isArray(remoteData[deletedArrayName]) ? remoteData[deletedArrayName] : [];
+
+    remoteData[activeArrayName] = active.filter(function(x){ return normKey(x && x[keyField]) !== normKey(id); });
+    remoteData[deletedArrayName] = [deletedItem].concat(deleted.filter(function(x){ return normKey(x && x[keyField]) !== normKey(id); }));
+
+    const remoteTombstones = (remoteData.tombstones && typeof remoteData.tombstones === 'object') ? remoteData.tombstones : {};
+    if (!Array.isArray(remoteTombstones[type])) remoteTombstones[type] = [];
+    remoteTombstones[type] = remoteTombstones[type].filter(function(x){ return normKey(x) !== normKey(id); });
+    remoteTombstones[type].push(id);
+    remoteData.tombstones = remoteTombstones;
+
+    const remoteRestored = (remoteData.restoredKeys && typeof remoteData.restoredKeys === 'object') ? remoteData.restoredKeys : {};
+    if (!Array.isArray(remoteRestored[type])) remoteRestored[type] = [];
+    remoteRestored[type] = remoteRestored[type].filter(function(x){ return normKey(x) !== normKey(id); });
+    remoteData.restoredKeys = remoteRestored;
+
+    remoteData.savedAt = new Date().toISOString();
+    remoteData.version = remoteData.version || 2;
+
+    const putRes = await fetch(FB_URL + '.json', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(remoteData)
+    });
+    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم نقل ' + label + ' إلى سلة المحذوفات');
+    hasUnsavedChanges = false;
+    lastSavedAt = remoteData.savedAt;
+    localStorage.setItem('kp_last_synced_at', remoteData.savedAt);
+    return true;
+  } catch (e) {
+    console.error('moveRecordToTrashRemoteAware failed:', type, id, e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل نقل ' + label + ' إلى Firebase');
+    try { autoSave(); } catch(_e) {}
+    return false;
+  }
+}
+
+async function moveClassToTrashRemoteAware(className, deletedItem) {
+  try {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري نقل الفصل إلى سلة المحذوفات...');
+    let remoteData = null;
+    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (fetchRes.ok) remoteData = await fetchRes.json();
+    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
+
+    const classesObj = (remoteData.classes && typeof remoteData.classes === 'object' && !Array.isArray(remoteData.classes)) ? remoteData.classes : {};
+    if (Object.prototype.hasOwnProperty.call(classesObj, className)) delete classesObj[className];
+    remoteData.classes = classesObj;
+
+    const deleted = Array.isArray(remoteData.deletedClasses) ? remoteData.deletedClasses : [];
+    remoteData.deletedClasses = [deletedItem].concat(deleted.filter(function(x){ return normKey(x && x.key) !== normKey(className); }));
+
+    const remoteTombstones = (remoteData.tombstones && typeof remoteData.tombstones === 'object') ? remoteData.tombstones : {};
+    if (!Array.isArray(remoteTombstones.classes)) remoteTombstones.classes = [];
+    remoteTombstones.classes = remoteTombstones.classes.filter(function(x){ return normKey(x) !== normKey(className); });
+    remoteTombstones.classes.push(className);
+    remoteData.tombstones = remoteTombstones;
+
+    const remoteRestored = (remoteData.restoredKeys && typeof remoteData.restoredKeys === 'object') ? remoteData.restoredKeys : {};
+    if (!Array.isArray(remoteRestored.classes)) remoteRestored.classes = [];
+    remoteRestored.classes = remoteRestored.classes.filter(function(x){ return normKey(x) !== normKey(className); });
+    remoteData.restoredKeys = remoteRestored;
+
+    remoteData.savedAt = new Date().toISOString();
+    remoteData.version = remoteData.version || 2;
+    const putRes = await fetch(FB_URL + '.json', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(remoteData) });
+    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم نقل الفصل إلى سلة المحذوفات');
+    hasUnsavedChanges = false;
+    lastSavedAt = remoteData.savedAt;
+    localStorage.setItem('kp_last_synced_at', remoteData.savedAt);
+    return true;
+  } catch(e) {
+    console.error('moveClassToTrashRemoteAware failed:', className, e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل حذف الفصل إلى Firebase');
+    try { autoSave(); } catch(_e) {}
+    return false;
+  }
+}
+
 function refreshAllViewsAfterSync() {
   renderDash();
   if (typeof renderStudents === 'function') renderStudents();
@@ -3269,27 +3375,27 @@ async function saveStudent(){
   autoSave(); alert(`✅ تم ${editingStuId?'تعديل':'إضافة'} الطالب "${name}" بنجاح`);
 }
 
-function delStudent(id){
-  const s = students.find(x => x.id === id);
+async function delStudent(id){
+  const s = students.find(function(x){ return normKey(x && x.id) === normKey(id); });
   if (!s) return;
   const reason = prompt('سبب الحذف (اختياري):', '') || '';
   if (!confirm('حذف الطالب "' + s.name + '"؟\nسيتم حفظه في سجل المحذوفين ويمكن استعادته.')) return;
-  // احفظ نسخة من بيانات الطالب مع تاريخ الحذف
   const deletedCopy = Object.assign({}, s, {
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
     deletionReason: reason,
     deletedBy: currentUser ? currentUser.name : 'نظام'
   });
-  deletedStudents = deletedStudents.filter(function(x){ return x.id !== id; });
+  deletedStudents = (deletedStudents || []).filter(function(x){ return normKey(x && x.id) !== normKey(id); });
   deletedStudents.unshift(deletedCopy);
-  localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
-  students = students.filter(x => x.id !== id);
+  students = students.filter(function(x){ return normKey(x && x.id) !== normKey(id); });
+  clearRestored('students', id);
   addTombstone('students', id);
+  localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
+  persistCoreDataToLocalStorage();
   resetPaymentMatchCache();
-  autoSave();
-  renderStudents();
-  renderDash();
+  renderStudents(); renderDash();
   if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
+  await moveRecordToTrashRemoteAware({type:'students', id:id, deletedItem:deletedCopy, activeArrayName:'students', deletedArrayName:'deletedStudents', keyField:'id', label:'الطالب'});
   alert('✅ تم حذف الطالب ونقله لسجل المحذوفين');
 }
 
@@ -3913,20 +4019,24 @@ function openEditPay(id){
   document.getElementById('mo-pay').classList.add('on');
 }
 
-function deletePayment(){
+async function deletePayment(){
   if(!editingPayId) return;
-  const p = payments.find(x=>x.id===editingPayId);
-  if(!p||!confirm('حذف السند #'+p.id+' ('+p.who+')؟')) return;
+  const p = payments.find(function(x){ return normKey(x && x.id) === normKey(editingPayId); });
+  if(!p || !confirm('حذف السند #'+p.id+' ('+p.who+')؟')) return;
   const delId = editingPayId;
-  deletedPayments.unshift(Object.assign({}, p, {
+  const deletedItem = Object.assign({}, p, {
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
     deletedBy: currentUser ? currentUser.name : 'نظام'
-  }));
-  localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
-  payments = payments.filter(x=>x.id!==delId);
+  });
+  deletedPayments = (deletedPayments || []).filter(function(x){ return normKey(x && x.id) !== normKey(delId); });
+  deletedPayments.unshift(deletedItem);
+  payments = payments.filter(function(x){ return normKey(x && x.id) !== normKey(delId); });
+  clearRestored('payments', delId);
   addTombstone('payments', delId);
-  autoSave(); closeAll(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
-  renderOtherDeletedItems();
+  localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
+  persistCoreDataToLocalStorage();
+  closeAll(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents(); renderOtherDeletedItems();
+  await moveRecordToTrashRemoteAware({type:'payments', id:delId, deletedItem:deletedItem, activeArrayName:'payments', deletedArrayName:'deletedPayments', keyField:'id', label:'السند'});
 }
 
 function savePayment(){
@@ -4098,14 +4208,13 @@ async function delExpense(id){
   const delId = id || editingExpId;
   if(!delId) return;
   const exp = expenses.find(function(e){ return normKey(e && e.id) === normKey(delId); });
-  if(!exp || !confirm('حذف هذا المصروف؟'))return;
+  if(!exp || !confirm('حذف هذا المصروف؟')) return;
 
   const deletedItem = Object.assign({}, exp, {
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
     deletedBy: currentUser ? currentUser.name : 'نظام'
   });
 
-  // 1) حدّث الذاكرة المحلية فوراً
   deletedExpenses = (deletedExpenses || []).filter(function(x){ return normKey(x && x.id) !== normKey(delId); });
   deletedExpenses.unshift(deletedItem);
   expenses = expenses.filter(function(e){ return normKey(e && e.id) !== normKey(delId); });
@@ -4114,52 +4223,8 @@ async function delExpense(id){
   localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
   persistCoreDataToLocalStorage();
 
-  closeAll();
-  renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
-  renderOtherDeletedItems();
-
-  // 2) اكتب نفس الحركة على Firebase مباشرة: حذف من expenses + إضافة إلى deletedExpenses
-  try {
-    showSyncBadge('⏳ جاري نقل المصروف إلى سلة المحذوفات...');
-    let remoteData = null;
-    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
-    if (fetchRes.ok) remoteData = await fetchRes.json();
-    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
-
-    const remoteExpenses = Array.isArray(remoteData.expenses) ? remoteData.expenses : [];
-    const remoteDeletedExpenses = Array.isArray(remoteData.deletedExpenses) ? remoteData.deletedExpenses : [];
-    const remoteTombstones = (remoteData.tombstones && typeof remoteData.tombstones === 'object') ? remoteData.tombstones : {};
-    if (!Array.isArray(remoteTombstones.expenses)) remoteTombstones.expenses = [];
-    const remoteRestored = (remoteData.restoredKeys && typeof remoteData.restoredKeys === 'object') ? remoteData.restoredKeys : {};
-    if (!Array.isArray(remoteRestored.expenses)) remoteRestored.expenses = [];
-
-    remoteData.expenses = remoteExpenses.filter(function(e){ return normKey(e && e.id) !== normKey(delId); });
-    remoteData.deletedExpenses = [deletedItem].concat(remoteDeletedExpenses.filter(function(e){ return normKey(e && e.id) !== normKey(delId); }));
-    remoteTombstones.expenses = remoteTombstones.expenses.filter(function(x){ return normKey(x) !== normKey(delId); });
-    remoteTombstones.expenses.push(delId);
-    remoteRestored.expenses = remoteRestored.expenses.filter(function(x){ return normKey(x) !== normKey(delId); });
-    remoteData.tombstones = remoteTombstones;
-    remoteData.restoredKeys = remoteRestored;
-    remoteData.savedAt = new Date().toISOString();
-    remoteData.version = remoteData.version || 2;
-
-    const putRes = await fetch(FB_URL + '.json', {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(remoteData)
-    });
-    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
-
-    showSyncBadge('✅ تم نقل المصروف إلى سلة المحذوفات');
-    hasUnsavedChanges = false;
-    lastSavedAt = remoteData.savedAt;
-    localStorage.setItem('kp_last_synced_at', remoteData.savedAt);
-  } catch(e) {
-    console.error('delExpense remote move failed:', e);
-    showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل حذف المصروف إلى Firebase');
-    // اترك autoSave يحاول لاحقاً بالمسار العام
-    autoSave();
-  }
+  closeAll(); renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents(); renderOtherDeletedItems();
+  await moveRecordToTrashRemoteAware({type:'expenses', id:delId, deletedItem:deletedItem, activeArrayName:'expenses', deletedArrayName:'deletedExpenses', keyField:'id', label:'المصروف'});
 }
 
 // ============================================================
@@ -5266,29 +5331,29 @@ function editClass(name) {
   saveClasses(); populateClassDropdowns(); renderAdminClasses();
 }
 
-function deleteClass(name) {
+async function deleteClass(name) {
   if (!confirm('حذف فصل "' + name + '"؟ سيتأثر الطلاب المسجلين فيه.')) return;
   const clsData = CLASSES[name] ? Object.assign({}, CLASSES[name]) : null;
-  deletedClasses = deletedClasses.filter(function(x){ return x.key !== name; });
-  deletedClasses.unshift({
+  const deletedItem = {
     key: name,
     name: name,
     data: clsData,
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
     deletedBy: currentUser ? currentUser.name : 'نظام'
-  });
+  };
+  deletedClasses = (deletedClasses || []).filter(function(x){ return normKey(x && x.key) !== normKey(name); });
+  deletedClasses.unshift(deletedItem);
   localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
+  clearRestored('classes', name);
   addTombstone('classes', name);
   delete CLASSES[name];
   CLASSES_DATA = CLASSES;
   localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
-  autoSave();
-  populateClassDropdowns();
-  renderAdminClasses();
-  renderStudents();
-  renderDash();
+  persistCoreDataToLocalStorage();
+  populateClassDropdowns(); renderAdminClasses(); renderStudents(); renderDash();
   if (typeof renderDeletedStudents==='function') renderDeletedStudents();
   renderOtherDeletedItems();
+  await moveClassToTrashRemoteAware(name, deletedItem);
 }
 
 // ============================================================
@@ -7535,24 +7600,25 @@ function saveRenewal() {
   renderRenewals();
 }
 
-function deleteRenewal() {
+async function deleteRenewal() {
   if (!editingRenId) return;
-  const r = renewals.find(x => x.id === editingRenId);
+  const r = renewals.find(function(x){ return normKey(x && x.id) === normKey(editingRenId); });
   if (!r) return;
   if (!confirm('حذف "' + r.name + '"؟')) return;
   const delId = editingRenId;
-  deletedRenewals.unshift(Object.assign({}, r, {
+  const deletedItem = Object.assign({}, r, {
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
     deletedBy: currentUser ? currentUser.name : 'نظام'
-  }));
+  });
+  deletedRenewals = (deletedRenewals || []).filter(function(x){ return normKey(x && x.id) !== normKey(delId); });
+  deletedRenewals.unshift(deletedItem);
   localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
-  renewals = renewals.filter(x => x.id !== delId);
+  renewals = renewals.filter(function(x){ return normKey(x && x.id) !== normKey(delId); });
+  clearRestored('renewals', delId);
   addTombstone('renewals', delId);
-  autoSave();
-  closeAll();
-  renderRenewals();
-  if (typeof renderDeletedStudents==='function') renderDeletedStudents();
-  renderOtherDeletedItems();
+  persistCoreDataToLocalStorage();
+  closeAll(); renderRenewals(); if (typeof renderDeletedStudents==='function') renderDeletedStudents(); renderOtherDeletedItems(); renderDash();
+  await moveRecordToTrashRemoteAware({type:'renewals', id:delId, deletedItem:deletedItem, activeArrayName:'renewals', deletedArrayName:'deletedRenewals', keyField:'id', label:'التجديد'});
 }
 
 // ============================================================
