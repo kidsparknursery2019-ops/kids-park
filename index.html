@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260422-forms-merge-undo -->
+<!-- v20260418-0450 -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -141,20 +141,8 @@ textarea{resize:vertical;min-height:65px}
 /* ===== RECEIPT PRINT TEMPLATE ===== */
 #receipt-print-area{display:none}
 @media print{
-  /* الوضع الافتراضي: طباعة السندات فقط */
-  body:not(.print-finreport) > *{display:none!important}
-  body:not(.print-finreport) #receipt-print-area{display:block!important;margin:0;padding:0}
-
-  /* وضع طباعة التقرير المالي */
-  body.print-finreport > *{display:none!important}
-  body.print-finreport > .wrap{display:flex!important}
-  body.print-finreport .side{display:none!important}
-  body.print-finreport .main{display:block!important;max-width:100%!important;padding:10px!important}
-  body.print-finreport .main .pg{display:none!important}
-  body.print-finreport .main #pg-finreport{display:block!important}
-  body.print-finreport .no-print{display:none!important}
-  body.print-finreport .hdr{display:none!important}
-  body.print-finreport .card{box-shadow:none!important;border:1px solid #ccc!important}
+  body > *{display:none!important}
+  #receipt-print-area{display:block!important;margin:0;padding:0}
 }
 .rp-wrap{font-family:'Tajawal',Arial,sans-serif;width:210mm;margin:0 auto;padding:8mm 10mm;color:#000;font-size:13px;direction:rtl}
 .rp-logo{text-align:center;margin-bottom:6mm}
@@ -215,19 +203,8 @@ textarea{resize:vertical;min-height:65px}
 .logo-preview{width:110px;height:110px;object-fit:contain;border:2px solid var(--border);border-radius:12px;background:#f9f9f9}
 .logo-preview-empty{width:110px;height:110px;border:2px dashed var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:36px}
 @media print{
-  body:not(.print-finreport) .login-screen,
-  body:not(.print-finreport) .hdr,
-  body:not(.print-finreport) .side,
-  body:not(.print-finreport) .btn,
-  body:not(.print-finreport) .btn-group,
-  body:not(.print-finreport) .sbar,
-  body:not(.print-finreport) .mof,
-  body:not(.print-finreport) .ct,
-  body:not(.print-finreport) .pt{display:none!important}
-  body:not(.print-finreport) .main,
-  body:not(.print-finreport) .pg,
-  body:not(.print-finreport) .card{background:white!important;padding:0!important;margin:0!important;box-shadow:none!important}
-  body,.main,.pg,.card{background:white!important}
+  .login-screen,.hdr,.side,.btn,.btn-group,.sbar,.mof,.ct,.pt{display:none!important}
+  body,.main,.pg,.card{background:white!important;padding:0!important;margin:0!important;box-shadow:none!important}
   .ws-preview-grid{display:block!important;padding:0!important;margin:0!important}
   .ws-student-card{
     display:block!important;
@@ -298,7 +275,10 @@ textarea{resize:vertical;min-height:65px}
 @media print { .no-print { display: none !important; } }
 
 @media print {
-  body.print-finreport .card { page-break-inside: avoid; }
+  .sidebar, .hdr, .no-print { display: none !important; }
+  body { background: white !important; padding: 0 !important; }
+  .pg:not(#pg-finreport) { display: none !important; }
+  .card { page-break-inside: avoid; box-shadow: none !important; border: 1.5px solid #ccc !important; }
 }
 </style>
 </head>
@@ -334,8 +314,7 @@ textarea{resize:vertical;min-height:65px}
   </div>
   <div style="display:flex;align-items:center;gap:14px">
   <div class="hdr-time" id="clock"></div>
-  <button id="notif-btn" class="notif-btn" onclick="toggleNotifPanel()" title="تنبيهات التجديدات">🔔<span class="notif-badge" id="notif-badge-count" style="display:none">0</span></button>
-  <button id="reg-notif-btn" class="notif-btn" onclick="toggleRegNotifPanel()" title="تنبيهات انتهاء التسجيل">⏰<span class="notif-badge" id="reg-notif-badge-count" style="display:none">0</span></button>
+  <button id="notif-btn" class="notif-btn" onclick="toggleNotifPanel()" title="التنبيهات">🔔<span class="notif-badge" id="notif-badge-count" style="display:none">0</span></button>
   <button id="btn-save-cloud" onclick="pushToFirebase()" style="display:none;padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.5);background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:12px;font-weight:700">☁️ حفظ</button>
   <button id="btn-refresh-cloud" onclick="manualRefreshFromFirebase()" style="display:none;padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.5);background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:12px;font-weight:700;margin-right:6px">🔄 تحديث</button>
   <div id="user-badge" style="display:none;align-items:center;gap:10px;font-size:13px">
@@ -347,17 +326,10 @@ textarea{resize:vertical;min-height:65px}
 
 <div class="notif-panel" id="notif-panel">
   <div class="notif-panel-hdr">
-    <span>🔔 تنبيهات التجديدات</span>
+    <span>🔔 التنبيهات</span>
     <button onclick="toggleNotifPanel()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;line-height:1">×</button>
   </div>
   <div class="notif-panel-body" id="notif-panel-body"></div>
-</div>
-<div class="notif-panel" id="reg-notif-panel" style="left:370px">
-  <div class="notif-panel-hdr">
-    <span>⏰ تنبيهات انتهاء التسجيل</span>
-    <button onclick="toggleRegNotifPanel()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;line-height:1">×</button>
-  </div>
-  <div class="notif-panel-body" id="reg-notif-panel-body"></div>
 </div>
 <div class="wrap">
   <nav class="side">
@@ -373,7 +345,7 @@ textarea{resize:vertical;min-height:65px}
     <div class="nav"     onclick="go('forms')">      <span class="ni">📋</span><span>طلبات التسجيل</span></div>
     <div class="nav"     onclick="go('renewals')">   <span class="ni">🔔</span><span>التجديدات</span></div>
     <div class="nav"     onclick="go('finreport')"> <span class="ni">📈</span><span>التقارير المالية</span></div>
-    <div class="nav" id="nav-recyclebin" onclick="go('recyclebin')"><span class="ni">🗑️</span><span>سلة المحذوفات</span><span id="bin-nav-badge" style="margin-right:auto;background:#e74c3c;color:#fff;font-size:11px;font-weight:800;padding:1px 7px;border-radius:10px;display:none">0</span></div>
+    <div class="nav" id="nav-deleted" onclick="go('deleted')">    <span class="ni">🗑</span><span>المحذوفون</span></div>
     <div class="side-sep"></div>
     <div class="nav" id="nav-admin" onclick="go('admin')" style="display:none"><span class="ni">⚙️</span><span>الإعدادات</span></div>
   </nav>
@@ -591,106 +563,27 @@ textarea{resize:vertical;min-height:65px}
 
     
 
-    <!-- UNIFIED RECYCLE BIN PAGE -->
-    <div class="pg" id="pg-recyclebin">
-      <div class="pt">
-        🗑️ سلة المحذوفات
-        <span style="flex:1"></span>
-        <button class="btn btn-out btn-sm" onclick="refreshBinNow()" title="جلب آخر التحديثات من السيرفر">🔄 تحديث فوري</button>
-        <button class="btn btn-out btn-sm" onclick="openExport('deleted')">⬇ تصدير الطلاب</button>
+    <!-- DELETED STUDENTS PAGE -->
+    <div class="pg" id="pg-deleted">
+      <div class="pt">🗑 سجل الطلاب المحذوفين</div>
+      <div class="sg" style="grid-template-columns:repeat(2,1fr)">
+        <div class="sc r"><div class="sl">محذوفون</div><div class="sv" id="del-count">—</div></div>
+        <div class="sc"><div class="sl">معلومة</div><div class="sv" style="font-size:14px;line-height:1.4">يمكن استعادة أي طالب محذوف. الحذف النهائي لا يمكن التراجع عنه.</div></div>
       </div>
-
-      <!-- Summary cards -->
-      <div class="sg" style="grid-template-columns:repeat(5,1fr)">
-        <div class="sc r"><div class="sl">إجمالي المحذوفات</div><div class="sv" id="bin-total-count">—</div><div class="ss">جميع الأنواع</div></div>
-        <div class="sc"><div class="sl">👶 طلاب</div><div class="sv" id="bin-students-count">—</div></div>
-        <div class="sc b"><div class="sl">🧾 سندات/مدفوعات</div><div class="sv" id="bin-payments-count">—</div></div>
-        <div class="sc y"><div class="sl">💸 مصاريف</div><div class="sv" id="bin-expenses-count">—</div></div>
-        <div class="sc o"><div class="sl">🔔 تجديدات + 🏫 فصول</div><div class="sv" id="bin-misc-count">—</div></div>
-      </div>
-
-      <!-- Live sync indicator -->
-      <div id="bin-sync-info" style="background:#eaf6ef;border:1.5px solid #4db87a;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--g1);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span id="bin-stream-dot" style="width:10px;height:10px;border-radius:50%;background:#4db87a;box-shadow:0 0 0 3px rgba(77,184,122,.25);display:inline-block;flex-shrink:0"></span>
-        <span style="font-weight:700" id="bin-stream-label">متصل بالمزامنة السريعة</span>
-        <span style="color:var(--muted)">— التحديثات تظهر خلال أقل من ثانية عند جميع الموظفين</span>
-        <span style="flex:1"></span>
-        <span id="bin-last-sync" style="font-size:11.5px;color:var(--muted)"></span>
-      </div>
-
-      <!-- Toolbar: filter tabs + search -->
-      <div class="card" style="padding:14px">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
-          <div id="bin-tabs" style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-sm bin-tab-on" data-type="all" onclick="setBinFilter('all')">🗂 الكل <span id="bin-tab-all">0</span></button>
-            <button class="btn btn-out btn-sm" data-type="students" onclick="setBinFilter('students')">👶 طلاب <span id="bin-tab-students">0</span></button>
-            <button class="btn btn-out btn-sm" data-type="payments" onclick="setBinFilter('payments')">🧾 سندات <span id="bin-tab-payments">0</span></button>
-            <button class="btn btn-out btn-sm" data-type="expenses" onclick="setBinFilter('expenses')">💸 مصاريف <span id="bin-tab-expenses">0</span></button>
-            <button class="btn btn-out btn-sm" data-type="renewals" onclick="setBinFilter('renewals')">🔔 تجديدات <span id="bin-tab-renewals">0</span></button>
-            <button class="btn btn-out btn-sm" data-type="classes" onclick="setBinFilter('classes')">🏫 فصول <span id="bin-tab-classes">0</span></button>
-          </div>
-          <span style="flex:1"></span>
-          <input type="search" id="bin-search" placeholder="🔎 بحث بالاسم/الوصف/السبب..." oninput="renderRecycleBin()" style="max-width:280px">
+      <div class="card">
+        <div class="ct">
+          <div style="font-size:13px;color:var(--muted)">جميع بيانات الطلاب المحذوفين محفوظة هنا لحماية السجلات</div>
+          <button class="btn btn-out btn-sm" onclick="openExport('deleted')">⬇ تصدير</button>
         </div>
-
-        <!-- Select all + empty bin -->
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 0;border-bottom:1.5px solid var(--border);margin-bottom:10px">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:700;color:var(--g1)">
-            <input type="checkbox" id="bin-select-all" onchange="toggleBinAll()" style="width:16px;height:16px;cursor:pointer">
-            تحديد الكل المعروض
-          </label>
-          <span id="bin-selected-info" style="font-size:12px;color:var(--muted)">لم يتم تحديد أي عنصر</span>
-          <span style="flex:1"></span>
-          <button class="btn btn-r btn-sm" onclick="emptyRecycleBin()" title="حذف نهائي لكل محتويات السلة">🧹 تفريغ السلة بالكامل</button>
-        </div>
-
-        <!-- Bulk actions bar (shown only when items selected) -->
-        <div id="bin-bulk-bar" style="display:none;background:linear-gradient(135deg,#1e6b3f,#2d8f56);color:#fff;padding:10px 14px;border-radius:10px;margin-bottom:12px;align-items:center;gap:10px;flex-wrap:wrap">
-          <span style="font-weight:800;font-size:14px">✓ <span id="bin-bulk-count">0</span> عنصر محدّد</span>
-          <span style="flex:1"></span>
-          <button class="btn btn-sm" style="background:#fff;color:#1e6b3f" onclick="bulkRestoreBin()">♻ استعادة المحددين</button>
-          <button class="btn btn-sm" style="background:#c0392b;color:#fff" onclick="bulkPermanentDeleteBin()">🗑 حذف نهائي للمحددين</button>
-          <button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.5)" onclick="clearBinSelection()">إلغاء التحديد</button>
-        </div>
-
-        <!-- The actual list -->
-        <div id="bin-list"></div>
+        <div id="deleted-list"></div>
       </div>
-
-      <!-- Legacy containers kept hidden for any old code that queries them -->
-      <div id="deleted-list" style="display:none"></div>
-      <div id="other-deleted-list" style="display:none"></div>
-      <span id="del-count" style="display:none"></span>
-      <span id="del-students-count" style="display:none"></span>
-      <span id="other-del-count" style="display:none"></span>
-      <span id="other-del-payments-count" style="display:none"></span>
-      <span id="other-del-expenses-count" style="display:none"></span>
-      <span id="other-del-misc-count" style="display:none"></span>
     </div>
-
-    <style>
-      .bin-tab-on{background:var(--g2)!important;color:#fff!important;border-color:var(--g2)!important}
-      .bin-item-row{background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start;transition:all .15s}
-      .bin-item-row:hover{border-color:var(--g2);box-shadow:0 2px 10px rgba(30,107,63,.08)}
-      .bin-item-row.selected{background:var(--gp);border-color:var(--g2)}
-      .bin-item-check{width:18px;height:18px;cursor:pointer;margin-top:3px;flex-shrink:0}
-      .bin-item-body{flex:1;min-width:0}
-      .bin-item-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
-      .bin-type-chip{display:inline-block;padding:2px 9px;border-radius:14px;font-size:11px;font-weight:800;margin-left:6px}
-      .bin-type-students{background:#d0f0e0;color:#0e5e30}
-      .bin-type-payments{background:#eaf3fc;color:#1a5fa8}
-      .bin-type-expenses{background:#fff0c0;color:#7a5500}
-      .bin-type-renewals{background:#fef3ea;color:#c0550a}
-      .bin-type-classes{background:#e8deff;color:#5b3a9e}
-      .bin-empty{text-align:center;padding:50px 20px;color:var(--muted)}
-      .bin-empty .ico{font-size:54px;opacity:.35;margin-bottom:10px}
-    </style>
 
         <!-- FINANCIAL REPORT PAGE -->
     <div class="pg" id="pg-finreport">
       <div class="pt">
         📈 التقارير المالية
-        <button class="btn btn-out btn-sm no-print" onclick="printFinancialReport()">🖨 طباعة التقرير</button>
+        <button class="btn btn-out btn-sm no-print" onclick="window.print()">🖨 طباعة التقرير</button>
       </div>
 
       <div class="card no-print">
@@ -814,7 +707,6 @@ textarea{resize:vertical;min-height:65px}
             <select id="forms-filter" onchange="renderFormRequests()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
               <option value="pending">الجديدة فقط</option>
               <option value="approved">المقبولة</option>
-              <option value="rejected">المرفوضة</option>
               <option value="all">الكل</option>
             </select>
             <input type="text" id="forms-search" placeholder="🔍 ابحث..." oninput="renderFormRequests()" style="max-width:180px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
@@ -1007,18 +899,6 @@ textarea{resize:vertical;min-height:65px}
   </div>
 </div>
 
-<div class="ov" id="mo-form-duplicates">
-  <div class="mo" style="width:720px;max-width:96vw">
-    <div class="mot">🔎 تم العثور على سجلات مشابهة</div>
-    <div id="mo-form-duplicates-body" style="max-height:60vh;overflow-y:auto"></div>
-    <div class="mof">
-      <button class="btn btn-out" onclick="closeAll()">إلغاء</button>
-      <button class="btn btn-y" id="mo-form-duplicates-new">➕ تسجيل كطالب جديد</button>
-      <button class="btn btn-g" id="mo-form-duplicates-merge">🔗 دمج مع السجل المحدد</button>
-    </div>
-  </div>
-</div>
-
 <!-- ======= MODALS ======= -->
 
 <!-- Add Student -->
@@ -1098,7 +978,6 @@ textarea{resize:vertical;min-height:65px}
       </div>
       <div class="fl"><label>المستلم</label><input id="np-rcvr" placeholder="ربا / الإدارة..."></div>
       <div class="fl"><label>ملاحظات (تُطبع)</label><input id="np-note" placeholder=""></div>
-      <div class="fl"><label>تاريخ انتهاء التسجيل</label><input id="np-sub-end" type="date"></div>
       <div class="fl fgr"><label>🔒 ملاحظات داخلية (لا تُطبع - للموظفين فقط)</label><textarea id="np-internal" rows="2" placeholder="ملاحظات خاصة لا تظهر في السند المطبوع..." style="background:#fff8e1"></textarea></div>
     </div>
     <div class="mof">
@@ -1288,68 +1167,26 @@ function getSafeNextReceiptId() {
   return maxId + 1;
 }
 
-function getSafeNextExpenseId(){
-  const usedIds = new Set();
-  if (Array.isArray(expenses)) {
-    expenses.forEach(function(e){
-      const id = Number(e && e.id);
-      if (Number.isFinite(id) && id > 0) usedIds.add(id);
-    });
-  }
-  if (typeof tombstones !== 'undefined' && tombstones && Array.isArray(tombstones.expenses)) {
-    tombstones.expenses.forEach(function(id){
-      const n = Number(id);
-      if (Number.isFinite(n) && n > 0) usedIds.add(n);
-    });
-  }
-  let candidate = 600;
-  while (usedIds.has(candidate)) candidate++;
-  return candidate;
-}
-
 function refreshNextIds(){
   if (Array.isArray(students) && students.length) nextStuId = Math.max.apply(null, students.map(function(s){ return s.id || 0; }).concat([199])) + 1;
   else nextStuId = 200;
 
   nextPayId = getSafeNextReceiptId();
-  nextExpId = getSafeNextExpenseId();
+
+  if (Array.isArray(expenses) && expenses.length) nextExpId = Math.max.apply(null, expenses.map(function(e){ return e.id || 0; }).concat([599])) + 1;
+  else nextExpId = 600;
 
   if (Array.isArray(renewals) && renewals.length) nextRenId = Math.max.apply(null, renewals.map(function(r){ return r.id || 0; }).concat([50])) + 1;
   else nextRenId = 51;
 }
 
 let deletedStudents = JSON.parse(localStorage.getItem('kp_deleted_students') || '[]');
-let deletedPayments = JSON.parse(localStorage.getItem('kp_deleted_payments') || '[]');
-let deletedExpenses = JSON.parse(localStorage.getItem('kp_deleted_expenses') || '[]');
-let deletedRenewals = JSON.parse(localStorage.getItem('kp_deleted_renewals') || '[]');
-let deletedClasses = JSON.parse(localStorage.getItem('kp_deleted_classes') || '[]');
 setTimeout(function(){ try{ resetPaymentMatchCache(); }catch(e){} }, 0);
-let tombstones = JSON.parse(localStorage.getItem('kp_tombstones') || '{"students":[],"payments":[],"expenses":[],"renewals":[],"classes":[]}');
+let tombstones = JSON.parse(localStorage.getItem('kp_tombstones') || '{"students":[],"payments":[],"expenses":[],"renewals":[]}');
 if (!tombstones.students) tombstones.students = [];
 if (!tombstones.payments) tombstones.payments = [];
 if (!tombstones.expenses) tombstones.expenses = [];
 if (!tombstones.renewals) tombstones.renewals = [];
-if (!tombstones.classes) tombstones.classes = [];
-
-// متتبع للسجلات المستعادة — يمنع عودة tombstone من remote أو عودة السجل لسلة المحذوفات
-let restoredKeys = JSON.parse(localStorage.getItem('kp_restored_keys') || '{"students":[],"payments":[],"expenses":[],"renewals":[],"classes":[]}');
-['students','payments','expenses','renewals','classes'].forEach(function(t){
-  if (!Array.isArray(restoredKeys[t])) restoredKeys[t] = [];
-});
-
-function markRestored(type, id) {
-  if (!restoredKeys[type]) restoredKeys[type] = [];
-  if (!hasKey(restoredKeys[type], id)) restoredKeys[type].push(id);
-  localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-}
-
-function clearRestored(type, id) {
-  if (!restoredKeys[type]) return;
-  restoredKeys[type] = restoredKeys[type].filter(function(x){ return normKey(x) !== normKey(id); });
-  localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-}
-let dismissedStudentSubAlerts = JSON.parse(localStorage.getItem('kp_dismissed_student_sub_alerts') || '[]');
-if (!Array.isArray(dismissedStudentSubAlerts)) dismissedStudentSubAlerts = [];
 
 
 function sanitizeEntityArray(arr) {
@@ -1366,135 +1203,17 @@ function sanitizeCoreData() {
   renewals = sanitizeEntityArray(renewals);
 }
 
-function normKey(value) {
-  return value == null ? '' : String(value);
-}
-
-function hasKey(list, value) {
-  const needle = normKey(value);
-  return Array.isArray(list) && list.some(function(item){ return normKey(item) === needle; });
-}
-
 function addTombstone(type, id) {
   if (!tombstones[type]) tombstones[type] = [];
-  if (!hasKey(tombstones[type], id)) tombstones[type].push(id);
+  if (!tombstones[type].includes(id)) tombstones[type].push(id);
   localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
-  // لو كان السجل مستعاد سابقاً ثم أعيد حذفه، أزل من قائمة المستعادين
-  if (restoredKeys && restoredKeys[type]) {
-    restoredKeys[type] = restoredKeys[type].filter(function(x){ return normKey(x) !== normKey(id); });
-    localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-  }
 }
 
 function applyTombstones() {
-  if (tombstones.students && tombstones.students.length) students = students.filter(function(s){ return !hasKey(tombstones.students, s && s.id); });
-  if (tombstones.payments && tombstones.payments.length) payments = payments.filter(function(p){ return !hasKey(tombstones.payments, p && p.id); });
-  if (tombstones.expenses && tombstones.expenses.length) expenses = expenses.filter(function(e){ return !hasKey(tombstones.expenses, e && e.id); });
-  if (tombstones.renewals && tombstones.renewals.length) renewals = renewals.filter(function(r){ return !hasKey(tombstones.renewals, r && r.id); });
-  if (tombstones.classes && tombstones.classes.length && CLASSES && typeof CLASSES === 'object') {
-    tombstones.classes.forEach(function(clsKey){
-      if (Object.prototype.hasOwnProperty.call(CLASSES, clsKey)) delete CLASSES[clsKey];
-    });
-    if (typeof CLASSES_DATA !== 'undefined') CLASSES_DATA = CLASSES;
-  }
-}
-
-
-function dedupeByKey(arr, keyField) {
-  const map = {};
-  (Array.isArray(arr) ? arr : []).forEach(function(item){
-    if (item && item[keyField] !== undefined && item[keyField] !== null) map[normKey(item[keyField])] = item;
-  });
-  return Object.values(map);
-}
-
-function cleanupDeletedBuckets() {
-  // المنطق الجديد: الـ deleted bucket هو الـ source of truth
-  // إذا سجل في deletedXxx، نشيله من المصفوفة النشطة (حماية من عودة remote غير مرغوبة)
-  // ونضيف tombstone للتأكيد
-
-  deletedStudents = dedupeByKey(deletedStudents, 'id');
-  const delStudentIds = new Set(deletedStudents.map(function(x){ return normKey(x && x.id); }));
-  students = students.filter(function(x){
-    if (x && delStudentIds.has(normKey(x.id))) {
-      addTombstone('students', x.id);
-      return false;
-    }
-    return true;
-  });
-
-  if (typeof deletedPayments !== 'undefined') {
-    deletedPayments = dedupeByKey(deletedPayments, 'id');
-    const delPayIds = new Set(deletedPayments.map(function(x){ return normKey(x && x.id); }));
-    payments = payments.filter(function(x){
-      if (x && delPayIds.has(normKey(x.id))) {
-        addTombstone('payments', x.id);
-        return false;
-      }
-      return true;
-    });
-  }
-
-  if (typeof deletedExpenses !== 'undefined') {
-    deletedExpenses = dedupeByKey(deletedExpenses, 'id');
-    const delExpIds = new Set(deletedExpenses.map(function(x){ return normKey(x && x.id); }));
-    expenses = expenses.filter(function(x){
-      if (x && delExpIds.has(normKey(x.id))) {
-        addTombstone('expenses', x.id);
-        return false;
-      }
-      return true;
-    });
-  }
-
-  if (typeof deletedRenewals !== 'undefined') {
-    deletedRenewals = dedupeByKey(deletedRenewals, 'id');
-    const delRenIds = new Set(deletedRenewals.map(function(x){ return normKey(x && x.id); }));
-    renewals = renewals.filter(function(x){
-      if (x && delRenIds.has(normKey(x.id))) {
-        addTombstone('renewals', x.id);
-        return false;
-      }
-      return true;
-    });
-  }
-
-  if (typeof deletedClasses !== 'undefined') {
-    deletedClasses = dedupeByKey(deletedClasses, 'key');
-    const delClsKeys = new Set(deletedClasses.map(function(x){ return normKey(x && x.key); }));
-    if (CLASSES && typeof CLASSES === 'object') {
-      Object.keys(CLASSES).forEach(function(k){
-        if (delClsKeys.has(normKey(k))) {
-          addTombstone('classes', k);
-          delete CLASSES[k];
-        }
-      });
-      if (typeof CLASSES_DATA !== 'undefined') CLASSES_DATA = CLASSES;
-      localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
-    }
-  }
-
-  localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
-  if (typeof deletedPayments !== 'undefined') localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
-  if (typeof deletedExpenses !== 'undefined') localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
-  if (typeof deletedRenewals !== 'undefined') localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
-  if (typeof deletedClasses !== 'undefined') localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
-}
-
-function refreshAllViewsAfterSync() {
-  renderDash();
-  if (typeof renderStudents === 'function') renderStudents();
-  if (typeof renderPayments === 'function') renderPayments();
-  if (typeof renderExpenses === 'function') renderExpenses();
-  if (typeof renderReceipts === 'function') renderReceipts();
-  if (typeof renderRenewals === 'function') renderRenewals();
-  if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
-  if (typeof renderOtherDeletedItems === 'function') renderOtherDeletedItems();
-  if (typeof renderRecycleBin === 'function') renderRecycleBin();
-  if (typeof renderAtt === 'function') renderAtt();
-  if (typeof renderAdminClasses === 'function') renderAdminClasses();
-  if (typeof updateNotifications === 'function') updateNotifications();
-  if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
+  if (tombstones.students && tombstones.students.length) students = students.filter(function(s){ return !tombstones.students.includes(s.id); });
+  if (tombstones.payments && tombstones.payments.length) payments = payments.filter(function(p){ return !tombstones.payments.includes(p.id); });
+  if (tombstones.expenses && tombstones.expenses.length) expenses = expenses.filter(function(e){ return !tombstones.expenses.includes(e.id); });
+  if (tombstones.renewals && tombstones.renewals.length) renewals = renewals.filter(function(r){ return !tombstones.renewals.includes(r.id); });
 }
 
 let students = [
@@ -2137,6 +1856,17 @@ function getDateYear(d) {
   return 0;
 }
 
+function getStudentIdentityNo(s) {
+  if (!s || typeof s !== 'object') return '';
+  return String(
+    s.idNo ||
+    s.identityNo ||
+    s.nationalId ||
+    s.emiratesId ||
+    ''
+  ).trim();
+}
+
 function formatDateAr(d) {
   const n = normalizeDate(d);
   if (!n) return '—';
@@ -2344,44 +2074,12 @@ function populateClassDropdowns() {
   }
 }
 
-
-function getStudentIdentity(s){
-  return (s && (s.idNo || s.identityNo || s.nationalId || s.emiratesId || '')) || '';
-}
-
-function getDismissedStudentAlerts(){
-  try { return JSON.parse(localStorage.getItem('kp_dismissed_student_alerts') || '{}') || {}; } catch(e) { return {}; }
-}
-
-function setDismissedStudentAlerts(map){
-  localStorage.setItem('kp_dismissed_student_alerts', JSON.stringify(map || {}));
-}
-
-function getStudentRegistrationExpiry(s){
-  if (!s) return '';
-  const direct = normalizeDate(s.sub_end || '');
-  let latest = direct;
-  if (Array.isArray(payments)) {
-    payments.forEach(function(p){
-      if (!p || +p.stuId !== +s.id || !p.sub_end) return;
-      const d = normalizeDate(p.sub_end || '');
-      if (!d) return;
-      if (!latest || d > latest) latest = d;
-    });
-  }
-  return latest || '';
-}
-
-function getStudentAlertKey(s){
-  return s ? (String(s.id||'') + '|' + String(getStudentRegistrationExpiry(s)||'')) : '';
-}
-
 function renderStudents(){
   populateClassDropdowns();
   const q=document.getElementById('stu-search').value.toLowerCase();
   const cls=document.getElementById('stu-cls').value;
   const gen=document.getElementById('stu-gen').value;
-  let f=students.filter(s=>(!q||String(s.name||'').includes(q)||String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q)||String(s.dad||'').includes(q)||String(s.mom||'').includes(q)||String(getStudentIdentity(s)||'').includes(q)||String(s.internalNote||'').includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen)).map(function(s){
+  let f=students.filter(s=>(!q||String(s.name||'').includes(q)||String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q)||String(s.dad||'').includes(q)||String(s.mom||'').includes(q)||String(getStudentIdentityNo(s)||'').includes(q)||String(s.internalNote||'').includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen)).map(function(s){
     const healthItems = getStudentHealthNotes(s);
     return Object.assign({}, s, { healthSummary: getStudentHealthSummary(s) });
   });
@@ -2401,7 +2099,7 @@ function renderStudents(){
       <td><b>#${s.id}</b></td>
       <td><b>${s.name}</b>${(s.note||s.notes) ? `<div style="font-size:11px;color:#e67e22;margin-top:2px;font-weight:600">📝 ${s.note||s.notes}</div>` : ''}</td>
       <td dir="ltr" style="font-size:12px">${escapeHtml(getStudentEnglishDisplayName(s)||'—')}</td>
-      <td dir="ltr">${escapeHtml(getStudentIdentity(s)||'—')}</td>
+      <td dir="ltr">${escapeHtml(getStudentIdentityNo(s)||'—')}</td>
       <td style="font-size:12px">${escapeHtml(s.internalNote||'—')}</td>
       <td style="font-size:12px">${healthSummary !== '—' ? `<span class="b br">⚕️ ${healthSummary}</span>` : '—'}</td>
       <td>${formatDate(s.dob)}</td>
@@ -2433,7 +2131,7 @@ function getStudentsFilteredForPrint(){
   const cls=document.getElementById('stu-cls')?.value||'';
   const gen=document.getElementById('stu-gen')?.value||'';
   return students.filter(s =>
-    (!q || String(s.name||'').includes(q) || String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q) || String(s.dad||'').includes(q) || String(s.mom||'').includes(q) || String(getStudentIdentity(s)||'').includes(q) || String(s.internalNote||'').includes(q)) &&
+    (!q || String(s.name||'').includes(q) || String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q) || String(s.dad||'').includes(q) || String(s.mom||'').includes(q) || String(getStudentIdentityNo(s)||'').includes(q) || String(s.internalNote||'').includes(q)) &&
     (!cls || s.cls===cls) &&
     (!gen || s.gen===gen)
   );
@@ -2463,7 +2161,7 @@ function buildClassNameListTable(className, items){
       <td dir="ltr">${escapeHtml(getStudentEnglishDisplayName(s)||'')}</td>
       <td>${escapeHtml(formatDate(s.dob)==='—' ? '' : formatDate(s.dob))}</td>
       <td>${escapeHtml(s.gen||'')}</td>
-      <td dir="ltr">${escapeHtml(getStudentIdentity(s)||'')}</td>
+      <td dir="ltr">${escapeHtml(getStudentIdentityNo(s)||'')}</td>
       <td>${escapeHtml(s.nat||'')}</td>
       <td>${escapeHtml((CLASSES[s.cls]?.emoji||'')+' '+(s.cls||''))}</td>
       <td>${escapeHtml(getStudentHealthSummary(s)||s.health||'')}</td>
@@ -3053,7 +2751,7 @@ function viewStudentProfile(id) {
       '<div class="fl"><label>الجنس</label><div>' + (s.gen||'—') + '</div></div>' +
       '<div class="fl"><label>الجنسية</label><div>' + (s.nat||'—') + '</div></div>' +
       '<div class="fl"><label>مكان الميلاد</label><div>' + (s.bpl||'—') + '</div></div>' +
-      '<div class="fl"><label>رقم الهوية</label><div dir="ltr">' + (getStudentIdentity(s)||'—') + '</div></div>' +
+      '<div class="fl"><label>رقم الهوية</label><div dir="ltr">' + (s.emiratesId||'—') + '</div></div>' +
       '<div class="fl"><label>رقم الجواز</label><div dir="ltr">' + (s.passport||'—') + '</div></div>' +
       '<div class="fl"><label>الديانة</label><div>' + (s.religion||'—') + '</div></div>' +
       '<div class="fl"><label>اللغة الأم</label><div>' + (s.motherTongue||'—') + '</div></div>' +
@@ -3231,7 +2929,7 @@ function editStudent(id){
   setVal('ns-name',    s.name);
   setVal('ns-name-en', getStudentEnglishDisplayName(s));
   setVal('ns-dob',     s.dob);
-  setVal('ns-idno',    getStudentIdentity(s) || '');
+  setVal('ns-idno',    getStudentIdentityNo(s));
   setVal('ns-gen',     s.gen);
   setVal('ns-nat',     s.nat);
   setVal('ns-cls',     s.cls || Object.keys(CLASSES)[0]);
@@ -3278,7 +2976,6 @@ function delStudent(id){
     deletionReason: reason,
     deletedBy: currentUser ? currentUser.name : 'نظام'
   });
-  deletedStudents = deletedStudents.filter(function(x){ return x.id !== id; });
   deletedStudents.unshift(deletedCopy);
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
   students = students.filter(x => x.id !== id);
@@ -3300,7 +2997,6 @@ function restoreStudent(id) {
   delete restored.deletedAt;
   delete restored.deletionReason;
   delete restored.deletedBy;
-  students = students.filter(function(x){ return x.id !== id; });
   students.push(restored);
   deletedStudents = deletedStudents.filter(x => x.id !== id);
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
@@ -3309,13 +3005,10 @@ function restoreStudent(id) {
     tombstones.students = tombstones.students.filter(function(x){ return x !== id; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
-  cleanupDeletedBuckets();
   autoSave();
   renderStudents();
   renderDash();
   renderDeletedStudents();
-  if (typeof updateNotifications === 'function') updateNotifications();
-  if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
   alert('✅ تم استعادة الطالب');
 }
 
@@ -3332,7 +3025,6 @@ function permanentDeleteStudent(id) {
   // ✅ ارفع التغيير لـ Firebase ليصل للأجهزة الأخرى
   autoSave();
   renderDeletedStudents();
-  renderOtherDeletedItems();
 }
 
 
@@ -3347,527 +3039,36 @@ function viewDeletedStudent(id) {
   setTimeout(function(){ students.length = original.length; }, 100);
 }
 
-
-function restorePayment(id) {
-  const p = deletedPayments.find(function(x){ return x.id === id; });
-  if (!p) return;
-  if (!confirm('استعادة السند #' + id + '؟')) return;
-  const restored = Object.assign({}, p);
-  delete restored.deletedAt; delete restored.deletedBy;
-  payments = payments.filter(function(x){ return x.id !== id; });
-  payments.push(restored);
-  deletedPayments = deletedPayments.filter(function(x){ return x.id !== id; });
-  localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
-  if (tombstones && tombstones.payments) {
-    tombstones.payments = tombstones.payments.filter(function(x){ return normKey(x) !== normKey(id); });
-    localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+function renderDeletedStudents() {
+  const el = document.getElementById('deleted-list');
+  if (!el) return;
+  document.getElementById('del-count').textContent = deletedStudents.length;
+  if (!deletedStudents.length) {
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">🗑 لا يوجد طلاب محذوفون</div>';
+    return;
   }
-  markRestored('payments', id);
-  persistCoreDataToLocalStorage();
-  autoSave(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
-  if (typeof updateNotifications === 'function') updateNotifications();
-  if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
-}
-
-function restoreExpense(id) {
-  const e = deletedExpenses.find(function(x){ return x.id === id; });
-  if (!e) return;
-  if (!confirm('استعادة المصروف #' + id + '؟')) return;
-  const restored = Object.assign({}, e);
-  delete restored.deletedAt; delete restored.deletedBy;
-  expenses = expenses.filter(function(x){ return x.id !== id; });
-  expenses.push(restored);
-  deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== id; });
-  localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
-  if (tombstones && tombstones.expenses) {
-    tombstones.expenses = tombstones.expenses.filter(function(x){ return normKey(x) !== normKey(id); });
-    localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
-  }
-  markRestored('expenses', id);
-  persistCoreDataToLocalStorage();
-  autoSave(); renderExpenses(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
-  if (typeof updateNotifications === 'function') updateNotifications();
-}
-
-function restoreRenewal(id) {
-  const r = deletedRenewals.find(function(x){ return x.id === id; });
-  if (!r) return;
-  if (!confirm('استعادة التجديد #' + id + '؟')) return;
-  const restored = Object.assign({}, r);
-  delete restored.deletedAt; delete restored.deletedBy;
-  renewals = renewals.filter(function(x){ return x.id !== id; });
-  renewals.push(restored);
-  deletedRenewals = deletedRenewals.filter(function(x){ return x.id !== id; });
-  localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
-  if (tombstones && tombstones.renewals) {
-    tombstones.renewals = tombstones.renewals.filter(function(x){ return normKey(x) !== normKey(id); });
-    localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
-  }
-  markRestored('renewals', id);
-  persistCoreDataToLocalStorage();
-  autoSave(); renderRenewals(); renderDeletedStudents(); renderOtherDeletedItems();
-  if (typeof updateNotifications === 'function') updateNotifications();
-}
-
-function restoreClass(name) {
-  const c = deletedClasses.find(function(x){ return x.key === name; });
-  if (!c) return;
-  if (!confirm('استعادة الفصل "' + name + '"؟')) return;
-  CLASSES[name] = c.data || {teacher:'', emoji:'🏫'};
-  CLASSES_DATA = CLASSES;
-  deletedClasses = deletedClasses.filter(function(x){ return x.key !== name; });
-  localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
-  if (tombstones && tombstones.classes) {
-    tombstones.classes = tombstones.classes.filter(function(x){ return normKey(x) !== normKey(name); });
-    localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
-  }
-  markRestored('classes', name);
-  localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
-  autoSave(); populateClassDropdowns(); renderAdminClasses(); renderStudents(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
-}
-
-function permanentDeleteGeneric(type, key) {
-  if (!confirm('⚠️ حذف نهائي؟ لا يمكن التراجع!')) return;
-  if (type === 'payments') {
-    deletedPayments = deletedPayments.filter(function(x){ return x.id !== key; });
-    localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
-    addTombstone('payments', key);
-  } else if (type === 'expenses') {
-    deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== key; });
-    localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
-    addTombstone('expenses', key);
-  } else if (type === 'renewals') {
-    deletedRenewals = deletedRenewals.filter(function(x){ return x.id !== key; });
-    localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
-    addTombstone('renewals', key);
-  } else if (type === 'classes') {
-    deletedClasses = deletedClasses.filter(function(x){ return x.key !== key; });
-    localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
-    addTombstone('classes', key);
-  }
-  cleanupDeletedBuckets();
-  autoSave(); renderDeletedStudents(); renderOtherDeletedItems();
-}
-
-function renderDeletedSectionCard(icon, title, subtitle, actionsHtml) {
-  return '<div class="card" style="padding:12px;margin-bottom:8px;border:1.5px solid var(--border)">' +
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">' +
-      '<div style="flex:1;min-width:200px">' +
-        '<div style="font-weight:700;font-size:14px;margin-bottom:4px">' + icon + ' ' + title + '</div>' +
-        '<div style="font-size:12px;color:var(--muted);line-height:1.8">' + subtitle + '</div>' +
+  el.innerHTML = deletedStudents.map(function(s){
+    return '<div class="card" style="padding:12px;margin-bottom:8px;border:1.5px solid var(--border)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">' +
+        '<div style="flex:1;min-width:200px">' +
+          '<div style="font-weight:700;font-size:14px;margin-bottom:4px">👶 ' + s.name + '</div>' +
+          '<div style="font-size:12px;color:var(--muted);line-height:1.8">' +
+            '📅 تاريخ الميلاد: ' + (s.dob||'—') + ' | 🏫 الفصل: ' + (s.cls||'—') + '<br>' +
+            '👨 ' + (s.dad||'—') + ' | 📱 ' + (s.dph||'—') + '<br>' +
+            '👩 ' + (s.mom||'—') + ' | 📱 ' + (s.mph||'—') + '<br>' +
+            '<span style="color:#e74c3c">🗑 حُذف في: ' + (s.deletedAt||'—') + '</span>' +
+            (s.deletionReason ? '<br>📝 السبب: ' + s.deletionReason : '') +
+            (s.deletedBy ? '<br>👤 بواسطة: ' + s.deletedBy : '') +
+          '</div>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:6px">' +
+          '<button class="btn btn-out btn-sm" onclick="viewDeletedStudent(' + s.id + ')">👁 عرض</button>' +
+          '<button class="btn btn-g btn-sm" onclick="restoreStudent(' + s.id + ')">♻️ استعادة</button>' +
+          '<button class="btn btn-r btn-sm" onclick="permanentDeleteStudent(' + s.id + ')">🗑 حذف نهائي</button>' +
+        '</div>' +
       '</div>' +
-      '<div style="display:flex;flex-direction:column;gap:6px">' + actionsHtml + '</div>' +
-    '</div>' +
-  '</div>';
-}
-
-// ============================================================
-// UNIFIED RECYCLE BIN — جميع المحذوفات في سلة واحدة
-// ============================================================
-// Shims: keep old callers working by routing to the unified renderer.
-function renderDeletedStudents(){ renderRecycleBin(); }
-function renderOtherDeletedItems(){ renderRecycleBin(); }
-
-// State for the unified bin page
-var _binFilter = 'all';
-var _binSelected = { students:{}, payments:{}, expenses:{}, renewals:{}, classes:{} };
-
-function setBinFilter(type){
-  _binFilter = type;
-  // Update tab styles
-  document.querySelectorAll('#bin-tabs button').forEach(function(b){
-    if(b.getAttribute('data-type') === type){
-      b.classList.add('bin-tab-on');
-      b.classList.remove('btn-out');
-    } else {
-      b.classList.remove('bin-tab-on');
-      b.classList.add('btn-out');
-    }
-  });
-  renderRecycleBin();
-}
-
-function clearBinSelection(){
-  _binSelected = { students:{}, payments:{}, expenses:{}, renewals:{}, classes:{} };
-  renderRecycleBin();
-}
-
-function _binSelectedCount(){
-  return Object.keys(_binSelected.students).length
-       + Object.keys(_binSelected.payments).length
-       + Object.keys(_binSelected.expenses).length
-       + Object.keys(_binSelected.renewals).length
-       + Object.keys(_binSelected.classes).length;
-}
-
-function toggleBinItem(type, key, checked){
-  var k = String(key);
-  if(checked){
-    _binSelected[type][k] = true;
-  } else {
-    delete _binSelected[type][k];
-  }
-  _updateBinBulkBar();
-  // Update row visual
-  var row = document.querySelector('.bin-item-row[data-type="'+type+'"][data-key="'+k.replace(/"/g,'\\"')+'"]');
-  if(row){ row.classList.toggle('selected', !!checked); }
-}
-
-function toggleBinAll(){
-  var checked = document.getElementById('bin-select-all').checked;
-  var items = _collectBinItems();
-  var matching = items.filter(_matchesBinFilterAndSearch);
-  matching.forEach(function(it){
-    if(checked) _binSelected[it.type][String(it.key)] = true;
-    else delete _binSelected[it.type][String(it.key)];
-  });
-  renderRecycleBin();
-}
-
-function _updateBinBulkBar(){
-  var n = _binSelectedCount();
-  var bar = document.getElementById('bin-bulk-bar');
-  var cnt = document.getElementById('bin-bulk-count');
-  var info = document.getElementById('bin-selected-info');
-  if(bar) bar.style.display = n > 0 ? 'flex' : 'none';
-  if(cnt) cnt.textContent = n;
-  if(info) info.textContent = n ? ('تم تحديد ' + n + ' عنصر') : 'لم يتم تحديد أي عنصر';
-}
-
-// Build a uniform item list from all 5 deleted arrays
-function _collectBinItems(){
-  var items = [];
-  (deletedStudents||[]).forEach(function(s){
-    items.push({
-      type:'students', key:s.id, icon:'👶', typeLabel:'طالب',
-      title: s.name || ('طالب #' + s.id),
-      subtitle: '📅 ' + (s.dob||'—') + ' · 🏫 ' + (s.cls||'—') +
-                (s.dad ? ' · 👨 ' + s.dad : '') +
-                (s.mom ? ' · 👩 ' + s.mom : ''),
-      reason: s.deletionReason || '',
-      deletedAt: s.deletedAt || '',
-      deletedBy: s.deletedBy || '',
-      raw: s,
-      searchText: [s.name, s.dad, s.mom, s.cls, s.nat, s.addr, s.deletionReason].join(' ').toLowerCase()
-    });
-  });
-  (deletedPayments||[]).forEach(function(p){
-    items.push({
-      type:'payments', key:p.id, icon:'🧾', typeLabel:'سند/مدفوعة',
-      title: 'سند #' + p.id + ' — ' + (p.who||'—'),
-      subtitle: '💰 ' + (p.amt||'—') + ' · 📝 ' + (p.desc||'—') + (p.date ? ' · 📅 ' + p.date : ''),
-      reason: '',
-      deletedAt: p.deletedAt || '',
-      deletedBy: p.deletedBy || '',
-      raw: p,
-      searchText: [p.who, p.desc, p.amt, p.id].join(' ').toLowerCase()
-    });
-  });
-  (deletedExpenses||[]).forEach(function(x){
-    items.push({
-      type:'expenses', key:x.id, icon:'💸', typeLabel:'مصروف',
-      title: 'مصروف #' + x.id + ' — ' + (x.desc||'—'),
-      subtitle: '💰 ' + (x.amt||'—') + ' · 🗂 ' + (x.cat||'—') + (x.date ? ' · 📅 ' + x.date : ''),
-      reason: '',
-      deletedAt: x.deletedAt || '',
-      deletedBy: x.deletedBy || '',
-      raw: x,
-      searchText: [x.desc, x.cat, x.amt, x.id].join(' ').toLowerCase()
-    });
-  });
-  (deletedRenewals||[]).forEach(function(x){
-    items.push({
-      type:'renewals', key:x.id, icon:'🔔', typeLabel:'تجديد',
-      title: x.name || ('تجديد #' + x.id),
-      subtitle: '📅 ' + (x.date||'—') + ' · 💰 ' + (x.cost||'—'),
-      reason: '',
-      deletedAt: x.deletedAt || '',
-      deletedBy: x.deletedBy || '',
-      raw: x,
-      searchText: [x.name, x.date, x.cost, x.id].join(' ').toLowerCase()
-    });
-  });
-  (deletedClasses||[]).forEach(function(x){
-    items.push({
-      type:'classes', key:x.key, icon:'🏫', typeLabel:'فصل',
-      title: x.name || x.key,
-      subtitle: '👩‍🏫 ' + ((x.data&&x.data.teacher)||'—') + ' · ' + ((x.data&&x.data.emoji)||'🏫'),
-      reason: '',
-      deletedAt: x.deletedAt || '',
-      deletedBy: x.deletedBy || '',
-      raw: x,
-      searchText: [x.name, x.key, (x.data&&x.data.teacher)].join(' ').toLowerCase()
-    });
-  });
-  // Sort by deletedAt desc (newest first)
-  items.sort(function(a,b){ return (b.deletedAt||'').localeCompare(a.deletedAt||''); });
-  return items;
-}
-
-function _matchesBinFilterAndSearch(it){
-  if(_binFilter !== 'all' && it.type !== _binFilter) return false;
-  var q = (document.getElementById('bin-search')||{}).value || '';
-  q = q.trim().toLowerCase();
-  if(q && it.searchText.indexOf(q) === -1) return false;
-  return true;
-}
-
-function renderRecycleBin(){
-  var listEl = document.getElementById('bin-list');
-  if(!listEl) return;
-
-  var items = _collectBinItems();
-
-  // Counts per type
-  var counts = { students:0, payments:0, expenses:0, renewals:0, classes:0 };
-  items.forEach(function(it){ counts[it.type]++; });
-  var total = items.length;
-
-  // Update summary cards
-  var set = function(id, v){ var e = document.getElementById(id); if(e) e.textContent = v; };
-  set('bin-total-count', total);
-  set('bin-students-count', counts.students);
-  set('bin-payments-count', counts.payments);
-  set('bin-expenses-count', counts.expenses);
-  set('bin-misc-count', counts.renewals + counts.classes);
-
-  // Update tab counters
-  set('bin-tab-all', total);
-  set('bin-tab-students', counts.students);
-  set('bin-tab-payments', counts.payments);
-  set('bin-tab-expenses', counts.expenses);
-  set('bin-tab-renewals', counts.renewals);
-  set('bin-tab-classes', counts.classes);
-
-  // Update nav badge
-  var badge = document.getElementById('bin-nav-badge');
-  if(badge){
-    if(total > 0){ badge.style.display = 'inline-block'; badge.textContent = total; }
-    else { badge.style.display = 'none'; }
-  }
-
-  // Update last sync timestamp
-  var syncEl = document.getElementById('bin-last-sync');
-  if(syncEl){
-    var d = new Date();
-    syncEl.textContent = 'آخر تحديث للعرض: ' + d.toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-  }
-
-  // Apply filter + search
-  var filtered = items.filter(_matchesBinFilterAndSearch);
-
-  // Build list
-  if(filtered.length === 0){
-    var msg = total === 0 ? 'السلة فارغة' : 'لا يوجد عناصر تطابق التصفية أو البحث';
-    listEl.innerHTML = '<div class="bin-empty"><div class="ico">🗑️</div><div style="font-size:15px;font-weight:700;margin-bottom:4px">' + msg + '</div>'
-      + (total === 0 ? '<div style="font-size:13px">عند حذف أي سجل من النظام سيظهر هنا مع إمكانية الاسترجاع.</div>' : '') + '</div>';
-  } else {
-    var html = '';
-    filtered.forEach(function(it){
-      var keyStr = String(it.key);
-      var keyJs = JSON.stringify(keyStr).replace(/"/g,'&quot;');
-      var isSelected = !!_binSelected[it.type][keyStr];
-      var chipClass = 'bin-type-' + it.type;
-      var escName = String(it.title||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      var escSub = String(it.subtitle||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      var escReason = String(it.reason||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      var escBy = String(it.deletedBy||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      var escAt = String(it.deletedAt||'—').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-
-      // Individual action buttons per type
-      var actions = '';
-      if(it.type === 'students'){
-        actions = '<button class="btn btn-out btn-sm" onclick="viewDeletedStudent('+ keyStr +')">👁 عرض</button>'
-                + '<button class="btn btn-g btn-sm" onclick="restoreStudent('+ keyStr +')">♻ استعادة</button>'
-                + '<button class="btn btn-r btn-sm" onclick="permanentDeleteStudent('+ keyStr +')">🗑 حذف نهائي</button>';
-      } else if(it.type === 'payments'){
-        actions = '<button class="btn btn-g btn-sm" onclick="restorePayment('+ keyStr +')">♻ استعادة</button>'
-                + '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'payments\','+ keyStr +')">🗑 حذف نهائي</button>';
-      } else if(it.type === 'expenses'){
-        actions = '<button class="btn btn-g btn-sm" onclick="restoreExpense('+ keyStr +')">♻ استعادة</button>'
-                + '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'expenses\','+ keyStr +')">🗑 حذف نهائي</button>';
-      } else if(it.type === 'renewals'){
-        actions = '<button class="btn btn-g btn-sm" onclick="restoreRenewal('+ keyStr +')">♻ استعادة</button>'
-                + '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'renewals\','+ keyStr +')">🗑 حذف نهائي</button>';
-      } else if(it.type === 'classes'){
-        actions = '<button class="btn btn-g btn-sm" onclick="restoreClass('+ keyJs +')">♻ استعادة</button>'
-                + '<button class="btn btn-r btn-sm" onclick="permanentDeleteGeneric(\'classes\','+ keyJs +')">🗑 حذف نهائي</button>';
-      }
-
-      html += '<div class="bin-item-row' + (isSelected?' selected':'') + '" data-type="' + it.type + '" data-key="' + keyStr.replace(/"/g,'&quot;') + '">'
-            +   '<input type="checkbox" class="bin-item-check" ' + (isSelected?'checked':'') + ' onchange="toggleBinItem(\'' + it.type + '\',' + keyJs + ',this.checked)">'
-            +   '<div class="bin-item-body">'
-            +     '<div style="font-size:14px;font-weight:800;margin-bottom:4px">'
-            +       it.icon + ' ' + escName
-            +       '<span class="bin-type-chip ' + chipClass + '">' + it.typeLabel + '</span>'
-            +     '</div>'
-            +     '<div style="font-size:12.5px;color:var(--muted);line-height:1.7">' + escSub + '</div>'
-            +     '<div style="font-size:12px;color:#c0392b;margin-top:6px">🗑 حُذف في: ' + escAt
-            +       (escBy ? ' · 👤 بواسطة: ' + escBy : '')
-            +       (escReason ? '<br>📝 السبب: ' + escReason : '')
-            +     '</div>'
-            +   '</div>'
-            +   '<div class="bin-item-actions">' + actions + '</div>'
-            + '</div>';
-    });
-    listEl.innerHTML = html;
-  }
-
-  // Sync select-all checkbox state
-  var selAll = document.getElementById('bin-select-all');
-  if(selAll){
-    var visibleCount = filtered.length;
-    var selectedVisible = filtered.filter(function(it){ return _binSelected[it.type][String(it.key)]; }).length;
-    selAll.checked = visibleCount > 0 && selectedVisible === visibleCount;
-    selAll.indeterminate = selectedVisible > 0 && selectedVisible < visibleCount;
-  }
-
-  _updateBinBulkBar();
-}
-
-// Manual refresh — pull latest from Firebase immediately
-async function refreshBinNow(){
-  if(typeof manualRefreshFromFirebase === 'function'){
-    try { await manualRefreshFromFirebase(); } catch(e){ console.error(e); }
-  }
-  renderRecycleBin();
-}
-
-// Bulk restore: uses existing individual restore functions for safety,
-// but suppresses their confirm() dialogs by temporarily overriding confirm.
-function bulkRestoreBin(){
-  var n = _binSelectedCount();
-  if(!n){ alert('لم يتم تحديد أي عنصر'); return; }
-  if(!confirm('استعادة ' + n + ' عنصر محدّد؟')) return;
-
-  var originalConfirm = window.confirm;
-  window.confirm = function(){ return true; };
-
-  try {
-    // Snapshot selections (they get cleared as items are restored)
-    var sel = {
-      students: Object.keys(_binSelected.students).slice(),
-      payments: Object.keys(_binSelected.payments).slice(),
-      expenses: Object.keys(_binSelected.expenses).slice(),
-      renewals: Object.keys(_binSelected.renewals).slice(),
-      classes:  Object.keys(_binSelected.classes).slice()
-    };
-
-    sel.students.forEach(function(k){
-      var id = _coerceKey(deletedStudents, k);
-      if(id !== null && typeof restoreStudent === 'function') restoreStudent(id);
-    });
-    sel.payments.forEach(function(k){
-      var id = _coerceKey(deletedPayments, k);
-      if(id !== null && typeof restorePayment === 'function') restorePayment(id);
-    });
-    sel.expenses.forEach(function(k){
-      var id = _coerceKey(deletedExpenses, k);
-      if(id !== null && typeof restoreExpense === 'function') restoreExpense(id);
-    });
-    sel.renewals.forEach(function(k){
-      var id = _coerceKey(deletedRenewals, k);
-      if(id !== null && typeof restoreRenewal === 'function') restoreRenewal(id);
-    });
-    sel.classes.forEach(function(k){
-      if(typeof restoreClass === 'function') restoreClass(k);
-    });
-  } finally {
-    window.confirm = originalConfirm;
-  }
-
-  clearBinSelection();
-  if(typeof autoSaveNow === 'function') autoSaveNow();
-  else if(typeof autoSave === 'function') autoSave();
-  renderRecycleBin();
-  alert('✅ تمت الاستعادة — المزامنة جارية لباقي الأجهزة');
-}
-
-function bulkPermanentDeleteBin(){
-  var n = _binSelectedCount();
-  if(!n){ alert('لم يتم تحديد أي عنصر'); return; }
-  if(!confirm('⚠️ حذف نهائي لـ ' + n + ' عنصر محدّد؟\nلا يمكن التراجع!')) return;
-  if(!confirm('تأكيد أخير: حذف نهائي لـ ' + n + ' عنصر؟')) return;
-
-  var originalConfirm = window.confirm;
-  window.confirm = function(){ return true; };
-
-  try {
-    // Students — need full tombstone handling, use permanentDeleteStudent
-    Object.keys(_binSelected.students).forEach(function(k){
-      var id = _coerceKey(deletedStudents, k);
-      if(id !== null && typeof permanentDeleteStudent === 'function') permanentDeleteStudent(id);
-    });
-    // Payments / Expenses / Renewals / Classes — use permanentDeleteGeneric
-    Object.keys(_binSelected.payments).forEach(function(k){
-      var id = _coerceKey(deletedPayments, k);
-      if(id !== null && typeof permanentDeleteGeneric === 'function') permanentDeleteGeneric('payments', id);
-    });
-    Object.keys(_binSelected.expenses).forEach(function(k){
-      var id = _coerceKey(deletedExpenses, k);
-      if(id !== null && typeof permanentDeleteGeneric === 'function') permanentDeleteGeneric('expenses', id);
-    });
-    Object.keys(_binSelected.renewals).forEach(function(k){
-      var id = _coerceKey(deletedRenewals, k);
-      if(id !== null && typeof permanentDeleteGeneric === 'function') permanentDeleteGeneric('renewals', id);
-    });
-    Object.keys(_binSelected.classes).forEach(function(k){
-      if(typeof permanentDeleteGeneric === 'function') permanentDeleteGeneric('classes', k);
-    });
-  } finally {
-    window.confirm = originalConfirm;
-  }
-
-  clearBinSelection();
-  if(typeof autoSaveNow === 'function') autoSaveNow();
-  else if(typeof autoSave === 'function') autoSave();
-  renderRecycleBin();
-  alert('🗑 تم الحذف النهائي — تمت المزامنة');
-}
-
-// Helper: item keys are stored as strings, but deletedX arrays use numbers for ids.
-// Coerce a string key back to whatever type matches inside the array.
-function _coerceKey(arr, strKey){
-  if(!arr || !arr.length) return null;
-  var item = arr.find(function(x){
-    var k = (x && (x.id !== undefined ? x.id : x.key));
-    return String(k) === String(strKey);
-  });
-  if(!item) return null;
-  return (item.id !== undefined) ? item.id : item.key;
-}
-
-function emptyRecycleBin(){
-  var total = (deletedStudents||[]).length + (deletedPayments||[]).length
-            + (deletedExpenses||[]).length + (deletedRenewals||[]).length + (deletedClasses||[]).length;
-  if(!total){ alert('السلة فارغة أصلاً'); return; }
-  if(!confirm('⚠️ تفريغ السلة بالكامل؟\nسيتم حذف ' + total + ' عنصر حذفاً نهائياً.\nلا يمكن التراجع عن هذه العملية!')) return;
-  if(!confirm('🚨 تأكيد نهائي!\nاكتب/اضغط موافق فقط إذا كنت متأكداً 100%')) return;
-
-  // Add tombstones so other devices also see the deletion
-  (deletedStudents||[]).forEach(function(s){ if(s && s.id !== undefined && typeof addTombstone === 'function') addTombstone('students', s.id); });
-  (deletedPayments||[]).forEach(function(p){ if(p && p.id !== undefined && typeof addTombstone === 'function') addTombstone('payments', p.id); });
-  (deletedExpenses||[]).forEach(function(x){ if(x && x.id !== undefined && typeof addTombstone === 'function') addTombstone('expenses', x.id); });
-  (deletedRenewals||[]).forEach(function(x){ if(x && x.id !== undefined && typeof addTombstone === 'function') addTombstone('renewals', x.id); });
-  (deletedClasses||[]).forEach(function(x){ if(x && x.key !== undefined && typeof addTombstone === 'function') addTombstone('classes', x.key); });
-
-  deletedStudents = [];
-  deletedPayments = [];
-  deletedExpenses = [];
-  deletedRenewals = [];
-  deletedClasses  = [];
-  localStorage.setItem('kp_deleted_students', '[]');
-  localStorage.setItem('kp_deleted_payments', '[]');
-  localStorage.setItem('kp_deleted_expenses', '[]');
-  localStorage.setItem('kp_deleted_renewals', '[]');
-  localStorage.setItem('kp_deleted_classes',  '[]');
-
-  clearBinSelection();
-  if(typeof cleanupDeletedBuckets === 'function') cleanupDeletedBuckets();
-  if(typeof autoSaveNow === 'function') autoSaveNow();
-  else if(typeof autoSave === 'function') autoSave();
-  renderRecycleBin();
-  alert('🧹 تم تفريغ السلة بالكامل — تمت المزامنة مع باقي الأجهزة');
+    '</div>';
+  }).join('');
 }
 
 
@@ -4066,7 +3267,7 @@ function renderPayments(){
   const theadEl = document.getElementById('pay-thead');
   if (theadEl) theadEl.innerHTML = sortableHead('pay-table', [
     ['id','#السند'], ['who','ولي الأمر'], ['amt','المبلغ'], ['desc','البيان'],
-    ['studentMatch','ربط الطالب'], ['internalNote','ملاحظات داخلية'], ['type','النوع'], ['method','طريقة الدفع'], ['date','التاريخ'], ['sub_end','انتهاء التسجيل'], ['rcvr','المستلم'], ['','']
+    ['studentMatch','ربط الطالب'], ['internalNote','ملاحظات داخلية'], ['type','النوع'], ['method','طريقة الدفع'], ['date','التاريخ'], ['rcvr','المستلم'], ['','']
   ]);
   const total=f.reduce((s,p)=>s+p.amt,0);
   document.getElementById('pay-total').textContent=total.toLocaleString();
@@ -4089,7 +3290,7 @@ function renderPayments(){
       <td style="font-size:12px">${matchCell}</td>
       <td style="font-size:12px">${(p.internalNote || p.internal || p.internal_note) ? `<div style="padding:3px 8px;background:#fff8e1;border-right:3px solid #f39c12;border-radius:5px;color:#b8860b;font-weight:600">🔒 ${p.internalNote || p.internal || p.internal_note}</div>` : '<span style="color:#999">—</span>'}</td>
       <td><span class="b bgr">${p.type}</span></td>
-      <td>${p.method}</td><td>${p.date}</td><td>${p.sub_end ? formatDate(p.sub_end) : '—'}</td><td>${p.rcvr}</td>
+      <td>${p.method}</td><td>${p.date}</td><td>${p.rcvr}</td>
       <td style="display:flex;gap:5px"><button class="btn btn-out btn-sm" onclick="openReceiptDetail(${p.id})">🧾 سند</button><button class="btn btn-out btn-sm" onclick="openEditPay(${p.id})">✏️</button></td>
     </tr>`;
   }).join('');
@@ -4163,8 +3364,6 @@ function selectStudentForPay(id) {
   }
   // املأ ولي الأمر تلقائياً
   if (whoEl && !whoEl.value) whoEl.value = 'والد/والدة الطفل ' + s.name;
-  const subEndEl = document.getElementById('np-sub-end');
-  if (subEndEl && !subEndEl.value) subEndEl.value = normalizeDate(s.sub_end || '');
 }
 
 // للتوافق مع الكود القديم
@@ -4177,7 +3376,7 @@ function lookupStudentForPay(idVal) {
 function openAddPay(){
   editingPayId = null;
   document.getElementById('np-date').value=new Date().toISOString().slice(0,10);
-  ['np-who','np-amt','np-amtwords','np-desc','np-rcvr','np-note','np-stuid','np-id','np-sub-end'].forEach(id=>{
+  ['np-who','np-amt','np-amtwords','np-desc','np-rcvr','np-note','np-stuid','np-id'].forEach(id=>{
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -4209,8 +3408,6 @@ function openEditPay(id){
   document.getElementById('np-date').value  = normalizeDate(p.date);
   document.getElementById('np-rcvr').value  = p.rcvr||'';
   document.getElementById('np-note').value  = p.note||'';
-  const subEndEl = document.getElementById('np-sub-end');
-  if (subEndEl) subEndEl.value = normalizeDate(p.sub_end || '');
   document.getElementById('np-type').value  = p.type||'قسط شهري';
   document.getElementById('np-method').value= p.method||'نقدي';
   const intEl = document.getElementById('np-internal');
@@ -4236,15 +3433,9 @@ function deletePayment(){
   const p = payments.find(x=>x.id===editingPayId);
   if(!p||!confirm('حذف السند #'+p.id+' ('+p.who+')؟')) return;
   const delId = editingPayId;
-  deletedPayments.unshift(Object.assign({}, p, {
-    deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
-    deletedBy: currentUser ? currentUser.name : 'نظام'
-  }));
-  localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
   payments = payments.filter(x=>x.id!==delId);
   addTombstone('payments', delId);
-  autoSave(); closeAll(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
-  renderOtherDeletedItems();
+  autoSave(); closeAll(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash();
 }
 
 function savePayment(){
@@ -4268,11 +3459,9 @@ function savePayment(){
     p.date = document.getElementById('np-date').value;
     p.rcvr = document.getElementById('np-rcvr').value;
     p.note = document.getElementById('np-note').value;
-    p.sub_end = document.getElementById('np-sub-end').value || '';
     p.internalNote = internalValue;
     p.amtWords = amtWordsValue || amtToWords(amt);
     p.stuId = parseInt((document.getElementById('np-stuid')||{}).value) || null;
-    if (p.stuId && p.sub_end) { const sp = students.find(function(x){ return x.id === p.stuId; }); if (sp) sp.sub_end = p.sub_end; }
 
     if (currentUser && currentUser.role === 'admin') {
       const requestedId = parseInt(idInput && idInput.value);
@@ -4308,12 +3497,10 @@ function savePayment(){
       date: document.getElementById('np-date').value,
       rcvr: document.getElementById('np-rcvr').value,
       note: document.getElementById('np-note').value,
-      sub_end: document.getElementById('np-sub-end').value || '',
       internalNote: internalValue,
       amtWords: amtWordsValue || amtToWords(amt),
       stuId: stuid
     };
-    if (p.stuId && p.sub_end) { const sp = students.find(function(x){ return x.id === p.stuId; }); if (sp) sp.sub_end = p.sub_end; }
     payments.push(p);
     refreshNextIds();
     closeAll();
@@ -4332,30 +3519,30 @@ function renderExpenses(){
   sanitizeCoreData();
   const q=document.getElementById('exp-search').value.toLowerCase();
   const cat=document.getElementById('exp-cat').value;
-  let f=expenses.filter(e=>(!q||String(e.desc||'').toLowerCase().includes(q))&&(!cat||e.cat===cat));
+  let f=expenses.filter(e=>(!q||e.desc.toLowerCase().includes(q))&&(!cat||e.cat===cat));
   if (tableSortState['exp-table']) f = applyTableSort('exp-table', f);
   const expTheadEl = document.getElementById('exp-thead');
   if (expTheadEl) expTheadEl.innerHTML = sortableHead('exp-table', [
     ['id','#'], ['desc','البيان / الوصف'], ['amt','المبلغ'], ['cat','الفئة'],
     ['date','التاريخ'], ['method','طريقة الدفع'], ['note','ملاحظات'], ['','']
   ]);
-  const total=f.reduce((s,e)=>s+(+e.amt||0),0);
+  const total=f.reduce((s,e)=>s+e.amt,0);
   document.getElementById('exp-total').textContent=total.toLocaleString();
   document.getElementById('exp-count').textContent=f.length;
   // top category
   const catMap={};
-  expenses.forEach(e=>{catMap[e.cat||'غير محدد']=(catMap[e.cat||'غير محدد']||0)+(+e.amt||0);});
+  expenses.forEach(e=>{catMap[e.cat]=(catMap[e.cat]||0)+e.amt;});
   const topCat=Object.entries(catMap).sort((a,b)=>b[1]-a[1])[0];
   document.getElementById('exp-top').textContent=topCat?topCat[0]:'—';
   document.getElementById('exp-tbody').innerHTML=[...f].reverse().map(e=>`
     <tr>
-      <td>#${e.id||''}</td>
-      <td>${e.desc||''}</td>
-      <td class="fin-neg"><b>${(+e.amt||0).toLocaleString()} د.إ</b></td>
-      <td><span class="b br">${e.cat||''}</span></td>
-      <td>${e.exp_date||e.date||''}</td>
-      <td>${e.method||''}</td>
-      <td style="font-size:12px">${e.note||''}</td>
+      <td>#${e.id}</td>
+      <td>${e.desc}</td>
+      <td class="fin-neg"><b>${e.amt.toLocaleString()} د.إ</b></td>
+      <td><span class="b br">${e.cat}</span></td>
+      <td>${e.date}</td>
+      <td>${e.method}</td>
+      <td style="font-size:12px">${e.note}</td>
       <td style="display:flex;gap:5px"><button class="btn btn-out btn-sm" onclick="openEditExp(${e.id})">✏️</button><button class="btn btn-r btn-sm" onclick="delExpense(${e.id})">🗑</button></td>
     </tr>`).join('');
 }
@@ -4398,15 +3585,11 @@ function saveExpense(){
     e.cat = document.getElementById('ne-cat').value;
     e.method = document.getElementById('ne-method').value;
     e.date = document.getElementById('ne-date').value;
-    e.exp_date = document.getElementById('ne-date').value;
-    e.note = document.getElementById('ne-note').value||'';
+    e.note = document.getElementById('ne-note').value;
     closeAll();renderExpenses();renderDash();
     autoSave(); alert('✅ تم تعديل المصروف بنجاح');
   } else {
-    const expDate = document.getElementById('ne-date').value;
-    const newExpenseId = getSafeNextExpenseId();
-    nextExpId = newExpenseId + 1;
-    expenses.push({id:newExpenseId,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:expDate,exp_date:expDate,note:document.getElementById('ne-note').value||''});
+    expenses.push({id:nextExpId++,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:document.getElementById('ne-date').value,note:document.getElementById('ne-note').value});
     closeAll();renderExpenses();renderDash();
     autoSave(); alert('✅ تم حفظ المصروف بنجاح');
   }
@@ -4415,18 +3598,11 @@ function saveExpense(){
 function delExpense(id){
   const delId = id || editingExpId;
   if(!delId) return;
-  const exp = expenses.find(function(e){ return e.id===delId; });
-  if(!exp || !confirm('حذف هذا المصروف؟'))return;
-  deletedExpenses.unshift(Object.assign({}, exp, {
-    deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
-    deletedBy: currentUser ? currentUser.name : 'نظام'
-  }));
-  localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
+  if(!confirm('حذف هذا المصروف؟'))return;
   expenses=expenses.filter(e=>e.id!==delId);
   addTombstone('expenses', delId);
   closeAll();
-  autoSave(); renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
-  renderOtherDeletedItems();
+  autoSave(); renderExpenses(); renderDash();
 }
 
 // ============================================================
@@ -4811,10 +3987,6 @@ function performAutoBackup(silent) {
       renewals: renewals,
       attLog: attLog,
       deletedStudents: (typeof deletedStudents !== 'undefined' ? deletedStudents : []),
-      deletedPayments: (typeof deletedPayments !== 'undefined' ? deletedPayments : []),
-      deletedExpenses: (typeof deletedExpenses !== 'undefined' ? deletedExpenses : []),
-      deletedRenewals: (typeof deletedRenewals !== 'undefined' ? deletedRenewals : []),
-      deletedClasses: (typeof deletedClasses !== 'undefined' ? deletedClasses : []),
       tombstones: (typeof tombstones !== 'undefined' ? tombstones : {}),
       CLASSES: CLASSES,
       nurserySettings: nurserySettings,
@@ -4902,10 +4074,6 @@ function downloadBackup() {
     renewals: renewals,
     attLog: attLog,
     deletedStudents: (typeof deletedStudents !== 'undefined' ? deletedStudents : []),
-    deletedPayments: (typeof deletedPayments !== 'undefined' ? deletedPayments : []),
-    deletedExpenses: (typeof deletedExpenses !== 'undefined' ? deletedExpenses : []),
-    deletedRenewals: (typeof deletedRenewals !== 'undefined' ? deletedRenewals : []),
-    deletedClasses: (typeof deletedClasses !== 'undefined' ? deletedClasses : []),
     tombstones: (typeof tombstones !== 'undefined' ? tombstones : {}),
     CLASSES: CLASSES,
     nurserySettings: nurserySettings,
@@ -4940,17 +4108,12 @@ function restoreBackup(event) {
       if (backup.renewals) renewals = backup.renewals;
       if (backup.attLog) attLog = backup.attLog;
       if (backup.deletedStudents) { deletedStudents = backup.deletedStudents; localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents)); }
-      if (backup.deletedPayments) { deletedPayments = backup.deletedPayments; localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments)); }
-      if (backup.deletedExpenses) { deletedExpenses = backup.deletedExpenses; localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses)); }
-      if (backup.deletedRenewals) { deletedRenewals = backup.deletedRenewals; localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals)); }
-      if (backup.deletedClasses) { deletedClasses = backup.deletedClasses; localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses)); }
       if (backup.tombstones) { tombstones = backup.tombstones; localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); }
-      if (backup.CLASSES) Object.assign(CLASSES, backup.CLASSES);
+      if (backup.CLASSES) replaceClassesData(backup.CLASSES);
       if (backup.nurserySettings) Object.assign(nurserySettings, backup.nurserySettings);
       if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(backup.kp_users));
       if (backup.kp_form_rows) { localStorage.setItem('kp_form_rows', JSON.stringify(backup.kp_form_rows)); syncedFormRows = backup.kp_form_rows; }
       refreshNextIds();
-      forceFullReplaceOnNextSync = true;
       autoSave();
       renderDash();
       if (typeof renderStudents === 'function') renderStudents();
@@ -4959,7 +4122,6 @@ function restoreBackup(event) {
       if (typeof renderReceipts === 'function') renderReceipts();
       if (typeof renderRenewals === 'function') renderRenewals();
       if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
-      if (typeof renderOtherDeletedItems === 'function') renderOtherDeletedItems();
       if (typeof updateNotifications === 'function') updateNotifications();
       alert('✅ تم استعادة النسخة الاحتياطية بنجاح!\n\n' + 'الطلاب: ' + (backup.students||[]).length + '\n' + 'السندات: ' + (backup.payments||[]).length + '\n' + 'المصاريف: ' + (backup.expenses||[]).length);
     } catch(err) { alert('❌ فشل قراءة الملف: ' + err.message); }
@@ -5135,7 +4297,7 @@ function doExport(){
   const dataMap = {
     students: {
       cols: ['#','اسم الطالب','الاسم الإنجليزي','رقم الهوية','ملاحظات داخلية','الحالة الصحية','تاريخ الميلاد','الجنس','الجنسية','الفصل','اسم الأب','عمل الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان','انتهاء الاشتراك','ملاحظات'],
-      rows: students.map(function(s,i){ return [i+1, s.name||'', getStudentEnglishDisplayName(s)||'', getStudentIdentity(s)||'', s.internalNote||'', getStudentHealthSummary(s)||s.health||'', s.dob||'', s.gen||'', s.nat||'', s.cls||'', s.dad||'', s.job||'', s.dph||'', s.mom||'', s.mph||'', s.addr||'', s.sub_end||'', s.note||s.notes||'']; })
+      rows: students.map(function(s,i){ return [i+1, s.name||'', getStudentEnglishDisplayName(s)||'', getStudentIdentityNo(s)||'', s.internalNote||'', getStudentHealthSummary(s)||s.health||'', s.dob||'', s.gen||'', s.nat||'', s.cls||'', s.dad||'', s.job||'', s.dph||'', s.mom||'', s.mph||'', s.addr||'', s.sub_end||'', s.note||s.notes||'']; })
     },
     payments: {
       cols: ['#السند','ولي الأمر','المبلغ (د.إ)','البيان','النوع','طريقة الدفع','التاريخ','المستلم','ملاحظات'],
@@ -5179,7 +4341,7 @@ function doExport(){
   };
   const d=dataMap[exportTarget];
   if(!d)return;
-  const names={students:'الطلاب',payments:'المدفوعات',expenses:'المصاريف',receipts:'سندات_القبض',finance:'الإيرادات',attendance:'الحضور',renewals:'التجديدات',deleted:'سلة_المحذوفات'};
+  const names={students:'الطلاب',payments:'المدفوعات',expenses:'المصاريف',receipts:'سندات_القبض',finance:'الإيرادات',attendance:'الحضور',renewals:'التجديدات',deleted:'الطلاب_المحذوفون'};
   const fname=`حضانة_حديقة_الأطفال_${names[exportTarget]||exportTarget}`;
   if(exportFmt==='xlsx'){
     const ws=XLSX.utils.aoa_to_sheet([d.cols,...d.rows]);
@@ -5199,7 +4361,7 @@ function doPrintExport(){
   let html=`<html dir="rtl"><head><meta charset="UTF-8"><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet"><style>body{font-family:'Tajawal',sans-serif;font-size:12px}table{width:100%;border-collapse:collapse}th{background:#eaf6ef;color:#1e6b3f;padding:7px;border:1px solid #d2e5d2}td{padding:6px;border:1px solid #eee}.title{font-size:18px;font-weight:900;margin-bottom:10px;color:#1e6b3f}</style></head><body>
   <div class="title">حضانة حديقة الأطفال — ${names[exportTarget]||exportTarget}</div>
   <div style="font-size:11px;color:#666;margin-bottom:10px">تاريخ التصدير: ${new Date().toLocaleDateString('ar-AE')}</div><table>`;
-  const dataMap={students:{cols:['رقم الطالب','الاسم العربي','الاسم الإنجليزي','تاريخ الميلاد','الجنس','رقم الهوية','الجنسية','الفصل','الحالة الصحية','اسم الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان'],rows:students.map((s)=>[s.id,s.name||'',getStudentEnglishDisplayName(s)||'',formatDate(s.dob),s.gen||'',getStudentIdentity(s)||'',s.nat||'',s.cls||'',getStudentHealthSummary(s)||'',s.dad||'',s.dph||'',s.mom||'',s.mph||'',s.addr||''])},payments:{cols:['#','ولي الأمر','المبلغ','البيان','النوع','الطريقة','التاريخ','المستلم'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.type,p.method,p.date,p.rcvr])},expenses:{cols:['#','البيان','المبلغ','الفئة','التاريخ'],rows:expenses.map(e=>[e.id,e.desc,e.amt+' د.إ',e.cat,e.date])},finance:{cols:['الشهر','الإيرادات','المصاريف','الصافي'],rows:finData.map(d=>[d.month,d.inc.toLocaleString(),d.exp.toLocaleString(),(d.inc-d.exp).toLocaleString()])},attendance:{cols:['التاريخ','الفصل','الطالب','الحالة'],rows:Object.entries(attLog).filter(([,v])=>v).map(([k,v])=>{const[date,idStr]=k.split('_');const s=students.find(x=>x.id===+idStr);return s?[date,s.cls,s.name,v==='present'?'حاضر':v==='absent'?'غائب':'متأخر']:null;}).filter(Boolean)},receipts:{cols:['#','ولي الأمر','المبلغ','البيان','التاريخ'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.date])}};
+  const dataMap={students:{cols:['رقم الطالب','الاسم العربي','الاسم الإنجليزي','تاريخ الميلاد','الجنس','رقم الهوية','الجنسية','الفصل','الحالة الصحية','اسم الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان'],rows:students.map((s)=>[s.id,s.name||'',getStudentEnglishDisplayName(s)||'',formatDate(s.dob),s.gen||'',getStudentIdentityNo(s)||'',s.nat||'',s.cls||'',getStudentHealthSummary(s)||'',s.dad||'',s.dph||'',s.mom||'',s.mph||'',s.addr||''])},payments:{cols:['#','ولي الأمر','المبلغ','البيان','النوع','الطريقة','التاريخ','المستلم'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.type,p.method,p.date,p.rcvr])},expenses:{cols:['#','البيان','المبلغ','الفئة','التاريخ'],rows:expenses.map(e=>[e.id,e.desc,e.amt+' د.إ',e.cat,e.date])},finance:{cols:['الشهر','الإيرادات','المصاريف','الصافي'],rows:finData.map(d=>[d.month,d.inc.toLocaleString(),d.exp.toLocaleString(),(d.inc-d.exp).toLocaleString()])},attendance:{cols:['التاريخ','الفصل','الطالب','الحالة'],rows:Object.entries(attLog).filter(([,v])=>v).map(([k,v])=>{const[date,idStr]=k.split('_');const s=students.find(x=>x.id===+idStr);return s?[date,s.cls,s.name,v==='present'?'حاضر':v==='absent'?'غائب':'متأخر']:null;}).filter(Boolean)},receipts:{cols:['#','ولي الأمر','المبلغ','البيان','التاريخ'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.date])}};
   const d=dataMap[exportTarget];
   if(d){
     html+=`<thead><tr>${d.cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
@@ -5266,8 +4428,6 @@ function applyLogin() {
   if (sb) sb.style.display = 'inline-block';
   const nb = document.getElementById('notif-btn');
   if (nb) nb.style.display = 'inline-block';
-  const rnb = document.getElementById('reg-notif-btn');
-  if (rnb) rnb.style.display = 'inline-block';
   const rb = document.getElementById('btn-refresh-cloud');
   if (rb) rb.style.display = 'inline-block';
   document.getElementById('ub-name').textContent = currentUser.name || currentUser.username;
@@ -5286,7 +4446,6 @@ function applyLogin() {
   const yfInit = document.getElementById('dash-year-filter');
   if (yfInit) yfInit.value = String(dashYear);
 
-  if (typeof loadCoreDataFromLocalStorage === 'function') loadCoreDataFromLocalStorage();
   if (typeof applyTombstones === 'function') applyTombstones();
   // اعتماد جماعي لمطابقات السندات المقترحة الحالية (مرة واحدة فقط)
   let bulkApprovedNow = runOneTimeBulkMatchApproval();
@@ -5295,7 +4454,7 @@ function applyLogin() {
   if (bulkApprovedNow > 0) {
     setTimeout(function(){ alert('✅ تم اعتماد ' + bulkApprovedNow + ' عملية ربط بين السندات وملفات الطلاب'); }, 300);
   }
-  setTimeout(function(){ updateNotifications(); updateRegExpiryNotifications(); }, 500);
+  setTimeout(updateNotifications, 500);
   // تحميل من Firebase وتحديث عند الانتهاء
   loadFromFirebase().then(() => {
     const approvedAfterSync = runOneTimeBulkMatchApproval();
@@ -5304,76 +4463,12 @@ function applyLogin() {
     if (yf2 && !yf2.value) yf2.value = String(new Date().getFullYear());
     renderDash();
     updateNotifications();
-    updateRegExpiryNotifications();
     if (approvedAfterSync > 0) {
       setTimeout(function(){ alert('✅ تم اعتماد ' + approvedAfterSync + ' عملية ربط إضافية بعد مزامنة البيانات'); }, 500);
     }
   });
-  // ============================================================
-  // FAST SYNC: aggressive polling of `savedAt` timestamp only
-  // ------------------------------------------------------------
-  // Why this and not SSE? Firebase REST streaming requires
-  // following HTTP 307 redirects, which browsers' EventSource
-  // cannot reliably do cross-origin. Fast polling of the tiny
-  // savedAt endpoint (a single timestamp, ~30 bytes) works on
-  // every browser and gives sub-second perceived latency.
-  //
-  // Adaptive intervals:
-  //   - Recycle bin open:  600ms  (near-real-time)
-  //   - Other pages:       1200ms (still very fast)
-  //   - Tab hidden:        paused until visible again
-  // ============================================================
-  startFastSync();
+  setInterval(checkForUpdates, 5000);
   startAutoSync();
-}
-
-// ============================================================
-// FAST SYNC via savedAt polling
-// ============================================================
-var _fastSyncTimer = null;
-
-function startFastSync() {
-  stopFastSync();
-  _fastSyncTimer = setInterval(function(){
-    if (document.hidden) return; // don't poll when tab is hidden
-    checkForUpdates();
-  }, _fastSyncInterval());
-}
-
-function stopFastSync() {
-  if (_fastSyncTimer) { clearInterval(_fastSyncTimer); _fastSyncTimer = null; }
-}
-
-function _fastSyncInterval() {
-  var binPage = document.getElementById('pg-recyclebin');
-  var binActive = binPage && binPage.classList.contains('on');
-  return binActive ? 600 : 1200;
-}
-
-// Re-tune the interval whenever the user navigates to/from the bin
-function retuneFastSync() {
-  stopFastSync();
-  startFastSync();
-}
-
-function _setStreamStatus(status) {
-  // status: 'connected' | 'reconnecting' | 'disconnected'
-  var dot = document.getElementById('bin-stream-dot');
-  var label = document.getElementById('bin-stream-label');
-  if (!dot || !label) return;
-  if (status === 'connected') {
-    dot.style.background = '#4db87a';
-    dot.style.boxShadow = '0 0 0 3px rgba(77,184,122,.25)';
-    label.textContent = 'متصل بالمزامنة السريعة';
-  } else if (status === 'reconnecting') {
-    dot.style.background = '#e8a800';
-    dot.style.boxShadow = '0 0 0 3px rgba(232,168,0,.25)';
-    label.textContent = 'جاري الاتصال...';
-  } else {
-    dot.style.background = '#c0392b';
-    dot.style.boxShadow = '0 0 0 3px rgba(192,57,43,.25)';
-    label.textContent = 'غير متصل';
-  }
 }
 
 function doLogout() {
@@ -5384,16 +4479,12 @@ function doLogout() {
   if (sb2) sb2.style.display = 'none';
   const nb2 = document.getElementById('notif-btn');
   if (nb2) nb2.style.display = 'none';
-  const rnb2 = document.getElementById('reg-notif-btn');
-  if (rnb2) rnb2.style.display = 'none';
   const rb2 = document.getElementById('btn-refresh-cloud');
   if (rb2) rb2.style.display = 'none';
   document.getElementById('user-badge').style.display = 'none';
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
   document.getElementById('login-err').textContent = '';
-  // Stop fast-sync polling on logout
-  stopFastSync();
 }
 
 function checkSession() {
@@ -5549,13 +4640,16 @@ function deleteUser(username) {
 // ============================================================
 // CLASSES_DATA = CLASSES (defined above)
 
-function saveClasses() {
-  const nextClasses = JSON.parse(JSON.stringify(CLASSES_DATA || {}));
-  Object.keys(CLASSES || {}).forEach(function(key){ if (!Object.prototype.hasOwnProperty.call(nextClasses, key)) delete CLASSES[key]; });
-  Object.assign(CLASSES, nextClasses);
+function replaceClassesData(source) {
+  if (!source || typeof source !== 'object') return;
+  Object.keys(CLASSES).forEach(function(k){ delete CLASSES[k]; });
+  Object.keys(source).forEach(function(k){ CLASSES[k] = source[k]; });
   CLASSES_DATA = CLASSES;
   localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
-  autoSave();
+}
+
+function saveClasses() {
+  replaceClassesData(CLASSES_DATA);
 }
 
 function renderAdminClasses() {
@@ -5598,17 +4692,6 @@ function editClass(name) {
 
 function deleteClass(name) {
   if (!confirm('حذف فصل "' + name + '"؟ سيتأثر الطلاب المسجلين فيه.')) return;
-  const clsData = CLASSES[name] ? Object.assign({}, CLASSES[name]) : null;
-  deletedClasses = deletedClasses.filter(function(x){ return x.key !== name; });
-  deletedClasses.unshift({
-    key: name,
-    name: name,
-    data: clsData,
-    deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
-    deletedBy: currentUser ? currentUser.name : 'نظام'
-  });
-  localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
-  addTombstone('classes', name);
   delete CLASSES[name];
   CLASSES_DATA = CLASSES;
   localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
@@ -5617,8 +4700,6 @@ function deleteClass(name) {
   renderAdminClasses();
   renderStudents();
   renderDash();
-  if (typeof renderDeletedStudents==='function') renderDeletedStudents();
-  renderOtherDeletedItems();
 }
 
 // ============================================================
@@ -5825,29 +4906,20 @@ function go(page) {
     alert('هذا القسم للمدير فقط');
     return;
   }
-  // Alias legacy trash routes to the unified recycle bin
-  const pageAliases = { deleted:'recyclebin', otherdeleted:'recyclebin' };
-  const pgId = pageAliases[page] || page;
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.nav').forEach(n=>n.classList.remove('on'));
-  const pgEl = document.getElementById('pg-'+pgId);
+  const pgEl = document.getElementById('pg-'+page);
   if(pgEl) pgEl.classList.add('on');
-  document.querySelectorAll('.nav').forEach(n=>{
-    const oc = n.getAttribute('onclick') || '';
-    if(oc===`go('${page}')` || oc===`go('${pgId}')`) n.classList.add('on');
-  });
+  document.querySelectorAll('.nav').forEach(n=>{if(n.getAttribute('onclick')===`go('${page}')`)n.classList.add('on');});
 
   const renders = {
     dash:renderDash, students:renderStudents, att:renderAtt,
     payments:renderPayments, expenses:renderExpenses,
     receipts:renderReceipts, finance:renderFinance,
-    worksheets:renderWorksheets, forms:renderFormRequests, renewals:renderRenewals, finreport:renderFinReport,
-    recyclebin:renderRecycleBin, deleted:renderRecycleBin, otherdeleted:renderRecycleBin,
+    worksheets:renderWorksheets, forms:renderFormRequests, renewals:renderRenewals, finreport:renderFinReport, deleted:renderDeletedStudents,
     admin:()=>{renderAdminUsers();renderAdminClasses();}
   };
   if(renders[page]) renders[page]();
-  // Re-tune polling interval: bin page gets 600ms, others 1200ms
-  if (typeof retuneFastSync === 'function' && currentUser) retuneFastSync();
 }
 
 // ============================================================
@@ -5987,11 +5059,8 @@ window.addEventListener('DOMContentLoaded', () => {
 const FB_URL = 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data';
 const FB_LOGO_URL = FB_URL + '/branding/logoDataUrl';
 let isSyncing = false;
-let pendingSync = false;
 let syncTimeout = null;
 let lastSavedAt = '';
-let forceFullReplaceOnNextSync = false;
-let hasUnsavedChanges = false; // تتبع التغييرات غير المحفوظة
 
 function getAllData() {
   const cleanSettings = Object.assign({}, nurserySettings);
@@ -6007,73 +5076,9 @@ function getAllData() {
   };
 }
 
-function persistCoreDataToLocalStorage() {
-  try {
-    localStorage.setItem('kp_students_data', JSON.stringify(sanitizeEntityArray(students)));
-    localStorage.setItem('kp_payments_data', JSON.stringify(sanitizeEntityArray(payments)));
-    localStorage.setItem('kp_expenses_data', JSON.stringify(sanitizeEntityArray(expenses)));
-    localStorage.setItem('kp_renewals_data', JSON.stringify(sanitizeEntityArray(renewals)));
-    localStorage.setItem('kp_attlog_data', JSON.stringify(attLog || {}));
-    localStorage.setItem('kp_classes', JSON.stringify(CLASSES || {}));
-  } catch (e) {
-    console.warn('persistCoreDataToLocalStorage failed:', e);
-  }
-}
-
-function loadCoreDataFromLocalStorage() {
-  try {
-    const localStudents = JSON.parse(localStorage.getItem('kp_students_data') || 'null');
-    const localPayments = JSON.parse(localStorage.getItem('kp_payments_data') || 'null');
-    const localExpenses = JSON.parse(localStorage.getItem('kp_expenses_data') || 'null');
-    const localRenewals = JSON.parse(localStorage.getItem('kp_renewals_data') || 'null');
-    const localAttLog = JSON.parse(localStorage.getItem('kp_attlog_data') || 'null');
-    const localClasses = JSON.parse(localStorage.getItem('kp_classes') || 'null');
-
-    if (Array.isArray(localStudents)) students = sanitizeEntityArray(localStudents);
-    if (Array.isArray(localPayments)) payments = sanitizeEntityArray(localPayments);
-    if (Array.isArray(localExpenses)) expenses = sanitizeEntityArray(localExpenses);
-    if (Array.isArray(localRenewals)) renewals = sanitizeEntityArray(localRenewals);
-    if (localAttLog && typeof localAttLog === 'object' && !Array.isArray(localAttLog)) attLog = localAttLog;
-    if (localClasses && typeof localClasses === 'object' && !Array.isArray(localClasses)) {
-      CLASSES = localClasses;
-      if (typeof CLASSES_DATA !== 'undefined') CLASSES_DATA = CLASSES;
-    }
-
-    sanitizeCoreData();
-    applyTombstones();
-    refreshNextIds();
-  } catch (e) {
-    console.warn('loadCoreDataFromLocalStorage failed:', e);
-  }
-}
-
 function autoSave() {
-  hasUnsavedChanges = true;
-  persistCoreDataToLocalStorage();
-  if (isSyncing) {
-    pendingSync = true;
-    return;
-  }
   clearTimeout(syncTimeout);
-  // 80ms debounce (was 300ms) — faster reflection on other devices
-  syncTimeout = setTimeout(function(){
-    syncTimeout = null;
-    pushToFirebase();
-  }, 80);
-}
-
-// Immediate push — zero debounce. Use for critical/user-triggered actions
-// where instant visibility on other devices matters (bin ops, deletions).
-function autoSaveNow() {
-  hasUnsavedChanges = true;
-  persistCoreDataToLocalStorage();
-  clearTimeout(syncTimeout);
-  syncTimeout = null;
-  if (isSyncing) {
-    pendingSync = true;
-    return;
-  }
-  pushToFirebase();
+  syncTimeout = setTimeout(pushToFirebase, 10);
 }
 
 async function saveLogoToFirebaseSilent() {
@@ -6115,176 +5120,6 @@ async function loadLogoFromFirebase() {
 
 // FINANCIAL REPORTS
 let lastFinReportData = null;
-
-function buildFinancialReportPrintHtml(d) {
-  const generatedAt = new Date().toLocaleString('ar-AE');
-  const incEntries = Object.entries(d.incByType || {}).sort(function(a,b){ return (b[1]?.amt || 0) - (a[1]?.amt || 0); });
-  const expEntries = Object.entries(d.expByCat || {}).sort(function(a,b){ return (b[1]?.amt || 0) - (a[1]?.amt || 0); });
-  const monthEntries = Object.keys(d.monthly || {}).filter(function(m){ return m; }).sort();
-  const logoSrc = (typeof logoDataUrl === 'string' && logoDataUrl) || (nurserySettings && nurserySettings.logoDataUrl) || '';
-
-  const incRows = incEntries.length
-    ? incEntries.map(function(entry){
-        const name = entry[0] || 'غير محدد';
-        const data = entry[1] || {};
-        const pct = d.totalInc > 0 ? (((data.amt || 0) / d.totalInc) * 100).toFixed(1) : '0.0';
-        return '<tr><td>' + escapeHtml(name) + '</td><td>' + (data.count || 0) + '</td><td class="money in">' + (data.amt || 0).toLocaleString() + ' د.إ</td><td>' + pct + '%</td></tr>';
-      }).join('')
-    : '<tr><td colspan="4" class="empty">لا توجد واردات</td></tr>';
-
-  const expRows = expEntries.length
-    ? expEntries.map(function(entry){
-        const name = entry[0] || 'غير محدد';
-        const data = entry[1] || {};
-        const pct = d.totalExp > 0 ? (((data.amt || 0) / d.totalExp) * 100).toFixed(1) : '0.0';
-        return '<tr><td>' + escapeHtml(name) + '</td><td>' + (data.count || 0) + '</td><td class="money out">' + (data.amt || 0).toLocaleString() + ' د.إ</td><td>' + pct + '%</td></tr>';
-      }).join('')
-    : '<tr><td colspan="4" class="empty">لا توجد صادرات</td></tr>';
-
-  const monthRows = monthEntries.length
-    ? monthEntries.map(function(month){
-        const item = d.monthly[month] || { inc: 0, exp: 0 };
-        const net = (item.inc || 0) - (item.exp || 0);
-        return '<tr><td><b>' + escapeHtml(month) + '</b></td><td class="money in">+' + (item.inc || 0).toLocaleString() + '</td><td class="money out">-' + (item.exp || 0).toLocaleString() + '</td><td class="money ' + (net >= 0 ? 'in' : 'neg') + '">' + net.toLocaleString() + ' د.إ</td></tr>';
-      }).join('')
-    : '<tr><td colspan="4" class="empty">لا توجد بيانات</td></tr>';
-
-  const detailRows = (d.rows || []).length
-    ? d.rows.map(function(row, idx){
-        const positive = row.sign > 0;
-        return '<tr>' +
-          '<td>' + (idx + 1) + '</td>' +
-          '<td class="' + (positive ? 'in' : 'out') + '">' + (positive ? 'وارد' : 'صادر') + '</td>' +
-          '<td>' + escapeHtml(row.date || '') + '</td>' +
-          '<td class="text-right">' + escapeHtml(row.desc || '') + '</td>' +
-          '<td class="text-right">' + escapeHtml(row.who || '') + '</td>' +
-          '<td class="money ' + (positive ? 'in' : 'out') + '">' + (positive ? '+' : '-') + (row.amt || 0).toLocaleString() + ' د.إ</td>' +
-        '</tr>';
-      }).join('')
-    : '<tr><td colspan="6" class="empty">لا توجد حركات</td></tr>';
-
-  return `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>التقرير المالي</title>
-<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
-<style>
-  :root{--g:#1e6b3f;--g2:#2d9156;--in:#1f8f4d;--out:#d46b08;--neg:#c0392b;--bd:#d9e7d9;--muted:#657565;}
-  *{box-sizing:border-box}
-  body{font-family:'Tajawal',Arial,sans-serif;margin:0;background:#f3f6f3;color:#182618}
-  .page{max-width:1080px;margin:0 auto;background:#fff;padding:18px 22px 26px}
-  .head{border:2px solid var(--g);border-radius:16px;overflow:hidden;margin-bottom:14px}
-  .head-top{background:linear-gradient(135deg,var(--g),var(--g2));color:#fff;padding:18px 20px;text-align:center}
-  .logo-wrap{display:flex;justify-content:center;align-items:center;margin-bottom:10px}
-  .logo{max-height:72px;max-width:160px;object-fit:contain}
-  .title{font-size:28px;font-weight:900;margin-bottom:6px}
-  .sub{font-size:14px;opacity:.95}
-  .meta{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-top:1px solid rgba(255,255,255,.15);background:#f8fbf8;color:#183018}
-  .meta div{padding:10px 12px;border-left:1px solid var(--bd);font-size:13px}
-  .meta div:last-child{border-left:none}
-  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0}
-  .stat{border:1.5px solid var(--bd);border-radius:14px;padding:14px 12px;background:#fbfdfb;text-align:center}
-  .stat .label{font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px}
-  .stat .value{font-size:26px;font-weight:900}
-  .stat .subv{font-size:12px;color:var(--muted);margin-top:5px}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
-  .card{border:1.5px solid var(--bd);border-radius:14px;overflow:hidden;background:#fff;margin-bottom:14px;page-break-inside:avoid}
-  .card h3{margin:0;background:#f2f8f2;color:var(--g);padding:12px 14px;font-size:16px}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th,td{border:1px solid #e5ece5;padding:8px 9px;text-align:center;vertical-align:middle}
-  th{background:#f8fbf8;font-weight:800}
-  .text-right{text-align:right}
-  .money{font-weight:800}
-  .in{color:var(--in)}
-  .out{color:var(--out)}
-  .neg{color:var(--neg)}
-  .empty{padding:18px;color:var(--muted);text-align:center}
-  .tfoot td{background:#f3fbf4;font-size:15px;font-weight:900}
-  .foot{margin-top:12px;padding-top:10px;border-top:1px solid var(--bd);text-align:center;font-size:12px;color:var(--muted)}
-  @media print{
-    body{background:#fff}
-    .page{max-width:none;padding:8mm 8mm 10mm}
-    @page{size:A4;margin:10mm}
-  }
-</style>
-</head>
-<body>
-  <div class="page">
-    <div class="head">
-      <div class="head-top">
-        ${logoSrc ? `<div class="logo-wrap"><img src="${logoSrc}" class="logo" alt="شعار الحضانة"></div>` : ''}
-        <div class="title">📊 التقرير المالي</div>
-        <div class="sub">حضانة حديقة الأطفال</div>
-      </div>
-      <div class="meta">
-        <div><b>الفترة:</b> من ${escapeHtml(d.from)} إلى ${escapeHtml(d.to)}</div>
-        <div><b>تاريخ الإنشاء:</b> ${escapeHtml(generatedAt)}</div>
-        <div><b>عدد الحركات:</b> ${(d.rows || []).length}</div>
-      </div>
-    </div>
-
-    <div class="stats">
-      <div class="stat"><div class="label">إجمالي الواردات</div><div class="value in">${d.totalInc.toLocaleString()} د.إ</div><div class="subv">${Object.values(d.incByType || {}).reduce(function(s,x){ return s + (x.count || 0); },0)} سند</div></div>
-      <div class="stat"><div class="label">إجمالي الصادرات</div><div class="value out">${d.totalExp.toLocaleString()} د.إ</div><div class="subv">${Object.values(d.expByCat || {}).reduce(function(s,x){ return s + (x.count || 0); },0)} مصروف</div></div>
-      <div class="stat"><div class="label">الصافي</div><div class="value ${d.net >= 0 ? 'in' : 'neg'}">${d.net.toLocaleString()} د.إ</div><div class="subv">${d.net >= 0 ? 'فائض' : 'عجز'}</div></div>
-      <div class="stat"><div class="label">عدد الأيام</div><div class="value">${Math.round((new Date(d.to) - new Date(d.from)) / 86400000) + 1}</div><div class="subv">خلال الفترة</div></div>
-    </div>
-
-    <div class="grid2">
-      <div class="card">
-        <h3>💰 الواردات حسب النوع</h3>
-        <table>
-          <thead><tr><th>النوع</th><th>العدد</th><th>المبلغ</th><th>%</th></tr></thead>
-          <tbody>${incRows}</tbody>
-        </table>
-      </div>
-      <div class="card">
-        <h3>🧾 الصادرات حسب الفئة</h3>
-        <table>
-          <thead><tr><th>الفئة</th><th>العدد</th><th>المبلغ</th><th>%</th></tr></thead>
-          <tbody>${expRows}</tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>📅 التوزيع الشهري</h3>
-      <table>
-        <thead><tr><th>الشهر</th><th>الواردات</th><th>الصادرات</th><th>الصافي</th></tr></thead>
-        <tbody>${monthRows}</tbody>
-      </table>
-    </div>
-
-    <div class="card">
-      <h3>📋 التفصيل الكامل</h3>
-      <table>
-        <thead><tr><th>#</th><th>النوع</th><th>التاريخ</th><th>البيان</th><th>الجهة / الفئة</th><th>المبلغ</th></tr></thead>
-        <tbody>${detailRows}</tbody>
-        <tfoot class="tfoot"><tr><td colspan="5" class="text-right">📊 الصافي</td><td class="money ${d.net >= 0 ? 'in' : 'neg'}">${d.net.toLocaleString()} د.إ</td></tr></tfoot>
-      </table>
-    </div>
-
-    <div class="foot">حضانة حديقة الأطفال — تقرير مالي تم إنشاؤه في ${escapeHtml(generatedAt)}</div>
-  </div>
-  <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
-</body>
-</html>`;
-}
-
-function printFinancialReport() {
-  generateFinReport();
-  if (!lastFinReportData) { alert('قم بإنشاء التقرير أولاً'); return; }
-  const printWindow = window.open('', '_blank', 'width=1100,height=850');
-  if (!printWindow) {
-    alert('تعذر فتح نافذة الطباعة. تأكد من السماح بالنوافذ المنبثقة لهذا الموقع.');
-    return;
-  }
-  printWindow.document.open();
-  printWindow.document.write(buildFinancialReportPrintHtml(lastFinReportData));
-  printWindow.document.close();
-}
 
 function renderFinReport() {
   const today = new Date().toISOString().slice(0,10);
@@ -6464,25 +5299,21 @@ function exportFinReport() {
 
 // دمج مصفوفة محلية مع مصفوفة من Firebase بناءً على الـ id
 // يضيف السجلات الجديدة ويحافظ على السجلات الموجودة في كلا الطرفين
-function mergeArrayById(localArr, remoteArr, localTombstones, localDeletedBucket) {
+function mergeArrayById(localArr, remoteArr, localTombstones) {
   if (!Array.isArray(remoteArr)) return Array.isArray(localArr) ? localArr : [];
   if (!Array.isArray(localArr)) return remoteArr;
   const ts = Array.isArray(localTombstones) ? localTombstones : [];
-  // السجلات المحذوفة محلياً (سلة المحذوفات) تُعامَل كـ tombstone افتراضي
-  const deletedIds = new Set((Array.isArray(localDeletedBucket) ? localDeletedBucket : [])
-    .map(function(x){ return x && x.id != null ? normKey(x.id) : null; })
-    .filter(function(v){ return v !== null; }));
   const merged = {};
   // أضف جميع السجلات من Firebase أولاً
   remoteArr.forEach(function(item) {
-    if (item && item.id != null && !hasKey(ts, item.id) && !deletedIds.has(normKey(item.id))) {
-      merged[normKey(item.id)] = item;
+    if (item && item.id != null && !ts.includes(item.id)) {
+      merged[item.id] = item;
     }
   });
   // أضف/اكتب فوق بالسجلات المحلية (أحدث - تغييرات الجلسة الحالية)
   localArr.forEach(function(item) {
-    if (item && item.id != null && !hasKey(ts, item.id) && !deletedIds.has(normKey(item.id))) {
-      merged[normKey(item.id)] = item;
+    if (item && item.id != null && !ts.includes(item.id)) {
+      merged[item.id] = item;
     }
   });
   return Object.values(merged).sort(function(a,b){ return (a.id||0)-(b.id||0); });
@@ -6495,279 +5326,102 @@ function mergeAttLog(localLog, remoteLog) {
   return result;
 }
 
-function mergeClasses(localClasses, remoteClasses, classTombstones) {
-  const ts = Array.isArray(classTombstones) ? classTombstones : [];
-  const merged = Object.assign({}, (remoteClasses && typeof remoteClasses === 'object' && !Array.isArray(remoteClasses)) ? remoteClasses : {});
-  if (localClasses && typeof localClasses === 'object' && !Array.isArray(localClasses)) {
-    Object.keys(localClasses).forEach(function(key){ merged[key] = localClasses[key]; });
-  }
-  ts.forEach(function(key){ if (Object.prototype.hasOwnProperty.call(merged, key)) delete merged[key]; });
-  return merged;
-}
-
-function mergeDeletedClasses(localArr, remoteArr, classTombstones, currentClasses, restoredArr) {
-  const ts = Array.isArray(classTombstones) ? classTombstones : [];
-  const restoredSet = new Set((Array.isArray(restoredArr) ? restoredArr : []).map(function(x){ return normKey(x); }));
-  const current = currentClasses && typeof currentClasses === 'object' ? currentClasses : {};
-  const localKeys = new Set((Array.isArray(localArr) ? localArr : [])
-    .map(function(item){ return item && normKey(item.key); })
-    .filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
-  const map = {};
-  (Array.isArray(remoteArr) ? remoteArr : []).forEach(function(item){ if (item && item.key != null) map[item.key] = item; });
-  (Array.isArray(localArr) ? localArr : []).forEach(function(item){ if (item && item.key != null) map[item.key] = item; });
-  return Object.values(map).filter(function(item){
-    if (!item || item.key == null) return false;
-    const key = normKey(item.key);
-    // إذا الفصل مستعاد محلياً، لا يظهر في سلة المحذوفات
-    if (restoredSet.has(key)) return false;
-    // إذا محذوف محلياً، يظل في السلة
-    if (localKeys.has(key)) return true;
-    if (hasKey(ts, item.key)) return false;
-    if (Object.prototype.hasOwnProperty.call(current, item.key)) return false;
-    return true;
-  });
-}
-
-// دمج tombstones — اتحاد المحذوفات من الطرفين مع احترام المستعادين
+// دمج tombstones — اتحاد المحذوفات من الطرفين
 function mergeTombstones(localTs, remoteTs) {
   const result = {};
-  ['students','payments','expenses','renewals','classes'].forEach(function(type) {
+  ['students','payments','expenses','renewals'].forEach(function(type) {
     const local  = Array.isArray(localTs  && localTs[type])  ? localTs[type]  : [];
     const remote = Array.isArray(remoteTs && remoteTs[type]) ? remoteTs[type] : [];
-    const restored = (restoredKeys && Array.isArray(restoredKeys[type])) ? restoredKeys[type] : [];
-    const combined = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
-    // استبعد أي سجل تم استعادته محلياً من tombstones
-    result[type] = combined.filter(function(id){ return !hasKey(restored, id); });
+    const combined = local.concat(remote.filter(function(id){ return !local.includes(id); }));
+    result[type] = combined;
   });
   return result;
 }
 
 async function pushToFirebase() {
-  if (syncTimeout) {
-    clearTimeout(syncTimeout);
-    syncTimeout = null;
-  }
   if (isSyncing) return;
   isSyncing = true;
   try {
-    cleanupDeletedBuckets();
-    const fullReplace = forceFullReplaceOnNextSync === true;
-
     // ── الخطوة 1: اقرأ البيانات الحالية من Firebase ──────────────────
     let remoteData = null;
-    if (!fullReplace) {
-      try {
-        const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
-        if (fetchRes.ok) remoteData = await fetchRes.json();
-      } catch(_) { /* نتابع بدون بيانات سحابية */ }
-    }
+    try {
+      const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+      if (fetchRes.ok) remoteData = await fetchRes.json();
+    } catch(_) { /* نتابع بدون بيانات سحابية */ }
+
+    // ── حماية من Cache القديم ─────────────────────────────────────────
+    // إذا كانت Firebase عندها بيانات محفوظة أحدث من آخر مزامنة محلية،
+    // نعطي Firebase الأولوية الكاملة ولا نسمح للبيانات القديمة بالكتابة فوقها
+    const localSyncedAt = localStorage.getItem('kp_last_synced_at') || '';
+    const remoteSavedAt = (remoteData && remoteData.savedAt) || '';
+    const firebaseIsNewer = remoteSavedAt && remoteSavedAt > localSyncedAt;
 
     // ── الخطوة 2: دمج البيانات المحلية مع السحابية ───────────────────
-    // الاستراتيجية: دائماً ادمج المحلي مع السحابي بناءً على الـ id
-    // البيانات المحلية تأخذ الأولوية (هي الأحدث - تعديلات الجلسة الحالية)
-
-    // ادمج restoredKeys أولاً (اتحاد محلي + remote)
-    const localRestored = (typeof restoredKeys === 'object' && restoredKeys) ? restoredKeys : {};
-    const remoteRestored = (!fullReplace && remoteData && remoteData.restoredKeys && typeof remoteData.restoredKeys === 'object') ? remoteData.restoredKeys : {};
-    const mergedRestoredKeys = {};
-    ['students','payments','expenses','renewals','classes'].forEach(function(type){
-      const local = Array.isArray(localRestored[type]) ? localRestored[type] : [];
-      const remote = Array.isArray(remoteRestored[type]) ? remoteRestored[type] : [];
-      mergedRestoredKeys[type] = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
-    });
-
     const localTombstones = typeof tombstones !== 'undefined' ? tombstones : {};
-    const remoteTombstones = fullReplace ? {} : ((remoteData && remoteData.tombstones) ? remoteData.tombstones : {});
-    // دمج tombstones مع استبعاد المستعادين (من restoredKeys المدمج)
-    const mergedTombstones = fullReplace
-      ? {
-          students: Array.isArray(localTombstones.students) ? localTombstones.students.slice() : [],
-          payments: Array.isArray(localTombstones.payments) ? localTombstones.payments.slice() : [],
-          expenses: Array.isArray(localTombstones.expenses) ? localTombstones.expenses.slice() : [],
-          renewals: Array.isArray(localTombstones.renewals) ? localTombstones.renewals.slice() : [],
-          classes:  Array.isArray(localTombstones.classes) ? localTombstones.classes.slice() : []
-        }
-      : (function(){
-          const result = {};
-          ['students','payments','expenses','renewals','classes'].forEach(function(type){
-            const local  = Array.isArray(localTombstones[type])  ? localTombstones[type]  : [];
-            const remote = Array.isArray(remoteTombstones[type]) ? remoteTombstones[type] : [];
-            const restored = Array.isArray(mergedRestoredKeys[type]) ? mergedRestoredKeys[type] : [];
-            const combined = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
-            result[type] = combined.filter(function(id){ return !hasKey(restored, id); });
-          });
-          return result;
-        })();
+    const remoteTombstones = (remoteData && remoteData.tombstones) ? remoteData.tombstones : {};
+    const mergedTombstones = mergeTombstones(localTombstones, remoteTombstones);
 
-    // نظّف mergedRestoredKeys: أي id له tombstone حقيقي في remote (ومش في remote.restoredKeys) = حُذف مجدداً
-    if (!fullReplace && remoteData && remoteData.tombstones) {
-      ['students','payments','expenses','renewals','classes'].forEach(function(type){
-        const remoteTs = Array.isArray(remoteData.tombstones[type]) ? remoteData.tombstones[type] : [];
-        const remoteR = Array.isArray(remoteRestored[type]) ? remoteRestored[type] : [];
-        const localR = Array.isArray(localRestored[type]) ? localRestored[type] : [];
-        // id في remote tombstones ومش في remote restoredKeys ومش في local restoredKeys = حُذف نهائياً
-        const reDeleted = remoteTs.filter(function(id){ return !hasKey(remoteR, id) && !hasKey(localR, id); });
-        mergedRestoredKeys[type] = mergedRestoredKeys[type].filter(function(id){ return !hasKey(reDeleted, id); });
-        reDeleted.forEach(function(id){ if (!hasKey(mergedTombstones[type], id)) mergedTombstones[type].push(id); });
-      });
-    }
-
-    // دائماً ادمج المحلي مع السحابي — المحلي يأخذ الأولوية (الأحدث)
+    // إذا Firebase أحدث: خذ Firebase أساساً ولا تكتب المحلي القديم فوقها
     const mergedStudents = mergeArrayById(
-      students,
+      firebaseIsNewer ? [] : students,
       remoteData && remoteData.students,
-      mergedTombstones.students,
-      typeof deletedStudents !== 'undefined' ? deletedStudents : []
+      mergedTombstones.students
     );
+    // للمدفوعات: دائماً ادمج (لأن المستخدم قد يضيف دفعة جديدة)
     const mergedPayments = mergeArrayById(
       payments,
       remoteData && remoteData.payments,
-      mergedTombstones.payments,
-      typeof deletedPayments !== 'undefined' ? deletedPayments : []
+      mergedTombstones.payments
     );
     const mergedExpenses = mergeArrayById(
-      expenses,
+      firebaseIsNewer ? [] : expenses,
       remoteData && remoteData.expenses,
-      mergedTombstones.expenses,
-      typeof deletedExpenses !== 'undefined' ? deletedExpenses : []
+      mergedTombstones.expenses
     );
     const mergedRenewals = mergeArrayById(
       renewals,
       remoteData && remoteData.renewals,
-      mergedTombstones.renewals,
-      typeof deletedRenewals !== 'undefined' ? deletedRenewals : []
+      mergedTombstones.renewals
     );
     const mergedAttLog = mergeAttLog(
       attLog,
       remoteData && remoteData.attLog
-    );
-    const mergedClasses = mergeClasses(
-      CLASSES,
-      remoteData && remoteData.CLASSES,
-      mergedTombstones.classes
     );
 
     // دمج سجلات النماذج (بدون تكرار بناءً على timestamp)
     const localFormRows = JSON.parse(localStorage.getItem('kp_form_rows') || '[]');
     const remoteFormRows = (remoteData && Array.isArray(remoteData.kp_form_rows)) ? remoteData.kp_form_rows : [];
     const formRowsMap = {};
-    function pickPreferredFormRow(a, b) {
-      if (!a) return b;
-      if (!b) return a;
-      const aTime = formRowUpdatedAtValue(a);
-      const bTime = formRowUpdatedAtValue(b);
-      if (aTime !== bTime) return aTime > bTime ? a : b;
-      const aRank = formRowStatusRank(a.status);
-      const bRank = formRowStatusRank(b.status);
-      if (aRank !== bRank) return aRank > bRank ? a : b;
-      return Object.assign({}, a, b);
-    }
-    remoteFormRows.forEach(function(r){ if(r && r.timestamp) formRowsMap[r.timestamp] = pickPreferredFormRow(formRowsMap[r.timestamp], r); });
-    localFormRows.forEach(function(r){ if(r && r.timestamp) formRowsMap[r.timestamp] = pickPreferredFormRow(formRowsMap[r.timestamp], r); });
+    remoteFormRows.forEach(function(r){ if(r && r.timestamp) formRowsMap[r.timestamp] = r; });
+    localFormRows.forEach(function(r){ if(r && r.timestamp) formRowsMap[r.timestamp] = r; });
     const mergedFormRows = Object.values(formRowsMap);
 
-    // دمج سلة المحذوفات — احترم tombstones والمُستعادين
+    // دمج قائمة الطلاب المحذوفين
     const localDeleted = typeof deletedStudents !== 'undefined' ? deletedStudents : [];
     const remoteDeleted = (remoteData && Array.isArray(remoteData.deletedStudents)) ? remoteData.deletedStudents : [];
     const deletedMap = {};
-    // ابدأ بالبيانات البعيدة
     remoteDeleted.forEach(function(s){ if(s && s.id) deletedMap[s.id] = s; });
-    // البيانات المحلية تأخذ الأولوية (تشمل الحذف الجديد أو شطب الاستعادة)
     localDeleted.forEach(function(s){ if(s && s.id) deletedMap[s.id] = s; });
-    // أي عنصر تمت استعادته محلياً (غير موجود في localDeleted لكن موجود في remoteDeleted) يُحذف
-    // أي عنصر tombstone يجب ألا يكون في deletedStudents أيضاً (حذف نهائي)
-    const finalTsStudents = mergedTombstones.students || [];
-    const mergedDeleted = Object.values(deletedMap).filter(function(s){
-      // إذا لم يعد في القائمة المحلية وكان قد استُعيد (ليس في tombstones) فلا نُدرجه
-      const inLocal = localDeleted.some(function(x){ return x && normKey(x.id) === normKey(s.id); });
-      const inTombstone = hasKey(finalTsStudents, s.id);
-      // إذا كان في tombstone (حذف نهائي) لا يظهر في سلة المحذوفات
-      if (inTombstone) return false;
-      // إذا لم يكن في البيانات المحلية وقد جاء فقط من Firebase، تحقق أنه لم يُستعد محلياً
-      // (أي أن students المحلي يحتوي عليه — إذاً قد استُعيد)
-      if (!inLocal) {
-        const restoredLocally = (typeof students !== 'undefined') && students.some(function(x){ return x && normKey(x.id) === normKey(s.id); });
-        if (restoredLocally) return false;
-      }
-      return true;
-    });
-
-    const mergeDeletedByKey = function(localArr, remoteArr, keyField, tombstoneArr, activeArr, restoredArr) {
-      const localDeletedKeys = new Set((Array.isArray(localArr) ? localArr : []).map(function(item){ return item && normKey(item[keyField]); }).filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
-      const restoredSet = new Set((Array.isArray(restoredArr) ? restoredArr : []).map(function(x){ return normKey(x); }));
-      // المفاتيح النشطة فقط التي لم تكن محذوفة محلياً
-      const activeKeys = new Set((Array.isArray(activeArr) ? activeArr : [])
-        .map(function(item){ return item && normKey(item[keyField]); })
-        .filter(function(v){ return v !== undefined && v !== null && v !== '' && !localDeletedKeys.has(v); }));
-      const map = {};
-      (Array.isArray(remoteArr)?remoteArr:[]).forEach(function(item){ if(item && item[keyField] !== undefined) map[normKey(item[keyField])] = item; });
-      (Array.isArray(localArr)?localArr:[]).forEach(function(item){ if(item && item[keyField] !== undefined) map[normKey(item[keyField])] = item; });
-      return Object.values(map).filter(function(item){
-        if (!item || item[keyField] === undefined || item[keyField] === null) return false;
-        const key = normKey(item[keyField]);
-        // إذا السجل مستعاد محلياً، لا يظهر في سلة المحذوفات أبداً
-        if (restoredSet.has(key)) return false;
-        // إذا السجل محذوف محلياً، يظل في سلة المحذوفات حتى لو كان في activeArr (عودة خاطئة من remote)
-        if (localDeletedKeys.has(key)) return true;
-        if (activeKeys.has(key)) return false;
-        if (hasKey(tombstoneArr, item[keyField])) return false;
-        return true;
-      });
-    };
-    const mergedDeletedPayments = mergeDeletedByKey(typeof deletedPayments !== 'undefined' ? deletedPayments : [], remoteData && remoteData.deletedPayments, 'id', mergedTombstones.payments, mergedPayments, mergedRestoredKeys.payments);
-    const mergedDeletedExpenses = mergeDeletedByKey(typeof deletedExpenses !== 'undefined' ? deletedExpenses : [], remoteData && remoteData.deletedExpenses, 'id', mergedTombstones.expenses, mergedExpenses, mergedRestoredKeys.expenses);
-    const mergedDeletedRenewals = mergeDeletedByKey(typeof deletedRenewals !== 'undefined' ? deletedRenewals : [], remoteData && remoteData.deletedRenewals, 'id', mergedTombstones.renewals, mergedRenewals, mergedRestoredKeys.renewals);
-    const mergedDeletedClasses = mergeDeletedClasses(
-      typeof deletedClasses !== 'undefined' ? deletedClasses : [],
-      remoteData && remoteData.deletedClasses,
-      mergedTombstones.classes,
-      mergedClasses,
-      mergedRestoredKeys.classes
-    );
+    const mergedDeleted = Object.values(deletedMap);
 
     // حدّث المتغيرات المحلية بالبيانات المدمجة
-    // حماية إضافية: شِل من المصفوفات النشطة أي سجل موجود في سلة المحذوفات المدمجة
-    const finalDelStudentIds = new Set(mergedDeleted.map(function(x){ return x && x.id != null ? normKey(x.id) : null; }).filter(Boolean));
-    const finalDelPayIds = new Set(mergedDeletedPayments.map(function(x){ return x && x.id != null ? normKey(x.id) : null; }).filter(Boolean));
-    const finalDelExpIds = new Set(mergedDeletedExpenses.map(function(x){ return x && x.id != null ? normKey(x.id) : null; }).filter(Boolean));
-    const finalDelRenIds = new Set(mergedDeletedRenewals.map(function(x){ return x && x.id != null ? normKey(x.id) : null; }).filter(Boolean));
-    const finalDelClsKeys = new Set(mergedDeletedClasses.map(function(x){ return x && x.key != null ? normKey(x.key) : null; }).filter(Boolean));
-
-    const filteredStudents = mergedStudents.filter(function(x){ return !(x && finalDelStudentIds.has(normKey(x.id))); });
-    const filteredPayments = mergedPayments.filter(function(x){ return !(x && finalDelPayIds.has(normKey(x.id))); });
-    const filteredExpenses = mergedExpenses.filter(function(x){ return !(x && finalDelExpIds.has(normKey(x.id))); });
-    const filteredRenewals = mergedRenewals.filter(function(x){ return !(x && finalDelRenIds.has(normKey(x.id))); });
-
-    students = sanitizeEntityArray(filteredStudents);
-    payments = sanitizeEntityArray(filteredPayments);
-    expenses = sanitizeEntityArray(filteredExpenses);
-    renewals = sanitizeEntityArray(filteredRenewals);
-    Object.keys(CLASSES || {}).forEach(function(k){ if (!Object.prototype.hasOwnProperty.call(mergedClasses, k) || finalDelClsKeys.has(normKey(k))) delete CLASSES[k]; });
-    Object.keys(mergedClasses || {}).forEach(function(k){ if (!finalDelClsKeys.has(normKey(k))) CLASSES[k] = mergedClasses[k]; });
-    CLASSES_DATA = CLASSES;
+    students = sanitizeEntityArray(mergedStudents);
+    payments = sanitizeEntityArray(mergedPayments);
+    expenses = sanitizeEntityArray(mergedExpenses);
+    renewals = sanitizeEntityArray(mergedRenewals);
     Object.keys(mergedAttLog).forEach(function(k){ attLog[k] = mergedAttLog[k]; });
     if (typeof deletedStudents !== 'undefined') deletedStudents = mergedDeleted;
-    if (typeof deletedPayments !== 'undefined') deletedPayments = mergedDeletedPayments;
-    if (typeof deletedExpenses !== 'undefined') deletedExpenses = mergedDeletedExpenses;
-    if (typeof deletedRenewals !== 'undefined') deletedRenewals = mergedDeletedRenewals;
-    if (typeof deletedClasses !== 'undefined') deletedClasses = mergedDeletedClasses;
     if (typeof tombstones !== 'undefined') {
       tombstones.students = mergedTombstones.students;
       tombstones.payments = mergedTombstones.payments;
       tombstones.expenses = mergedTombstones.expenses;
       tombstones.renewals = mergedTombstones.renewals;
-      tombstones.classes = mergedTombstones.classes;
       localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
     }
-    localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
-    localStorage.setItem('kp_deleted_classes', JSON.stringify(mergedDeletedClasses));
     resetPaymentMatchCache();
     refreshNextIds();
 
     // ── الخطوة 3: اكتب البيانات المدمجة إلى Firebase ────────────────
-    restoredKeys = mergedRestoredKeys;
-    localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-
     const cleanSettings = Object.assign({}, nurserySettings);
     delete cleanSettings.logoDataUrl;
     const mergedData = {
@@ -6783,12 +5437,7 @@ async function pushToFirebase() {
       kp_users:        JSON.parse(localStorage.getItem('kp_users') || '[]'),
       kp_form_rows:    mergedFormRows,
       deletedStudents: mergedDeleted,
-      deletedPayments: mergedDeletedPayments,
-      deletedExpenses: mergedDeletedExpenses,
-      deletedRenewals: mergedDeletedRenewals,
-      deletedClasses:  mergedDeletedClasses,
       tombstones:      mergedTombstones,
-      restoredKeys:    mergedRestoredKeys,
     };
 
     const res = await fetch(FB_URL + '.json', {
@@ -6801,10 +5450,7 @@ async function pushToFirebase() {
       try { await saveLogoToFirebaseSilent(); } catch(_) {}
       lastSavedAt = mergedData.savedAt;
       localStorage.setItem('kp_last_synced_at', mergedData.savedAt);
-      persistCoreDataToLocalStorage();
-      forceFullReplaceOnNextSync = false;
-      hasUnsavedChanges = false;
-      showSyncBadge(fullReplace ? '✅ تم استبدال البيانات بالكامل' : '✅ محفوظ');
+      showSyncBadge('✅ محفوظ');
     } else {
       const errText = await res.text().catch(()=>'');
       showSyncBadge('⚠️ خطأ ' + res.status + ': ' + errText.slice(0,50));
@@ -6815,11 +5461,6 @@ async function pushToFirebase() {
     console.error('pushToFirebase error:', e);
   } finally {
     isSyncing = false;
-    // إذا جاء طلب حفظ أثناء الحفظ الحالي، نفّذه الآن
-    if (pendingSync) {
-      pendingSync = false;
-      setTimeout(pushToFirebase, 300);
-    }
   }
 }
 
@@ -6830,157 +5471,38 @@ async function loadFromFirebase() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
-
-    // دمج restoredKeys أولاً من Firebase مع المحلي (الاتحاد)
-    if (data.restoredKeys && typeof data.restoredKeys === 'object') {
-      ['students','payments','expenses','renewals','classes'].forEach(function(type){
-        const remote = Array.isArray(data.restoredKeys[type]) ? data.restoredKeys[type] : [];
-        const local = Array.isArray(restoredKeys[type]) ? restoredKeys[type] : [];
-        restoredKeys[type] = local.concat(remote.filter(function(id){ return !hasKey(local, id); }));
-      });
-      localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-    }
-
-    // دمج tombstones — مع احترام restoredKeys (سواء المحلي أو remote)
-    if (data.tombstones && typeof tombstones !== 'undefined') {
-      ['students','payments','expenses','renewals','classes'].forEach(function(type){
-        const remote = (data.tombstones[type] && Array.isArray(data.tombstones[type])) ? data.tombstones[type] : [];
-        const local = Array.isArray(tombstones[type]) ? tombstones[type] : [];
-        const restored = Array.isArray(restoredKeys[type]) ? restoredKeys[type] : [];
-        // استبعد السجلات المستعادة من tombstones
-        const combined = local.concat(remote.filter(function(id){ return !local.includes(id); }));
-        tombstones[type] = combined.filter(function(id){ return !hasKey(restored, id); });
-      });
-      localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
-    }
-
-    // الآن: نظّف restoredKeys من أي id صار له tombstone حقيقي (حُذف مجدداً بعد الاستعادة)
-    // لكن هذا يتم فقط لو الـ remote tombstones فيها الـ id، وremote restoredKeys ما فيها
-    if (data.tombstones && data.restoredKeys) {
-      ['students','payments','expenses','renewals','classes'].forEach(function(type){
-        const remoteTs = Array.isArray(data.tombstones[type]) ? data.tombstones[type] : [];
-        const remoteR = Array.isArray(data.restoredKeys[type]) ? data.restoredKeys[type] : [];
-        // أي id في remote tombstones ومش في remote restoredKeys = حُذف مجدداً
-        const reDeleted = remoteTs.filter(function(id){ return !hasKey(remoteR, id); });
-        if (reDeleted.length && Array.isArray(restoredKeys[type])) {
-          restoredKeys[type] = restoredKeys[type].filter(function(id){ return !hasKey(reDeleted, id); });
-        }
-        // وأضف الـ reDeleted للـ tombstones المحلية
-        reDeleted.forEach(function(id){
-          if (!hasKey(tombstones[type], id)) tombstones[type].push(id);
-        });
-      });
-      localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-      localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
-    }
-
-    // قبل دمج البيانات النشطة، شطب السجلات المستعادة من deleted buckets المحلية
-    // لكي mergeArrayById لا يرفض السجل المستعاد
-    const _preRestoredStudents = new Set((restoredKeys.students||[]).map(function(x){return normKey(x);}));
-    const _preRestoredPayments = new Set((restoredKeys.payments||[]).map(function(x){return normKey(x);}));
-    const _preRestoredExpenses = new Set((restoredKeys.expenses||[]).map(function(x){return normKey(x);}));
-    const _preRestoredRenewals = new Set((restoredKeys.renewals||[]).map(function(x){return normKey(x);}));
-    const _preRestoredClasses = new Set((restoredKeys.classes||[]).map(function(x){return normKey(x);}));
-    if (deletedStudents.length) deletedStudents = deletedStudents.filter(function(s){ return !(s && _preRestoredStudents.has(normKey(s.id))); });
-    if (deletedPayments.length) deletedPayments = deletedPayments.filter(function(s){ return !(s && _preRestoredPayments.has(normKey(s.id))); });
-    if (deletedExpenses.length) deletedExpenses = deletedExpenses.filter(function(s){ return !(s && _preRestoredExpenses.has(normKey(s.id))); });
-    if (deletedRenewals.length) deletedRenewals = deletedRenewals.filter(function(s){ return !(s && _preRestoredRenewals.has(normKey(s.id))); });
-    if (deletedClasses.length) deletedClasses = deletedClasses.filter(function(c){ return !(c && _preRestoredClasses.has(normKey(c.key))); });
-
-    // دمج البيانات بدل الاستبدال — يحمي التعديلات المحلية غير المحفوظة
-    if (Array.isArray(data.students)) {
-      students = mergeArrayById(students, data.students, tombstones.students || [], deletedStudents);
-      students = sanitizeEntityArray(students);
-    }
+    const localStudentsCount = Array.isArray(students) ? students.length : 0;
+    const remoteStudentsCount = Array.isArray(data.students) ? data.students.length : 0;
+    const localPaymentsCount = Array.isArray(payments) ? payments.length : 0;
+    const remotePaymentsCount = Array.isArray(data.payments) ? data.payments.length : 0;
+    const shouldProtectLocalStudents = localStudentsCount > 0 && remoteStudentsCount === 0;
+    const shouldProtectLocalPayments = localPaymentsCount > 0 && remotePaymentsCount === 0;
+    // حماية: لا تستبدل البيانات المحلية ببيانات سحابية فارغة
+    if (Array.isArray(data.students) && !shouldProtectLocalStudents) students = sanitizeEntityArray(data.students);
     resetPaymentMatchCache();
-    if (Array.isArray(data.payments)) {
-      payments = mergeArrayById(payments, data.payments, tombstones.payments || [], deletedPayments);
-      payments = sanitizeEntityArray(payments);
-    }
-    if (Array.isArray(data.expenses)) {
-      expenses = mergeArrayById(expenses, data.expenses, tombstones.expenses || [], deletedExpenses);
-      expenses = sanitizeEntityArray(expenses);
-    }
-    if (Array.isArray(data.renewals)) {
-      renewals = mergeArrayById(renewals, data.renewals, tombstones.renewals || [], deletedRenewals);
-      renewals = sanitizeEntityArray(renewals);
-    }
+    if (Array.isArray(data.payments) && !shouldProtectLocalPayments) payments = sanitizeEntityArray(data.payments);
+    if (Array.isArray(data.expenses)) expenses = sanitizeEntityArray(data.expenses);
+    if (Array.isArray(data.renewals)) renewals = sanitizeEntityArray(data.renewals);
     sanitizeCoreData();
     if (data.attLog) { Object.keys(data.attLog).forEach(function(k){ attLog[k] = data.attLog[k]; }); }
-
-    // دمج سلة المحذوفات مع احترام tombstones
-    const allTs = tombstones;
-    const restoredStudentsSet = _preRestoredStudents;
-    const restoredPaymentsSet = _preRestoredPayments;
-    const restoredExpensesSet = _preRestoredExpenses;
-    const restoredRenewalsSet = _preRestoredRenewals;
-    const restoredClassesSet = _preRestoredClasses;
     if (data.deletedStudents && typeof deletedStudents !== 'undefined') {
-      const remoteDs = data.deletedStudents.filter(function(s){
-        if (!s || !s.id) return false;
-        if (restoredStudentsSet.has(normKey(s.id))) return false;
-        if (students.some(function(x){ return x.id === s.id; })) return false;
-        return true;
-      });
-      const localMap = {};
-      deletedStudents.forEach(function(s){ if(s && s.id) localMap[s.id] = s; });
-      remoteDs.forEach(function(s){ if(s && s.id && !localMap[s.id]) localMap[s.id] = s; });
-      deletedStudents = Object.values(localMap);
+      deletedStudents = data.deletedStudents;
       localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
     }
-    if (Array.isArray(data.deletedPayments) && typeof deletedPayments !== 'undefined') {
-      const remoteMap = {};
-      data.deletedPayments.filter(function(x){
-        if (!x || x.id == null) return false;
-        if (restoredPaymentsSet.has(normKey(x.id))) return false;
-        if (payments.some(function(p){ return p && normKey(p.id) === normKey(x.id); })) return false;
-        return true;
-      }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
-      deletedPayments.forEach(function(x){
-        if (x && x.id != null && !payments.some(function(p){ return p && normKey(p.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
+    if (data.tombstones && typeof tombstones !== 'undefined') {
+      // Firebase هو المرجع - استبدل tombstones بالكامل
+      // لأن restoreStudent على أي جهاز يحذف من Firebase
+      ['students','payments','expenses','renewals'].forEach(function(type){
+        if (data.tombstones[type] && Array.isArray(data.tombstones[type])) {
+          tombstones[type] = data.tombstones[type].slice();
+        } else {
+          tombstones[type] = [];
+        }
       });
-      deletedPayments = Object.values(remoteMap);
-      localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
+      localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+      applyTombstones();
     }
-    if (Array.isArray(data.deletedExpenses) && typeof deletedExpenses !== 'undefined') {
-      const remoteMap = {};
-      data.deletedExpenses.filter(function(x){
-        if (!x || x.id == null) return false;
-        if (restoredExpensesSet.has(normKey(x.id))) return false;
-        if (expenses.some(function(e){ return e && normKey(e.id) === normKey(x.id); })) return false;
-        return true;
-      }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
-      deletedExpenses.forEach(function(x){
-        if (x && x.id != null && !expenses.some(function(e){ return e && normKey(e.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
-      });
-      deletedExpenses = Object.values(remoteMap);
-      localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
-    }
-    if (Array.isArray(data.deletedRenewals) && typeof deletedRenewals !== 'undefined') {
-      const remoteMap = {};
-      data.deletedRenewals.filter(function(x){
-        if (!x || x.id == null) return false;
-        if (restoredRenewalsSet.has(normKey(x.id))) return false;
-        if (renewals.some(function(r){ return r && normKey(r.id) === normKey(x.id); })) return false;
-        return true;
-      }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
-      deletedRenewals.forEach(function(x){
-        if (x && x.id != null && !renewals.some(function(r){ return r && normKey(r.id) === normKey(x.id); })) remoteMap[normKey(x.id)] = x;
-      });
-      deletedRenewals = Object.values(remoteMap);
-      localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
-    }
-    const mergedRemoteClasses = mergeClasses(CLASSES, data && data.CLASSES, tombstones.classes || []);
-    Object.keys(CLASSES || {}).forEach(function(k){ if (!Object.prototype.hasOwnProperty.call(mergedRemoteClasses, k)) delete CLASSES[k]; });
-    Object.assign(CLASSES, mergedRemoteClasses);
-    CLASSES_DATA = CLASSES;
-
-    if (Array.isArray(data.deletedClasses) && typeof deletedClasses !== 'undefined') {
-      deletedClasses = mergeDeletedClasses(deletedClasses, data.deletedClasses, tombstones.classes || [], CLASSES, restoredKeys.classes);
-      localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
-    }
-    applyTombstones();
-    cleanupDeletedBuckets();
+    if (data.CLASSES)         replaceClassesData(data.CLASSES);
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
     if (data.kp_users && data.kp_users.length) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
     if (Array.isArray(data.kp_form_rows)) {
@@ -6993,31 +5515,45 @@ async function loadFromFirebase() {
       localStorage.setItem('kp_logo', logoDataUrl);
     }
     localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
-    persistCoreDataToLocalStorage();
-    populateClassDropdowns();
-    if (typeof renderAdminClasses === 'function') renderAdminClasses();
     updateLogoDisplay();
     refreshNextIds();
     lastSavedAt = data.savedAt || '';
     localStorage.setItem('kp_last_synced_at', lastSavedAt);
     renderDash();
-    showSyncBadge('✅ تم التحميل');
+    if (shouldProtectLocalStudents || shouldProtectLocalPayments) {
+      const warnings = [];
+      if (shouldProtectLocalStudents) warnings.push('الطلاب المحليين محفوظين');
+      if (shouldProtectLocalPayments) warnings.push('السندات المحلية محفوظة');
+      showSyncBadge('🛡️ ' + warnings.join(' + '));
+    } else {
+      showSyncBadge('✅ تم التحميل');
+    }
   } catch(e) {
     const msg = (e && e.message) ? e.message : 'unknown';
-    showSyncBadge('📴 بدون إنترنت — بيانات محلية');
+    if (msg.indexOf('null') >= 0 || msg.indexOf('undefined') >= 0) {
+      showSyncBadge('⚠️ تم إصلاح بيانات غير سليمة محلياً');
+    } else {
+      showSyncBadge('📴 بدون إنترنت — بيانات محلية');
+    }
     console.log('Firebase load failed:', msg);
     sanitizeCoreData();
     try { refreshNextIds(); renderDash(); if (typeof renderStudents==='function') renderStudents(); if (typeof renderPayments==='function') renderPayments(); if (typeof renderExpenses==='function') renderExpenses(); if (typeof renderReceipts==='function') renderReceipts(); if (typeof renderAtt==='function') renderAtt(); } catch(_) {}
   }
 }
 
-let syncPollCounter = 0;
-
 async function manualRefreshFromFirebase() {
   showSyncBadge('⏳ جاري التحديث...');
   try {
     await loadFromFirebase();
-    refreshAllViewsAfterSync();
+    renderDash();
+    if (typeof renderStudents === 'function') renderStudents();
+    if (typeof renderPayments === 'function') renderPayments();
+    if (typeof renderExpenses === 'function') renderExpenses();
+    if (typeof renderReceipts === 'function') renderReceipts();
+    if (typeof renderRenewals === 'function') renderRenewals();
+    if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
+    if (typeof renderAtt === 'function') renderAtt();
+    if (typeof updateNotifications === 'function') updateNotifications();
     showSyncBadge('🔄 تم جلب أحدث البيانات من Firebase');
   } catch (e) {
     showSyncBadge('⚠️ تعذر التحديث من Firebase');
@@ -7026,27 +5562,23 @@ async function manualRefreshFromFirebase() {
 }
 
 async function checkForUpdates() {
-  if (isSyncing || hasUnsavedChanges || syncTimeout) return;
+  if (isSyncing) return;
   try {
-    syncPollCounter++;
-    const forceFullRefresh = (syncPollCounter % 30 === 0);
-    if (forceFullRefresh) {
-      await loadFromFirebase();
-      refreshAllViewsAfterSync();
-      if (typeof _setStreamStatus === 'function') _setStreamStatus('connected');
-      return;
-    }
     const res = await fetch(FB_URL + '/savedAt.json', { cache: 'no-store' });
     const time = await res.json();
-    if (typeof _setStreamStatus === 'function') _setStreamStatus('connected');
     if (time && time !== lastSavedAt) {
       await loadFromFirebase();
-      refreshAllViewsAfterSync();
-      showSyncBadge('🔄 تحديث مزامنة');
+      renderDash();
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderPayments === 'function') renderPayments();
+      if (typeof renderExpenses === 'function') renderExpenses();
+      if (typeof renderReceipts === 'function') renderReceipts();
+      if (typeof renderRenewals === 'function') renderRenewals();
+      if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
+      if (typeof updateNotifications === 'function') updateNotifications();
+      showSyncBadge('🔄 تم تحديث البيانات تلقائياً');
     }
-  } catch(e) {
-    if (typeof _setStreamStatus === 'function') _setStreamStatus('disconnected');
-  }
+  } catch(e) { /* offline */ }
 }
 
 function showSyncBadge(msg) {
@@ -7212,12 +5744,7 @@ async function syncFromGoogleSheets() {
         var prev = syncedFormRows[existingIndex] || {};
         syncedFormRows[existingIndex] = Object.assign({}, prev, mappedRow, {
           status: prev.status || mappedRow.status,
-          cls: prev.cls || mappedRow.cls,
-          rowUpdatedAt: prev.rowUpdatedAt || prev.decisionAt || mappedRow.timestamp,
-          decisionAt: prev.decisionAt || '',
-          approvedStudentId: prev.approvedStudentId || null,
-          approvedAction: prev.approvedAction || '',
-          undoData: prev.undoData || null
+          cls: prev.cls || mappedRow.cls
         });
       } else {
         syncedFormRows.push(mappedRow);
@@ -7245,93 +5772,46 @@ function driveImgUrl(url) {
   return m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w400' : url;
 }
 
-function formRowStatusRank(status) {
-  return status === 'approved' ? 3 : status === 'rejected' ? 2 : 1;
-}
-
-function formRowUpdatedAtValue(row) {
-  return Date.parse((row && (row.rowUpdatedAt || row.decisionAt || row.approvedAt || row.timestamp)) || '') || 0;
-}
-
-function normalizeArabicText(s) {
-  return String(s || '')
+function normalizeFormMatchText(v){
+  return String(v || '')
     .toLowerCase()
-    .replace(/[ً-ٰٟ]/g, '')
-    .replace(/[أإآٱ]/g, 'ا')
-    .replace(/[ة]/g, 'ه')
-    .replace(/[ى]/g, 'ي')
-    .replace(/[^؀-ۿa-z0-9]+/gi, ' ')
+    .replace(/[\u064B-\u0652\u0670]/g, '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-function normalizeDigitsOnly(s) {
-  return String(s || '').replace(/\D+/g, '');
+function normalizeFormMatchPhone(v){
+  return String(v || '').replace(/\D+/g, '');
 }
 
-function normalizeDateOnly(s) {
-  return String(s || '').trim().slice(0, 10);
+function isStudentValueEmpty(v){
+  return v == null || String(v).trim() === '';
 }
 
-function escapeHtml(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+function escapeTsForInline(ts){
+  return String(ts || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-function buildStudentFromFormRow(r, studentIdOverride) {
+function buildStudentFromFormRow(r) {
   return {
-    id: studentIdOverride || nextStuId++,
-    name: r.name,
-    dob: r.dob,
-    gen: r.gen,
-    nat: r.nat,
-    cls: r.cls || Object.keys(CLASSES)[0],
-    bpl: '',
-    dad: r.dadFull,
-    job: r.dadJob,
-    dph: r.dadMob,
-    mom: r.momFull,
-    mph: r.momMob,
-    addr: r.addr,
+    id: nextStuId++, name: r.name, dob: r.dob, gen: r.gen, nat: r.nat,
+    cls: r.cls || Object.keys(CLASSES)[0], bpl: '',
+    dad: r.dadFull, job: r.dadJob, dph: r.dadMob,
+    mom: r.momFull, mph: r.momMob, addr: r.addr,
     note: [r.notes, r.allergyNote ? '⚠️ حساسية: ' + r.allergyNote : ''].filter(Boolean).join(' | '),
-    familyName: r.familyName,
-    firstName: r.firstName,
-    emiratesId: r.emiratesId,
-    passport: r.passport,
-    religion: r.religion,
-    motherTongue: r.motherTongue,
-    otherLanguages: r.otherLanguages,
-    dadNat: r.dadNat,
-    dadEmail: r.dadEmail,
-    dadHome: r.dadHome,
-    dadWork: r.dadWork,
-    dadMotherTongue: r.dadMotherTongue,
-    dadOtherLanguages: r.dadOtherLanguages,
-    momNat: r.momNat,
-    momJob: r.momJob,
-    momEmail: r.momEmail,
-    momHome: r.momHome,
-    momWork: r.momWork,
-    momMotherTongue: r.momMotherTongue,
-    momOtherLanguages: r.momOtherLanguages,
-    emergName: r.emergName,
-    emergRel: r.emergRel,
-    emergMob: r.emergMob,
-    allergy: r.allergy,
-    allergyNote: r.allergyNote,
-    allergyType: r.allergyType,
+    familyName: r.familyName, firstName: r.firstName,
+    emiratesId: r.emiratesId, passport: r.passport,
+    religion: r.religion, motherTongue: r.motherTongue, otherLanguages: r.otherLanguages,
+    dadNat: r.dadNat, dadEmail: r.dadEmail, dadHome: r.dadHome, dadWork: r.dadWork, dadMotherTongue: r.dadMotherTongue, dadOtherLanguages: r.dadOtherLanguages,
+    momNat: r.momNat, momJob: r.momJob, momEmail: r.momEmail, momHome: r.momHome, momWork: r.momWork, momMotherTongue: r.momMotherTongue, momOtherLanguages: r.momOtherLanguages,
+    emergName: r.emergName, emergRel: r.emergRel, emergMob: r.emergMob,
+    allergy: r.allergy, allergyNote: r.allergyNote, allergyType: r.allergyType,
     allergyMedicationFood: r.allergyMedicationFood,
-    photoConsent: r.photoConsent,
-    socialConsent: r.socialConsent,
-    nurseConsent: r.nurseConsent,
-    contagious: r.contagious,
-    surgical: r.surgical,
-    diseaseDetails: r.diseaseDetails,
-    accidentDetails: r.accidentDetails,
+    photoConsent: r.photoConsent, socialConsent: r.socialConsent, nurseConsent: r.nurseConsent,
+    contagious: r.contagious, surgical: r.surgical, diseaseDetails: r.diseaseDetails, accidentDetails: r.accidentDetails,
     guardianUndertake: r.guardianUndertake,
     imgChildPhoto: r.imgChildPhoto,
     imgEmiratesId: r.imgEmiratesId,
@@ -7346,86 +5826,137 @@ function buildStudentFromFormRow(r, studentIdOverride) {
   };
 }
 
-function mergeStudentWithFormData(existingStudent, r) {
-  var incoming = buildStudentFromFormRow(r, existingStudent.id);
-  var merged = Object.assign({}, existingStudent);
-  Object.keys(incoming).forEach(function(key) {
-    var val = incoming[key];
-    if (val === undefined || val === null) return;
-    if (typeof val === 'string') {
-      if (val.trim() !== '') merged[key] = val;
-      return;
-    }
-    merged[key] = val;
-  });
-  merged.id = existingStudent.id;
-  merged.mergedFromFormAt = new Date().toISOString();
-  merged.formTimestamp = r.timestamp;
-  return merged;
-}
+function getFormStudentMatchCandidates(r) {
+  var childName = normalizeFormMatchText(r.name);
+  var dadName = normalizeFormMatchText(r.dadFull);
+  var momName = normalizeFormMatchText(r.momFull);
+  var emiratesId = String(r.emiratesId || '').trim();
+  var passport = String(r.passport || '').trim();
+  var dadMob = normalizeFormMatchPhone(r.dadMob);
+  var momMob = normalizeFormMatchPhone(r.momMob);
 
-function findPotentialStudentMatches(r) {
-  var formName = normalizeArabicText(r.name);
-  var formDob = normalizeDateOnly(r.dob);
-  var formId = normalizeDigitsOnly(r.emiratesId);
-  var formPass = normalizeDigitsOnly(r.passport);
-  var formDad = normalizeArabicText(r.dadFull);
-  var formMom = normalizeArabicText(r.momFull);
-  var formDadMob = normalizeDigitsOnly(r.dadMob);
-  var formMomMob = normalizeDigitsOnly(r.momMob);
-
-  return students.map(function(s) {
+  return students.map(function(s){
     var score = 0;
     var reasons = [];
-    var studentId = normalizeDigitsOnly(getStudentIdentity ? getStudentIdentity(s) : (s.emiratesId || s.identity || ''));
-    var studentPass = normalizeDigitsOnly(s.passport);
-    var studentName = normalizeArabicText(s.name);
-    var studentDob = normalizeDateOnly(s.dob);
-    var studentDad = normalizeArabicText(s.dad);
-    var studentMom = normalizeArabicText(s.mom);
-    var studentDadMob = normalizeDigitsOnly(s.dph);
-    var studentMomMob = normalizeDigitsOnly(s.mph);
+    var sName = normalizeFormMatchText(s.name);
+    var sDad = normalizeFormMatchText(s.dad);
+    var sMom = normalizeFormMatchText(s.mom);
+    var sEmirates = String(s.emiratesId || s.idNo || s.identityNo || s.nationalId || '').trim();
+    var sPassport = String(s.passport || '').trim();
+    var sDadMob = normalizeFormMatchPhone(s.dph || s.dadMob || s.fatherPhone);
+    var sMomMob = normalizeFormMatchPhone(s.mph || s.momMob || s.motherPhone);
 
-    if (formId && studentId && formId === studentId) { score += 100; reasons.push('رقم الهوية مطابق'); }
-    if (formPass && studentPass && formPass === studentPass) { score += 70; reasons.push('رقم الجواز مطابق'); }
-    if (formName && studentName && formName === studentName) { score += 45; reasons.push('الاسم مطابق'); }
-    if (formDob && studentDob && formDob === studentDob) { score += 25; reasons.push('تاريخ الميلاد مطابق'); }
-    if (formDad && studentDad && formDad === studentDad) { score += 20; reasons.push('اسم الأب مطابق'); }
-    if (formMom && studentMom && formMom === studentMom) { score += 20; reasons.push('اسم الأم مطابق'); }
-    if (formDadMob && studentDadMob && formDadMob === studentDadMob) { score += 20; reasons.push('هاتف الأب مطابق'); }
-    if (formMomMob && studentMomMob && formMomMob === studentMomMob) { score += 20; reasons.push('هاتف الأم مطابق'); }
+    if (emiratesId && sEmirates && emiratesId === sEmirates) { score += 140; reasons.push('تطابق رقم الهوية'); }
+    if (passport && sPassport && passport === sPassport) { score += 100; reasons.push('تطابق رقم الجواز'); }
+    if (childName && sName && childName === sName) { score += 40; reasons.push('تطابق اسم الطالب'); }
+    if (dadMob && sDadMob && dadMob === sDadMob) { score += 45; reasons.push('تطابق موبايل الأب'); }
+    if (momMob && sMomMob && momMob === sMomMob) { score += 45; reasons.push('تطابق موبايل الأم'); }
+    if (dadName && sDad && dadName === sDad) { score += 25; reasons.push('تطابق اسم الأب'); }
+    if (momName && sMom && momName === sMom) { score += 25; reasons.push('تطابق اسم الأم'); }
+    if (childName && sName && childName === sName && dadMob && sDadMob && dadMob === sDadMob) score += 60;
+    if (childName && sName && childName === sName && momMob && sMomMob && momMob === sMomMob) score += 60;
+    if (childName && sName && childName === sName && dadName && sDad && dadName === sDad) score += 30;
+    if (childName && sName && childName === sName && momName && sMom && momName === sMom) score += 30;
 
     return { student: s, score: score, reasons: reasons };
-  }).filter(function(x) {
-    return x.score >= 45 || x.reasons.some(function(reason){ return reason.indexOf('الهوية') >= 0 || reason.indexOf('الجواز') >= 0; });
-  }).sort(function(a,b){ return b.score - a.score; });
+  }).filter(function(x){ return x.score >= 70; }).sort(function(a,b){ return b.score - a.score; });
 }
 
-function persistFormRowsAndSync() {
+function mergeMissingStudentFields(target, source) {
+  var filled = [];
+  var fieldMap = {
+    name:'name', dob:'dob', gen:'gen', nat:'nat', dadFull:'dad', dadJob:'job', dadMob:'dph', momFull:'mom', momMob:'mph', addr:'addr',
+    familyName:'familyName', firstName:'firstName', emiratesId:'emiratesId', passport:'passport', religion:'religion', motherTongue:'motherTongue',
+    otherLanguages:'otherLanguages', dadNat:'dadNat', dadEmail:'dadEmail', dadHome:'dadHome', dadWork:'dadWork', dadMotherTongue:'dadMotherTongue',
+    dadOtherLanguages:'dadOtherLanguages', momNat:'momNat', momJob:'momJob', momEmail:'momEmail', momHome:'momHome', momWork:'momWork',
+    momMotherTongue:'momMotherTongue', momOtherLanguages:'momOtherLanguages', emergName:'emergName', emergRel:'emergRel', emergMob:'emergMob',
+    allergy:'allergy', allergyNote:'allergyNote', allergyType:'allergyType', allergyMedicationFood:'allergyMedicationFood', photoConsent:'photoConsent',
+    socialConsent:'socialConsent', nurseConsent:'nurseConsent', contagious:'contagious', surgical:'surgical', diseaseDetails:'diseaseDetails',
+    accidentDetails:'accidentDetails', guardianUndertake:'guardianUndertake', imgChildPhoto:'imgChildPhoto', imgEmiratesId:'imgEmiratesId',
+    imgVaccination:'imgVaccination', imgPassport:'imgPassport', imgResidency:'imgResidency', imgGuardianId:'imgGuardianId',
+    imgGuardianPass:'imgGuardianPass', imgBirthCert:'imgBirthCert'
+  };
+
+  Object.keys(fieldMap).forEach(function(srcKey){
+    var dstKey = fieldMap[srcKey];
+    if (isStudentValueEmpty(target[dstKey]) && !isStudentValueEmpty(source[srcKey])) {
+      target[dstKey] = source[srcKey];
+      filled.push(dstKey);
+    }
+  });
+
+  var extraNote = [source.notes, source.allergyNote ? '⚠️ حساسية: ' + source.allergyNote : ''].filter(Boolean).join(' | ');
+  if (extraNote && isStudentValueEmpty(target.note)) {
+    target.note = extraNote;
+    filled.push('note');
+  }
+  target.formTimestamp = source.timestamp;
+  target.lastFormLinkedAt = new Date().toISOString();
+  return filled;
+}
+
+function chooseStudentForFormLink(r, matches) {
+  if (!matches || !matches.length) return null;
+  if (matches.length === 1) {
+    var only = matches[0];
+    var msg = 'تم العثور على تطابق محتمل مع ملف الطالب #' + only.student.id + ' — ' + (only.student.name || 'بدون اسم') + '\n' +
+      'الأسباب: ' + (only.reasons.join('، ') || 'تطابق ذكي') + '\n\n' +
+      'موافق على ربط الطلب بهذا الملف وإضافة البيانات الناقصة فقط؟';
+    return confirm(msg) ? only.student.id : null;
+  }
+
+  var lines = matches.slice(0, 8).map(function(m){
+    return '#' + m.student.id + ' — ' + (m.student.name || 'بدون اسم') + ' | ' + (m.reasons.join('، ') || 'تطابق ذكي');
+  }).join('\n');
+  var answer = prompt(
+    'وجدت أكثر من تطابق محتمل للطالب "' + (r.name || '') + '".\n\n' +
+    lines + '\n\n' +
+    'اكتبي رقم ملف الطالب للربط، أو اكتبي 0 لإنشاء ملف جديد، أو اتركيها فارغة للإلغاء.'
+  , String(matches[0].student.id || ''));
+  if (answer == null) return null;
+  answer = String(answer).trim();
+  if (!answer) return null;
+  if (answer === '0') return 0;
+  var chosenId = parseInt(answer, 10);
+  if (!chosenId) return null;
+  return chosenId;
+}
+
+function findStudentByAnyId(id) {
+  return students.find(function(s){ return s.id === id; }) || null;
+}
+
+function undoFormDecision(ts) {
+  var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
+  if (!r || !r.status || r.status === 'pending') return;
+  if (!confirm('إرجاع هذا الطلب إلى قائمة الطلبات المعلّقة؟')) return;
+
+  if (r.status === 'approved' && r.approvalMeta) {
+    if (r.approvalMeta.action === 'create' && r.approvalMeta.studentId) {
+      students = students.filter(function(s){ return s.id !== r.approvalMeta.studentId; });
+      addTombstone('students', r.approvalMeta.studentId);
+    } else if (r.approvalMeta.action === 'link' && r.approvalMeta.studentId && r.approvalMeta.before) {
+      var idx = students.findIndex(function(s){ return s.id === r.approvalMeta.studentId; });
+      if (idx >= 0) students[idx] = Object.assign({}, r.approvalMeta.before);
+    }
+  }
+
+  delete r.approvalMeta;
+  delete r.rejectedAt;
+  delete r.rejectedBy;
+  delete r.linkedStudentId;
+  delete r.approvedAt;
+  r.status = 'pending';
   localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
   autoSave();
-}
-
-function setFormRowDecision(r, status, meta) {
-  meta = meta || {};
-  r.status = status;
-  r.decisionAt = new Date().toISOString();
-  r.rowUpdatedAt = r.decisionAt;
-  Object.keys(meta).forEach(function(k){ r[k] = meta[k]; });
-  persistFormRowsAndSync();
-}
-
-function refreshAllAfterFormDecision() {
-  renderStudents();
-  renderDash();
-  renderFormRequests();
+  renderStudents(); renderDash(); renderFormRequests();
+  showSyncBadge('↩️ تم إرجاع الطلب إلى قيد المراجعة');
 }
 
 function renderFormRequests() {
   if (!document.getElementById('pg-forms')) return;
   var pending  = syncedFormRows.filter(function(r){ return r.status === 'pending'; });
   var approved = syncedFormRows.filter(function(r){ return r.status === 'approved'; });
-  var rejected = syncedFormRows.filter(function(r){ return r.status === 'rejected'; });
   var pc = document.getElementById('forms-pending-count');
   var ac = document.getElementById('forms-approved-count');
   if (pc) pc.textContent = pending.length;
@@ -7433,51 +5964,40 @@ function renderFormRequests() {
 
   var filter = (document.getElementById('forms-filter') || {}).value || 'pending';
   var search = ((document.getElementById('forms-search') || {}).value || '').toLowerCase();
-  var rows = filter === 'all' ? syncedFormRows : filter === 'approved' ? approved : filter === 'rejected' ? rejected : pending;
-  rows = rows.filter(function(r){
-    return !search || [r.name, r.dadFull, r.momFull, r.nat, r.dob, r.emiratesId].join(' ').toLowerCase().indexOf(search) >= 0;
-  }).sort(function(a,b){ return formRowUpdatedAtValue(b) - formRowUpdatedAtValue(a); });
+  var rows = filter === 'all' ? syncedFormRows : filter === 'approved' ? approved : pending;
+  if (search) rows = rows.filter(function(r){ return String(r.name||'').toLowerCase().includes(search); });
 
   var list = document.getElementById('forms-list');
   if (!list) return;
   if (!rows.length) {
-    var emptyText = filter === 'pending' ? 'لا توجد طلبات جديدة' : filter === 'approved' ? 'لا توجد طلبات مقبولة' : filter === 'rejected' ? 'لا توجد طلبات مرفوضة' : 'لا توجد نتائج';
-    list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)">' + emptyText + '</div>';
+    list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)">' +
+      (filter === 'pending' ? 'لا توجد طلبات جديدة' : 'لا توجد نتائج') + '</div>';
     return;
   }
   list.innerHTML = rows.map(function(r) {
-    var tsSafe = encodeURIComponent(String(r.timestamp || ''));
-    var viewBtn = '<button class="btn btn-b btn-sm" onclick="openFormDetail(decodeURIComponent(\'' + tsSafe + '\'));event.stopPropagation()">👁 عرض الطلب</button>';
-    var actionHtml = '';
-    if (r.status === 'pending') {
-      actionHtml = viewBtn +
-                   '<button class="btn btn-g btn-sm" onclick="quickApprove(decodeURIComponent(\'' + tsSafe + '\'));event.stopPropagation()">✅ قبول</button>' +
-                   '<button class="btn btn-r btn-sm" onclick="rejectFormRow(decodeURIComponent(\'' + tsSafe + '\'));event.stopPropagation()">❌ رفض</button>';
-    } else if (r.status === 'approved') {
-      actionHtml = viewBtn + '<span class="b bg">✅ مقبول</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\'' + tsSafe + '\'));event.stopPropagation()">↩️ تراجع</button>';
-    } else {
-      actionHtml = viewBtn + '<span class="b br">❌ مرفوض</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\'' + tsSafe + '\'));event.stopPropagation()">↩️ تراجع</button>';
-    }
-    return '<div class="form-req-card" onclick="openFormDetail(decodeURIComponent(\'' + tsSafe + '\'))">' +
-      '<div class="form-req-left">' +
-        (r.imgChildPhoto
-          ? '<img src="' + driveImgUrl(r.imgChildPhoto) + '" class="form-req-photo" onerror="this.style.display=\'none\'">'
-          : '<div class="form-req-photo-empty">👶</div>') +
-      '</div>' +
-      '<div class="form-req-info">' +
-        '<div class="form-req-name">' + escapeHtml(r.name) + '</div>' +
-        '<div class="form-req-meta">' +
-          '<span>🌍 ' + escapeHtml(r.nat||'—') + '</span>' +
-          '<span>📅 ' + escapeHtml(r.dob||'—') + '</span>' +
-          '<span>' + escapeHtml(r.gen||'—') + '</span>' +
-        '</div>' +
-        '<div class="form-req-meta">' +
-          '<span>👨 ' + escapeHtml(r.dadFull||'—') + '</span>' +
-          '<span>📱 ' + escapeHtml(r.dadMob||r.momMob||'—') + '</span>' +
-        '</div>' +
-      '</div>' +
-      '<div class="form-req-actions" onclick="event.stopPropagation()">' + actionHtml + '</div>' +
-    '</div>';
+    var ts = escapeTsForInline(r.timestamp);
+    var statusHtml = r.status === 'pending'
+      ? `<button class="btn btn-g btn-sm" onclick="quickApprove('${ts}')">✅ قبول</button><button class="btn btn-r btn-sm" onclick="rejectFormRow('${ts}')">❌ رفض</button>`
+      : ((r.status === 'approved') ? '<span class="b bg">✅ مقبول</span>' : '<span class="b br">❌ مرفوض</span>') +
+        `<button class="btn btn-out btn-sm" onclick="undoFormDecision('${ts}')">↩️ تراجع</button>`;
+    return `<div class="form-req-card" onclick="openFormDetail('${ts}')">
+      <div class="form-req-left">
+        ${r.imgChildPhoto ? `<img src="${driveImgUrl(r.imgChildPhoto)}" class="form-req-photo" onerror="this.style.display='none'">` : '<div class="form-req-photo-empty">👶</div>'}
+      </div>
+      <div class="form-req-info">
+        <div class="form-req-name">${r.name}</div>
+        <div class="form-req-meta">
+          <span>🌍 ${r.nat||'—'}</span>
+          <span>📅 ${r.dob||'—'}</span>
+          <span>${r.gen||'—'}</span>
+        </div>
+        <div class="form-req-meta">
+          <span>👨 ${r.dadFull||'—'}</span>
+          <span>📱 ${r.dadMob||r.momMob||'—'}</span>
+        </div>
+      </div>
+      <div class="form-req-actions" onclick="event.stopPropagation()">${statusHtml}</div>
+    </div>`;
   }).join('');
 }
 
@@ -7494,45 +6014,53 @@ function openFormDetail(ts) {
 
   var docsHtml = docs.length ? docs.map(function(d) {
     return '<div style="text-align:center">' +
-      '<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">' + escapeHtml(d[0]) + '</div>' +
+      '<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">' + d[0] + '</div>' +
       '<a href="' + d[1] + '" target="_blank">' +
-        '<img src="' + driveImgUrl(d[1]) + '" style="width:100%;max-height:160px;object-fit:cover;border-radius:8px;border:1.5px solid var(--border)">' +
-      '</a><div style="margin-top:4px;font-size:11px"><a href="' + d[1] + '" target="_blank" style="color:var(--b2)">فتح الملف</a></div></div>';
+        '<img src="' + driveImgUrl(d[1]) + '" style="width:100%;max-height:160px;object-fit:cover;border-radius:8px;border:1.5px solid var(--border)" ' +
+          'onerror="this.outerHTML=\'<a href=' + d[1] + ' target=_blank style=font-size:11px;color:var(--b2)>فتح الملف</a>\'">' +
+      '</a></div>';
   }).join('') : '<p style="color:var(--muted);font-size:13px">لا توجد صور مرفقة</p>';
 
   var allergyHtml = (r.allergy === 'نعم' || String(r.allergy||'').toLowerCase().includes('yes'))
-    ? '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">⚠️ <b>حساسية:</b> ' + escapeHtml(r.allergyNote||r.allergyType||'يرجى المراجعة') + '</div>'
+    ? '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">⚠️ <b>حساسية:</b> ' + (r.allergyNote||r.allergyType||'يرجى المراجعة') + '</div>'
     : '';
 
   var clsOptions = Object.entries(CLASSES).map(function(e){
-    var selected = (r.cls && r.cls === e[0]) ? ' selected' : '';
-    return '<option value="' + escapeHtml(e[0]) + '"' + selected + '>' + e[1].emoji + ' ' + escapeHtml(e[0]) + '</option>';
+    return '<option value="' + e[0] + '">' + e[1].emoji + ' ' + e[0] + '</option>';
   }).join('');
 
+  var tsInline = escapeTsForInline(ts);
+  var statusBanner = r.status === 'approved'
+    ? `<div style="background:var(--gp);border-radius:8px;padding:10px;margin-bottom:12px;font-size:13px">✅ هذا الطلب مقبول${r.linkedStudentId ? ' ومرتبط بالملف #' + r.linkedStudentId : ''} <button class="btn btn-out btn-sm" style="margin-right:8px" onclick="undoFormDecision('${tsInline}')">↩️ تراجع</button></div>`
+    : (r.status === 'rejected'
+      ? `<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:12px;font-size:13px">❌ هذا الطلب مرفوض <button class="btn btn-out btn-sm" style="margin-right:8px" onclick="undoFormDecision('${tsInline}')">↩️ تراجع</button></div>`
+      : '');
+
   document.getElementById('mo-form-detail-body').innerHTML =
+    statusBanner +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">' +
-      '<div class="fl"><label>الاسم</label><div style="font-size:15px;font-weight:700">' + escapeHtml(r.name) + '</div></div>' +
-      '<div class="fl"><label>تاريخ الميلاد</label><div>' + escapeHtml(r.dob||'—') + '</div></div>' +
-      '<div class="fl"><label>الجنس</label><div>' + escapeHtml(r.gen||'—') + '</div></div>' +
-      '<div class="fl"><label>الجنسية</label><div>' + escapeHtml(r.nat||'—') + '</div></div>' +
-      '<div class="fl"><label>رقم الهوية</label><div dir="ltr">' + escapeHtml(r.emiratesId||'—') + '</div></div>' +
-      '<div class="fl"><label>رقم الجواز</label><div dir="ltr">' + escapeHtml(r.passport||'—') + '</div></div>' +
-      '<div class="fl" style="grid-column:1/-1"><label>العنوان</label><div>' + escapeHtml(r.addr||'—') + '</div></div>' +
+      '<div class="fl"><label>الاسم</label><div style="font-size:15px;font-weight:700">' + r.name + '</div></div>' +
+      '<div class="fl"><label>تاريخ الميلاد</label><div>' + (r.dob||'—') + '</div></div>' +
+      '<div class="fl"><label>الجنس</label><div>' + (r.gen||'—') + '</div></div>' +
+      '<div class="fl"><label>الجنسية</label><div>' + (r.nat||'—') + '</div></div>' +
+      '<div class="fl"><label>رقم الهوية</label><div dir="ltr">' + (r.emiratesId||'—') + '</div></div>' +
+      '<div class="fl"><label>رقم الجواز</label><div dir="ltr">' + (r.passport||'—') + '</div></div>' +
+      '<div class="fl" style="grid-column:1/-1"><label>العنوان</label><div>' + (r.addr||'—') + '</div></div>' +
     '</div>' +
     '<div style="font-weight:700;color:var(--g1);margin-bottom:6px">👨 الأب</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:13px">' +
-      '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + escapeHtml(r.dadFull||'—') + '</div></div>' +
-      '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + escapeHtml(r.dadMob||'—') + '</div></div>' +
-      '<div><label style="font-size:11px;color:var(--muted)">المهنة</label><div>' + escapeHtml(r.dadJob||'—') + '</div></div>' +
-      '<div><label style="font-size:11px;color:var(--muted)">الإيميل</label><div dir="ltr">' + escapeHtml(r.dadEmail||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + (r.dadFull||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + (r.dadMob||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">المهنة</label><div>' + (r.dadJob||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الإيميل</label><div dir="ltr">' + (r.dadEmail||'—') + '</div></div>' +
     '</div>' +
     '<div style="font-weight:700;color:var(--g1);margin-bottom:6px">👩 الأم</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:13px">' +
-      '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + escapeHtml(r.momFull||'—') + '</div></div>' +
-      '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + escapeHtml(r.momMob||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + (r.momFull||'—') + '</div></div>' +
+      '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + (r.momMob||'—') + '</div></div>' +
     '</div>' +
     allergyHtml +
-    (r.notes ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📝 ' + escapeHtml(r.notes) + '</div>' : '') +
+    (r.notes ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📝 ' + r.notes + '</div>' : '') +
     '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px">📎 الوثائق</div>' +
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">' + docsHtml + '</div>' +
     (r.status === 'pending' ?
@@ -7541,15 +6069,14 @@ function openFormDetail(ts) {
         '<select id="detail-cls-select" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:14px;margin-top:6px">' +
           clsOptions +
         '</select>' +
-      '</div>' : '') +
-    (r.status === 'approved' ? '<div style="margin-top:14px;background:var(--gp);padding:10px;border-radius:8px;font-size:13px">تم قبول هذا الطلب ويمكن التراجع عنه عند الحاجة.</div>' : '') +
-    (r.status === 'rejected' ? '<div style="margin-top:14px;background:var(--rp);padding:10px;border-radius:8px;font-size:13px">تم رفض هذا الطلب ويمكن التراجع عن الرفض.</div>' : '');
+      '</div>' : '');
 
   var approveBtn = document.getElementById('mo-form-detail-approve');
   approveBtn.style.display = r.status === 'pending' ? 'inline-flex' : 'none';
   approveBtn.onclick = function() {
     r.cls = (document.getElementById('detail-cls-select') || {}).value || Object.keys(CLASSES)[0];
-    startApproveFlow(r);
+    doApprove(r);
+    closeAll();
   };
   document.getElementById('mo-form-detail').classList.add('on');
 }
@@ -7558,123 +6085,76 @@ function quickApprove(ts) {
   var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
   if (!r) return;
   r.cls = r.cls || Object.keys(CLASSES)[0];
-  startApproveFlow(r);
+  doApprove(r);
 }
 
-function startApproveFlow(r) {
-  if (!r || r.status !== 'pending') return;
-  var matches = findPotentialStudentMatches(r);
-  if (!matches.length) {
-    performApproveNew(r);
-    closeAll();
+function doApprove(r) {
+  var matches = getFormStudentMatchCandidates(r);
+  var chosenId = null;
+
+  if (matches.length) {
+    chosenId = chooseStudentForFormLink(r, matches);
+    if (chosenId == null) {
+      if (!confirm('تم إلغاء الربط. هل تريدين إنشاء ملف جديد لهذا الطالب بدلًا من ذلك؟')) return;
+      chosenId = 0;
+    }
+  } else {
+    if (!confirm('لم يتم العثور على ملف طالب مطابق. سيتم إنشاء ملف جديد لهذا الطالب. متابعة؟')) return;
+    chosenId = 0;
+  }
+
+  if (chosenId === 0) {
+    var created = buildStudentFromFormRow(r);
+    students.push(created);
+    r.approvalMeta = { action:'create', studentId: created.id };
+    r.linkedStudentId = created.id;
+    r.status = 'approved';
+    r.approvedAt = new Date().toISOString();
+    localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+    autoSave();
+    renderStudents(); renderDash(); renderFormRequests();
+    showSyncBadge('✅ تم قبول الطلب وإنشاء ملف جديد للطالب');
     return;
   }
-  openDuplicateDecisionModal(r, matches);
-}
 
-function openDuplicateDecisionModal(r, matches) {
-  var body = document.getElementById('mo-form-duplicates-body');
-  if (!body) return;
-  body.innerHTML = '<div style="background:var(--yp);padding:10px 12px;border-radius:10px;margin-bottom:12px;font-size:13px">' +
-    'تم العثور على ' + matches.length + ' سجل مشابه للطالب <b>' + escapeHtml(r.name) + '</b>. اختاري الطالب الصحيح للدمج، أو سجليه كطالب جديد إذا لم يكن أي سجل مطابق.' +
-  '</div>' +
-  matches.map(function(m, idx) {
-    var s = m.student;
-    return '<label style="display:block;border:1.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;cursor:pointer">' +
-      '<div style="display:flex;gap:10px;align-items:flex-start">' +
-        '<input type="radio" name="form-match-student" value="' + s.id + '" ' + (idx === 0 ? 'checked' : '') + ' style="margin-top:4px;width:auto">' +
-        '<div style="flex:1">' +
-          '<div style="font-size:15px;font-weight:800;color:var(--g1)">' + escapeHtml(s.name || 'بدون اسم') + '</div>' +
-          '<div style="font-size:12px;color:var(--muted);margin:4px 0 6px">الفصل: ' + escapeHtml(s.cls || '—') + ' | الميلاد: ' + escapeHtml(s.dob || '—') + ' | الهوية: ' + escapeHtml((getStudentIdentity ? getStudentIdentity(s) : (s.emiratesId||'')) || '—') + '</div>' +
-          '<div style="font-size:12px">🔎 ' + escapeHtml(m.reasons.join('، ') || 'تشابه عام بالبيانات') + ' — <b>' + m.score + '%</b></div>' +
-        '</div>' +
-      '</div>' +
-    '</label>';
-  }).join('');
+  var target = findStudentByAnyId(chosenId);
+  if (!target) {
+    alert('رقم الملف الذي تم إدخاله غير موجود.');
+    return;
+  }
 
-  var mergeBtn = document.getElementById('mo-form-duplicates-merge');
-  var newBtn = document.getElementById('mo-form-duplicates-new');
-  mergeBtn.onclick = function() {
-    var selected = document.querySelector('input[name="form-match-student"]:checked');
-    if (!selected) { alert('اختاري الطالب الذي تريدين الدمج معه'); return; }
-    var sid = Number(selected.value);
-    var target = students.find(function(s){ return s.id === sid; });
-    if (!target) { alert('تعذر العثور على الطالب المحدد'); return; }
-    if (!confirm('سيتم دمج بيانات الطلب مع سجل الطالب الحالي: ' + (target.name || '') + '. هل تريدين المتابعة؟')) return;
-    performApproveMerge(r, sid);
-    closeAll();
-  };
-  newBtn.onclick = function() {
-    if (!confirm('سيتم تسجيل هذا الطلب كطالب جديد. هل تريدين المتابعة؟')) return;
-    performApproveNew(r);
-    closeAll();
-  };
-  document.getElementById('mo-form-duplicates').classList.add('on');
-}
+  var before = JSON.parse(JSON.stringify(target));
+  var filled = mergeMissingStudentFields(target, r);
+  if (!confirm('سيتم ربط الطلب بملف الطالب #' + target.id + ' — ' + (target.name || 'بدون اسم') + '\n' +
+               'عدد الحقول التي ستُستكمل: ' + filled.length + '\n\n' +
+               'متابعة القبول وربط الطلب بهذا الملف؟')) {
+    var idxBefore = students.findIndex(function(s){ return s.id === target.id; });
+    if (idxBefore >= 0) students[idxBefore] = before;
+    return;
+  }
 
-function performApproveNew(r) {
-  var newStudent = buildStudentFromFormRow(r);
-  students.push(newStudent);
-  setFormRowDecision(r, 'approved', {
-    approvedStudentId: newStudent.id,
-    approvedAction: 'new',
-    undoData: { createdStudentId: newStudent.id }
-  });
-  refreshAllAfterFormDecision();
-  showSyncBadge('✅ تم قبول الطالب وإضافته');
-}
-
-function performApproveMerge(r, studentId) {
-  var idx = students.findIndex(function(s){ return s.id === studentId; });
-  if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
-  var before = JSON.parse(JSON.stringify(students[idx]));
-  students[idx] = mergeStudentWithFormData(students[idx], r);
-  setFormRowDecision(r, 'approved', {
-    approvedStudentId: studentId,
-    approvedAction: 'merge',
-    undoData: { mergedStudentId: studentId, previousStudent: before }
-  });
-  refreshAllAfterFormDecision();
-  showSyncBadge('✅ تم قبول الطلب ودمج البيانات');
+  r.approvalMeta = { action:'link', studentId: target.id, before: before, filledFields: filled };
+  r.linkedStudentId = target.id;
+  r.status = 'approved';
+  r.approvedAt = new Date().toISOString();
+  localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+  autoSave();
+  renderStudents(); renderDash(); renderFormRequests();
+  showSyncBadge('✅ تم قبول الطلب وربطه بالملف #' + target.id);
 }
 
 function rejectFormRow(ts) {
   var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
   if (!r) return;
-  if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
-  setFormRowDecision(r, 'rejected', {
-    approvedStudentId: null,
-    approvedAction: 'reject',
-    undoData: { revertTo: 'pending' }
-  });
+  if (!confirm('رفض هذا الطلب وإخفاؤه من قائمة الطلبات المعلّقة؟')) return;
+  r.status = 'rejected';
+  r.rejectedAt = new Date().toISOString();
+  localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+  autoSave();
   renderFormRequests();
-  showSyncBadge('✅ تم رفض الطلب');
+  showSyncBadge('❌ تم رفض الطلب');
 }
 
-function undoFormDecision(ts) {
-  var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
-  if (!r || r.status === 'pending') return;
-  if (!confirm('هل تريدين التراجع عن هذا القرار وإعادة الطلب إلى قائمة الجديدة؟')) return;
-
-  if (r.status === 'approved' && r.undoData) {
-    if (r.approvedAction === 'new' && r.undoData.createdStudentId != null) {
-      students = students.filter(function(s){ return s.id !== r.undoData.createdStudentId; });
-    } else if (r.approvedAction === 'merge' && r.undoData.mergedStudentId != null && r.undoData.previousStudent) {
-      var idx = students.findIndex(function(s){ return s.id === r.undoData.mergedStudentId; });
-      if (idx >= 0) students[idx] = r.undoData.previousStudent;
-    }
-  }
-
-  r.status = 'pending';
-  r.decisionAt = '';
-  r.rowUpdatedAt = new Date().toISOString();
-  r.approvedStudentId = null;
-  r.approvedAction = '';
-  r.undoData = null;
-  persistFormRowsAndSync();
-  refreshAllAfterFormDecision();
-  showSyncBadge('↩️ تم التراجع عن القرار');
-}
 // ============================================================
 // RENEWALS — التجديدات والوثائق الرسمية
 // ============================================================
@@ -7875,44 +6355,21 @@ function deleteRenewal() {
   if (!r) return;
   if (!confirm('حذف "' + r.name + '"؟')) return;
   const delId = editingRenId;
-  deletedRenewals.unshift(Object.assign({}, r, {
-    deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
-    deletedBy: currentUser ? currentUser.name : 'نظام'
-  }));
-  localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
   renewals = renewals.filter(x => x.id !== delId);
   addTombstone('renewals', delId);
   autoSave();
   closeAll();
   renderRenewals();
-  if (typeof renderDeletedStudents==='function') renderDeletedStudents();
-  renderOtherDeletedItems();
 }
 
 // ============================================================
-function getStudentSubAlertKey(s) {
-  return String((s && s.id) || '') + '|' + String((s && s.sub_end) || '');
-}
-function isStudentSubAlertDismissed(s) {
-  const key = getStudentSubAlertKey(s);
-  return dismissedStudentSubAlerts.includes(key);
-}
-function dismissStudentSubAlert(id, subEnd, ev) {
-  if (ev) { ev.stopPropagation(); ev.preventDefault(); }
-  const key = String(id) + '|' + String(subEnd || '');
-  if (!dismissedStudentSubAlerts.includes(key)) {
-    dismissedStudentSubAlerts.push(key);
-    localStorage.setItem('kp_dismissed_student_sub_alerts', JSON.stringify(dismissedStudentSubAlerts));
-  }
-  updateNotifications();
-}
-
 // NOTIFICATIONS — التنبيهات الشاملة
 // ============================================================
 function updateNotifications() {
   const alerts = [];
+  const today = new Date(); today.setHours(0,0,0,0);
 
-  // Renewals alerts only
+  // Renewals alerts
   renewals.forEach(r => {
     const days = getRenDays(r.date);
     if (days === null) return;
@@ -7923,25 +6380,43 @@ function updateNotifications() {
     }
   });
 
+  // Student subscription alerts
+  students.forEach(s => {
+    if (!s.sub_end) return;
+    const days = getRenDays(s.sub_end);
+    if (days === null) return;
+    if (days < 0) {
+      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'انتهى اشتراكه منذ ' + Math.abs(days) + ' يوم', days, urgent:true });
+    } else if (days <= 30) {
+      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'ينتهي اشتراكه خلال ' + days + ' يوم', days, urgent:true });
+    } else if (days <= 60) {
+      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'ينتهي اشتراكه خلال ' + days + ' يوم', days, urgent:false });
+    }
+  });
+
+  // Sort by urgency
   alerts.sort((a,b) => a.days - b.days);
 
+  // Update bell
   const btn = document.getElementById('notif-btn');
   const badge = document.getElementById('notif-badge-count');
   if (btn) {
     btn.style.display = 'inline-block';
     if (alerts.length > 0) {
       btn.classList.add('has-alerts');
-      if (badge) { badge.style.display = 'flex'; badge.textContent = alerts.length > 99 ? '99+' : alerts.length; }
+      badge.style.display = 'flex';
+      badge.textContent = alerts.length > 99 ? '99+' : alerts.length;
     } else {
       btn.classList.remove('has-alerts');
-      if (badge) badge.style.display = 'none';
+      badge.style.display = 'none';
     }
   }
 
+  // Update panel
   const body = document.getElementById('notif-panel-body');
   if (!body) return;
   if (!alerts.length) {
-    body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">✅ لا توجد تنبيهات تجديد</div>';
+    body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">✅ لا توجد تنبيهات</div>';
     return;
   }
 
@@ -7959,129 +6434,20 @@ function updateNotifications() {
   }).join('');
 }
 
-function dismissStudentAlert(id, alertKey) {
-  const map = getDismissedStudentAlerts();
-  map[alertKey] = true;
-  setDismissedStudentAlerts(map);
-  updateRegExpiryNotifications();
-}
-
 function goToAlert(type, id) {
   toggleNotifPanel();
   if (type === 'renewal') {
     go('renewals');
     setTimeout(() => openEditRenewal(id), 300);
+  } else if (type === 'student') {
+    go('students');
+    setTimeout(() => editStudent(id), 300);
   }
 }
 
 function toggleNotifPanel() {
   const panel = document.getElementById('notif-panel');
   if (panel) panel.classList.toggle('open');
-  const regPanel = document.getElementById('reg-notif-panel');
-  if (regPanel) regPanel.classList.remove('open');
-}
-
-function updateRegExpiryNotifications() {
-  const alerts = [];
-  const dismissedStudentAlerts = getDismissedStudentAlerts();
-
-  students.forEach(s => {
-    const regExpiry = getStudentRegistrationExpiry(s);
-    if (!regExpiry) return;
-    const days = getRenDays(regExpiry);
-    if (days === null || Number.isNaN(days)) return;
-    const alertKey = String((s && s.id) || '') + '|' + String(regExpiry || '');
-    if (dismissedStudentAlerts[alertKey]) return;
-    if (days < 0) {
-      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'انتهى تسجيله منذ ' + Math.abs(days) + ' يوم', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:regExpiry });
-    } else if (days <= 7) {
-      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'ينتهي تسجيله خلال ' + days + ' يوم', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:regExpiry });
-    }
-  });
-
-  // تنبيهات من تواريخ انتهاء التسجيل في المدفوعات (للدفعات غير المربوطة بطالب أو المربوطة)
-  const seenPayAlertKeys = new Set();
-  (typeof payments !== 'undefined' ? payments : []).forEach(function(p) {
-    if (!p || !p.sub_end) return;
-    const days = getRenDays(p.sub_end);
-    if (days === null || Number.isNaN(days)) return;
-    if (days > 7) return; // فقط 7 أيام وأقل
-
-    // إذا الدفعة مربوطة بطالب، الطالب سيظهر بالفعل من قسم الطلاب — تجنب التكرار
-    if (p.stuId) {
-      const s = students.find(function(x){ return x.id === p.stuId; });
-      if (s && getStudentRegistrationExpiry(s) === p.sub_end) return;
-    }
-
-    const alertKey = 'pay|' + String(p.id) + '|' + String(p.sub_end);
-    if (dismissedStudentAlerts[alertKey]) return;
-    if (seenPayAlertKeys.has(alertKey)) return;
-    seenPayAlertKeys.add(alertKey);
-
-    const label = p.who ? p.who : ('سند #' + p.id);
-    if (days < 0) {
-      alerts.push({ type:'payment', id:p.id, icon:'💰', title:label, sub:'انتهى تسجيله منذ ' + Math.abs(days) + ' يوم (سند #' + p.id + ')', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:p.sub_end });
-    } else {
-      alerts.push({ type:'payment', id:p.id, icon:'💰', title:label, sub:'ينتهي تسجيله خلال ' + days + ' يوم (سند #' + p.id + ')', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:p.sub_end });
-    }
-  });
-
-  alerts.sort((a,b) => a.days - b.days);
-
-  const btn = document.getElementById('reg-notif-btn');
-  const badge = document.getElementById('reg-notif-badge-count');
-  if (btn) {
-    btn.style.display = 'inline-block';
-    if (alerts.length > 0) {
-      btn.classList.add('has-alerts');
-      if (badge) { badge.style.display = 'flex'; badge.textContent = alerts.length > 99 ? '99+' : alerts.length; }
-    } else {
-      btn.classList.remove('has-alerts');
-      if (badge) badge.style.display = 'none';
-    }
-  }
-
-  const body = document.getElementById('reg-notif-panel-body');
-  if (!body) return;
-  if (!alerts.length) {
-    body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">✅ لا توجد تنبيهات انتهاء تسجيل</div>';
-    return;
-  }
-
-  body.innerHTML = alerts.map(a => {
-    const color = a.days < 0 ? '#e74c3c' : '#e67e22';
-    const daysText = a.days < 0 ? 'منتهية' : a.days + ' يوم';
-    const dismissBtn = a.dismissible
-      ? '<button class="btn btn-out btn-sm" style="padding:2px 8px;font-size:11px" onclick="dismissStudentAlert(' + a.id + ',\'' + String(a.alertKey || '').replace(/'/g, "&#39;") + '\');event.stopPropagation();">Dismiss</button>'
-      : '';
-    return '<div class="notif-item" onclick="goToRegAlert(\'' + a.type + '\',' + a.id + ')">' +
-      '<div class="notif-item-icon">' + a.icon + '</div>' +
-      '<div style="flex:1;min-width:0">' +
-        '<div class="notif-item-title">' + a.title + '</div>' +
-        '<div class="notif-item-sub">' + a.sub + '</div>' +
-      '</div>' +
-      dismissBtn +
-      '<div style="font-size:12px;font-weight:700;color:' + color + ';flex-shrink:0">' + daysText + '</div>' +
-    '</div>';
-  }).join('');
-}
-
-function goToRegAlert(type, id) {
-  toggleRegNotifPanel();
-  if (type === 'payment') {
-    go('payments');
-    setTimeout(function(){ openEditPay(id); }, 300);
-  } else {
-    go('students');
-    setTimeout(function(){ editStudent(id); }, 300);
-  }
-}
-
-function toggleRegNotifPanel() {
-  const panel = document.getElementById('reg-notif-panel');
-  if (panel) panel.classList.toggle('open');
-  const renPanel = document.getElementById('notif-panel');
-  if (renPanel) renPanel.classList.remove('open');
 }
 
 // Close panel when clicking outside
@@ -8091,26 +6457,14 @@ document.addEventListener('click', function(e) {
   if (panel && btn && !panel.contains(e.target) && !btn.contains(e.target)) {
     panel.classList.remove('open');
   }
-  const regPanel = document.getElementById('reg-notif-panel');
-  const regBtn = document.getElementById('reg-notif-btn');
-  if (regPanel && regBtn && !regPanel.contains(e.target) && !regBtn.contains(e.target)) {
-    regPanel.classList.remove('open');
-  }
 });
+
 
 window.addEventListener('focus', function(){
   if (typeof checkForUpdates === 'function' && currentUser) checkForUpdates();
-  // Ensure fast-sync is running after the tab regains focus
-  if (currentUser && typeof startFastSync === 'function' && !_fastSyncTimer) {
-    startFastSync();
-  }
 });
 document.addEventListener('visibilitychange', function(){
   if (!document.hidden && typeof checkForUpdates === 'function' && currentUser) checkForUpdates();
-  // Resume fast-sync when tab becomes visible again
-  if (!document.hidden && currentUser && typeof startFastSync === 'function' && !_fastSyncTimer) {
-    startFastSync();
-  }
 });
 
 // renderDash is called by applyLogin after login
