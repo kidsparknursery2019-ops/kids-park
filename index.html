@@ -3933,15 +3933,18 @@ function deletePayment(){
   const p = payments.find(x=>x.id===editingPayId);
   if(!p||!confirm('حذف السند #'+p.id+' ('+p.who+')؟')) return;
   const delId = editingPayId;
-  deletedPayments.unshift(Object.assign({}, p, {
+  const trashPayment = Object.assign({}, p, {
+    id: delId,
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
     deletedBy: currentUser ? currentUser.name : 'نظام'
-  }));
+  });
+  deletedPayments = deletedPayments.filter(function(x){ return normKey(x.id) !== normKey(delId); });
+  deletedPayments.unshift(trashPayment);
   localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
   payments = payments.filter(x=>x.id!==delId);
   addTombstone('payments', delId);
   persistCoreDataToLocalStorage();
-  syncRecordDeleteQuick('payments', Object.assign({}, p, {id: delId}), false);
+  syncRecordDeleteQuick('payments', trashPayment, false);
   closeAll(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
   renderOtherDeletedItems();
 }
@@ -4123,16 +4126,19 @@ function delExpense(id){
   if(!delId) return;
   const exp = expenses.find(function(e){ return e.id===delId; });
   if(!exp || !confirm('حذف هذا المصروف؟'))return;
-  deletedExpenses.unshift(Object.assign({}, exp, {
+  const trashExp = Object.assign({}, exp, {
+    id: delId,
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
     deletedBy: currentUser ? currentUser.name : 'نظام'
-  }));
+  });
+  deletedExpenses = deletedExpenses.filter(function(x){ return normKey(x.id) !== normKey(delId); });
+  deletedExpenses.unshift(trashExp);
   localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
   expenses=expenses.filter(e=>e.id!==delId);
   addTombstone('expenses', delId);
   closeAll();
   persistCoreDataToLocalStorage();
-  syncRecordDeleteQuick('expenses', Object.assign({}, exp, {id: delId}), false);
+  syncRecordDeleteQuick('expenses', trashExp, false);
   renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
   renderOtherDeletedItems();
 }
@@ -5951,31 +5957,45 @@ async function syncRecordDeleteQuick(type, record, permanent) {
   const idKey = quickSyncKey(record.id);
   try {
     showSyncBadge('⏳ إرسال حذف ' + cfg.label + ' إلى Firebase...');
-    await quickFirebaseDelete(cfg.active + '/' + idKey).catch(function(){});
+
     if (permanent) {
+      // الحذف النهائي: احذف من سلة المحذوفات ثم ضع tombstone حتى لا يعود من النسخ القديمة.
       await quickFirebaseDelete(cfg.deleted + '/' + idKey).catch(function(){});
+      await quickFirebaseDelete(cfg.active + '/' + idKey).catch(function(){});
       await quickFirebasePatch('tombstonesById/' + type + '/' + idKey, {
         id: record.id,
         deletedAt: new Date().toISOString(),
         deletedBy: currentUser ? currentUser.name : 'نظام'
       });
     } else {
-      await quickFirebasePatch(cfg.deleted + '/' + idKey, Object.assign({}, record, {
-        _lastAction: 'delete',
+      // حذف عادي = ترحيل لسلة المحذوفات وليس حذف نهائي.
+      // مهم جداً: اكتب نسخة المحذوفات أولاً، وبعد نجاحها فقط احذف من القائمة الأساسية.
+      const trashRecord = Object.assign({}, record, {
+        deletedAt: record.deletedAt || new Date().toISOString().slice(0,19).replace('T',' '),
+        deletedBy: record.deletedBy || (currentUser ? currentUser.name : 'نظام'),
+        _lastAction: 'move_to_trash',
         _syncedAt: new Date().toISOString()
-      }));
-      await quickFirebaseDelete('tombstonesById/' + type + '/' + idKey).catch(function(){});
+      });
+      await quickFirebasePatch(cfg.deleted + '/' + idKey, trashRecord);
+      await quickFirebaseDelete(cfg.active + '/' + idKey).catch(function(){});
+      // tombstone هنا وظيفته منع رجوع السجل من مصفوفة active القديمة، وليس حذفه نهائياً.
+      await quickFirebasePatch('tombstonesById/' + type + '/' + idKey, {
+        id: record.id,
+        deletedAt: trashRecord.deletedAt,
+        deletedBy: trashRecord.deletedBy,
+        movedToTrash: true
+      }).catch(function(){});
     }
+
     // مهم جداً: إذا كان السجل مستعاداً سابقاً وبقي له restoredKeysById في Firebase
     // فإن التحديث التلقائي سيعتبره "مستعاد" ويرجعه من مصفوفة expenses/payments القديمة.
-    // لذلك عند أي حذف، احذف علامة الاستعادة السحابية.
     await quickFirebaseDelete('restoredKeysById/' + type + '/' + idKey).catch(function(){});
     const __syncNow = new Date().toISOString();
     await quickFirebasePatch('savedAt', __syncNow).catch(function(){});
     await quickFirebasePatch('meta/savedAt', __syncNow).catch(function(){});
     persistCoreDataToLocalStorage();
     hasUnsavedChanges = false;
-    showSyncBadge(permanent ? '✅ تم إرسال الحذف النهائي إلى Firebase' : '✅ تم إرسال الحذف إلى Firebase');
+    showSyncBadge(permanent ? '✅ تم إرسال الحذف النهائي إلى Firebase' : '✅ تم نقل ' + cfg.label + ' إلى سلة المحذوفات في Firebase');
     return true;
   } catch(e) {
     hasUnsavedChanges = true;
