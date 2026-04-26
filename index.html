@@ -5733,6 +5733,29 @@ function normalizeFirebaseByIdData(data) {
   data.deletedPayments = mergeByIdArray(data.deletedPayments, data.deletedPaymentsById, 'id');
   data.deletedExpenses = mergeByIdArray(data.deletedExpenses, data.deletedExpensesById, 'id');
 
+  // في وضع الحفظ الفردي، المصفوفات القديمة students/payments/expenses على الجذر قد تبقى وفيها سجلات محذوفة.
+  // إذا وجد السجل في deletedXxxById فهذا يعني أنه محذوف حالياً، ويجب ألا يرجع للقائمة النشطة عند التحديث.
+  function keysFromById(obj) {
+    const set = {};
+    if (obj && typeof obj === 'object') {
+      Object.keys(obj).forEach(function(k){
+        const item = obj[k];
+        const id = item && typeof item === 'object' && item.id != null ? item.id : k;
+        set[normKey(id)] = true;
+      });
+    }
+    return set;
+  }
+  function filterActiveAgainstByIdDeletes(arr, deletedByIdObj) {
+    const del = keysFromById(deletedByIdObj);
+    return (Array.isArray(arr) ? arr : []).filter(function(item){
+      return !(item && item.id != null && del[normKey(item.id)]);
+    });
+  }
+  data.students = filterActiveAgainstByIdDeletes(data.students, data.deletedStudentsById);
+  data.payments = filterActiveAgainstByIdDeletes(data.payments, data.deletedPaymentsById);
+  data.expenses = filterActiveAgainstByIdDeletes(data.expenses, data.deletedExpensesById);
+
   if (!data.tombstones || typeof data.tombstones !== 'object') data.tombstones = {};
   ['students','payments','expenses'].forEach(function(type){
     if (!Array.isArray(data.tombstones[type])) data.tombstones[type] = [];
@@ -5831,6 +5854,10 @@ async function syncStudentDeleteQuick(student, permanent) {
       }));
       await quickFirebaseDelete('tombstonesById/students/' + idKey).catch(function(){});
     }
+    // مهم جداً: إذا كان السجل مستعاداً سابقاً وبقي له restoredKeysById في Firebase
+    // فإن التحديث التلقائي سيعتبره "مستعاد" ويرجعه من مصفوفة expenses/payments القديمة.
+    // لذلك عند أي حذف، احذف علامة الاستعادة السحابية.
+    await quickFirebaseDelete('restoredKeysById/' + type + '/' + idKey).catch(function(){});
     const __syncNow = new Date().toISOString();
     await quickFirebasePatch('savedAt', __syncNow).catch(function(){});
     await quickFirebasePatch('meta/savedAt', __syncNow).catch(function(){});
@@ -5939,6 +5966,10 @@ async function syncRecordDeleteQuick(type, record, permanent) {
       }));
       await quickFirebaseDelete('tombstonesById/' + type + '/' + idKey).catch(function(){});
     }
+    // مهم جداً: إذا كان السجل مستعاداً سابقاً وبقي له restoredKeysById في Firebase
+    // فإن التحديث التلقائي سيعتبره "مستعاد" ويرجعه من مصفوفة expenses/payments القديمة.
+    // لذلك عند أي حذف، احذف علامة الاستعادة السحابية.
+    await quickFirebaseDelete('restoredKeysById/' + type + '/' + idKey).catch(function(){});
     const __syncNow = new Date().toISOString();
     await quickFirebasePatch('savedAt', __syncNow).catch(function(){});
     await quickFirebasePatch('meta/savedAt', __syncNow).catch(function(){});
