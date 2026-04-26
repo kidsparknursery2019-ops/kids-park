@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260426-student-id-safe-sync -->
+<!-- v20260426-quick-per-record-students-payments-expenses-sync -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -2588,7 +2588,15 @@ function printStudentsSelectedReport(){
     .meals-grid td.blank-cell{height:30px;width:70px}
   </style>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
-  <script>window.onload=()=>{setTimeout(()=>window.print(),250)}<\/script></body></html>`);
+  <script>window.onload=()=>{setTimeout(()=>window.print(),250)}<\/script>
+<script>
+window.PER_RECORD_ONLY_CORE_SECTIONS = true;
+// تعطيل الحفظ الشامل للأقسام الأساسية:
+// students + payments + expenses
+// مع الإبقاء على النسخ الاحتياطي والاستعادة الكاملة كما هي.
+</script>
+
+</body></html>`);
   w.document.close();
 }
 
@@ -2901,7 +2909,15 @@ function printStudentPayments(studentId) {
       '<button class="btn" onclick="window.print()">🖨 طباعة</button>' +
       '<button class="btn" onclick="window.close()" style="background:#888">إغلاق</button>' +
     '</div>' +
-    '</body></html>'
+    '
+<script>
+window.PER_RECORD_ONLY_CORE_SECTIONS = true;
+// تعطيل الحفظ الشامل للأقسام الأساسية:
+// students + payments + expenses
+// مع الإبقاء على النسخ الاحتياطي والاستعادة الكاملة كما هي.
+</script>
+
+</body></html>'
   );
   w.document.close();
 }
@@ -3010,7 +3026,15 @@ function printStudentFullFile(studentId) {
     '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+total.toLocaleString()+' د.إ — عدد السندات: '+pays.length+'</div></div>'+
     '<div class="sec"><h2>المرفقات والوثائق</h2><div class="docs">'+docCards+'</div></div>'+
     '<div class="actions"><button class="btn" onclick="window.print()">🖨 طباعة</button><button class="btn gray" onclick="window.close()">إغلاق</button></div>'+
-  '</body></html>');
+  '
+<script>
+window.PER_RECORD_ONLY_CORE_SECTIONS = true;
+// تعطيل الحفظ الشامل للأقسام الأساسية:
+// students + payments + expenses
+// مع الإبقاء على النسخ الاحتياطي والاستعادة الكاملة كما هي.
+</script>
+
+</body></html>');
   w.document.close();
 }
 
@@ -3250,18 +3274,25 @@ async function saveStudent(){
   const manualHealthValue = document.getElementById('ns-health').value.trim();
   const nameEnInput = (document.getElementById('ns-name-en').value || '').trim();
   const data={name,nameEn:(nameEnInput || transliterateArabicName(name)),dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,addr:document.getElementById('ns-addr').value,idNo:document.getElementById('ns-idno').value,health:manualHealthValue,healthOverride:manualHealthValue,healthDeleted:false,note:document.getElementById('ns-note').value,internalNote:document.getElementById('ns-internal-note').value,sub_end:(document.getElementById('ns-sub-end')||{}).value||''};
+  let savedStudent = null;
   if(editingStuId){
     const i=students.findIndex(x=>x.id===editingStuId);
-    if(i>=0)students[i]={...students[i],...data};
+    if(i>=0){
+      students[i]={...students[i],...data};
+      savedStudent = students[i];
+    }
   } else {
     const safeStudentId = await getSafeNextStudentIdRemoteAware();
-    students.push({id:safeStudentId,...data});
+    savedStudent = {id:safeStudentId,...data};
+    students.push(savedStudent);
     nextStuId = getSafeNextStudentId();
   }
   resetPaymentMatchCache();
   closeAll();renderStudents();renderDash();
   if(typeof renderPayments==='function') renderPayments(); if(typeof renderReceipts==='function') renderReceipts();
-  autoSave(); alert(`✅ تم ${editingStuId?'تعديل':'إضافة'} الطالب "${name}" بنجاح`);
+  persistCoreDataToLocalStorage();
+  if(savedStudent) syncStudentRecordQuick(savedStudent, editingStuId ? 'edit' : 'add');
+  alert(`✅ تم ${editingStuId?'تعديل':'إضافة'} الطالب "${name}" بنجاح`);
 }
 
 function delStudent(id){
@@ -3281,7 +3312,8 @@ function delStudent(id){
   students = students.filter(x => x.id !== id);
   addTombstone('students', id);
   resetPaymentMatchCache();
-  autoSave();
+  persistCoreDataToLocalStorage();
+  syncStudentDeleteQuick(deletedCopy, false);
   renderStudents();
   renderDash();
   if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
@@ -3307,7 +3339,9 @@ function restoreStudent(id) {
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
   cleanupDeletedBuckets();
-  autoSave();
+  markRestored('students', id);
+  persistCoreDataToLocalStorage();
+  syncStudentRestoreQuick(restored);
   renderStudents();
   renderDash();
   renderDeletedStudents();
@@ -3326,8 +3360,9 @@ function permanentDeleteStudent(id) {
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
   // تأكد من إضافة tombstone (في حال ما كان موجود)
   addTombstone('students', id);
-  // ✅ ارفع التغيير لـ Firebase ليصل للأجهزة الأخرى
-  autoSave();
+  // ✅ ارفع التغيير كحذف فردي لـ Firebase ليصل للأجهزة الأخرى
+  persistCoreDataToLocalStorage();
+  syncStudentDeleteQuick(s, true);
   renderDeletedStudents();
   renderOtherDeletedItems();
 }
@@ -3361,7 +3396,8 @@ function restorePayment(id) {
   }
   markRestored('payments', id);
   persistCoreDataToLocalStorage();
-  autoSave(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
+  syncRecordRestoreQuick('payments', restored);
+  renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
   if (typeof updateNotifications === 'function') updateNotifications();
   if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
 }
@@ -3382,7 +3418,8 @@ function restoreExpense(id) {
   }
   markRestored('expenses', id);
   persistCoreDataToLocalStorage();
-  autoSave(); renderExpenses(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
+  syncRecordRestoreQuick('expenses', restored);
+  renderExpenses(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
   if (typeof updateNotifications === 'function') updateNotifications();
 }
 
@@ -3425,14 +3462,19 @@ function restoreClass(name) {
 
 function permanentDeleteGeneric(type, key) {
   if (!confirm('⚠️ حذف نهائي؟ لا يمكن التراجع!')) return;
+  let deletedRecordForSync = null;
   if (type === 'payments') {
+    deletedRecordForSync = deletedPayments.find(function(x){ return x.id === key; }) || {id:key};
     deletedPayments = deletedPayments.filter(function(x){ return x.id !== key; });
     localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
     addTombstone('payments', key);
+    syncRecordDeleteQuick('payments', deletedRecordForSync, true);
   } else if (type === 'expenses') {
+    deletedRecordForSync = deletedExpenses.find(function(x){ return x.id === key; }) || {id:key};
     deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== key; });
     localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
     addTombstone('expenses', key);
+    syncRecordDeleteQuick('expenses', deletedRecordForSync, true);
   } else if (type === 'renewals') {
     deletedRenewals = deletedRenewals.filter(function(x){ return x.id !== key; });
     localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
@@ -3443,7 +3485,9 @@ function permanentDeleteGeneric(type, key) {
     addTombstone('classes', key);
   }
   cleanupDeletedBuckets();
-  autoSave(); renderDeletedStudents(); renderOtherDeletedItems();
+  persistCoreDataToLocalStorage();
+  if (type !== 'payments' && type !== 'expenses') autoSave();
+  renderDeletedStudents(); renderOtherDeletedItems();
 }
 
 function renderDeletedSectionCard(icon, title, subtitle, actionsHtml) {
@@ -3920,7 +3964,9 @@ function deletePayment(){
   localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
   payments = payments.filter(x=>x.id!==delId);
   addTombstone('payments', delId);
-  autoSave(); closeAll(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
+  persistCoreDataToLocalStorage();
+  syncRecordDeleteQuick('payments', Object.assign({}, p, {id: delId}), false);
+  closeAll(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
   renderOtherDeletedItems();
 }
 
@@ -3964,7 +4010,8 @@ function savePayment(){
     renderPayments();
     renderReceipts();
     renderDash();
-    autoSave();
+    persistCoreDataToLocalStorage();
+    syncRecordQuick('payments', p, 'edit');
     alert('✅ تم تعديل السند #' + p.id);
   } else {
     let newId = nextPayId;
@@ -3997,7 +4044,8 @@ function savePayment(){
     renderPayments();
     renderReceipts();
     renderDash();
-    autoSave();
+    persistCoreDataToLocalStorage();
+    syncRecordQuick('payments', p, 'add');
     alert('✅ تم تسجيل الدفعة بنجاح (#' + p.id + ')');
   }
 }
@@ -4078,14 +4126,19 @@ function saveExpense(){
     e.exp_date = document.getElementById('ne-date').value;
     e.note = document.getElementById('ne-note').value||'';
     closeAll();renderExpenses();renderDash();
-    autoSave(); alert('✅ تم تعديل المصروف بنجاح');
+    persistCoreDataToLocalStorage();
+    syncRecordQuick('expenses', e, 'edit');
+    alert('✅ تم تعديل المصروف بنجاح');
   } else {
     const expDate = document.getElementById('ne-date').value;
     const newExpenseId = getSafeNextExpenseId();
     nextExpId = newExpenseId + 1;
-    expenses.push({id:newExpenseId,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:expDate,exp_date:expDate,note:document.getElementById('ne-note').value||''});
+    const newExpense = {id:newExpenseId,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:expDate,exp_date:expDate,note:document.getElementById('ne-note').value||''};
+    expenses.push(newExpense);
     closeAll();renderExpenses();renderDash();
-    autoSave(); alert('✅ تم حفظ المصروف بنجاح');
+    persistCoreDataToLocalStorage();
+    syncRecordQuick('expenses', newExpense, 'add');
+    alert('✅ تم حفظ المصروف بنجاح');
   }
 }
 
@@ -4102,7 +4155,9 @@ function delExpense(id){
   expenses=expenses.filter(e=>e.id!==delId);
   addTombstone('expenses', delId);
   closeAll();
-  autoSave(); renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
+  persistCoreDataToLocalStorage();
+  syncRecordDeleteQuick('expenses', Object.assign({}, exp, {id: delId}), false);
+  renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
   renderOtherDeletedItems();
 }
 
@@ -4885,7 +4940,15 @@ function doPrintExport(){
     d.rows.forEach(r=>{html+=`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`;});
     html+='</tbody>';
   }
-  html+='</table></body></html>';
+  html+='</table>
+<script>
+window.PER_RECORD_ONLY_CORE_SECTIONS = true;
+// تعطيل الحفظ الشامل للأقسام الأساسية:
+// students + payments + expenses
+// مع الإبقاء على النسخ الاحتياطي والاستعادة الكاملة كما هي.
+</script>
+
+</body></html>';
   const w=window.open('','_blank');
   w.document.write(html);
   w.document.close();
@@ -5413,7 +5476,15 @@ function printAllWorksheets() {
 </div>`;
   });
 
-  printHtml += `</body></html>`;
+  printHtml += `
+<script>
+window.PER_RECORD_ONLY_CORE_SECTIONS = true;
+// تعطيل الحفظ الشامل للأقسام الأساسية:
+// students + payments + expenses
+// مع الإبقاء على النسخ الاحتياطي والاستعادة الكاملة كما هي.
+</script>
+
+</body></html>`;
 
   const win = window.open('', '_blank');
   if(!win) { alert('يرجى السماح بالنوافذ المنبثقة في المتصفح'); return; }
@@ -5666,6 +5737,290 @@ function autoSave() {
   }, 300);
 }
 
+// ============================================================
+// QUICK PER-RECORD FIREBASE SYNC LAYER (students trial)
+// يحفظ عمليات الطلاب كسجلات منفصلة لتقليل تضارب الأجهزة.
+// يترك autoSave القديم لباقي الأقسام وللاستعادة الكاملة.
+// ============================================================
+function quickSyncKey(value) {
+  return value == null ? '' : String(value).replace(/[.#$\[\]\/]/g, '_');
+}
+
+function normalizeFirebaseByIdData(data) {
+  if (!data || typeof data !== 'object') return data;
+
+  function mergeByIdArray(arr, byIdObj, idField) {
+    const map = {};
+    (Array.isArray(arr) ? arr : []).forEach(function(item){
+      if (item && item[idField] != null) map[normKey(item[idField])] = item;
+    });
+    if (byIdObj && typeof byIdObj === 'object') {
+      Object.keys(byIdObj).forEach(function(k){
+        const item = byIdObj[k];
+        if (item && typeof item === 'object' && item[idField] != null) {
+          map[normKey(item[idField])] = Object.assign({}, map[normKey(item[idField])] || {}, item);
+        }
+      });
+    }
+    return Object.values(map);
+  }
+
+  data.students = mergeByIdArray(data.students, data.studentsById, 'id');
+  data.payments = mergeByIdArray(data.payments, data.paymentsById, 'id');
+  data.expenses = mergeByIdArray(data.expenses, data.expensesById, 'id');
+  data.deletedStudents = mergeByIdArray(data.deletedStudents, data.deletedStudentsById, 'id');
+  data.deletedPayments = mergeByIdArray(data.deletedPayments, data.deletedPaymentsById, 'id');
+  data.deletedExpenses = mergeByIdArray(data.deletedExpenses, data.deletedExpensesById, 'id');
+
+  if (!data.tombstones || typeof data.tombstones !== 'object') data.tombstones = {};
+  ['students','payments','expenses'].forEach(function(type){
+    if (!Array.isArray(data.tombstones[type])) data.tombstones[type] = [];
+    if (data.tombstonesById && data.tombstonesById[type] && typeof data.tombstonesById[type] === 'object') {
+      Object.keys(data.tombstonesById[type]).forEach(function(k){
+        const marker = data.tombstonesById[type][k];
+        const id = marker && marker.id != null ? marker.id : k;
+        if (!hasKey(data.tombstones[type], id)) data.tombstones[type].push(id);
+      });
+    }
+  });
+
+  if (data.restoredKeysById && typeof data.restoredKeysById === 'object') {
+    if (!data.restoredKeys || typeof data.restoredKeys !== 'object') data.restoredKeys = {};
+    ['students','payments','expenses'].forEach(function(type){
+      if (!Array.isArray(data.restoredKeys[type])) data.restoredKeys[type] = [];
+      if (data.restoredKeysById[type] && typeof data.restoredKeysById[type] === 'object') {
+        Object.keys(data.restoredKeysById[type]).forEach(function(k){
+          const marker = data.restoredKeysById[type][k];
+          const id = marker && marker.id != null ? marker.id : k;
+          if (!hasKey(data.restoredKeys[type], id)) data.restoredKeys[type].push(id);
+        });
+      }
+    });
+  }
+
+  return data;
+}
+
+async function quickFirebasePatch(path, value) {
+  const res = await fetch(FB_URL + '/' + path + '.json', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(value)
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(function(){ return ''; });
+    throw new Error('HTTP ' + res.status + ' ' + txt.slice(0, 80));
+  }
+  return true;
+}
+
+async function quickFirebaseDelete(path) {
+  const res = await fetch(FB_URL + '/' + path + '.json', { method: 'DELETE' });
+  if (!res.ok) {
+    const txt = await res.text().catch(function(){ return ''; });
+    throw new Error('HTTP ' + res.status + ' ' + txt.slice(0, 80));
+  }
+  return true;
+}
+
+async function syncStudentRecordQuick(student, actionLabel) {
+  if (!student || student.id == null) return false;
+  const idKey = quickSyncKey(student.id);
+  try {
+    showSyncBadge('⏳ إرسال الطالب إلى Firebase...');
+    await quickFirebasePatch('studentsById/' + idKey, Object.assign({}, student, {
+      _lastAction: actionLabel || 'save',
+      _syncedAt: new Date().toISOString()
+    }));
+    await quickFirebaseDelete('deletedStudentsById/' + idKey).catch(function(){});
+    await quickFirebaseDelete('tombstonesById/students/' + idKey).catch(function(){});
+    await quickFirebasePatch('meta/savedAt', new Date().toISOString()).catch(function(){});
+    persistCoreDataToLocalStorage();
+    hasUnsavedChanges = false;
+    showSyncBadge('✅ تم إرسال الطالب إلى Firebase');
+    return true;
+  } catch (e) {
+    hasUnsavedChanges = true;
+    persistCoreDataToLocalStorage();
+    showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل إلى Firebase');
+    console.error('syncStudentRecordQuick failed:', e);
+    return false;
+  }
+}
+
+async function syncStudentDeleteQuick(student, permanent) {
+  if (!student || student.id == null) return false;
+  const idKey = quickSyncKey(student.id);
+  try {
+    showSyncBadge('⏳ إرسال حذف الطالب إلى Firebase...');
+    await quickFirebaseDelete('studentsById/' + idKey).catch(function(){});
+    if (permanent) {
+      await quickFirebaseDelete('deletedStudentsById/' + idKey).catch(function(){});
+      await quickFirebasePatch('tombstonesById/students/' + idKey, {
+        id: student.id,
+        deletedAt: new Date().toISOString(),
+        deletedBy: currentUser ? currentUser.name : 'نظام'
+      });
+    } else {
+      await quickFirebasePatch('deletedStudentsById/' + idKey, Object.assign({}, student, {
+        _lastAction: 'delete',
+        _syncedAt: new Date().toISOString()
+      }));
+      await quickFirebaseDelete('tombstonesById/students/' + idKey).catch(function(){});
+    }
+    await quickFirebasePatch('meta/savedAt', new Date().toISOString()).catch(function(){});
+    persistCoreDataToLocalStorage();
+    hasUnsavedChanges = false;
+    showSyncBadge(permanent ? '✅ تم إرسال الحذف النهائي إلى Firebase' : '✅ تم إرسال الحذف إلى Firebase');
+    return true;
+  } catch (e) {
+    hasUnsavedChanges = true;
+    persistCoreDataToLocalStorage();
+    showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل حذف الطالب إلى Firebase');
+    console.error('syncStudentDeleteQuick failed:', e);
+    return false;
+  }
+}
+
+async function syncStudentRestoreQuick(student) {
+  if (!student || student.id == null) return false;
+  const idKey = quickSyncKey(student.id);
+  try {
+    showSyncBadge('⏳ إرسال استعادة الطالب إلى Firebase...');
+    await quickFirebasePatch('studentsById/' + idKey, Object.assign({}, student, {
+      _lastAction: 'restore',
+      _syncedAt: new Date().toISOString()
+    }));
+    await quickFirebaseDelete('deletedStudentsById/' + idKey).catch(function(){});
+    await quickFirebaseDelete('tombstonesById/students/' + idKey).catch(function(){});
+    await quickFirebasePatch('restoredKeysById/students/' + idKey, {
+      id: student.id,
+      restoredAt: new Date().toISOString(),
+      restoredBy: currentUser ? currentUser.name : 'نظام'
+    }).catch(function(){});
+    await quickFirebasePatch('meta/savedAt', new Date().toISOString()).catch(function(){});
+    persistCoreDataToLocalStorage();
+    hasUnsavedChanges = false;
+    showSyncBadge('✅ تم إرسال الاستعادة إلى Firebase');
+    return true;
+  } catch (e) {
+    hasUnsavedChanges = true;
+    persistCoreDataToLocalStorage();
+    showSyncBadge('⚠️ محفوظ محلياً فقط — لم تصل الاستعادة إلى Firebase');
+    console.error('syncStudentRestoreQuick failed:', e);
+    return false;
+  }
+}
+
+
+async function syncRecordQuick(type, record, actionLabel) {
+  if (!record || record.id == null) return false;
+  const map = {
+    payments: {active:'paymentsById', deleted:'deletedPaymentsById', label:'السند'},
+    expenses: {active:'expensesById', deleted:'deletedExpensesById', label:'المصروف'}
+  };
+  const cfg = map[type];
+  if (!cfg) return false;
+  const idKey = quickSyncKey(record.id);
+  try {
+    showSyncBadge('⏳ إرسال ' + cfg.label + ' إلى Firebase...');
+    await quickFirebasePatch(cfg.active + '/' + idKey, Object.assign({}, record, {
+      _lastAction: actionLabel || 'save',
+      _syncedAt: new Date().toISOString()
+    }));
+    await quickFirebaseDelete(cfg.deleted + '/' + idKey).catch(function(){});
+    await quickFirebaseDelete('tombstonesById/' + type + '/' + idKey).catch(function(){});
+    await quickFirebasePatch('meta/savedAt', new Date().toISOString()).catch(function(){});
+    persistCoreDataToLocalStorage();
+    hasUnsavedChanges = false;
+    showSyncBadge('✅ تم إرسال ' + cfg.label + ' إلى Firebase');
+    return true;
+  } catch(e) {
+    hasUnsavedChanges = true;
+    persistCoreDataToLocalStorage();
+    showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل ' + cfg.label + ' إلى Firebase');
+    console.error('syncRecordQuick failed:', type, e);
+    return false;
+  }
+}
+
+async function syncRecordDeleteQuick(type, record, permanent) {
+  if (!record || record.id == null) return false;
+  const map = {
+    payments: {active:'paymentsById', deleted:'deletedPaymentsById', label:'السند'},
+    expenses: {active:'expensesById', deleted:'deletedExpensesById', label:'المصروف'}
+  };
+  const cfg = map[type];
+  if (!cfg) return false;
+  const idKey = quickSyncKey(record.id);
+  try {
+    showSyncBadge('⏳ إرسال حذف ' + cfg.label + ' إلى Firebase...');
+    await quickFirebaseDelete(cfg.active + '/' + idKey).catch(function(){});
+    if (permanent) {
+      await quickFirebaseDelete(cfg.deleted + '/' + idKey).catch(function(){});
+      await quickFirebasePatch('tombstonesById/' + type + '/' + idKey, {
+        id: record.id,
+        deletedAt: new Date().toISOString(),
+        deletedBy: currentUser ? currentUser.name : 'نظام'
+      });
+    } else {
+      await quickFirebasePatch(cfg.deleted + '/' + idKey, Object.assign({}, record, {
+        _lastAction: 'delete',
+        _syncedAt: new Date().toISOString()
+      }));
+      await quickFirebaseDelete('tombstonesById/' + type + '/' + idKey).catch(function(){});
+    }
+    await quickFirebasePatch('meta/savedAt', new Date().toISOString()).catch(function(){});
+    persistCoreDataToLocalStorage();
+    hasUnsavedChanges = false;
+    showSyncBadge(permanent ? '✅ تم إرسال الحذف النهائي إلى Firebase' : '✅ تم إرسال الحذف إلى Firebase');
+    return true;
+  } catch(e) {
+    hasUnsavedChanges = true;
+    persistCoreDataToLocalStorage();
+    showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل حذف ' + cfg.label + ' إلى Firebase');
+    console.error('syncRecordDeleteQuick failed:', type, e);
+    return false;
+  }
+}
+
+async function syncRecordRestoreQuick(type, record) {
+  if (!record || record.id == null) return false;
+  const map = {
+    payments: {active:'paymentsById', deleted:'deletedPaymentsById', label:'السند'},
+    expenses: {active:'expensesById', deleted:'deletedExpensesById', label:'المصروف'}
+  };
+  const cfg = map[type];
+  if (!cfg) return false;
+  const idKey = quickSyncKey(record.id);
+  try {
+    showSyncBadge('⏳ إرسال استعادة ' + cfg.label + ' إلى Firebase...');
+    await quickFirebasePatch(cfg.active + '/' + idKey, Object.assign({}, record, {
+      _lastAction: 'restore',
+      _syncedAt: new Date().toISOString()
+    }));
+    await quickFirebaseDelete(cfg.deleted + '/' + idKey).catch(function(){});
+    await quickFirebaseDelete('tombstonesById/' + type + '/' + idKey).catch(function(){});
+    await quickFirebasePatch('restoredKeysById/' + type + '/' + idKey, {
+      id: record.id,
+      restoredAt: new Date().toISOString(),
+      restoredBy: currentUser ? currentUser.name : 'نظام'
+    }).catch(function(){});
+    await quickFirebasePatch('meta/savedAt', new Date().toISOString()).catch(function(){});
+    persistCoreDataToLocalStorage();
+    hasUnsavedChanges = false;
+    showSyncBadge('✅ تم إرسال الاستعادة إلى Firebase');
+    return true;
+  } catch(e) {
+    hasUnsavedChanges = true;
+    persistCoreDataToLocalStorage();
+    showSyncBadge('⚠️ محفوظ محلياً فقط — لم تصل الاستعادة إلى Firebase');
+    console.error('syncRecordRestoreQuick failed:', type, e);
+    return false;
+  }
+}
+
+
 async function saveLogoToFirebaseSilent() {
   const res = await fetch(FB_LOGO_URL + '.json', {
     method: 'PUT',
@@ -5859,6 +6214,14 @@ function buildFinancialReportPrintHtml(d) {
     <div class="foot">حضانة حديقة الأطفال — تقرير مالي تم إنشاؤه في ${escapeHtml(generatedAt)}</div>
   </div>
   <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
+
+<script>
+window.PER_RECORD_ONLY_CORE_SECTIONS = true;
+// تعطيل الحفظ الشامل للأقسام الأساسية:
+// students + payments + expenses
+// مع الإبقاء على النسخ الاحتياطي والاستعادة الكاملة كما هي.
+</script>
+
 </body>
 </html>`;
 }
@@ -6148,7 +6511,7 @@ async function pushToFirebase() {
     if (!fullReplace) {
       try {
         const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
-        if (fetchRes.ok) remoteData = await fetchRes.json();
+        if (fetchRes.ok) remoteData = normalizeFirebaseByIdData(await fetchRes.json());
       } catch(_) { /* نتابع بدون بيانات سحابية */ }
     }
 
@@ -6418,8 +6781,8 @@ async function loadFromFirebase() {
   try {
     const res = await fetch(FB_URL + '.json', { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
+    let data = normalizeFirebaseByIdData(await res.json());
+    if (!data || (!data.version && !data.studentsById && !data.deletedStudentsById)) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
 
     // دمج restoredKeys أولاً من Firebase مع المحلي (الاتحاد)
     if (data.restoredKeys && typeof data.restoredKeys === 'object') {
@@ -7719,5 +8082,13 @@ document.addEventListener('click', function(e) {
   }
 })();
 </script>
+
+<script>
+window.PER_RECORD_ONLY_CORE_SECTIONS = true;
+// تعطيل الحفظ الشامل للأقسام الأساسية:
+// students + payments + expenses
+// مع الإبقاء على النسخ الاحتياطي والاستعادة الكاملة كما هي.
+</script>
+
 </body>
 </html>
