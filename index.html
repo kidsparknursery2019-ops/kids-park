@@ -3928,7 +3928,7 @@ function openEditPay(id){
   document.getElementById('mo-pay').classList.add('on');
 }
 
-function deletePayment(){
+async function deletePayment(){
   if(!editingPayId) return;
   const p = payments.find(x=>x.id===editingPayId);
   if(!p||!confirm('حذف السند #'+p.id+' ('+p.who+')؟')) return;
@@ -3943,10 +3943,12 @@ function deletePayment(){
   localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
   payments = payments.filter(x=>x.id!==delId);
   addTombstone('payments', delId);
+  cleanupDeletedBuckets();
   persistCoreDataToLocalStorage();
-  syncRecordDeleteQuick('payments', trashPayment, false);
+  const ok = await syncRecordDeleteQuick('payments', trashPayment, false);
   closeAll(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
   renderOtherDeletedItems();
+  if (!ok) alert('⚠️ تم نقل السند محلياً إلى سلة المحذوفات، لكن لم يصل Firebase بعد.');
 }
 
 function savePayment(){
@@ -4121,7 +4123,7 @@ function saveExpense(){
   }
 }
 
-function delExpense(id){
+async function delExpense(id){
   const delId = id || editingExpId;
   if(!delId) return;
   const exp = expenses.find(function(e){ return e.id===delId; });
@@ -4136,11 +4138,13 @@ function delExpense(id){
   localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
   expenses=expenses.filter(e=>e.id!==delId);
   addTombstone('expenses', delId);
+  cleanupDeletedBuckets();
   closeAll();
   persistCoreDataToLocalStorage();
-  syncRecordDeleteQuick('expenses', trashExp, false);
+  const ok = await syncRecordDeleteQuick('expenses', trashExp, false);
   renderExpenses(); renderDash(); if (typeof renderDeletedStudents==='function') renderDeletedStudents();
   renderOtherDeletedItems();
+  if (!ok) alert('⚠️ تم نقل المصروف محلياً إلى سلة المحذوفات، لكن لم يصل Firebase بعد.');
 }
 
 // ============================================================
@@ -6663,21 +6667,22 @@ async function pushToFirebase() {
 
     const mergeDeletedByKey = function(localArr, remoteArr, keyField, tombstoneArr, activeArr, restoredArr) {
       const localDeletedKeys = new Set((Array.isArray(localArr) ? localArr : []).map(function(item){ return item && normKey(item[keyField]); }).filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
+      const remoteDeletedKeys = new Set((Array.isArray(remoteArr) ? remoteArr : []).map(function(item){ return item && normKey(item[keyField]); }).filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
+      const allDeletedKeys = new Set(Array.from(localDeletedKeys).concat(Array.from(remoteDeletedKeys)));
       const restoredSet = new Set((Array.isArray(restoredArr) ? restoredArr : []).map(function(x){ return normKey(x); }));
-      // المفاتيح النشطة فقط التي لم تكن محذوفة محلياً
+      // مهم: وجود السجل في deleted محلياً أو سحابياً أقوى من وجود نسخة قديمة له في activeArr.
       const activeKeys = new Set((Array.isArray(activeArr) ? activeArr : [])
         .map(function(item){ return item && normKey(item[keyField]); })
-        .filter(function(v){ return v !== undefined && v !== null && v !== '' && !localDeletedKeys.has(v); }));
+        .filter(function(v){ return v !== undefined && v !== null && v !== '' && !allDeletedKeys.has(v); }));
       const map = {};
       (Array.isArray(remoteArr)?remoteArr:[]).forEach(function(item){ if(item && item[keyField] !== undefined) map[normKey(item[keyField])] = item; });
       (Array.isArray(localArr)?localArr:[]).forEach(function(item){ if(item && item[keyField] !== undefined) map[normKey(item[keyField])] = item; });
       return Object.values(map).filter(function(item){
         if (!item || item[keyField] === undefined || item[keyField] === null) return false;
         const key = normKey(item[keyField]);
-        // إذا السجل مستعاد محلياً، لا يظهر في سلة المحذوفات أبداً
         if (restoredSet.has(key)) return false;
-        // إذا السجل محذوف محلياً، يظل في سلة المحذوفات حتى لو كان في activeArr (عودة خاطئة من remote)
-        if (localDeletedKeys.has(key)) return true;
+        // إذا السجل موجود في deleted محلياً أو في Firebase deletedById/deleted array، يجب أن يظهر في سلة المحذوفات حتى لو كانت المصفوفة القديمة ما زالت تحتويه.
+        if (allDeletedKeys.has(key)) return true;
         if (activeKeys.has(key)) return false;
         if (hasKey(tombstoneArr, item[keyField])) return false;
         return true;
@@ -6908,7 +6913,7 @@ async function loadFromFirebase() {
       const remoteDs = data.deletedStudents.filter(function(s){
         if (!s || !s.id) return false;
         if (restoredStudentsSet.has(normKey(s.id))) return false;
-        if (students.some(function(x){ return x.id === s.id; })) return false;
+        // deleted remote wins over stale active array
         return true;
       });
       const localMap = {};
@@ -6922,7 +6927,7 @@ async function loadFromFirebase() {
       data.deletedPayments.filter(function(x){
         if (!x || x.id == null) return false;
         if (restoredPaymentsSet.has(normKey(x.id))) return false;
-        if (payments.some(function(p){ return p && normKey(p.id) === normKey(x.id); })) return false;
+        // deleted remote wins over stale active array
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
       deletedPayments.forEach(function(x){
@@ -6936,7 +6941,7 @@ async function loadFromFirebase() {
       data.deletedExpenses.filter(function(x){
         if (!x || x.id == null) return false;
         if (restoredExpensesSet.has(normKey(x.id))) return false;
-        if (expenses.some(function(e){ return e && normKey(e.id) === normKey(x.id); })) return false;
+        // deleted remote wins over stale active array
         return true;
       }).forEach(function(x){ remoteMap[normKey(x.id)] = x; });
       deletedExpenses.forEach(function(x){
