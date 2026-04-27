@@ -288,6 +288,14 @@ textarea{resize:vertical;min-height:65px}
 .notif-item-sub{font-size:11px;color:var(--muted);margin-top:1px}
 .notif-item-days{font-size:12px;font-weight:700;flex-shrink:0;margin-right:auto}
 
+
+
+/* Default payments sorting: voucher number descending */
+window.__DEFAULT_PAYMENT_SORT__ = {
+  field: 'receiptNumber',
+  direction: 'desc'
+};
+
 /* Sortable table headers (Excel-style) */
 .tbl th.sortable { cursor:pointer; user-select:none; position:relative; padding-right:18px }
 .tbl th.sortable:hover { background:var(--g1); color:white }
