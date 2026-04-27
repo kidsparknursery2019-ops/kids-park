@@ -288,14 +288,6 @@ textarea{resize:vertical;min-height:65px}
 .notif-item-sub{font-size:11px;color:var(--muted);margin-top:1px}
 .notif-item-days{font-size:12px;font-weight:700;flex-shrink:0;margin-right:auto}
 
-
-
-/* Default payments sorting: voucher number descending */
-window.__DEFAULT_PAYMENT_SORT__ = {
-  field: 'receiptNumber',
-  direction: 'desc'
-};
-
 /* Sortable table headers (Excel-style) */
 .tbl th.sortable { cursor:pointer; user-select:none; position:relative; padding-right:18px }
 .tbl th.sortable:hover { background:var(--g1); color:white }
@@ -507,10 +499,10 @@ window.__DEFAULT_PAYMENT_SORT__ = {
           <option>2021</option><option>2022</option><option>2023</option><option>2024</option><option>2025</option><option>2026</option>
         </select>
         <select id="pay-sort" onchange="renderPayments()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
+          <option value="id-desc" selected>رقم السند ↓ (الأكبر)</option>
+          <option value="id-asc">رقم السند ↑ (الأصغر)</option>
           <option value="desc">الأحدث أولاً</option>
           <option value="asc">الأقدم أولاً</option>
-          <option value="id-desc">رقم السند ↓ (الأكبر)</option>
-          <option value="id-asc">رقم السند ↑ (الأصغر)</option>
           <option value="amt-desc">الأعلى قيمة</option>
           <option value="amt-asc">الأقل قيمة</option>
         </select>
@@ -3901,7 +3893,7 @@ function renderPayments(){
   const q    = document.getElementById('pay-search').value.toLowerCase();
   const type = document.getElementById('pay-type').value;
   const yr   = document.getElementById('pay-year') ? document.getElementById('pay-year').value : '';
-  const sort = document.getElementById('pay-sort') ? document.getElementById('pay-sort').value : 'desc';
+  const sort = document.getElementById('pay-sort') ? (document.getElementById('pay-sort').value || 'id-desc') : 'id-desc';
   let f = payments.filter(function(p){
     if (!p) return false;
     const who = String(p.who || '').toLowerCase();
@@ -3914,8 +3906,8 @@ function renderPayments(){
   f = [...f].sort((a,b) => {
     if (sort === 'asc')      return normalizeDate(a.date).localeCompare(normalizeDate(b.date));
     if (sort === 'desc')     return normalizeDate(b.date).localeCompare(normalizeDate(a.date));
-    if (sort === 'id-desc')  return b.id - a.id;
-    if (sort === 'id-asc')   return a.id - b.id;
+    if (sort === 'id-desc')  return (parseInt(b.id, 10) || 0) - (parseInt(a.id, 10) || 0);
+    if (sort === 'id-asc')   return (parseInt(a.id, 10) || 0) - (parseInt(b.id, 10) || 0);
     if (sort === 'amt-desc') return b.amt - a.amt;
     if (sort === 'amt-asc')  return a.amt - b.amt;
     return 0;
