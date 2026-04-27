@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260427-student-restore-guard-cache-fix -->
+<!-- v20260427-backup-schema-compatible-registration-requests -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -258,6 +258,17 @@ textarea{resize:vertical;min-height:65px}
 .form-req-name{font-size:15px;font-weight:700;margin-bottom:3px}
 .form-req-meta{font-size:12px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;margin-bottom:2px}
 .form-req-actions{flex-shrink:0;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+/* FORM REQUEST FULL DETAIL PATCH */
+.form-detail-section{border:1.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px;background:#fff}
+.form-detail-section h4{margin:0 0 10px;color:var(--g1);font-size:15px;font-weight:900}
+.form-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;font-size:13px}
+.form-detail-item{background:#fbfdfb;border:1px solid #eef4ee;border-radius:8px;padding:8px;min-height:48px}
+.form-detail-item.full{grid-column:1/-1}
+.form-detail-label{font-size:11px;color:var(--muted);font-weight:800;margin-bottom:3px}
+.form-detail-value{white-space:pre-wrap;word-break:break-word}
+.form-doc-card{text-align:center;background:#fbfdfb;border:1px solid var(--border);border-radius:10px;padding:8px}
+.form-doc-card img{width:100%;max-height:160px;object-fit:cover;border-radius:8px;border:1px solid var(--border);background:#fff}
+@media(max-width:650px){.form-detail-grid{grid-template-columns:1fr}}
 
 .ren-grid{display:flex;flex-direction:column;gap:8px}
 .ren-row{display:flex;align-items:center;gap:12px;background:white;border-radius:11px;padding:11px 14px;border:1.5px solid var(--border);transition:all .15s;cursor:pointer}
@@ -4847,54 +4858,6 @@ function updateAutoBackupUI() {
 }
 
 
-
-
-// ============================================================
-// RESTORE GUARD — حماية من رجوع بيانات الطلاب المخربطة من الكاش
-// أُضيف بعد حادثة استيراد خاطئ ضاعف عدد الطلاب.
-// بعد استعادة نسخة احتياطية صحيحة، نخزن بصمة بأرقام الطلاب الصحيحة.
-// أي جهاز يحاول لاحقاً رفع كاش قديم فيه طلاب زيادة يتم تجاهله/تنظيفه.
-// ============================================================
-function kpStudentGuardKey(id){ return String(id == null ? '' : id).trim(); }
-function kpBuildStudentGuard(arr){
-  const ids = (Array.isArray(arr) ? arr : [])
-    .map(function(s){ return s && kpStudentGuardKey(s.id); })
-    .filter(function(v){ return v !== ''; });
-  return { active:true, type:'students-authoritative-after-restore', createdAt:new Date().toISOString(), studentsCount:ids.length, studentIds:ids };
-}
-function kpGetLocalStudentGuard(){
-  try { return JSON.parse(localStorage.getItem('kp_restore_guard') || 'null'); } catch(_) { return null; }
-}
-function kpSetLocalStudentGuard(guard){
-  try { if (guard && guard.active) localStorage.setItem('kp_restore_guard', JSON.stringify(guard)); } catch(_) {}
-}
-function kpHasBadStudentImportMarker(s){
-  if (!s || typeof s !== 'object') return false;
-  return !!(s.updatedFromAdditionalListAt || s.updatedFromOfficialStudentListAt || s.studentListOrder || s.studentsUpdatedFrom || s.addedFromSecondListOnly);
-}
-function kpCleanBadImportedStudents(arr){
-  if (!Array.isArray(arr)) return [];
-  return arr.filter(function(s){ return !(s && s.updatedFromAdditionalListAt); });
-}
-function kpApplyStudentGuardToArray(arr, guard){
-  if (!Array.isArray(arr)) return [];
-  if (!guard || !guard.active || !Array.isArray(guard.studentIds) || !guard.studentIds.length) return arr;
-  const allowed = new Set(guard.studentIds.map(kpStudentGuardKey));
-  return arr.filter(function(s){ return s && allowed.has(kpStudentGuardKey(s.id)); });
-}
-function kpLocalStudentsLooksPolluted(localArr, remoteArr, guard){
-  if (!Array.isArray(localArr)) return false;
-  const remoteCount = Array.isArray(remoteArr) ? remoteArr.length : 0;
-  const guardCount = guard && Number(guard.studentsCount || (Array.isArray(guard.studentIds) ? guard.studentIds.length : 0));
-  if (localArr.some(kpHasBadStudentImportMarker)) return true;
-  if (guard && guard.active && guardCount && localArr.length > guardCount + 10) return true;
-  if (remoteCount && localArr.length > remoteCount + 10) return true;
-  return false;
-}
-function kpClearDangerousStudentCaches(){
-  ['kp_students_data','kp_students_backup_before_health_action','kp_bad_students_data','kp_last_bad_students_data'].forEach(function(k){ try { localStorage.removeItem(k); } catch(_) {} });
-}
-
 function downloadBackup() {
   const backup = {
     backupDate: new Date().toISOString(),
@@ -4929,92 +4892,38 @@ function downloadBackup() {
 function restoreBackup(event) {
   const file = event.target.files[0];
   if (!file) return;
-  if (!confirm('⚠️ تحذير!\n\nاستعادة النسخة الاحتياطية ستحل محل جميع البيانات الحالية بالكامل، وستمسح أي بيانات قديمة أو خاطئة من الكاش المحلي ومن Firebase.\n\nهل أنت متأكد؟')) {
+  if (!confirm('⚠️ تحذير!\n\nاستعادة النسخة الاحتياطية ستحل محل جميع البيانات الحالية.\n\nهل أنت متأكد؟')) {
     event.target.value = ''; return;
   }
-
   const reader = new FileReader();
-  reader.onload = async function(e) {
+  reader.onload = function(e) {
     try {
       const backup = JSON.parse(e.target.result);
-      if (!backup || (!backup.version && !Array.isArray(backup.students)) || !Array.isArray(backup.students)) {
-        alert('❌ الملف ليس نسخة احتياطية صالحة');
-        return;
-      }
-
-      // إيقاف أي حفظ/تحديث قديم حتى لا يدمج بيانات Firebase الخاطئة أثناء الاستعادة
-      try { clearTimeout(syncTimeout); syncTimeout = null; pendingSync = false; } catch(_) {}
-      localStorage.setItem('kp_restore_lock_until', String(Date.now() + 30000));
-
-      // تنظيف كامل للكاش المحلي الذي ممكن يرجّع بيانات طلاب قديمة/مكررة بعد الاستعادة
-      [
-        'kp_students_data','kp_payments_data','kp_expenses_data','kp_renewals_data','kp_attlog_data',
-        'kp_deleted_students','kp_deleted_payments','kp_deleted_expenses','kp_deleted_renewals','kp_deleted_classes',
-        'kp_tombstones','kp_restored_keys','kp_last_synced_at',
-        'kp_students_backup_before_health_action'
-      ].forEach(function(k){ try { localStorage.removeItem(k); } catch(_) {} });
-
-      // استبدال كل البيانات محلياً من ملف النسخة فقط — بدون دمج مع القديم
-      students = kpCleanBadImportedStudents(sanitizeEntityArray(backup.students || []));
-      payments = sanitizeEntityArray(backup.payments || []);
-      expenses = sanitizeEntityArray(backup.expenses || []);
-      renewals = sanitizeEntityArray(backup.renewals || []);
-      attLog = (backup.attLog && typeof backup.attLog === 'object' && !Array.isArray(backup.attLog)) ? backup.attLog : {};
-
-      deletedStudents = sanitizeEntityArray(backup.deletedStudents || []);
-      deletedPayments = sanitizeEntityArray(backup.deletedPayments || []);
-      deletedExpenses = sanitizeEntityArray(backup.deletedExpenses || []);
-      deletedRenewals = sanitizeEntityArray(backup.deletedRenewals || []);
-      deletedClasses = sanitizeEntityArray(backup.deletedClasses || []);
-
-      tombstones = (backup.tombstones && typeof backup.tombstones === 'object' && !Array.isArray(backup.tombstones))
-        ? backup.tombstones
-        : {};
-      ['students','payments','expenses','renewals','classes'].forEach(function(t){
-        if (!Array.isArray(tombstones[t])) tombstones[t] = [];
-      });
-
-      restoredKeys = (backup.restoredKeys && typeof backup.restoredKeys === 'object' && !Array.isArray(backup.restoredKeys))
-        ? backup.restoredKeys
-        : {};
-      ['students','payments','expenses','renewals','classes'].forEach(function(t){
-        if (!Array.isArray(restoredKeys[t])) restoredKeys[t] = [];
-      });
-
-      if (backup.CLASSES && typeof backup.CLASSES === 'object' && !Array.isArray(backup.CLASSES)) {
-        Object.keys(CLASSES || {}).forEach(function(k){ delete CLASSES[k]; });
-        Object.assign(CLASSES, backup.CLASSES);
-        if (typeof CLASSES_DATA !== 'undefined') CLASSES_DATA = CLASSES;
-      }
+      if (!backup.version || !backup.students) { alert('❌ الملف ليس نسخة احتياطية صالحة'); return; }
+      if (backup.students) students = backup.students;
+      resetPaymentMatchCache();
+      if (backup.payments) payments = backup.payments;
+      if (backup.expenses) expenses = backup.expenses;
+      if (backup.renewals) renewals = backup.renewals;
+      if (backup.attLog) attLog = backup.attLog;
+      if (backup.deletedStudents) { deletedStudents = backup.deletedStudents; localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents)); }
+      if (backup.deletedPayments) { deletedPayments = backup.deletedPayments; localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments)); }
+      if (backup.deletedExpenses) { deletedExpenses = backup.deletedExpenses; localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses)); }
+      if (backup.deletedRenewals) { deletedRenewals = backup.deletedRenewals; localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals)); }
+      if (backup.deletedClasses) { deletedClasses = backup.deletedClasses; localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses)); }
+      if (backup.tombstones) { tombstones = backup.tombstones; localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); }
+      if (backup.CLASSES) Object.assign(CLASSES, backup.CLASSES);
       if (backup.nurserySettings) Object.assign(nurserySettings, backup.nurserySettings);
       if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(backup.kp_users));
       if (backup.kp_form_rows) { localStorage.setItem('kp_form_rows', JSON.stringify(backup.kp_form_rows)); syncedFormRows = backup.kp_form_rows; }
-
-      // حفظ النسخة النظيفة محلياً بعد القراءة فقط، وليس قبلها
-      persistCoreDataToLocalStorage();
-      localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
-      localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
-      localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
-      localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
-      localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
-      localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
-      localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-
-      resetPaymentMatchCache();
       refreshNextIds();
-
-      const restoreGuard = kpBuildStudentGuard(students);
-      kpSetLocalStudentGuard(restoreGuard);
-      kpClearDangerousStudentCaches();
-      persistCoreDataToLocalStorage();
-
-      // استبدال Firebase بالكامل فوراً، وليس دمجاً مع البيانات المخربطة
+      // امسح أي كاش محلي قديم قبل الاستبدال الكامل حتى لا يرجع الطلاب الزائدون.
+      ['kp_students_data','kp_payments_data','kp_expenses_data','kp_renewals_data','kp_attlog_data','kp_classes','kp_deleted_students','kp_deleted_payments','kp_deleted_expenses','kp_deleted_renewals','kp_deleted_classes','kp_students_backup_before_health_action'].forEach(function(k){
+        try { localStorage.removeItem(k); } catch(_) {}
+      });
       forceFullReplaceOnNextSync = true;
-      hasUnsavedChanges = true;
-      await pushToFirebase();
-
-      localStorage.removeItem('kp_restore_lock_until');
-
+      // استبدال مباشر الآن، وليس autoSave مؤجل، لتجنب أي دمج أو كاش قديم.
+      pushToFirebase();
       renderDash();
       if (typeof renderStudents === 'function') renderStudents();
       if (typeof renderPayments === 'function') renderPayments();
@@ -5024,18 +4933,1085 @@ function restoreBackup(event) {
       if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
       if (typeof renderOtherDeletedItems === 'function') renderOtherDeletedItems();
       if (typeof updateNotifications === 'function') updateNotifications();
-
-      alert('✅ تم استعادة النسخة الاحتياطية واستبدال قاعدة Firebase بالكامل.\n\n' +
-            'الطلاب: ' + students.length + '\n' +
-            'السندات: ' + payments.length + '\n' +
-            'المصاريف: ' + expenses.length);
-    } catch(err) {
-      localStorage.removeItem('kp_restore_lock_until');
-      alert('❌ فشل الاستعادة: ' + (err && err.message ? err.message : err));
-    }
+      alert('✅ تم استعادة النسخة الاحتياطية بنجاح!\n\n' + 'الطلاب: ' + (backup.students||[]).length + '\n' + 'السندات: ' + (backup.payments||[]).length + '\n' + 'المصاريف: ' + (backup.expenses||[]).length);
+    } catch(err) { alert('❌ فشل قراءة الملف: ' + err.message); }
     event.target.value = '';
   };
   reader.readAsText(file);
+}
+
+
+function openImport(target) {
+  importTarget = target;
+  importParsedData = null;
+  const schema = IMPORT_SCHEMAS[target];
+  if (!schema) { alert('نوع البيانات غير مدعوم'); return; }
+  document.getElementById('mo-import-title').textContent = '⬆ استيراد ' + schema.title;
+  document.getElementById('import-file').value = '';
+  document.getElementById('import-preview').style.display = 'none';
+  document.getElementById('import-confirm-btn').style.display = 'none';
+  const schemaHtml = '<b>الأعمدة (بنفس الترتيب):</b><br>' +
+    '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">' +
+    schema.columns.map(function(c, i){
+      const star = c.required ? '<span style="color:#e74c3c">*</span>' : '';
+      return '<span style="background:white;padding:3px 8px;border-radius:6px;border:1px solid var(--border)">' + (i+1) + '. ' + c.label + star + '</span>';
+    }).join('') + '</div>' +
+    '<div style="margin-top:8px;font-size:11px;color:var(--muted)">🔴 <span style="color:#e74c3c">*</span> = حقل إلزامي.</div>';
+  document.getElementById('mo-import-schema').innerHTML = schemaHtml;
+  document.getElementById('import-file').onchange = handleImportFile;
+  document.getElementById('mo-import').classList.add('on');
+}
+
+function downloadImportTemplate() {
+  const schema = IMPORT_SCHEMAS[importTarget];
+  if (!schema) return;
+  const headers = schema.columns.map(function(c){ return c.label + (c.required?' *':''); });
+  const ws = XLSX.utils.aoa_to_sheet([headers]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, schema.title);
+  XLSX.writeFile(wb, 'قالب_' + schema.title + '.xlsx');
+}
+
+function downloadImportSample() {
+  const schema = IMPORT_SCHEMAS[importTarget];
+  if (!schema) return;
+  const headers = schema.columns.map(function(c){ return c.label + (c.required?' *':''); });
+  const s1 = schema.columns.map(function(c){ return c.sample || ''; });
+  const ws = XLSX.utils.aoa_to_sheet([headers, s1]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, schema.title);
+  XLSX.writeFile(wb, 'مثال_' + schema.title + '.xlsx');
+}
+
+function handleImportFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const data = new Uint8Array(ev.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+      const firstSheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+      if (!rows.length) { alert('الملف فارغ'); return; }
+      const schema = IMPORT_SCHEMAS[importTarget];
+      let dataRows = rows.slice(1).filter(function(r){ return r.some(function(c){ return String(c).trim(); }); });
+      const parsed = dataRows.map(function(row){
+        const obj = {};
+        schema.columns.forEach(function(col, i){ obj[col.key] = String(row[i] == null ? '' : row[i]).trim(); });
+        return obj;
+      });
+      importParsedData = parsed;
+      const preview = document.getElementById('import-preview');
+      preview.style.display = 'block';
+      let h = '<div style="font-weight:700;margin-bottom:6px">معاينة: ' + parsed.length + ' صف</div>';
+      h += '<table class="tbl" style="font-size:11px"><thead><tr>' +
+        schema.columns.map(function(c){ return '<th>'+c.label+'</th>'; }).join('') + '</tr></thead><tbody>' +
+        parsed.slice(0,5).map(function(item){
+          return '<tr>' + schema.columns.map(function(c){ return '<td>' + (item[c.key]||'—') + '</td>'; }).join('') + '</tr>';
+        }).join('') + '</tbody></table>';
+      if (parsed.length > 5) h += '<div style="font-size:11px;color:var(--muted);margin-top:4px">... و ' + (parsed.length-5) + ' صفوف أخرى</div>';
+      preview.innerHTML = h;
+      document.getElementById('import-confirm-btn').style.display = 'inline-block';
+      document.getElementById('import-confirm-btn').textContent = '✅ استيراد ' + parsed.length + ' سجل';
+    } catch(err) { alert('خطأ في قراءة الملف: ' + err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function doImport() {
+  if (!importParsedData || !importParsedData.length) { alert('لا توجد بيانات'); return; }
+  if (!confirm('استيراد ' + importParsedData.length + ' سجل؟')) return;
+  let added = 0;
+  if (importTarget === 'students') {
+    importParsedData.forEach(function(item){
+      if (!item.name || !item.cls) return;
+      const safeImportStudentId = getSafeNextStudentId();
+      students.push({ id: safeImportStudentId, name:item.name, nameEn:item.nameEn||item.name_en||item.englishName||transliterateArabicName(item.name||''), dob:item.dob, gen:item.gen||'ذكر', nat:item.nat, cls:item.cls, bpl:item.bpl, dad:item.dad, job:item.job, dph:item.dph, mom:item.mom, mph:item.mph, addr:item.addr, idNo:item.idNo||item.identityNo||item.nationalId||item.emiratesId||'', health:item.health||item.healthStatus||'', healthOverride:item.healthOverride||'', healthDeleted:!!item.healthDeleted, note:item.note, internalNote:item.internalNote||item.internal_note||'', sub_end:item.sub_end });
+      nextStuId = getSafeNextStudentId();
+      added++;
+    });
+    renderStudents();
+  } else if (importTarget === 'payments' || importTarget === 'receipts') {
+    importParsedData.forEach(function(item){
+      if (!item.who || !item.amt || !item.desc) return;
+      payments.push({ id: nextPayId++, stuId: parseInt(item.stuId)||null, who:item.who, amt:+item.amt, desc:item.desc, type:item.type||'قسط شهري', method:item.method||'نقدي', date:item.date, rcvr:item.rcvr, note:item.note, internalNote:item.internalNote||'' });
+      added++;
+    });
+    resetPaymentMatchCache();
+    renderPayments(); if(typeof renderReceipts==='function') renderReceipts();
+  } else if (importTarget === 'expenses') {
+    importParsedData.forEach(function(item){
+      if (!item.desc || !item.amt) return;
+      expenses.push({ id: nextExpId++, desc:item.desc, amt:+item.amt, cat:item.cat||'أخرى', method:item.method||'نقدي', date:item.date, exp_date:item.date, note:item.note });
+      added++;
+    });
+    renderExpenses();
+  } else if (importTarget === 'renewals') {
+    importParsedData.forEach(function(item){
+      if (!item.name) return;
+      renewals.push({ id: nextRenId++, name:item.name, date:item.date, cat:item.cat||'أخرى', cost:item.cost, notes:item.notes });
+      added++;
+    });
+    renderRenewals();
+  } else if (importTarget === 'attendance') {
+    importParsedData.forEach(function(item){
+      if (!item.date || !item.stuId || !item.status) return;
+      const status = item.status === 'حاضر' ? 'present' : item.status === 'غائب' ? 'absent' : item.status === 'متأخر' ? 'late' : '';
+      if (!status) return;
+      attLog[item.date + '_' + parseInt(item.stuId)] = status;
+      added++;
+    });
+  }
+  autoSave();
+  renderDash();
+  closeAll();
+  alert('✅ تم استيراد ' + added + ' سجل بنجاح');
+  importParsedData = null;
+}
+
+
+function openExport(target){
+  exportTarget=target; exportFmt='xlsx';
+  document.querySelectorAll('.export-opt').forEach(o=>o.classList.remove('on'));
+  document.getElementById('exp-opt-xlsx').classList.add('on');
+  document.getElementById('mo-export').classList.add('on');
+}
+
+function selectExportFmt(fmt){
+  exportFmt=fmt;
+  document.querySelectorAll('.export-opt').forEach(o=>o.classList.remove('on'));
+  document.getElementById('exp-opt-'+fmt).classList.add('on');
+}
+
+function doExport(){
+  closeAll();
+  if(exportFmt==='print'){ if(typeof doPrintExport==='function') doPrintExport(); return; }
+
+  // حساب البيانات المالية من المدفوعات والمصاريف
+  const finByYear = {};
+  payments.forEach(function(p){
+    const y = getDateYear(p.date);
+    if (y < 2020 || y > 2030) return;
+    if (!finByYear[y]) finByYear[y] = {inc:0, exp:0};
+    finByYear[y].inc += (p.amt||0);
+  });
+  expenses.forEach(function(e){
+    const y = getDateYear(e.exp_date || e.date);
+    if (y < 2020 || y > 2030) return;
+    if (!finByYear[y]) finByYear[y] = {inc:0, exp:0};
+    finByYear[y].exp += (e.amt||0);
+  });
+  const finRows = Object.keys(finByYear).sort().map(function(y){
+    return [y, finByYear[y].inc, finByYear[y].exp, finByYear[y].inc - finByYear[y].exp];
+  });
+
+  const dataMap = {
+    students: {
+      cols: ['#','اسم الطالب','الاسم الإنجليزي','رقم الهوية','ملاحظات داخلية','الحالة الصحية','تاريخ الميلاد','الجنس','الجنسية','الفصل','اسم الأب','عمل الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان','انتهاء الاشتراك','ملاحظات'],
+      rows: students.map(function(s,i){ return [i+1, s.name||'', getStudentEnglishDisplayName(s)||'', getStudentIdentity(s)||'', s.internalNote||'', getStudentHealthSummary(s)||s.health||'', s.dob||'', s.gen||'', s.nat||'', s.cls||'', s.dad||'', s.job||'', s.dph||'', s.mom||'', s.mph||'', s.addr||'', s.sub_end||'', s.note||s.notes||'']; })
+    },
+    payments: {
+      cols: ['#السند','ولي الأمر','المبلغ (د.إ)','البيان','النوع','طريقة الدفع','التاريخ','المستلم','ملاحظات'],
+      rows: payments.map(function(p){ return [p.id, p.who||'', p.amt||0, p.desc||'', p.type||'', p.method||'', p.date||'', p.rcvr||'', p.note||'']; })
+    },
+    expenses: {
+      cols: ['#','البيان','المبلغ (د.إ)','الفئة','طريقة الدفع','التاريخ','ملاحظات'],
+      rows: expenses.map(function(e){ return [e.id, e.desc||'', e.amt||0, e.cat||'', e.method||'', (e.exp_date||e.date||''), e.note||'']; })
+    },
+    receipts: {
+      cols: ['#السند','ولي الأمر','المبلغ (د.إ)','البيان','طريقة الدفع','التاريخ','المستلم','ملاحظات'],
+      rows: payments.map(function(p){ return [p.id, p.who||'', p.amt||0, p.desc||'', p.method||'', p.date||'', p.rcvr||'', p.note||'']; })
+    },
+    finance: {
+      cols: ['السنة','الإيرادات (د.إ)','المصاريف (د.إ)','الصافي (د.إ)'],
+      rows: finRows
+    },
+    attendance: {
+      cols: ['التاريخ','الفصل','الطالب','الحالة'],
+      rows: Object.entries(attLog).filter(function(e){return e[1];}).map(function(e){
+        const k=e[0], v=e[1];
+        const parts = k.split('_');
+        const date = parts[0], idStr = parts[1];
+        const s = students.find(function(x){return x.id === +idStr;});
+        return s ? [date, s.cls||'', s.name||'', v==='present'?'حاضر':v==='absent'?'غائب':'متأخر'] : null;
+      }).filter(Boolean)
+    },
+    renewals: {
+      cols: ['#','الاسم / الجهة','تاريخ الانتهاء','الفئة','التكلفة','الأيام المتبقية','ملاحظات'],
+      rows: renewals.map(function(r){
+        const days = r.date ? Math.round((new Date(r.date) - new Date()) / 86400000) : '';
+        return [r.id, r.name||'', r.date||'', r.cat||'', r.cost||'', days, r.notes||''];
+      })
+    },
+    deleted: {
+      cols: ['#','اسم الطالب','تاريخ الميلاد','الجنس','الجنسية','الفصل','اسم الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان','تاريخ الحذف','السبب'],
+      rows: (typeof deletedStudents !== 'undefined' ? deletedStudents : []).map(function(s,i){
+        return [i+1, s.name||'', s.dob||'', s.gen||'', s.nat||'', s.cls||'', s.dad||'', s.dph||'', s.mom||'', s.mph||'', s.addr||'', s.deletedAt||'', s.deletionReason||''];
+      })
+    },
+  };
+  const d=dataMap[exportTarget];
+  if(!d)return;
+  const names={students:'الطلاب',payments:'المدفوعات',expenses:'المصاريف',receipts:'سندات_القبض',finance:'الإيرادات',attendance:'الحضور',renewals:'التجديدات',deleted:'سلة_المحذوفات'};
+  const fname=`حضانة_حديقة_الأطفال_${names[exportTarget]||exportTarget}`;
+  if(exportFmt==='xlsx'){
+    const ws=XLSX.utils.aoa_to_sheet([d.cols,...d.rows]);
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,names[exportTarget]||'data');
+    XLSX.writeFile(wb,fname+'.xlsx');
+  } else {
+    const csv='\uFEFF'+[d.cols,...d.rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const a=document.createElement('a');
+    a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+    a.download=fname+'.csv';a.click();
+  }
+}
+
+function doPrintExport(){
+  const names={students:'الطلاب',payments:'المدفوعات',expenses:'المصاريف',receipts:'سندات القبض',finance:'الإيرادات',attendance:'الحضور'};
+  let html=`<html dir="rtl"><head><meta charset="UTF-8"><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet"><style>body{font-family:'Tajawal',sans-serif;font-size:12px}table{width:100%;border-collapse:collapse}th{background:#eaf6ef;color:#1e6b3f;padding:7px;border:1px solid #d2e5d2}td{padding:6px;border:1px solid #eee}.title{font-size:18px;font-weight:900;margin-bottom:10px;color:#1e6b3f}</style></head><body>
+  <div class="title">حضانة حديقة الأطفال — ${names[exportTarget]||exportTarget}</div>
+  <div style="font-size:11px;color:#666;margin-bottom:10px">تاريخ التصدير: ${new Date().toLocaleDateString('ar-AE')}</div><table>`;
+  const dataMap={students:{cols:['رقم الطالب','الاسم العربي','الاسم الإنجليزي','تاريخ الميلاد','الجنس','رقم الهوية','الجنسية','الفصل','الحالة الصحية','اسم الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان'],rows:students.map((s)=>[s.id,s.name||'',getStudentEnglishDisplayName(s)||'',formatDate(s.dob),s.gen||'',getStudentIdentity(s)||'',s.nat||'',s.cls||'',getStudentHealthSummary(s)||'',s.dad||'',s.dph||'',s.mom||'',s.mph||'',s.addr||''])},payments:{cols:['#','ولي الأمر','المبلغ','البيان','النوع','الطريقة','التاريخ','المستلم'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.type,p.method,p.date,p.rcvr])},expenses:{cols:['#','البيان','المبلغ','الفئة','التاريخ'],rows:expenses.map(e=>[e.id,e.desc,e.amt+' د.إ',e.cat,e.date])},finance:{cols:['الشهر','الإيرادات','المصاريف','الصافي'],rows:finData.map(d=>[d.month,d.inc.toLocaleString(),d.exp.toLocaleString(),(d.inc-d.exp).toLocaleString()])},attendance:{cols:['التاريخ','الفصل','الطالب','الحالة'],rows:Object.entries(attLog).filter(([,v])=>v).map(([k,v])=>{const[date,idStr]=k.split('_');const s=students.find(x=>x.id===+idStr);return s?[date,s.cls,s.name,v==='present'?'حاضر':v==='absent'?'غائب':'متأخر']:null;}).filter(Boolean)},receipts:{cols:['#','ولي الأمر','المبلغ','البيان','التاريخ'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.date])}};
+  const d=dataMap[exportTarget];
+  if(d){
+    html+=`<thead><tr>${d.cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
+    d.rows.forEach(r=>{html+=`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`;});
+    html+='</tbody>';
+  }
+  html+='</table></body></html>';
+  const w=window.open('','_blank');
+  w.document.write(html);
+  w.document.close();
+  setTimeout(()=>w.print(),500);
+}
+
+// ============================================================
+// UTILS
+// ============================================================
+function closeAll(){document.querySelectorAll('.ov').forEach(o=>o.classList.remove('on'));}
+// إزالة الإغلاق التلقائي عند الضغط خارج النافذة - لحماية البيانات
+
+
+// ============================================================
+// AUTH & SESSION
+// ============================================================
+let currentUser = null;
+let logoDataUrl = '';
+let nurserySettings = {
+  name: 'حضانة حديقة الأطفال',
+  addr_ar: 'الإمارات العربية المتحدة - الشارقة - المجاز 3 - مقابل حديقة الصفيا',
+  addr_en: 'UAE - Sharjah - AlMajaz 3 - Opp. Of AlSafiya Park',
+  phone: '0555152728', email: 'kidsparknursery@outlook.com',
+  refund_ar: '- لا يحق لولي الأمر المطالبة باسترجاع الرسوم\n- عدم استرداد الرسوم الشهرية بعد مضي أسبوع\n- خصم الأخوة 10% للطفل الثاني\n- يتم تسديد الأقساط مقدماً في بداية كل شهر أو فصل أو سنة',
+  refund_en: '- Registration fees are not refundable.\n- In case the child didn\'t complete one week, full month fees will be refunded.\n- If child completed one week and didn\'t continue, fees calculated based on days attended.'
+};
+
+// Worksheet images per class: {classKey: base64DataUrl}
+let worksheetImages = JSON.parse(localStorage.getItem('ws_images')||'{}');
+
+function doLogin() {
+  const user = document.getElementById('login-user').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  const err = document.getElementById('login-err');
+  err.textContent = '';
+  // Simple credential check - stored in localStorage for offline mode
+  const users = JSON.parse(localStorage.getItem('kp_users') || '[]');
+  // Default admin if no users set
+  if (!users.length) {
+    localStorage.setItem('kp_users', JSON.stringify([
+      {username:'admin', password:'admin123', role:'admin', name:'المدير'}
+    ]));
+  }
+  const allUsers = JSON.parse(localStorage.getItem('kp_users'));
+  const found = allUsers.find(u => u.username === user && u.password === pass);
+  if (!found) { err.textContent = 'اسم المستخدم أو كلمة السر غلط'; return; }
+  currentUser = found;
+  sessionStorage.setItem('kp_session', JSON.stringify(found));
+  applyLogin();
+}
+
+function applyLogin() {
+  document.getElementById('login-screen').style.display = 'none';
+  const ub = document.getElementById('user-badge');
+  ub.style.display = 'flex';
+  const sb = document.getElementById('btn-save-cloud');
+  if (sb) sb.style.display = 'inline-block';
+  const nb = document.getElementById('notif-btn');
+  if (nb) nb.style.display = 'inline-block';
+  const rnb = document.getElementById('reg-notif-btn');
+  if (rnb) rnb.style.display = 'inline-block';
+  const rb = document.getElementById('btn-refresh-cloud');
+  if (rb) rb.style.display = 'inline-block';
+  document.getElementById('ub-name').textContent = currentUser.name || currentUser.username;
+  document.getElementById('ub-role').textContent = currentUser.role === 'admin' ? '👑 مدير' : '👤 موظف';
+  // Show admin nav only for admin
+  const navAdmin = document.getElementById('nav-admin');
+  if (navAdmin) navAdmin.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
+  // Load saved settings
+  loadSettings();
+  // تهيئة فلتر السنة على السنة الحالية
+  const yf = document.getElementById('dash-year-filter');
+  if (yf && !yf.value) yf.value = String(new Date().getFullYear());
+
+  // تهيئة السنة الافتراضية
+  dashYear = new Date().getFullYear();
+  const yfInit = document.getElementById('dash-year-filter');
+  if (yfInit) yfInit.value = String(dashYear);
+
+  if (typeof loadCoreDataFromLocalStorage === 'function') loadCoreDataFromLocalStorage();
+  if (typeof applyTombstones === 'function') applyTombstones();
+  // اعتماد جماعي لمطابقات السندات المقترحة الحالية (مرة واحدة فقط)
+  let bulkApprovedNow = runOneTimeBulkMatchApproval();
+  // عرض البيانات المحلية فوراً
+  renderDash();
+  if (bulkApprovedNow > 0) {
+    setTimeout(function(){ alert('✅ تم اعتماد ' + bulkApprovedNow + ' عملية ربط بين السندات وملفات الطلاب'); }, 300);
+  }
+  setTimeout(function(){ updateNotifications(); updateRegExpiryNotifications(); }, 500);
+  // تحميل من Firebase وتحديث عند الانتهاء
+  loadFromFirebase().then(() => {
+    const approvedAfterSync = runOneTimeBulkMatchApproval();
+    // إعادة تهيئة الفلتر بعد التحميل
+    const yf2 = document.getElementById('dash-year-filter');
+    if (yf2 && !yf2.value) yf2.value = String(new Date().getFullYear());
+    renderDash();
+    updateNotifications();
+    updateRegExpiryNotifications();
+    if (approvedAfterSync > 0) {
+      setTimeout(function(){ alert('✅ تم اعتماد ' + approvedAfterSync + ' عملية ربط إضافية بعد مزامنة البيانات'); }, 500);
+    }
+  });
+  setInterval(checkForUpdates, 5000);
+  startAutoSync();
+}
+
+function doLogout() {
+  currentUser = null;
+  sessionStorage.removeItem('kp_session');
+  document.getElementById('login-screen').style.display = 'flex';
+  const sb2 = document.getElementById('btn-save-cloud');
+  if (sb2) sb2.style.display = 'none';
+  const nb2 = document.getElementById('notif-btn');
+  if (nb2) nb2.style.display = 'none';
+  const rnb2 = document.getElementById('reg-notif-btn');
+  if (rnb2) rnb2.style.display = 'none';
+  const rb2 = document.getElementById('btn-refresh-cloud');
+  if (rb2) rb2.style.display = 'none';
+  document.getElementById('user-badge').style.display = 'none';
+  document.getElementById('login-user').value = '';
+  document.getElementById('login-pass').value = '';
+  document.getElementById('login-err').textContent = '';
+}
+
+function checkSession() {
+  const saved = sessionStorage.getItem('kp_session');
+  if (saved) { currentUser = JSON.parse(saved); applyLogin(); }
+  else document.getElementById('login-screen').style.display = 'flex';
+}
+
+// ============================================================
+// SETTINGS (stored in localStorage)
+// ============================================================
+function loadSettings() {
+  const saved = localStorage.getItem('kp_settings');
+  if (saved) nurserySettings = { ...nurserySettings, ...JSON.parse(saved) };
+  logoDataUrl = nurserySettings.logoDataUrl || localStorage.getItem('kp_logo') || '';
+  // Apply to form
+  const f = (id, val) => { const el = document.getElementById(id); if(el) el.value = val; };
+  f('set-name', nurserySettings.name);
+  f('set-addr-ar', nurserySettings.addr_ar);
+  f('set-addr-en', nurserySettings.addr_en);
+  f('set-phone', nurserySettings.phone);
+  f('set-email', nurserySettings.email);
+  f('set-refund-ar', nurserySettings.refund_ar);
+  f('set-refund-en', nurserySettings.refund_en);
+  // Apply logo everywhere
+  updateLogoDisplay();
+}
+
+function saveNurseryInfo() {
+  nurserySettings.name = document.getElementById('set-name').value;
+  nurserySettings.addr_ar = document.getElementById('set-addr-ar').value;
+  nurserySettings.addr_en = document.getElementById('set-addr-en').value;
+  nurserySettings.phone = document.getElementById('set-phone').value;
+  nurserySettings.email = document.getElementById('set-email').value;
+  nurserySettings.logoDataUrl = logoDataUrl || '';
+  localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
+  autoSave();
+  alert('✅ تم حفظ معلومات الحضانة');
+}
+
+function saveRefundPolicy() {
+  nurserySettings.refund_ar = document.getElementById('set-refund-ar').value;
+  nurserySettings.refund_en = document.getElementById('set-refund-en').value;
+  nurserySettings.logoDataUrl = logoDataUrl || '';
+  localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
+  autoSave();
+  alert('✅ تم حفظ السياسة');
+}
+
+function uploadLogo(input) {
+  const file = input.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async e => {
+    logoDataUrl = e.target.result;
+    nurserySettings.logoDataUrl = logoDataUrl;
+    localStorage.setItem('kp_logo', logoDataUrl);
+    localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
+    updateLogoDisplay();
+    await saveLogoToFirebase();
+    autoSave();
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeLogo() {
+  if(!confirm('حذف الشعار؟')) return;
+  logoDataUrl = '';
+  nurserySettings.logoDataUrl = '';
+  localStorage.removeItem('kp_logo');
+  localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
+  updateLogoDisplay();
+  saveLogoToFirebase();
+  autoSave();
+}
+
+function updateLogoDisplay() {
+  const img = document.getElementById('logo-preview-img');
+  const empty = document.getElementById('logo-empty');
+  const loginLogo = document.getElementById('login-logo-area');
+  if(logoDataUrl) {
+    if(img){ img.src = logoDataUrl; img.style.display = 'block'; }
+    if(empty) empty.style.display = 'none';
+    if(loginLogo) loginLogo.innerHTML = `<img src="${logoDataUrl}" style="height:70px;object-fit:contain">`;
+    // Update header logo
+    const hdrLogo = document.querySelector('.hdr-brand img');
+    if(hdrLogo) hdrLogo.src = logoDataUrl;
+  } else {
+    if(img) img.style.display = 'none';
+    if(empty) empty.style.display = 'flex';
+    if(loginLogo) loginLogo.innerHTML = '🌿';
+  }
+}
+
+function changePassword() {
+  if(currentUser?.role !== 'admin') return alert('للمدير فقط');
+  const oldP = document.getElementById('cp-old').value;
+  const newP = document.getElementById('cp-new').value;
+  const conf = document.getElementById('cp-confirm').value;
+  const users = JSON.parse(localStorage.getItem('kp_users') || '[]');
+  const me = users.find(u => u.username === currentUser.username);
+  if(!me || me.password !== oldP) return alert('كلمة السر الحالية غلط');
+  if(newP.length < 4) return alert('كلمة السر الجديدة قصيرة جداً (4 أحرف على الأقل)');
+  if(newP !== conf) return alert('تأكيد كلمة السر ما يطابق');
+  me.password = newP;
+  localStorage.setItem('kp_users', JSON.stringify(users));
+  currentUser.password = newP;
+  sessionStorage.setItem('kp_session', JSON.stringify(currentUser));
+  ['cp-old','cp-new','cp-confirm'].forEach(id => document.getElementById(id).value = '');
+  alert('✅ تم تغيير كلمة السر بنجاح');
+}
+
+// ============================================================
+// ADMIN — USERS
+// ============================================================
+function renderAdminUsers() {
+  const users = JSON.parse(localStorage.getItem('kp_users') || '[]');
+  const el = document.getElementById('admin-users-list');
+  if(!el) return;
+  el.innerHTML = users.map(u => `
+    <div class="admin-user-row">
+      <div>
+        <b>${u.name || u.username}</b>
+        <span style="color:var(--muted);font-size:12px;margin-right:6px">(@${u.username})</span>
+        <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:${u.role==='admin'?'#d0f0e0':'var(--bp)'};color:${u.role==='admin'?'#0e5e30':'var(--b1)'}">${u.role==='admin'?'مدير':'موظف'}</span>
+      </div>
+      ${u.username !== 'admin' ? `<button class="btn btn-r btn-sm" onclick="deleteUser('${u.username}')">🗑</button>` : '<span style="font-size:11px;color:var(--muted)">رئيسي</span>'}
+    </div>`).join('');
+}
+
+function openAddUser() {
+  const name = prompt('الاسم الكامل:'); if(!name) return;
+  const user = prompt('اسم المستخدم (بالإنجليزي):'); if(!user) return;
+  const pass = prompt('كلمة السر:'); if(!pass||pass.length<4) return alert('كلمة السر قصيرة جداً');
+  const role = confirm('هل يكون مدير؟ (موافق=مدير، إلغاء=موظف)') ? 'admin' : 'staff';
+  const users = JSON.parse(localStorage.getItem('kp_users') || '[]');
+  if(users.find(u=>u.username===user)) return alert('اسم المستخدم موجود مسبقاً');
+  users.push({username:user, password:pass, role, name});
+  localStorage.setItem('kp_users', JSON.stringify(users));
+  renderAdminUsers();
+  alert('✅ تم إضافة المستخدم');
+}
+
+function deleteUser(username) {
+  if(!confirm(`حذف المستخدم ${username}؟`)) return;
+  let users = JSON.parse(localStorage.getItem('kp_users') || '[]');
+  users = users.filter(u => u.username !== username);
+  localStorage.setItem('kp_users', JSON.stringify(users));
+  renderAdminUsers();
+}
+
+// ============================================================
+// ADMIN — CLASSES
+// ============================================================
+// CLASSES_DATA = CLASSES (defined above)
+
+function saveClasses() {
+  const nextClasses = JSON.parse(JSON.stringify(CLASSES_DATA || {}));
+  Object.keys(CLASSES || {}).forEach(function(key){ if (!Object.prototype.hasOwnProperty.call(nextClasses, key)) delete CLASSES[key]; });
+  Object.assign(CLASSES, nextClasses);
+  CLASSES_DATA = CLASSES;
+  localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
+  autoSave();
+}
+
+function renderAdminClasses() {
+  const el = document.getElementById('admin-classes-list');
+  if(!el) return;
+  el.innerHTML = Object.entries(CLASSES_DATA).map(([name,c]) => `
+    <div class="admin-class-row">
+      <div>${c.emoji} <b>${name}</b> <span style="color:var(--muted);font-size:12px">— ${c.teacher||'بدون معلمة'}</span></div>
+      <div class="btn-group">
+        <button class="btn btn-out btn-sm" onclick="editClass('${name}')">✏️</button>
+        <button class="btn btn-r btn-sm" onclick="deleteClass('${name}')">🗑</button>
+      </div>
+    </div>`).join('');
+}
+
+function openAddClass() {
+  const name = prompt('اسم الفصل الجديد:'); if(!name) return;
+  if(CLASSES_DATA[name]) return alert('الفصل موجود مسبقاً');
+  const emoji = prompt('ايموجي الفصل:', '🌟') || '🌟';
+  const teacher = prompt('اسم المعلمة:') || '';
+  CLASSES_DATA[name] = {teacher, emoji};
+  saveClasses(); populateClassDropdowns(); renderAdminClasses();
+  alert(`✅ تم إضافة فصل ${name}`);
+}
+
+function editClass(name) {
+  const c = CLASSES_DATA[name];
+  const newName = prompt('اسم الفصل:', name);
+  if(!newName) return;
+  const newEmoji = prompt('الايموجي:', c.emoji) || c.emoji;
+  const newTeacher = prompt('المعلمة:', c.teacher);
+  if(newName !== name) {
+    delete CLASSES_DATA[name];
+    CLASSES_DATA[newName] = {teacher: newTeacher||'', emoji: newEmoji};
+  } else {
+    CLASSES_DATA[name] = {teacher: newTeacher||'', emoji: newEmoji};
+  }
+  saveClasses(); populateClassDropdowns(); renderAdminClasses();
+}
+
+async function deleteClass(name) {
+  if (!confirm('حذف فصل "' + name + '"؟ سيتأثر الطلاب المسجلين فيه.')) return;
+  const clsData = CLASSES[name] ? Object.assign({}, CLASSES[name]) : null;
+  const deletedItem = {
+    key: name,
+    name: name,
+    data: clsData,
+    deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
+    deletedBy: currentUser ? currentUser.name : 'نظام'
+  };
+  deletedClasses = (deletedClasses || []).filter(function(x){ return normKey(x && x.key) !== normKey(name); });
+  deletedClasses.unshift(deletedItem);
+  localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
+  clearRestored('classes', name);
+  addTombstone('classes', name);
+  delete CLASSES[name];
+  CLASSES_DATA = CLASSES;
+  localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
+  persistCoreDataToLocalStorage();
+  populateClassDropdowns(); renderAdminClasses(); renderStudents(); renderDash();
+  if (typeof renderDeletedStudents==='function') renderDeletedStudents();
+  renderOtherDeletedItems();
+  await moveClassToTrashRemoteAware(name, deletedItem);
+}
+
+// ============================================================
+// WORKSHEETS
+// ============================================================
+let wsCurrentClass = null;
+
+function renderWorksheets() {
+  worksheetImages = JSON.parse(localStorage.getItem('ws_images')||'{}');
+  const grid = document.getElementById('ws-classes-grid');
+  if(!grid) return;
+  grid.innerHTML = Object.entries(CLASSES).map(([name, c]) => {
+    const hasImg = !!worksheetImages[name];
+    return `<div class="ws-card ${hasImg?'has-img':''}" onclick="selectWsClass('${name}')">
+      <div style="font-size:32px;margin-bottom:6px">${c.emoji}</div>
+      <div style="font-size:15px;font-weight:700">${name}</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:4px">${hasImg?'✅ ورقة عمل موجودة':'➕ اضغط لرفع ورقة عمل'}</div>
+      <div style="font-size:11px;color:var(--muted)">${students.filter(s=>s.cls===name).length} طالب</div>
+    </div>`;
+  }).join('');
+}
+
+function selectWsClass(className) {
+  wsCurrentClass = className;
+  const hasImg = !!worksheetImages[className];
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = e => {
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      worksheetImages[className] = ev.target.result;
+      localStorage.setItem('ws_images', JSON.stringify(worksheetImages));
+      renderWorksheets();
+      showWsPreview(className);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  if(hasImg) {
+    const choice = confirm(`فصل ${className} عنده ورقة عمل موجودة.
+
+موافق = عرض الأوراق الحالية
+إلغاء = استبدال الصورة`);
+    if(choice) { showWsPreview(className); }
+    else { input.click(); }
+  } else {
+    input.click();
+  }
+}
+
+function showWsPreview(className) {
+  const cls = CLASSES[className];
+  const clsStudents = students.filter(s => s.cls === className);
+  const img = worksheetImages[className];
+  const logoHtml = logoDataUrl
+    ? `<img src="${logoDataUrl}" style="height:40px;object-fit:contain;margin-bottom:3px">`
+    : `<div style="font-size:22px">🌿</div>`;
+
+  document.getElementById('ws-preview-title').textContent = `أوراق العمل — ${cls.emoji} ${className} (${clsStudents.length} طالب)`;
+  document.getElementById('ws-preview-grid').innerHTML = clsStudents.map(s => `
+    <div class="ws-student-card" id="ws-${s.id}">
+      <div class="ws-student-header">
+        ${logoHtml}
+        <div style="font-size:10.5px;opacity:.8">${nurserySettings.name}</div>
+        <div style="font-size:12px;font-weight:700;opacity:.9;margin-top:2px">${cls.emoji} ${className}</div>
+        <div style="font-size:16px;font-weight:900;margin-top:4px">${s.name}</div>
+      </div>
+      ${img ? `<img src="${img}" class="ws-student-img" alt="ورقة عمل">` : '<div style="padding:20px;text-align:center;color:#999;font-size:13px">لا توجد صورة</div>'}
+    </div>`).join('');
+
+  document.getElementById('ws-preview-section').style.display = 'block';
+  document.getElementById('ws-preview-section').scrollIntoView({behavior:'smooth'});
+}
+
+function closeWsPreview() {
+  document.getElementById('ws-preview-section').style.display = 'none';
+  wsCurrentClass = null;
+}
+
+function printAllWorksheets() {
+  const grid = document.getElementById('ws-preview-grid');
+  if(!grid || !grid.children.length) { alert('لا توجد أوراق عمل لطباعتها'); return; }
+
+  const cls = wsCurrentClass;
+  const clsInfo = CLASSES[cls] || {};
+  const logo = logoDataUrl
+    ? `<img src="${logoDataUrl}" style="height:52px;object-fit:contain;margin-bottom:3px">`
+    : `<div style="font-size:28px;margin-bottom:3px">🌿</div>`;
+
+  const clsStudents = students.filter(s => s.cls === cls);
+  const img = worksheetImages[cls];
+
+  let printHtml = `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; font-family:'Tajawal',Arial,sans-serif; background:white; }
+  .page {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+    break-after: page;
+    overflow: hidden;
+  }
+  .page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+  .header {
+    background: #1e6b3f;
+    color: white;
+    padding: 10px 16px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .nursery-name { font-size:11px; opacity:.8; margin-bottom:2px; }
+  .class-name   { font-size:12px; font-weight:700; opacity:.9; margin-bottom:3px; }
+  .student-name { font-size:22px; font-weight:900; }
+  .img-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: white;
+  }
+  .img-wrap img {
+    max-width: 100%;
+    max-height: 100%;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  .no-img {
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:#999;
+    font-size:16px;
+  }
+  @media print {
+    html, body { width:210mm; }
+    .page {
+      width: 210mm;
+      height: 297mm;
+      page-break-after: always;
+      break-after: page;
+    }
+    .page:last-child { page-break-after:auto; break-after:auto; }
+    .img-wrap { height: calc(297mm - 90px); }
+    .img-wrap img { object-fit: contain; width:100%; height:100%; }
+  }
+</style>
+</head>
+<body>`;
+
+  clsStudents.forEach(s => {
+    printHtml += `<div class="page">
+  <div class="header">
+    ${logo}
+    <div class="nursery-name">${nurserySettings.name}</div>
+    <div class="class-name">${clsInfo.emoji || ''} ${cls}</div>
+    <div class="student-name">${s.name}</div>
+  </div>
+  ${img
+    ? `<div class="img-wrap"><img src="${img}" alt="ورقة عمل"></div>`
+    : `<div class="no-img">لا توجد صورة لورقة العمل</div>`
+  }
+</div>`;
+  });
+
+  printHtml += `</body></html>`;
+
+  const win = window.open('', '_blank');
+  if(!win) { alert('يرجى السماح بالنوافذ المنبثقة في المتصفح'); return; }
+  win.document.open();
+  win.document.write(printHtml);
+  win.document.close();
+  // Wait for images to load then print
+  win.addEventListener('load', () => {
+    setTimeout(() => { win.focus(); win.print(); }, 500);
+  });
+}
+
+// ============================================================
+// OVERRIDE go() to handle new pages + auth
+// ============================================================
+const _origGo = go;
+function go(page) {
+  if(!currentUser && page !== 'login') {
+    document.getElementById('login-screen').style.display = 'flex';
+    return;
+  }
+  if(page === 'admin' && currentUser?.role !== 'admin') {
+    alert('هذا القسم للمدير فقط');
+    return;
+  }
+  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.nav').forEach(n=>n.classList.remove('on'));
+  const pgEl = document.getElementById('pg-'+page);
+  if(pgEl) pgEl.classList.add('on');
+  document.querySelectorAll('.nav').forEach(n=>{if(n.getAttribute('onclick')===`go('${page}')`)n.classList.add('on');});
+
+  const renders = {
+    dash:renderDash, students:renderStudents, att:renderAtt,
+    payments:renderPayments, expenses:renderExpenses,
+    receipts:renderReceipts, finance:renderFinance,
+    worksheets:renderWorksheets, forms:renderFormRequests, renewals:renderRenewals, finreport:renderFinReport, deleted:renderDeletedStudents, otherdeleted:renderOtherDeletedItems,
+    admin:()=>{renderAdminUsers();renderAdminClasses();}
+  };
+  if(renders[page]) renders[page]();
+}
+
+// ============================================================
+// RECEIPT — inject dynamic settings
+// ============================================================
+const _origBuildReceipt = buildReceiptHTML;
+function buildReceiptHTML(p) {
+  const logo = logoDataUrl
+    ? `<img src="${logoDataUrl}" style="height:80px;width:80px;object-fit:contain">`
+    : `<div style="font-size:32px">🌿</div>`;
+  const refAr = (nurserySettings.refund_ar||'').split('\n').join('<br>');
+  const refEn = (nurserySettings.refund_en||'').split('\n').join('<br>');
+
+  return `<div style="font-family:'Tajawal',Arial,sans-serif;direction:rtl;font-size:13px;color:#000">
+    <div style="text-align:center;margin-bottom:8px">
+      ${logo}
+      <div style="font-size:17px;font-weight:900;color:#1e6b3f">${nurserySettings.name}</div>
+      <div style="font-size:11px;color:#666">Kids Park Nursery</div>
+    </div>
+    <div style="text-align:center;margin:8px 0">
+      <span style="border:2px solid #000;padding:4px 20px;font-size:16px;font-weight:900">سند قبض &nbsp; Receipt</span>
+    </div>
+    <table style="width:100%;border-collapse:collapse;border:2px solid #000;margin-bottom:6px">
+      <tr>
+        <td style="border:1px solid #000;padding:6px 10px;width:25%">
+          <div style="font-size:10px;color:#777">Currency العملة</div>
+          <div style="font-weight:700">dirhams</div>
+        </td>
+        <td style="border:1px solid #000;padding:6px 10px;text-align:center">
+          <b>No: </b><span style="color:#c00;font-size:18px;font-weight:900">${p.id}</span>
+        </td>
+        <td style="border:1px solid #000;padding:6px 10px;text-align:left">
+          <div style="font-size:10px;color:#777">Amount المبلغ:</div>
+          <div style="font-weight:900;font-size:16px">${(+p.amt||0).toLocaleString()}</div>
+        </td>
+        <td style="border:1px solid #000;padding:6px 10px">
+          <div style="font-size:10px;color:#777">طريقة الدفع</div>
+          <div style="font-weight:700">${p.method||''}</div>
+        </td>
+      </tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse;border:2px solid #000;margin-bottom:6px">
+      <tr>
+        <td style="border:1px solid #000;padding:6px 10px;text-align:right;width:150px;background:#f9f9f9">
+          <div style="font-size:11px;color:#555;font-weight:700">استلمنا من السيد</div>
+          <div style="font-size:10px;color:#888;font-style:italic">We have received from</div>
+        </td>
+        <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:14px;font-weight:600">${p.who||''}</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #000;padding:6px 10px;text-align:right;background:#f9f9f9">
+          <div style="font-size:11px;color:#555;font-weight:700">مبلغ وقدره</div>
+          <div style="font-size:10px;color:#888;font-style:italic">Amount of</div>
+        </td>
+        <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:13px;font-weight:600">${p.amtWords||amtToWords(+p.amt||0)}</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #000;padding:6px 10px;text-align:right;background:#f9f9f9">
+          <div style="font-size:11px;color:#555;font-weight:700">وذلك مقابل</div>
+          <div style="font-size:10px;color:#888;font-style:italic">and this is for</div>
+        </td>
+        <td style="border:1px solid #000;padding:8px 14px;text-align:center;font-size:13px;font-weight:600">${p.desc||''}</td>
+      </tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse;border:1px solid #000;margin-bottom:6px">
+      <tr><td style="padding:5px 10px;font-weight:900;border-bottom:1px solid #000">ملاحظات &nbsp; Notes</td></tr>
+      <tr><td style="padding:10px;min-height:22px">${p.note||''}</td></tr>
+    </table>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px;padding:0 4px">
+      <div>
+        <div style="font-weight:900;font-size:13px">المستلم &nbsp; Recipient</div>
+        <div style="border-bottom:2px solid #000;width:160px;padding-bottom:2px;margin-top:4px">${p.rcvr||''}</div>
+      </div>
+      <div style="text-align:left"><span style="font-weight:900">Date: &nbsp;</span>${p.date||''}&nbsp;&nbsp;&nbsp;<span style="font-weight:900">:التاريخ</span></div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;border:2px solid #000">
+      <tr>
+        <td style="border:1px solid #000;padding:8px 10px;width:50%;vertical-align:top">
+          <div style="font-weight:900;font-size:13px;margin-bottom:4px">Refund Policy:</div>
+          <div style="font-size:11px;line-height:1.8">${refEn}</div>
+        </td>
+        <td style="border:1px solid #000;padding:8px 10px;vertical-align:top;text-align:right">
+          <div style="font-weight:900;font-size:13px;margin-bottom:4px">سياسة استرجاع الرسوم</div>
+          <div style="font-size:11.5px;line-height:1.9">${refAr}</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #000;padding:10px;text-align:center" colspan="2">
+          <div style="font-weight:900;margin-bottom:5px">العنوان | Address</div>
+          <div style="font-size:12px;line-height:1.8;text-align:center">${nurserySettings.addr_ar||''}</div>
+          <div style="font-size:12px;line-height:1.8;text-align:center" dir="ltr">${nurserySettings.addr_en||''}</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #000;padding:10px;text-align:center" colspan="2">
+          <div style="font-size:12px;line-height:2;text-align:center">
+            <div><b>الموبايل | Mobile:</b> <span dir="ltr">${nurserySettings.phone||''}</span></div>
+            <div><b>البريد الإلكتروني | E-Mail:</b> <span dir="ltr">${nurserySettings.email||''}</span></div>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>`;
+}
+
+// ============================================================
+// STARTUP
+// ============================================================
+// Override init - require login first
+window.addEventListener('DOMContentLoaded', () => {
+  // Set default admin if no local users
+  if (!localStorage.getItem('kp_users')) {
+    localStorage.setItem('kp_users', JSON.stringify([
+      {username:'admin', password:'admin123', role:'admin', name:'المدير'}
+    ]));
+  }
+  // Load users from Firebase BEFORE showing login screen
+  refreshNextIds();
+  fetch('https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data/kp_users.json')
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data && Array.isArray(data) && data.length > 0) {
+        localStorage.setItem('kp_users', JSON.stringify(data));
+      }
+    })
+    .catch(function() { /* offline — use local */ })
+    .finally(function() {
+      checkSession();
+    });
+});
+
+// INIT (handled by checkSession above)
+// 
+// ============================================================
+// FIREBASE REST API — بدون SDK، يشتغل من أي مكان
+// ============================================================
+const FB_URL = 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data';
+const FB_LOGO_URL = FB_URL + '/branding/logoDataUrl';
+// قاعدة البيانات المعتمدة لهذه النسخة: backup_حضانة_2026-04-27 (version 2.0)
+// مفاتيح الطلاب المحفوظة كما هي في النسخة الاحتياطية: id/name/nameEn/dob/gen/nat/cls/bpl/dad/job/dph/mom/mph/addr/idNo/health/healthStatus/healthOverride/note + بيانات طلب التسجيل والوثائق.
+const REGISTRATION_PENDING_URL  = FB_URL + '/registrationRequests/pending';
+const REGISTRATION_ACCEPTED_URL = FB_URL + '/registrationRequests/accepted';
+const REGISTRATION_REJECTED_URL = FB_URL + '/registrationRequests/rejected';
+
+function getArabicOnlyValue(value) {
+  value = String(value || '').trim();
+  if (!value) return '';
+  // خيارات صفحة التسجيل تظهر أحياناً كـ "العربية - English" أو "English  العربية".
+  if (value.indexOf(' - ') >= 0) return value.split(' - ')[0].trim();
+  var arabicParts = value.match(/[\u0600-\u06FF][\u0600-\u06FF\s،]+/g);
+  if (arabicParts && arabicParts.length) return arabicParts[arabicParts.length - 1].trim();
+  return value;
+}
+
+function normalizeParentRegistrationRow(raw, firebaseKey) {
+  raw = raw || {};
+  var r = Object.assign({}, raw);
+  r.firebaseKey = raw.firebaseKey || firebaseKey || raw.id || '';
+  r.timestamp = raw.timestamp || raw.submittedAt || raw.createdAt || raw.firebaseKey || firebaseKey || new Date().toISOString();
+  r.status = raw.status || 'pending';
+  r.name = raw.name || [raw.firstName, raw.familyName].filter(Boolean).join(' ').trim();
+  r.nameEn = raw.nameEn || raw.childNameEn || raw.childEnglishName || raw.englishName || '';
+  r.childNameEn = r.nameEn;
+  r.nat = getArabicOnlyValue(raw.nat || raw.nationality || '');
+  r.dadFull = raw.dadFull || raw.fatherName || raw.dad || '';
+  r.dadMob = raw.dadMob || raw.fatherMobile || raw.dph || '';
+  r.momFull = raw.momFull || raw.motherName || raw.mom || '';
+  r.momMob = raw.momMob || raw.motherMobile || raw.mph || '';
+  r.emiratesId = raw.emiratesId || raw.idNo || raw.identityNo || raw.nationalId || '';
+  r.imgPassport = raw.imgPassport || raw.imgChildPassport || '';
+  r.imgGuardianId = raw.imgGuardianId || raw.imgFatherId || raw.imgDadId || '';
+  r.imgGuardianPass = raw.imgGuardianPass || raw.imgFatherPassport || raw.imgDadPassport || '';
+  r.source = raw.source || 'parent_registration_link';
+  return r;
+}
+
+function mergeFormRowsByTimestamp(existingRows, incomingRows) {
+  var map = {};
+  function put(row) {
+    if (!row || !row.timestamp) return;
+    var old = map[row.timestamp];
+    if (!old) { map[row.timestamp] = row; return; }
+    map[row.timestamp] = formRowUpdatedAtValue(row) >= formRowUpdatedAtValue(old) ? Object.assign({}, old, row) : Object.assign({}, row, old);
+  }
+  (Array.isArray(existingRows) ? existingRows : []).forEach(put);
+  (Array.isArray(incomingRows) ? incomingRows : []).forEach(put);
+  return Object.values(map);
+}
+
+async function syncRegistrationRequestsFromFirebase() {
+  try {
+    const res = await fetch(REGISTRATION_PENDING_URL + '.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const pendingObj = await res.json();
+    const incoming = [];
+    if (pendingObj && typeof pendingObj === 'object') {
+      Object.keys(pendingObj).forEach(function(key){
+        var row = normalizeParentRegistrationRow(pendingObj[key], key);
+        // لا تعيدي إظهار طلب سبق قبوله/رفضه بنفس firebaseKey
+        var decided = syncedFormRows.some(function(x){
+          return x && x.firebaseKey && x.firebaseKey === row.firebaseKey && x.status && x.status !== 'pending';
+        });
+        if (!decided) incoming.push(row);
+      });
+    }
+    if (incoming.length) {
+      syncedFormRows = mergeFormRowsByTimestamp(syncedFormRows, incoming);
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      renderFormRequests();
+      showSyncBadge('✅ تم تحميل طلبات التسجيل من رابط الأهالي');
+    }
+  } catch(e) {
+    console.log('Parent registration sync skipped:', e.message);
+  }
+}
+
+async function archiveFirebaseRegistrationRequest(r, status) {
+  try {
+    if (!r || !r.firebaseKey) return;
+    const targetUrl = (status === 'approved' ? REGISTRATION_ACCEPTED_URL : REGISTRATION_REJECTED_URL) + '/' + encodeURIComponent(r.firebaseKey);
+    const payload = Object.assign({}, r, { status: status, decisionAt: r.decisionAt || new Date().toISOString() });
+    await fetch(targetUrl + '.json', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    await fetch(REGISTRATION_PENDING_URL + '/' + encodeURIComponent(r.firebaseKey) + '.json', { method: 'DELETE' });
+  } catch(e) {
+    console.log('archiveFirebaseRegistrationRequest failed:', e.message);
+  }
+}
+
+let isSyncing = false;
+let pendingSync = false;
+let syncTimeout = null;
+let lastSavedAt = '';
+let forceFullReplaceOnNextSync = false;
+let hasUnsavedChanges = false; // تتبع التغييرات غير المحفوظة
+
+function getAllData() {
+  const cleanSettings = Object.assign({}, nurserySettings);
+  delete cleanSettings.logoDataUrl;
+  return {
+    version: 2,
+    savedAt: new Date().toISOString(),
+    students, payments, expenses, attLog, CLASSES,
+    nurserySettings: cleanSettings,
+    renewals,
+    kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
+    kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]'),
+  };
+}
+
+function persistCoreDataToLocalStorage() {
+  try {
+    localStorage.setItem('kp_students_data', JSON.stringify(sanitizeEntityArray(students)));
+    localStorage.setItem('kp_payments_data', JSON.stringify(sanitizeEntityArray(payments)));
+    localStorage.setItem('kp_expenses_data', JSON.stringify(sanitizeEntityArray(expenses)));
+    localStorage.setItem('kp_renewals_data', JSON.stringify(sanitizeEntityArray(renewals)));
+    localStorage.setItem('kp_attlog_data', JSON.stringify(attLog || {}));
+    localStorage.setItem('kp_classes', JSON.stringify(CLASSES || {}));
+  } catch (e) {
+    console.warn('persistCoreDataToLocalStorage failed:', e);
+  }
 }
 
 function loadCoreDataFromLocalStorage() {
@@ -5047,16 +6023,7 @@ function loadCoreDataFromLocalStorage() {
     const localAttLog = JSON.parse(localStorage.getItem('kp_attlog_data') || 'null');
     const localClasses = JSON.parse(localStorage.getItem('kp_classes') || 'null');
 
-    if (Array.isArray(localStudents)) {
-      const guard = kpGetLocalStudentGuard();
-      const cleanedLocalStudents = kpCleanBadImportedStudents(sanitizeEntityArray(localStudents));
-      if (kpLocalStudentsLooksPolluted(cleanedLocalStudents, null, guard)) {
-        console.warn('Ignored polluted local students cache after restore guard');
-        kpClearDangerousStudentCaches();
-      } else {
-        students = guard && guard.active ? kpApplyStudentGuardToArray(cleanedLocalStudents, guard) : cleanedLocalStudents;
-      }
-    }
+    if (Array.isArray(localStudents)) students = sanitizeEntityArray(localStudents);
     if (Array.isArray(localPayments)) payments = sanitizeEntityArray(localPayments);
     if (Array.isArray(localExpenses)) expenses = sanitizeEntityArray(localExpenses);
     if (Array.isArray(localRenewals)) renewals = sanitizeEntityArray(localRenewals);
@@ -5577,6 +6544,51 @@ async function pushToFirebase() {
     cleanupDeletedBuckets();
     const fullReplace = forceFullReplaceOnNextSync === true;
 
+    // HARD RESTORE PATH: عند استعادة نسخة احتياطية، لا ندمج مع Firebase ولا مع أي كاش محلي.
+    // نكتب النسخة الحالية كما هي بالكامل حتى لا ترجع سجلات طلاب قديمة أو مكررة.
+    if (fullReplace) {
+      const cleanSettings = Object.assign({}, nurserySettings || {});
+      delete cleanSettings.logoDataUrl;
+      const hardData = {
+        version: 2,
+        savedAt: new Date().toISOString(),
+        students: sanitizeEntityArray(students || []),
+        payments: sanitizeEntityArray(payments || []),
+        expenses: sanitizeEntityArray(expenses || []),
+        attLog: (attLog && typeof attLog === 'object' && !Array.isArray(attLog)) ? attLog : {},
+        CLASSES: (CLASSES && typeof CLASSES === 'object' && !Array.isArray(CLASSES)) ? CLASSES : {},
+        nurserySettings: cleanSettings,
+        renewals: sanitizeEntityArray(renewals || []),
+        kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
+        kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]'),
+        deletedStudents: sanitizeEntityArray(typeof deletedStudents !== 'undefined' ? deletedStudents : []),
+        deletedPayments: sanitizeEntityArray(typeof deletedPayments !== 'undefined' ? deletedPayments : []),
+        deletedExpenses: sanitizeEntityArray(typeof deletedExpenses !== 'undefined' ? deletedExpenses : []),
+        deletedRenewals: sanitizeEntityArray(typeof deletedRenewals !== 'undefined' ? deletedRenewals : []),
+        deletedClasses: sanitizeEntityArray(typeof deletedClasses !== 'undefined' ? deletedClasses : []),
+        tombstones: (typeof tombstones !== 'undefined' && tombstones && typeof tombstones === 'object') ? tombstones : {},
+        restoredKeys: (typeof restoredKeys !== 'undefined' && restoredKeys && typeof restoredKeys === 'object') ? restoredKeys : {}
+      };
+
+      const res = await fetch(FB_URL + '.json', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(hardData)
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(()=>'');
+        throw new Error('فشل الاستبدال الكامل: HTTP ' + res.status + ' ' + errText.slice(0,80));
+      }
+      try { await saveLogoToFirebaseSilent(); } catch(_) {}
+      lastSavedAt = hardData.savedAt;
+      localStorage.setItem('kp_last_synced_at', hardData.savedAt);
+      persistCoreDataToLocalStorage();
+      forceFullReplaceOnNextSync = false;
+      hasUnsavedChanges = false;
+      showSyncBadge('✅ تم استبدال البيانات بالكامل');
+      return;
+    }
+
     // ── الخطوة 1: اقرأ البيانات الحالية من Firebase ──────────────────
     let remoteData = null;
     if (!fullReplace) {
@@ -5584,15 +6596,6 @@ async function pushToFirebase() {
         const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
         if (fetchRes.ok) remoteData = await fetchRes.json();
       } catch(_) { /* نتابع بدون بيانات سحابية */ }
-    }
-
-    const remoteGuardForPush = remoteData && remoteData.kp_restore_guard && remoteData.kp_restore_guard.active ? remoteData.kp_restore_guard : kpGetLocalStudentGuard();
-    if (!fullReplace && remoteData && Array.isArray(remoteData.students) && kpLocalStudentsLooksPolluted(students, remoteData.students, remoteGuardForPush)) {
-      console.warn('Blocked polluted local students from being pushed. Using authoritative Firebase students.');
-      students = sanitizeEntityArray(remoteData.students);
-      if (remoteData.kp_restore_guard) kpSetLocalStudentGuard(remoteData.kp_restore_guard);
-      kpClearDangerousStudentCaches();
-      persistCoreDataToLocalStorage();
     }
 
     // ── الخطوة 2: دمج البيانات المحلية مع السحابية ───────────────────
@@ -5822,7 +6825,6 @@ async function pushToFirebase() {
       deletedClasses:  mergedDeletedClasses,
       tombstones:      mergedTombstones,
       restoredKeys:    mergedRestoredKeys,
-      kp_restore_guard: fullReplace ? kpBuildStudentGuard(students) : ((remoteData && remoteData.kp_restore_guard) || kpGetLocalStudentGuard() || null),
     };
 
     // ✅ حفظ آمن للمزامنة اليومية:
@@ -5847,8 +6849,7 @@ async function pushToFirebase() {
       deletedRenewals: mergedData.deletedRenewals,
       deletedClasses:  mergedData.deletedClasses,
       tombstones:      mergedData.tombstones,
-      restoredKeys:    mergedData.restoredKeys,
-      kp_restore_guard: mergedData.kp_restore_guard
+      restoredKeys:    mergedData.restoredKeys
     };
 
     const res = await fetch(FB_URL + '.json', {
@@ -5861,7 +6862,6 @@ async function pushToFirebase() {
       try { await saveLogoToFirebaseSilent(); } catch(_) {}
       lastSavedAt = mergedData.savedAt;
       localStorage.setItem('kp_last_synced_at', mergedData.savedAt);
-      if (mergedData.kp_restore_guard) kpSetLocalStudentGuard(mergedData.kp_restore_guard);
       persistCoreDataToLocalStorage();
       forceFullReplaceOnNextSync = false;
       hasUnsavedChanges = false;
@@ -5885,26 +6885,12 @@ async function pushToFirebase() {
 }
 
 async function loadFromFirebase() {
-  const restoreLockUntil = Number(localStorage.getItem('kp_restore_lock_until') || '0');
-  if (restoreLockUntil && Date.now() < restoreLockUntil) {
-    showSyncBadge('⏳ جاري تثبيت النسخة الاحتياطية...');
-    return;
-  }
   showSyncBadge('⏳ جاري التحميل...');
   try {
     const res = await fetch(FB_URL + '.json', { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
-
-    const remoteStudentGuard = data.kp_restore_guard && data.kp_restore_guard.active ? data.kp_restore_guard : null;
-    if (remoteStudentGuard) kpSetLocalStudentGuard(remoteStudentGuard);
-    if (remoteStudentGuard && Array.isArray(data.students) && kpLocalStudentsLooksPolluted(students, data.students, remoteStudentGuard)) {
-      console.warn('Local students cache was polluted; replacing from authoritative Firebase students.');
-      students = sanitizeEntityArray(data.students);
-      kpClearDangerousStudentCaches();
-      persistCoreDataToLocalStorage();
-    }
 
     // دمج restoredKeys أولاً من Firebase مع المحلي (الاتحاد)
     if (data.restoredKeys && typeof data.restoredKeys === 'object') {
@@ -5986,15 +6972,8 @@ async function loadFromFirebase() {
 
     // دمج البيانات بدل الاستبدال — يحمي التعديلات المحلية غير المحفوظة
     if (Array.isArray(data.students)) {
-      if (remoteStudentGuard && kpLocalStudentsLooksPolluted(students, data.students, remoteStudentGuard)) {
-        students = sanitizeEntityArray(data.students);
-      } else {
-        students = mergeArrayById(students, data.students, tombstones.students || [], deletedStudents);
-        students = sanitizeEntityArray(kpCleanBadImportedStudents(students));
-        if (remoteStudentGuard && students.length > (Number(remoteStudentGuard.studentsCount || 0) + 10)) {
-          students = sanitizeEntityArray(data.students);
-        }
-      }
+      students = mergeArrayById(students, data.students, tombstones.students || [], deletedStudents);
+      students = sanitizeEntityArray(students);
     }
     resetPaymentMatchCache();
     if (Array.isArray(data.payments)) {
@@ -6131,8 +7110,6 @@ async function manualRefreshFromFirebase() {
 }
 
 async function checkForUpdates() {
-  const restoreLockUntil = Number(localStorage.getItem('kp_restore_lock_until') || '0');
-  if (restoreLockUntil && Date.now() < restoreLockUntil) return;
   if (isSyncing || hasUnsavedChanges || syncTimeout) return;
   try {
     syncPollCounter++;
@@ -6177,8 +7154,12 @@ let autoSyncTimer = null;
 
 function startAutoSync() {
   syncFromGoogleSheets();
+  if (typeof syncRegistrationRequestsFromFirebase === 'function') syncRegistrationRequestsFromFirebase();
   clearInterval(autoSyncTimer);
-  autoSyncTimer = setInterval(syncFromGoogleSheets, 5 * 60 * 1000);
+  autoSyncTimer = setInterval(function(){
+    syncFromGoogleSheets();
+    if (typeof syncRegistrationRequestsFromFirebase === 'function') syncRegistrationRequestsFromFirebase();
+  }, 5 * 60 * 1000);
 }
 
 async function syncFromGoogleSheets() {
@@ -6386,36 +7367,84 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
+function cleanArabicOnlyValue(value) {
+  var v = String(value || '').trim();
+  if (!v) return '';
+  if (v.indexOf('|') >= 0) v = v.split('|')[0].trim();
+  v = v.replace(/\s{2,}/g, ' ').trim();
+  var arabicMatches = v.match(/[\u0600-\u06FF][\u0600-\u06FF\s\-،]+/g);
+  if (arabicMatches && arabicMatches.length) {
+    return arabicMatches.sort(function(a,b){ return b.length - a.length; })[0].trim();
+  }
+  return v;
+}
+
+function formatYesNoDetail(label, value, detail) {
+  var v = String(value || '').trim();
+  var d = String(detail || '').trim();
+  if (!v && !d) return '';
+  return label + ': ' + (v || '—') + (d ? ' — ' + d : '');
+}
+
+function buildHealthTextFromFormRow(r) {
+  var parts = [];
+  var allergyExtra = [r.allergyNote, r.allergyType, r.allergyMedicationFood].filter(Boolean).join(' — ');
+  parts.push(formatYesNoDetail('الحساسية', r.allergy, allergyExtra));
+  parts.push(formatYesNoDetail('مرض معدي', r.contagious, r.diseaseDetails || r.contagiousDetails));
+  parts.push(formatYesNoDetail('عملية أو حادث خطير', r.surgical, r.accidentDetails || r.surgicalDetails));
+  if (r.medicalNotes) parts.push('ملاحظات طبية: ' + r.medicalNotes);
+  if (r.healthStatus) parts.push('الحالة الصحية: ' + r.healthStatus);
+  if (r.health) parts.push('تفاصيل صحية: ' + r.health);
+  if (r.nurseConsent) parts.push('موافقات إسعافية/تمريضية: ' + r.nurseConsent);
+  return parts.filter(function(x){ return String(x || '').trim(); }).join(' | ');
+}
+
+function detailItem(label, value, full, dir) {
+  var v = (value === undefined || value === null || String(value).trim() === '') ? '—' : value;
+  return '<div class="form-detail-item' + (full ? ' full' : '') + '">' +
+    '<div class="form-detail-label">' + escapeHtml(label) + '</div>' +
+    '<div class="form-detail-value"' + (dir ? ' dir="' + dir + '"' : '') + '>' + escapeHtml(v) + '</div>' +
+  '</div>';
+}
+
+function detailSection(title, itemsHtml) {
+  return '<div class="form-detail-section"><h4>' + escapeHtml(title) + '</h4><div class="form-detail-grid">' + itemsHtml + '</div></div>';
+}
+
 function buildStudentFromFormRow(r, studentIdOverride) {
+  var healthText = buildHealthTextFromFormRow(r);
+  var arabicNat = cleanArabicOnlyValue(r.nat);
   return {
     id: studentIdOverride || nextStuId++,
     name: r.name,
+    nameEn: r.nameEn || r.childNameEn || r.childEnglishName || '',
     dob: r.dob,
     gen: r.gen,
-    nat: r.nat,
+    nat: arabicNat,
     cls: r.cls || Object.keys(CLASSES)[0],
-    bpl: '',
+    bpl: r.bpl || '',
     dad: r.dadFull,
     job: r.dadJob,
     dph: r.dadMob,
     mom: r.momFull,
     mph: r.momMob,
     addr: r.addr,
-    note: [r.notes, r.allergyNote ? '⚠️ حساسية: ' + r.allergyNote : ''].filter(Boolean).join(' | '),
+    note: [r.notes, healthText ? ('الحالة الصحية: ' + healthText) : ''].filter(Boolean).join(' | '),
     familyName: r.familyName,
     firstName: r.firstName,
     emiratesId: r.emiratesId,
+    idNo: r.emiratesId,
     passport: r.passport,
     religion: r.religion,
     motherTongue: r.motherTongue,
     otherLanguages: r.otherLanguages,
-    dadNat: r.dadNat,
+    dadNat: cleanArabicOnlyValue(r.dadNat),
     dadEmail: r.dadEmail,
     dadHome: r.dadHome,
     dadWork: r.dadWork,
     dadMotherTongue: r.dadMotherTongue,
     dadOtherLanguages: r.dadOtherLanguages,
-    momNat: r.momNat,
+    momNat: cleanArabicOnlyValue(r.momNat),
     momJob: r.momJob,
     momEmail: r.momEmail,
     momHome: r.momHome,
@@ -6434,8 +7463,12 @@ function buildStudentFromFormRow(r, studentIdOverride) {
     nurseConsent: r.nurseConsent,
     contagious: r.contagious,
     surgical: r.surgical,
-    diseaseDetails: r.diseaseDetails,
-    accidentDetails: r.accidentDetails,
+    diseaseDetails: r.diseaseDetails || r.contagiousDetails,
+    accidentDetails: r.accidentDetails || r.surgicalDetails,
+    healthStatus: healthText,
+    health: healthText,
+    healthOverride: healthText,
+    healthUpdatedAt: new Date().toISOString(),
     guardianUndertake: r.guardianUndertake,
     imgChildPhoto: r.imgChildPhoto,
     imgEmiratesId: r.imgEmiratesId,
@@ -6444,6 +7477,8 @@ function buildStudentFromFormRow(r, studentIdOverride) {
     imgResidency: r.imgResidency,
     imgGuardianId: r.imgGuardianId,
     imgGuardianPass: r.imgGuardianPass,
+    imgDadId: r.imgDadId || r.imgFatherId || r.imgGuardianId,
+    imgDadPassport: r.imgDadPassport || r.imgFatherPassport || r.imgGuardianPass,
     imgBirthCert: r.imgBirthCert,
     approvedAt: new Date().toISOString(),
     formTimestamp: r.timestamp,
@@ -6517,6 +7552,9 @@ function setFormRowDecision(r, status, meta) {
   r.rowUpdatedAt = r.decisionAt;
   Object.keys(meta).forEach(function(k){ r[k] = meta[k]; });
   persistFormRowsAndSync();
+  if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+    archiveFirebaseRegistrationRequest(r, status);
+  }
 }
 
 function refreshAllAfterFormDecision() {
@@ -6588,67 +7626,60 @@ function renderFormRequests() {
 function openFormDetail(ts) {
   var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
   if (!r) return;
-
   var docs = [
-    ['صورة الطفل', r.imgChildPhoto], ['الهوية الإماراتية', r.imgEmiratesId],
-    ['جواز السفر', r.imgPassport],   ['شهادة الميلاد', r.imgBirthCert],
+    ['صورة الطفل', r.imgChildPhoto], ['هوية الطفل الإماراتية', r.imgEmiratesId],
+    ['جواز سفر الطفل', r.imgPassport], ['شهادة ميلاد الطفل', r.imgBirthCert],
     ['شهادة التطعيم', r.imgVaccination], ['إقامة الطفل', r.imgResidency],
-    ['هوية ولي الأمر', r.imgGuardianId], ['جواز ولي الأمر', r.imgGuardianPass],
+    ['هوية الأب', r.imgDadId || r.imgFatherId || r.imgGuardianId],
+    ['جواز سفر الأب', r.imgDadPassport || r.imgFatherPassport || r.imgGuardianPass],
+    ['هوية ولي الأمر', r.imgGuardianId], ['جواز ولي الأمر', r.imgGuardianPass]
   ].filter(function(d){ return d[1]; });
-
   var docsHtml = docs.length ? docs.map(function(d) {
-    return '<div style="text-align:center">' +
-      '<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">' + escapeHtml(d[0]) + '</div>' +
-      '<a href="' + d[1] + '" target="_blank">' +
-        '<img src="' + driveImgUrl(d[1]) + '" style="width:100%;max-height:160px;object-fit:cover;border-radius:8px;border:1.5px solid var(--border)">' +
-      '</a><div style="margin-top:4px;font-size:11px"><a href="' + d[1] + '" target="_blank" style="color:var(--b2)">فتح الملف</a></div></div>';
+    var url = String(d[1] || '');
+    var thumb = driveImgUrl(url);
+    return '<div class="form-doc-card">' +
+      '<div style="font-size:11px;font-weight:800;color:var(--muted);margin-bottom:6px">' + escapeHtml(d[0]) + '</div>' +
+      '<a href="' + escapeHtml(url) + '" target="_blank"><img src="' + escapeHtml(thumb) + '" onerror="this.style.display=\'none\';"></a>' +
+      '<div style="margin-top:5px;font-size:11px"><a href="' + escapeHtml(url) + '" target="_blank" style="color:var(--b2)">فتح الملف</a></div></div>';
   }).join('') : '<p style="color:var(--muted);font-size:13px">لا توجد صور مرفقة</p>';
-
-  var allergyHtml = (r.allergy === 'نعم' || String(r.allergy||'').toLowerCase().includes('yes'))
-    ? '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">⚠️ <b>حساسية:</b> ' + escapeHtml(r.allergyNote||r.allergyType||'يرجى المراجعة') + '</div>'
-    : '';
-
   var clsOptions = Object.entries(CLASSES).map(function(e){
     var selected = (r.cls && r.cls === e[0]) ? ' selected' : '';
     return '<option value="' + escapeHtml(e[0]) + '"' + selected + '>' + e[1].emoji + ' ' + escapeHtml(e[0]) + '</option>';
   }).join('');
-
+  var healthText = buildHealthTextFromFormRow(r);
+  var statusBadge = r.status === 'approved' ? '<span class="b bg">مقبول</span>' : r.status === 'rejected' ? '<span class="b br">مرفوض</span>' : '<span class="b by">قيد المراجعة</span>';
   document.getElementById('mo-form-detail-body').innerHTML =
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">' +
-      '<div class="fl"><label>الاسم</label><div style="font-size:15px;font-weight:700">' + escapeHtml(r.name) + '</div></div>' +
-      '<div class="fl"><label>تاريخ الميلاد</label><div>' + escapeHtml(r.dob||'—') + '</div></div>' +
-      '<div class="fl"><label>الجنس</label><div>' + escapeHtml(r.gen||'—') + '</div></div>' +
-      '<div class="fl"><label>الجنسية</label><div>' + escapeHtml(r.nat||'—') + '</div></div>' +
-      '<div class="fl"><label>رقم الهوية</label><div dir="ltr">' + escapeHtml(r.emiratesId||'—') + '</div></div>' +
-      '<div class="fl"><label>رقم الجواز</label><div dir="ltr">' + escapeHtml(r.passport||'—') + '</div></div>' +
-      '<div class="fl" style="grid-column:1/-1"><label>العنوان</label><div>' + escapeHtml(r.addr||'—') + '</div></div>' +
-    '</div>' +
-    '<div style="font-weight:700;color:var(--g1);margin-bottom:6px">👨 الأب</div>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:13px">' +
-      '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + escapeHtml(r.dadFull||'—') + '</div></div>' +
-      '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + escapeHtml(r.dadMob||'—') + '</div></div>' +
-      '<div><label style="font-size:11px;color:var(--muted)">المهنة</label><div>' + escapeHtml(r.dadJob||'—') + '</div></div>' +
-      '<div><label style="font-size:11px;color:var(--muted)">الإيميل</label><div dir="ltr">' + escapeHtml(r.dadEmail||'—') + '</div></div>' +
-    '</div>' +
-    '<div style="font-weight:700;color:var(--g1);margin-bottom:6px">👩 الأم</div>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:13px">' +
-      '<div><label style="font-size:11px;color:var(--muted)">الاسم</label><div>' + escapeHtml(r.momFull||'—') + '</div></div>' +
-      '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + escapeHtml(r.momMob||'—') + '</div></div>' +
-    '</div>' +
-    allergyHtml +
-    (r.notes ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📝 ' + escapeHtml(r.notes) + '</div>' : '') +
-    '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px">📎 الوثائق</div>' +
-    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">' + docsHtml + '</div>' +
-    (r.status === 'pending' ?
-      '<div style="margin-top:14px">' +
-        '<label style="font-size:13px;font-weight:700;color:var(--muted)">إضافة إلى الفصل:</label>' +
-        '<select id="detail-cls-select" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:14px;margin-top:6px">' +
-          clsOptions +
-        '</select>' +
-      '</div>' : '') +
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px"><div style="font-size:16px;font-weight:900;color:var(--g1)">تفاصيل طلب التسجيل</div>' + statusBadge + '</div>' +
+    detailSection('👶 بيانات الطفل',
+      detailItem('اسم الطفل بالعربي', r.name, false) + detailItem('اسم الطفل بالإنجليزي', r.nameEn || r.childNameEn || r.childEnglishName, false, 'ltr') +
+      detailItem('الاسم الأول', r.firstName, false) + detailItem('اسم العائلة', r.familyName, false) +
+      detailItem('تاريخ الميلاد', r.dob, false) + detailItem('الجنس', r.gen, false) +
+      detailItem('الجنسية كما وردت بالطلب', r.nat, false) + detailItem('الجنسية التي ستُحفظ بملف الطالب', cleanArabicOnlyValue(r.nat), false) +
+      detailItem('رقم الهوية', r.emiratesId, false, 'ltr') + detailItem('رقم الجواز', r.passport, false, 'ltr') +
+      detailItem('الديانة', r.religion, false) + detailItem('اللغة الأم', r.motherTongue, false) + detailItem('لغات أخرى', r.otherLanguages, false) + detailItem('العنوان التفصيلي', r.addr, true)
+    ) +
+    detailSection('👨 بيانات الأب',
+      detailItem('الاسم الكامل', r.dadFull, false) + detailItem('رقم الموبايل', r.dadMob, false, 'ltr') + detailItem('الجنسية', r.dadNat, false) +
+      detailItem('هاتف المنزل', r.dadHome, false, 'ltr') + detailItem('المهنة', r.dadJob, false) + detailItem('جهة العمل', r.dadWork, false) +
+      detailItem('البريد الإلكتروني', r.dadEmail, false, 'ltr') + detailItem('اللغة الأم', r.dadMotherTongue, false) + detailItem('لغات أخرى', r.dadOtherLanguages, true)
+    ) +
+    detailSection('👩 بيانات الأم',
+      detailItem('الاسم الكامل', r.momFull, false) + detailItem('رقم الموبايل', r.momMob, false, 'ltr') + detailItem('الجنسية', r.momNat, false) +
+      detailItem('هاتف المنزل', r.momHome, false, 'ltr') + detailItem('المهنة', r.momJob, false) + detailItem('جهة العمل', r.momWork, false) +
+      detailItem('البريد الإلكتروني', r.momEmail, false, 'ltr') + detailItem('اللغة الأم', r.momMotherTongue, false) + detailItem('لغات أخرى', r.momOtherLanguages, true)
+    ) +
+    detailSection('🚨 الطوارئ', detailItem('اسم قريب الطوارئ', r.emergName, false) + detailItem('صلة القرابة', r.emergRel, false) + detailItem('رقم الموبايل', r.emergMob, false, 'ltr')) +
+    detailSection('🩺 الحالة الصحية التي ستنعكس في ملف الطالب',
+      detailItem('الحساسية', r.allergy, false) + detailItem('تفاصيل الحساسية', [r.allergyNote, r.allergyType, r.allergyMedicationFood].filter(Boolean).join(' — '), false) +
+      detailItem('مرض معدي', r.contagious, false) + detailItem('تفاصيل المرض', r.diseaseDetails || r.contagiousDetails, false) +
+      detailItem('عملية أو حادث خطير', r.surgical, false) + detailItem('تفاصيل العملية/الحادث', r.accidentDetails || r.surgicalDetails, false) +
+      detailItem('موافقات إسعافية/تمريضية', r.nurseConsent, true) + detailItem('النص النهائي للحالة الصحية', healthText, true)
+    ) +
+    detailSection('✅ الموافقات والملاحظات', detailItem('الموافقة على التصوير', r.photoConsent, false) + detailItem('الموافقة على النشر', r.socialConsent, false) + detailItem('تعهد ولي الأمر', r.guardianUndertake, true) + detailItem('ملاحظات إضافية', r.notes, true)) +
+    '<div class="form-detail-section"><h4>📎 الوثائق والمرفقات</h4><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">' + docsHtml + '</div></div>' +
+    (r.status === 'pending' ? '<div class="form-detail-section"><h4>🏫 قبول الطلب</h4><label style="font-size:13px;font-weight:800;color:var(--muted)">إضافة إلى الفصل:</label><select id="detail-cls-select" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:14px;margin-top:6px">' + clsOptions + '</select></div>' : '') +
     (r.status === 'approved' ? '<div style="margin-top:14px;background:var(--gp);padding:10px;border-radius:8px;font-size:13px">تم قبول هذا الطلب ويمكن التراجع عنه عند الحاجة.</div>' : '') +
     (r.status === 'rejected' ? '<div style="margin-top:14px;background:var(--rp);padding:10px;border-radius:8px;font-size:13px">تم رفض هذا الطلب ويمكن التراجع عن الرفض.</div>' : '');
-
   var approveBtn = document.getElementById('mo-form-detail-approve');
   approveBtn.style.display = r.status === 'pending' ? 'inline-flex' : 'none';
   approveBtn.onclick = function() {
