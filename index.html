@@ -753,7 +753,7 @@ textarea{resize:vertical;min-height:65px}
     </div>
 
 <div class="pg" id="pg-forms">
-      <div class="pt">📋 طلبات التسجيل من Google Forms</div>
+      <div class="pt">📋 طلبات التسجيل من الفورم المباشر و Google Sheets</div>
       <div class="sg" style="grid-template-columns:repeat(3,1fr)">
         <div class="sc y"><div class="sl">طلبات جديدة</div><div class="sv" id="forms-pending-count">—</div></div>
         <div class="sc"><div class="sl">تم القبول</div><div class="sv" id="forms-approved-count">—</div></div>
@@ -770,7 +770,7 @@ textarea{resize:vertical;min-height:65px}
             </select>
             <input type="text" id="forms-search" placeholder="🔍 ابحث..." oninput="renderFormRequests()" style="max-width:180px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
           </div>
-          <button class="btn btn-g" id="sync-sheets-btn" onclick="syncFromGoogleSheets()">🔄 مزامنة</button>
+          <button class="btn btn-g" id="sync-sheets-btn" onclick="syncFromGoogleSheets()">🔄 مزامنة من المصدرين</button>
         </div>
         <div id="forms-list">
           <div style="text-align:center;padding:30px;color:var(--muted)">سيتم المزامنة تلقائياً بعد تسجيل الدخول</div>
@@ -5956,6 +5956,8 @@ async function syncRegistrationRequestsFromFirebase() {
     if (incoming.length) {
       syncedFormRows = mergeFormRowsByTimestamp(syncedFormRows, incoming);
       localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      // ثبّت الطلبات المباشرة داخل kp_form_rows أيضاً حتى تظهر لكل الأجهزة مثل طلبات Google Sheets.
+      if (typeof autoSave === 'function') autoSave();
       renderFormRequests();
       showSyncBadge('✅ تم تحميل طلبات التسجيل من رابط الأهالي');
     }
@@ -7289,7 +7291,7 @@ async function syncFromGoogleSheets() {
         imgGuardianPass: valByLabel(c, ['صورة جواز سفر ولي الأمر | Guardian\'s passport'], 52),
         imgBirthCert:    valByLabel(c, ['شهادة الميلاد | Birth certificate'], 53),
 
-        cls: '', status: 'pending'
+        cls: '', status: 'pending', source: 'google_sheets'
       };
 
       var existingIndex = syncedFormRows.findIndex(function(r){ return r.timestamp === ts; });
@@ -7314,13 +7316,14 @@ async function syncFromGoogleSheets() {
     autoSave();
     var el = document.getElementById('forms-last-sync');
     if (el) el.textContent = new Date().toLocaleTimeString('ar');
-    if (added > 0) showSyncBadge('✅ ' + added + ' طلب تسجيل جديد');
+    if (added > 0) showSyncBadge('✅ ' + added + ' طلب تسجيل جديد من Google Sheets');
+    if (typeof syncRegistrationRequestsFromFirebase === 'function') await syncRegistrationRequestsFromFirebase();
     renderFormRequests();
   } catch(e) {
     console.log('Sheets sync error:', e.message);
     showSyncBadge('⚠️ تأكد أن الشيت عام (Anyone with link)');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🔄 مزامنة'; }
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 مزامنة من المصدرين'; }
   }
 }
 
@@ -7616,6 +7619,7 @@ function renderFormRequests() {
         '<div class="form-req-meta">' +
           '<span>👨 ' + escapeHtml(r.dadFull||'—') + '</span>' +
           '<span>📱 ' + escapeHtml(r.dadMob||r.momMob||'—') + '</span>' +
+          '<span>📌 ' + escapeHtml((r.source === 'parent_registration_link' || r.source === 'direct_form') ? 'رابط التسجيل' : (r.source === 'google_sheets' ? 'Google Sheets' : (r.source||'المصدر غير محدد'))) + '</span>' +
         '</div>' +
       '</div>' +
       '<div class="form-req-actions" onclick="event.stopPropagation()">' + actionHtml + '</div>' +
