@@ -4878,89 +4878,36 @@ function downloadBackup() {
   alert('✅ تم تحميل النسخة الاحتياطية بنجاح\n\nاحفظها في مكان آمن (Google Drive/Dropbox)');
 }
 
-function buildRestorePayloadFromBackup(backup) {
-  const cleanSettings = Object.assign({}, backup.nurserySettings || nurserySettings || {});
-  delete cleanSettings.logoDataUrl;
-  return {
-    version: 2,
-    savedAt: new Date().toISOString(),
-    students: sanitizeEntityArray(backup.students || []),
-    payments: sanitizeEntityArray(backup.payments || []),
-    expenses: sanitizeEntityArray(backup.expenses || []),
-    attLog: (backup.attLog && typeof backup.attLog === 'object') ? backup.attLog : {},
-    CLASSES: (backup.CLASSES && typeof backup.CLASSES === 'object') ? backup.CLASSES : (CLASSES || {}),
-    nurserySettings: cleanSettings,
-    renewals: sanitizeEntityArray(backup.renewals || []),
-    kp_users: Array.isArray(backup.kp_users) ? backup.kp_users : JSON.parse(localStorage.getItem('kp_users') || '[]'),
-    kp_form_rows: Array.isArray(backup.kp_form_rows) ? backup.kp_form_rows : JSON.parse(localStorage.getItem('kp_form_rows') || '[]'),
-    deletedStudents: sanitizeEntityArray(backup.deletedStudents || []),
-    deletedPayments: sanitizeEntityArray(backup.deletedPayments || []),
-    deletedExpenses: sanitizeEntityArray(backup.deletedExpenses || []),
-    deletedRenewals: sanitizeEntityArray(backup.deletedRenewals || []),
-    deletedClasses: sanitizeEntityArray(backup.deletedClasses || []),
-    tombstones: (backup.tombstones && typeof backup.tombstones === 'object') ? backup.tombstones : {students:[],payments:[],expenses:[],renewals:[],classes:[]},
-    restoredKeys: {students:[],payments:[],expenses:[],renewals:[],classes:[]}
-  };
-}
-
-async function restoreBackup(event) {
+function restoreBackup(event) {
   const file = event.target.files[0];
   if (!file) return;
-  if (!confirm('⚠️ تحذير!\n\nاستعادة النسخة الاحتياطية ستحل محل جميع بيانات السيستم الحالية.\n\nملاحظة: طلبات التسجيل القادمة من رابط الأهالي لن يتم حذفها.\n\nهل أنت متأكد؟')) {
+  if (!confirm('⚠️ تحذير!\n\nاستعادة النسخة الاحتياطية ستحل محل جميع البيانات الحالية.\n\nهل أنت متأكد؟')) {
     event.target.value = ''; return;
   }
   const reader = new FileReader();
-  reader.onload = async function(e) {
+  reader.onload = function(e) {
     try {
       const backup = JSON.parse(e.target.result);
-      if (!backup.version || !Array.isArray(backup.students)) { alert('❌ الملف ليس نسخة احتياطية صالحة'); return; }
-
-      const payload = buildRestorePayloadFromBackup(backup);
-
-      // طبّق محلياً أولاً
-      students = payload.students;
-      payments = payload.payments;
-      expenses = payload.expenses;
-      renewals = payload.renewals;
-      attLog = payload.attLog;
-      deletedStudents = payload.deletedStudents;
-      deletedPayments = payload.deletedPayments;
-      deletedExpenses = payload.deletedExpenses;
-      deletedRenewals = payload.deletedRenewals;
-      deletedClasses = payload.deletedClasses;
-      tombstones = payload.tombstones;
-      restoredKeys = payload.restoredKeys;
-      if (payload.CLASSES) { CLASSES = payload.CLASSES; if (typeof CLASSES_DATA !== 'undefined') CLASSES_DATA = CLASSES; }
-      if (payload.nurserySettings) Object.assign(nurserySettings, payload.nurserySettings);
-      localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
-      localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
-      localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
-      localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
-      localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
-      localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
-      localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
-      localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
-      localStorage.setItem('kp_users', JSON.stringify(payload.kp_users || []));
-      localStorage.setItem('kp_form_rows', JSON.stringify(payload.kp_form_rows || []));
-      syncedFormRows = payload.kp_form_rows || [];
-      persistCoreDataToLocalStorage();
+      if (!backup.version || !backup.students) { alert('❌ الملف ليس نسخة احتياطية صالحة'); return; }
+      if (backup.students) students = backup.students;
       resetPaymentMatchCache();
+      if (backup.payments) payments = backup.payments;
+      if (backup.expenses) expenses = backup.expenses;
+      if (backup.renewals) renewals = backup.renewals;
+      if (backup.attLog) attLog = backup.attLog;
+      if (backup.deletedStudents) { deletedStudents = backup.deletedStudents; localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents)); }
+      if (backup.deletedPayments) { deletedPayments = backup.deletedPayments; localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments)); }
+      if (backup.deletedExpenses) { deletedExpenses = backup.deletedExpenses; localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses)); }
+      if (backup.deletedRenewals) { deletedRenewals = backup.deletedRenewals; localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals)); }
+      if (backup.deletedClasses) { deletedClasses = backup.deletedClasses; localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses)); }
+      if (backup.tombstones) { tombstones = backup.tombstones; localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); }
+      if (backup.CLASSES) Object.assign(CLASSES, backup.CLASSES);
+      if (backup.nurserySettings) Object.assign(nurserySettings, backup.nurserySettings);
+      if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(backup.kp_users));
+      if (backup.kp_form_rows) { localStorage.setItem('kp_form_rows', JSON.stringify(backup.kp_form_rows)); syncedFormRows = backup.kp_form_rows; }
       refreshNextIds();
-      forceFullReplaceOnNextSync = false;
-      hasUnsavedChanges = false;
-
-      // احفظ فوراً على Firebase بانتظار النتيجة، حتى لا ترجع البيانات القديمة بعد تسجيل الخروج/الدخول.
-      showSyncBadge('⏳ جاري رفع النسخة الاحتياطية إلى Firebase...');
-      const res = await fetch(FB_URL + '.json', {
-        method: 'PATCH',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      lastSavedAt = payload.savedAt;
-      localStorage.setItem('kp_last_synced_at', lastSavedAt);
-      showSyncBadge('✅ تم استبدال بيانات السيستم وحفظها سحابياً');
-
+      forceFullReplaceOnNextSync = true;
+      autoSave();
       renderDash();
       if (typeof renderStudents === 'function') renderStudents();
       if (typeof renderPayments === 'function') renderPayments();
@@ -4970,9 +4917,8 @@ async function restoreBackup(event) {
       if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
       if (typeof renderOtherDeletedItems === 'function') renderOtherDeletedItems();
       if (typeof updateNotifications === 'function') updateNotifications();
-      if (typeof syncFromFirebaseRegistrationRequests === 'function') syncFromFirebaseRegistrationRequests();
-      alert('✅ تم استعادة النسخة الاحتياطية وحفظها على Firebase بنجاح!\n\n' + 'الطلاب: ' + payload.students.length + '\n' + 'السندات: ' + payload.payments.length + '\n' + 'المصاريف: ' + payload.expenses.length);
-    } catch(err) { alert('❌ فشل استعادة النسخة أو رفعها إلى Firebase: ' + err.message); }
+      alert('✅ تم استعادة النسخة الاحتياطية بنجاح!\n\n' + 'الطلاب: ' + (backup.students||[]).length + '\n' + 'السندات: ' + (backup.payments||[]).length + '\n' + 'المصاريف: ' + (backup.expenses||[]).length);
+    } catch(err) { alert('❌ فشل قراءة الملف: ' + err.message); }
     event.target.value = '';
   };
   reader.readAsText(file);
@@ -5786,9 +5732,6 @@ function go(page) {
     admin:()=>{renderAdminUsers();renderAdminClasses();}
   };
   if(renders[page]) renders[page]();
-  if (page === 'forms' && typeof syncFromFirebaseRegistrationRequests === 'function') {
-    syncFromFirebaseRegistrationRequests();
-  }
 }
 
 // ============================================================
@@ -6754,18 +6697,6 @@ async function pushToFirebase() {
       restoredKeys:    mergedData.restoredKeys
     };
 
-    // عند الاسترجاع الكامل لا نحذف طلبات التسجيل القادمة من رابط الأهالي.
-    // هي موجودة تحت registrationRequests وليست جزءاً من ملف النسخة الاحتياطية عادةً.
-    if (fullReplace && !writePayload.registrationRequests) {
-      try {
-        const rrRes = await fetch(FB_URL + '/registrationRequests.json', { cache: 'no-store' });
-        if (rrRes.ok) {
-          const rrData = await rrRes.json();
-          if (rrData && typeof rrData === 'object') writePayload.registrationRequests = rrData;
-        }
-      } catch(_) {}
-    }
-
     const res = await fetch(FB_URL + '.json', {
       method: fullReplace ? 'PUT' : 'PATCH',
       headers: {'Content-Type': 'application/json'},
@@ -7064,86 +6995,12 @@ function showSyncBadge(msg) {
 const SHEET_ID = '1ZAdT4ohpxxhjnwi8Zwmc7sjeFvRcK12WZ1a1-KvE86Y';
 const SHEETS_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:json';
 let syncedFormRows = JSON.parse(localStorage.getItem('kp_form_rows') || '[]');
-const REGISTRATION_REQUESTS_URL = FB_URL + '/registrationRequests/pending';
-
-function normalizeRegistrationRowForSystem(row, firebaseKey) {
-  row = row || {};
-  var firstName = row.firstName || '';
-  var familyName = row.familyName || '';
-  var name = row.name || ((firstName + ' ' + familyName).trim());
-  var ts = row.timestamp || row.submittedAt || row.createdAt || firebaseKey || new Date().toISOString();
-  return Object.assign({}, row, {
-    firebaseKey: row.firebaseKey || firebaseKey || '',
-    timestamp: ts,
-    submittedAt: row.submittedAt || ts,
-    name: name,
-    firstName: firstName || row.firstName || '',
-    familyName: familyName || row.familyName || '',
-    nameEn: row.nameEn || row.childNameEn || '',
-    status: row.status || 'pending',
-    cls: row.cls || ''
-  });
-}
-
-async function syncFromFirebaseRegistrationRequests() {
-  try {
-    const res = await fetch(REGISTRATION_REQUESTS_URL + '.json', { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    window.__kp_registrationRequestsCache = (data && typeof data === 'object') ? data : {};
-    if (!data || typeof data !== 'object') { renderFormRequests(); return; }
-    let changed = false;
-    Object.keys(data).forEach(function(key){
-      const incoming = normalizeRegistrationRowForSystem(data[key], key);
-      const idx = syncedFormRows.findIndex(function(r){ return (incoming.firebaseKey && r.firebaseKey === incoming.firebaseKey) || (incoming.timestamp && r.timestamp === incoming.timestamp); });
-      if (idx >= 0) {
-        syncedFormRows[idx] = Object.assign({}, syncedFormRows[idx], incoming, {
-          status: incoming.status || syncedFormRows[idx].status || 'pending',
-          rowUpdatedAt: incoming.rowUpdatedAt || incoming.decisionAt || incoming.submittedAt || incoming.timestamp
-        });
-      } else {
-        syncedFormRows.push(incoming);
-      }
-      changed = true;
-    });
-    if (changed) localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-    renderFormRequests();
-  } catch (ex) {
-    console.warn('Firebase registration sync failed', ex);
-  }
-}
-
-async function syncFormDecisionToFirebase(row) {
-  try {
-    if (!row || !row.firebaseKey) return;
-    const patch = {
-      status: row.status || 'pending',
-      cls: row.cls || '',
-      decisionAt: row.decisionAt || '',
-      rowUpdatedAt: row.rowUpdatedAt || new Date().toISOString(),
-      approvedStudentId: row.approvedStudentId || null,
-      approvedAction: row.approvedAction || ''
-    };
-    await fetch(REGISTRATION_REQUESTS_URL + '/' + encodeURIComponent(row.firebaseKey) + '.json', {
-      method: 'PATCH',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(patch)
-    });
-  } catch (ex) {
-    console.warn('Firebase registration decision sync failed', ex);
-  }
-}
-
 let autoSyncTimer = null;
 
 function startAutoSync() {
-  syncFromFirebaseRegistrationRequests();
   syncFromGoogleSheets();
   clearInterval(autoSyncTimer);
-  autoSyncTimer = setInterval(function(){
-    syncFromFirebaseRegistrationRequests();
-    // Google Sheets sync stays for old forms, but new Firebase parent link is checked more frequently.
-  }, 30 * 1000);
+  autoSyncTimer = setInterval(syncFromGoogleSheets, 5 * 60 * 1000);
 }
 
 async function syncFromGoogleSheets() {
@@ -7355,7 +7212,6 @@ function buildStudentFromFormRow(r, studentIdOverride) {
   return {
     id: studentIdOverride || nextStuId++,
     name: r.name,
-    nameEn: r.nameEn || r.childNameEn || '',
     dob: r.dob,
     gen: r.gen,
     nat: r.nat,
@@ -7400,10 +7256,6 @@ function buildStudentFromFormRow(r, studentIdOverride) {
     nurseConsent: r.nurseConsent,
     contagious: r.contagious,
     surgical: r.surgical,
-    healthStatus: [r.allergy ? ('الحساسية: ' + r.allergy) : '', r.allergyNote ? ('تفاصيل الحساسية: ' + r.allergyNote) : '', r.allergyType ? ('نوع الحساسية: ' + r.allergyType) : '', r.contagious ? ('مرض معدي: ' + r.contagious) : '', r.surgical ? ('عملية أو حادث: ' + r.surgical) : '', r.diseaseDetails ? ('تفاصيل المرض: ' + r.diseaseDetails) : '', r.accidentDetails ? ('تفاصيل الحادث/العملية: ' + r.accidentDetails) : '', r.allergyMedicationFood ? ('حساسية أطعمة/أدوية: ' + r.allergyMedicationFood) : '', r.nurseConsent ? ('موافقات الممرضة: ' + r.nurseConsent) : ''].filter(Boolean).join(' | '),
-    health: [r.allergy ? ('الحساسية: ' + r.allergy) : '', r.allergyNote || '', r.allergyType || '', r.contagious ? ('مرض معدي: ' + r.contagious) : '', r.surgical ? ('عملية أو حادث: ' + r.surgical) : '', r.diseaseDetails || '', r.accidentDetails || '', r.allergyMedicationFood || ''].filter(Boolean).join(' | '),
-    healthStatus: [r.allergy ? ('الحساسية: ' + r.allergy) : '', r.allergyNote ? ('تفاصيل الحساسية: ' + r.allergyNote) : '', r.allergyType ? ('نوع الحساسية: ' + r.allergyType) : '', r.contagious ? ('مرض معدي: ' + r.contagious) : '', r.surgical ? ('عملية أو حادث: ' + r.surgical) : '', r.diseaseDetails ? ('تفاصيل المرض: ' + r.diseaseDetails) : '', r.accidentDetails ? ('تفاصيل الحادث/العملية: ' + r.accidentDetails) : '', r.allergyMedicationFood ? ('حساسية أطعمة/أدوية: ' + r.allergyMedicationFood) : '', r.nurseConsent ? ('موافقات الممرضة: ' + r.nurseConsent) : ''].filter(Boolean).join(' | '),
-    health: [r.allergy ? ('الحساسية: ' + r.allergy) : '', r.allergyNote || '', r.allergyType || '', r.contagious ? ('مرض معدي: ' + r.contagious) : '', r.surgical ? ('عملية أو حادث: ' + r.surgical) : '', r.diseaseDetails || '', r.accidentDetails || '', r.allergyMedicationFood || ''].filter(Boolean).join(' | '),
     diseaseDetails: r.diseaseDetails,
     accidentDetails: r.accidentDetails,
     guardianUndertake: r.guardianUndertake,
@@ -7414,8 +7266,6 @@ function buildStudentFromFormRow(r, studentIdOverride) {
     imgResidency: r.imgResidency,
     imgGuardianId: r.imgGuardianId,
     imgGuardianPass: r.imgGuardianPass,
-    imgDadId: r.imgDadId || r.imgFatherId || r.imgGuardianId,
-    imgDadPassport: r.imgDadPassport || r.imgFatherPassport || r.imgGuardianPass,
     imgBirthCert: r.imgBirthCert,
     approvedAt: new Date().toISOString(),
     formTimestamp: r.timestamp,
@@ -7489,8 +7339,6 @@ function setFormRowDecision(r, status, meta) {
   r.rowUpdatedAt = r.decisionAt;
   Object.keys(meta).forEach(function(k){ r[k] = meta[k]; });
   persistFormRowsAndSync();
-  syncFormDecisionToFirebase(r);
-  syncFormDecisionToFirebase(r);
 }
 
 function refreshAllAfterFormDecision() {
@@ -7589,8 +7437,7 @@ function openFormDetail(ts) {
 
   document.getElementById('mo-form-detail-body').innerHTML =
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">' +
-      '<div class="fl"><label>الاسم العربي</label><div style="font-size:15px;font-weight:700">' + escapeHtml(r.name) + '</div></div>' +
-      '<div class="fl"><label>الاسم بالإنجليزي</label><div dir="ltr">' + escapeHtml(r.nameEn || r.childNameEn || '—') + '</div></div>' +
+      '<div class="fl"><label>الاسم</label><div style="font-size:15px;font-weight:700">' + escapeHtml(r.name) + '</div></div>' +
       '<div class="fl"><label>تاريخ الميلاد</label><div>' + escapeHtml(r.dob||'—') + '</div></div>' +
       '<div class="fl"><label>الجنس</label><div>' + escapeHtml(r.gen||'—') + '</div></div>' +
       '<div class="fl"><label>الجنسية</label><div>' + escapeHtml(r.nat||'—') + '</div></div>' +
