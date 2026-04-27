@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260427-backup-schema-compatible-registration-requests -->
+<!-- v20260427-backup-schema-compatible-registration-requests-storage-links -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -5918,8 +5918,11 @@ function normalizeParentRegistrationRow(raw, firebaseKey) {
   r.momMob = raw.momMob || raw.motherMobile || raw.mph || '';
   r.emiratesId = raw.emiratesId || raw.idNo || raw.identityNo || raw.nationalId || '';
   r.imgPassport = raw.imgPassport || raw.imgChildPassport || '';
-  r.imgGuardianId = raw.imgGuardianId || raw.imgFatherId || raw.imgDadId || '';
+  r.imgChildPassport = raw.imgChildPassport || raw.imgPassport || '';
+  r.imgGuardianId = raw.imgGuardianId || raw.imgFatherEmiratesId || raw.imgFatherId || raw.imgDadId || '';
+  r.imgDadId = raw.imgDadId || raw.imgFatherEmiratesId || raw.imgFatherId || raw.imgGuardianId || '';
   r.imgGuardianPass = raw.imgGuardianPass || raw.imgFatherPassport || raw.imgDadPassport || '';
+  r.imgDadPassport = raw.imgDadPassport || raw.imgFatherPassport || raw.imgGuardianPass || '';
   r.source = raw.source || 'parent_registration_link';
   return r;
 }
@@ -7329,6 +7332,10 @@ async function syncFromGoogleSheets() {
 
 function driveImgUrl(url) {
   if (!url) return '';
+  url = String(url).trim();
+  // يدعم روابط Firebase Storage وروابط الصور القديمة Base64 وروابط Google Drive.
+  if (/^data:image\//i.test(url)) return url;
+  if (/firebasestorage\.googleapis\.com|storage\.googleapis\.com|googleusercontent\.com/i.test(url)) return url;
   var m = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
   return m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w400' : url;
 }
@@ -7480,9 +7487,10 @@ function buildStudentFromFormRow(r, studentIdOverride) {
     imgResidency: r.imgResidency,
     imgGuardianId: r.imgGuardianId,
     imgGuardianPass: r.imgGuardianPass,
-    imgDadId: r.imgDadId || r.imgFatherId || r.imgGuardianId,
+    imgDadId: r.imgDadId || r.imgFatherEmiratesId || r.imgFatherId || r.imgGuardianId,
     imgDadPassport: r.imgDadPassport || r.imgFatherPassport || r.imgGuardianPass,
     imgBirthCert: r.imgBirthCert,
+    storageImages: r.storageImages || null,
     approvedAt: new Date().toISOString(),
     formTimestamp: r.timestamp,
   };
@@ -7634,7 +7642,7 @@ function openFormDetail(ts) {
     ['صورة الطفل', r.imgChildPhoto], ['هوية الطفل الإماراتية', r.imgEmiratesId],
     ['جواز سفر الطفل', r.imgPassport], ['شهادة ميلاد الطفل', r.imgBirthCert],
     ['شهادة التطعيم', r.imgVaccination], ['إقامة الطفل', r.imgResidency],
-    ['هوية الأب', r.imgDadId || r.imgFatherId || r.imgGuardianId],
+    ['هوية الأب', r.imgDadId || r.imgFatherEmiratesId || r.imgFatherId || r.imgGuardianId],
     ['جواز سفر الأب', r.imgDadPassport || r.imgFatherPassport || r.imgGuardianPass],
     ['هوية ولي الأمر', r.imgGuardianId], ['جواز ولي الأمر', r.imgGuardianPass]
   ].filter(function(d){ return d[1]; });
