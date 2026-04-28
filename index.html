@@ -8260,146 +8260,6 @@ function findPotentialStudentMatches(r) {
   }).sort(function(a,b){ return b.score - a.score; });
 }
 
-
-function kpRegDecisionSafeKey(v) {
-  return encodeURIComponent(String(v || ('item_' + Date.now())).replace(/[.#$\[\]\/]/g, '_'));
-}
-async function kpPutFirebasePath(path, payload) {
-  const res = await fetch(FB_URL + '/' + path + '.json', {
-    method: 'PUT',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify(payload)
-  });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  return true;
-}
-async function kpPatchFirebaseRoot(payload) {
-  const res = await fetch(FB_URL + '.json', {
-    method: 'PATCH',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify(payload)
-  });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  return true;
-}
-async function kpFetchArray(path) {
-  try {
-    const res = await fetch(FB_URL + '/' + path + '.json', {cache:'no-store'});
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
-  } catch(e) {
-    return [];
-  }
-}
-function kpNextArrayIndex(arr) {
-  arr = Array.isArray(arr) ? arr : [];
-  for (let i = 0; i < arr.length; i++) {
-    if (arr[i] === null || arr[i] === undefined) return i;
-  }
-  return arr.length;
-}
-async function kpFindArrayIndex(path, matcher) {
-  const arr = await kpFetchArray(path);
-  const idx = arr.findIndex(matcher);
-  return idx >= 0 ? idx : kpNextArrayIndex(arr);
-}
-function kpMarkLocalFormDecision(row, status) {
-  if (!row) return;
-  row.status = status;
-  row.decisionAt = row.decisionAt || new Date().toISOString();
-  row.rowUpdatedAt = row.rowUpdatedAt || row.decisionAt;
-  if (Array.isArray(syncedFormRows)) {
-    let found = false;
-    syncedFormRows = syncedFormRows.map(function(x) {
-      if (!x) return x;
-      const same = (row.timestamp && x.timestamp === row.timestamp) ||
-                   (row.firebaseKey && x.firebaseKey === row.firebaseKey);
-      if (same) {
-        found = true;
-        return Object.assign({}, x, row);
-      }
-      return x;
-    });
-    if (!found) syncedFormRows.push(row);
-    localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-  }
-}
-async function kpSaveFormDecisionIndividual(row, status) {
-  if (!row) return false;
-  kpMarkLocalFormDecision(row, status);
-
-  const idx = await kpFindArrayIndex('kp_form_rows', function(x) {
-    return x && ((row.timestamp && x.timestamp === row.timestamp) ||
-                 (row.firebaseKey && x.firebaseKey === row.firebaseKey));
-  });
-  await kpPutFirebasePath('kp_form_rows/' + idx, row);
-
-  if (row.firebaseKey) {
-    const key = kpRegDecisionSafeKey(row.firebaseKey);
-    const target = status === 'approved' ? 'registrationRequests/accepted/' : 'registrationRequests/rejected/';
-    await kpPutFirebasePath(target + key, row);
-    await kpPutFirebasePath('registrationRequests/pending/' + key, null);
-  }
-
-  const decisionKey = kpRegDecisionSafeKey(row.firebaseKey || row.timestamp || ((row.name || '') + '_' + (row.dob || '')));
-  await kpPutFirebasePath('registrationRequestDecisions/' + decisionKey, {
-    status: status,
-    timestamp: row.timestamp || '',
-    firebaseKey: row.firebaseKey || '',
-    name: row.name || '',
-    dob: row.dob || '',
-    emiratesId: row.emiratesId || row.idNo || '',
-    approvedStudentId: row.approvedStudentId || null,
-    approvedAction: row.approvedAction || '',
-    decisionAt: row.decisionAt || new Date().toISOString()
-  });
-  await kpPatchFirebaseRoot({savedAt: new Date().toISOString()});
-  return true;
-}
-async function kpSaveStudentIndividual(student) {
-  if (!student || student.id == null) return false;
-  const idx = await kpFindArrayIndex('students', function(s) {
-    return s && String(s.id) === String(student.id);
-  });
-  const saveStudent = Object.assign({}, student, {
-    updatedAt: new Date().toISOString(),
-    updatedBy: (currentUser && (currentUser.username || currentUser.name)) ? (currentUser.username || currentUser.name) : 'system',
-    version: (parseInt(student.version || 0, 10) || 0) + 1
-  });
-  await kpPutFirebasePath('students/' + idx, saveStudent);
-  await kpPatchFirebaseRoot({savedAt: new Date().toISOString()});
-  return true;
-}
-function kpFindExistingStudentForRequest(r) {
-  if (!Array.isArray(students) || !r) return null;
-  function digits(v){ return String(v || '').replace(/\D+/g, ''); }
-  function norm(v){ return String(v || '').trim().toLowerCase().replace(/\s+/g, ' '); }
-  const rid = digits(r.emiratesId || r.idNo || r.identityNo);
-  const rname = norm(r.name);
-  const rdob = norm(r.dob);
-  const rphone = digits(r.dadMob || r.momMob || r.dph || r.mph || r.fatherMobile || r.motherMobile);
-  return students.find(function(s) {
-    const sid = digits((typeof getStudentIdentity === 'function' ? getStudentIdentity(s) : '') || s.emiratesId || s.idNo || s.identityNo);
-    const sname = norm(s.name);
-    const sdob = norm(s.dob);
-    const sphone = digits(s.dph || s.mph || s.dadMob || s.momMob);
-    if (rid && sid && rid === sid) return true;
-    if (rname && rdob && sname === rname && sdob === rdob) return true;
-    if (rname && rphone && sname === rname && sphone && sphone === rphone) return true;
-    return false;
-  }) || null;
-}
-async function kpRefreshAfterDecision(message) {
-  try { persistCoreDataToLocalStorage(); } catch(e) {}
-  try { renderStudents(); } catch(e) {}
-  try { renderDash(); } catch(e) {}
-  try { renderFormRequests(); } catch(e) {}
-  try { updateFormsNavBadge(); } catch(e) {}
-  try { closeAll(); } catch(e) {}
-  if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
-}
-
 async function persistFormRowsAndSync(formRow) {
   // ✅ حفظ فردي — إذا تم تمرير formRow بنحفظه فردياً
   // إذا ما تم تمرير شي بنحفظ كل المصفوفة (للتراجع عن قرارات قديمة)
@@ -8574,16 +8434,11 @@ function quickApprove(ts) {
   startApproveFlow(r);
 }
 
-async function startApproveFlow(r) {
+function startApproveFlow(r) {
   if (!r || r.status !== 'pending') return;
-  var existing = kpFindExistingStudentForRequest(r);
-  if (existing) {
-    await performApproveMerge(r, existing.id);
-    return;
-  }
   var matches = findPotentialStudentMatches(r);
   if (!matches.length) {
-    await performApproveNew(r);
+    performApproveNew(r);
     closeAll();
     return;
   }
@@ -8619,84 +8474,56 @@ function openDuplicateDecisionModal(r, matches) {
     var target = students.find(function(s){ return s.id === sid; });
     if (!target) { alert('تعذر العثور على الطالب المحدد'); return; }
     if (!confirm('سيتم دمج بيانات الطلب مع سجل الطالب الحالي: ' + (target.name || '') + '. هل تريدين المتابعة؟')) return;
-    performApproveMerge(r, sid).then(function(){ closeAll(); });
+    performApproveMerge(r, sid);
+    closeAll();
   };
   newBtn.onclick = function() {
     if (!confirm('سيتم تسجيل هذا الطلب كطالب جديد. هل تريدين المتابعة؟')) return;
-    performApproveNew(r).then(function(){ closeAll(); });
+    performApproveNew(r);
+    closeAll();
   };
   document.getElementById('mo-form-duplicates').classList.add('on');
 }
 
-async function performApproveNew(r) {
-  try {
-    if (!r) return;
-    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب وحفظه فردياً...');
-    var newStudent = buildStudentFromFormRow(r, getSafeNextStudentId());
-    students.push(newStudent);
-    nextStuId = getSafeNextStudentId();
-
-    r.approvedStudentId = newStudent.id;
-    r.approvedAction = 'new';
-    r.undoData = { createdStudentId: newStudent.id };
-
-    kpMarkLocalFormDecision(r, 'approved');
-    persistCoreDataToLocalStorage();
-
-    await kpSaveStudentIndividual(newStudent);
-    await kpSaveFormDecisionIndividual(r, 'approved');
-
-    await kpRefreshAfterDecision('✅ تم قبول الطالب وحفظه فردياً على Firebase');
-  } catch(e) {
-    console.error('performApproveNew failed:', e);
-    alert('فشل قبول الطالب. لم يتم رفع قاعدة البيانات كاملة. تأكدي من الاتصال ثم حاولي مرة أخرى.');
-  }
+function performApproveNew(r) {
+  // ✅ FIX: استخدم رقم آمن لا يتعارض مع المحذوفين
+  var newStudent = buildStudentFromFormRow(r, getSafeNextStudentId());
+  students.push(newStudent);
+  nextStuId = getSafeNextStudentId();
+  setFormRowDecision(r, 'approved', {
+    approvedStudentId: newStudent.id,
+    approvedAction: 'new',
+    undoData: { createdStudentId: newStudent.id }
+  });
+  refreshAllAfterFormDecision();
+  showSyncBadge('✅ تم قبول الطالب وإضافته');
 }
 
-async function performApproveMerge(r, studentId) {
-  try {
-    var idx = students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
-    if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
-    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب وحفظه فردياً...');
-    var before = JSON.parse(JSON.stringify(students[idx]));
-    students[idx] = mergeStudentWithFormData(students[idx], r);
-
-    r.approvedStudentId = studentId;
-    r.approvedAction = 'merge';
-    r.undoData = { mergedStudentId: studentId, previousStudent: before };
-
-    kpMarkLocalFormDecision(r, 'approved');
-    persistCoreDataToLocalStorage();
-
-    await kpSaveStudentIndividual(students[idx]);
-    await kpSaveFormDecisionIndividual(r, 'approved');
-
-    await kpRefreshAfterDecision('✅ تم قبول الطلب ودمجه وحفظه فردياً على Firebase');
-  } catch(e) {
-    console.error('performApproveMerge failed:', e);
-    alert('فشل دمج الطالب. لم يتم رفع قاعدة البيانات كاملة. تأكدي من الاتصال ثم حاولي مرة أخرى.');
-  }
+function performApproveMerge(r, studentId) {
+  var idx = students.findIndex(function(s){ return s.id === studentId; });
+  if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+  var before = JSON.parse(JSON.stringify(students[idx]));
+  students[idx] = mergeStudentWithFormData(students[idx], r);
+  setFormRowDecision(r, 'approved', {
+    approvedStudentId: studentId,
+    approvedAction: 'merge',
+    undoData: { mergedStudentId: studentId, previousStudent: before }
+  });
+  refreshAllAfterFormDecision();
+  showSyncBadge('✅ تم قبول الطلب ودمج البيانات');
 }
 
-async function rejectFormRow(ts) {
-  try {
-    var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
-    if (!r) return;
-    if (!confirm('سيتم رفض هذا الطلب ونقله إلى قائمة المرفوضة على Firebase. متابعة؟')) return;
-    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب وحفظه فردياً...');
-
-    r.approvedStudentId = null;
-    r.approvedAction = 'reject';
-    r.undoData = { revertTo: 'pending' };
-
-    kpMarkLocalFormDecision(r, 'rejected');
-    await kpSaveFormDecisionIndividual(r, 'rejected');
-
-    await kpRefreshAfterDecision('✅ تم رفض الطلب وحفظه فردياً على Firebase');
-  } catch(e) {
-    console.error('rejectFormRow failed:', e);
-    alert('فشل رفض الطلب. لم يتم رفع قاعدة البيانات كاملة. تأكدي من الاتصال ثم حاولي مرة أخرى.');
-  }
+function rejectFormRow(ts) {
+  var r = syncedFormRows.find(function(x){ return x.timestamp === ts; });
+  if (!r) return;
+  if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+  setFormRowDecision(r, 'rejected', {
+    approvedStudentId: null,
+    approvedAction: 'reject',
+    undoData: { revertTo: 'pending' }
+  });
+  renderFormRequests();
+  showSyncBadge('✅ تم رفض الطلب');
 }
 
 function undoFormDecision(ts) {
