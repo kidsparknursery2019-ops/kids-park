@@ -7870,10 +7870,149 @@ function startAutoSync() {
   }, 5 * 60 * 1000);
 }
 
+async 
+// ============================================================
+// FORCE MOVE FOR STUCK REGISTRATION REQUESTS
+// زر نقل إجباري: يعزل الطلب المعلق كسجل قرار مستقل
+// ============================================================
+var forcedFormDecisions = {};
+function forceReqSafeKey(v) {
+  return encodeURIComponent(String(v || ('item_' + Date.now())).replace(/[.#$\[\]\/]/g, '_'));
+}
+function forceReqDigits(v) {
+  return String(v || '').replace(/\D+/g, '');
+}
+function forceReqNorm(v) {
+  return String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function forceReqKeys(r) {
+  r = r || {};
+  var keys = [];
+  function add(prefix, val) {
+    val = String(val || '').trim().toLowerCase();
+    if (val) keys.push(prefix + ':' + val);
+  }
+  add('timestamp', r.timestamp);
+  add('firebaseKey', r.firebaseKey);
+  var eid = forceReqDigits(r.emiratesId || r.idNo || r.identityNo || r.nationalId);
+  var name = forceReqNorm(r.name);
+  var dob = forceReqNorm(r.dob);
+  var phone = forceReqDigits(r.dadMob || r.momMob || r.dph || r.mph || r.fatherMobile || r.motherMobile);
+  if (eid) add('emiratesId', eid);
+  if (name && dob) add('nameDob', name + '|' + dob);
+  if (name && phone) add('namePhone', name + '|' + phone);
+  return keys;
+}
+function applyForcedFormDecision(r) {
+  if (!r) return r;
+  var found = null;
+  forceReqKeys(r).some(function(k) {
+    var safe = forceReqSafeKey(k);
+    if (forcedFormDecisions[safe] && forcedFormDecisions[safe].status) {
+      found = forcedFormDecisions[safe];
+      return true;
+    }
+    return false;
+  });
+  if (found) {
+    r.status = found.status;
+    r.decisionAt = r.decisionAt || found.decisionAt || new Date().toISOString();
+    r.rowUpdatedAt = r.rowUpdatedAt || r.decisionAt;
+    r.approvedAction = r.approvedAction || 'force_move';
+    r.approvedStudentId = r.approvedStudentId || found.approvedStudentId || null;
+  }
+  return r;
+}
+async function loadForcedFormDecisions() {
+  try {
+    var res = await fetch(FB_URL + '/forcedFormDecisions.json', { cache: 'no-store' });
+    if (res.ok) {
+      var data = await res.json();
+      forcedFormDecisions = (data && typeof data === 'object') ? data : {};
+    }
+  } catch(e) {
+    try { forcedFormDecisions = JSON.parse(localStorage.getItem('kp_forced_form_decisions') || '{}') || {}; } catch(_e) {}
+  }
+  return forcedFormDecisions;
+}
+async function saveForcedFormDecision(r, status) {
+  if (!r) return false;
+  status = status || 'rejected';
+  r.status = status;
+  r.decisionAt = new Date().toISOString();
+  r.rowUpdatedAt = r.decisionAt;
+  r.approvedAction = 'force_move';
+  if (status === 'rejected') r.approvedStudentId = null;
+
+  var action = {
+    status: status,
+    decisionAt: r.decisionAt,
+    timestamp: r.timestamp || '',
+    firebaseKey: r.firebaseKey || '',
+    name: r.name || '',
+    dob: r.dob || '',
+    emiratesId: r.emiratesId || r.idNo || '',
+    approvedStudentId: r.approvedStudentId || null,
+    approvedAction: 'force_move'
+  };
+
+  var updates = {};
+  forceReqKeys(r).forEach(function(k) {
+    var safe = forceReqSafeKey(k);
+    forcedFormDecisions[safe] = action;
+    updates[safe] = action;
+  });
+  try { localStorage.setItem('kp_forced_form_decisions', JSON.stringify(forcedFormDecisions)); } catch(e) {}
+
+  try {
+    await fetch(FB_URL + '/forcedFormDecisions.json', {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(updates)
+    });
+  } catch(e) {
+    console.log('forcedFormDecisions save skipped:', e.message);
+  }
+
+  try {
+    await saveFormRowRemoteAware(r);
+  } catch(e) {
+    console.log('saveFormRowRemoteAware forced skipped:', e.message);
+  }
+
+  if (r.firebaseKey && typeof archiveFirebaseRegistrationRequest === 'function') {
+    try { await archiveFirebaseRegistrationRequest(r, status); } catch(e) {}
+  }
+
+  return true;
+}
+async function forceMoveFormRequest(ts) {
+  var r = syncedFormRows.find(function(x){ return x && x.timestamp === ts; });
+  if (!r) { alert('لم يتم العثور على الطلب'); return; }
+  var choice = prompt('اكتبي: رفض أو قبول', 'رفض');
+  if (choice === null) return;
+  choice = String(choice).trim();
+  var status = (choice === 'قبول' || choice.toLowerCase() === 'approved') ? 'approved' : 'rejected';
+  if (!confirm('سيتم نقل هذا الطلب إجباريًا إلى قائمة ' + (status === 'approved' ? 'المقبولين' : 'المرفوضين') + ' ومنع رجوعه كطلب جديد. متابعة؟')) return;
+
+  await saveForcedFormDecision(r, status);
+
+  syncedFormRows = syncedFormRows.map(function(x){
+    if (!x) return x;
+    if (x.timestamp === r.timestamp || (r.firebaseKey && x.firebaseKey === r.firebaseKey)) return Object.assign({}, x, r);
+    return applyForcedFormDecision(x);
+  });
+  try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(e) {}
+  renderFormRequests();
+  updateFormsNavBadge();
+  showSyncBadge('✅ تم النقل الإجباري للطلب');
+}
+
 async function syncFromGoogleSheets() {
   const btn = document.getElementById('sync-sheets-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ جاري المزامنة...'; }
   try {
+    await loadForcedFormDecisions();
     const res  = await fetch(SHEETS_URL + '&headers=1');
     const text = await res.text();
     const raw  = text.slice(text.indexOf('(') + 1, text.lastIndexOf(')'));
@@ -8000,6 +8139,8 @@ async function syncFromGoogleSheets() {
 
         cls: '', status: 'pending', source: 'google_sheets'
       };
+
+      mappedRow = applyForcedFormDecision(mappedRow);
 
       var existingIndex = syncedFormRows.findIndex(function(r){ return r.timestamp === ts; });
       if (existingIndex >= 0) {
@@ -8300,6 +8441,9 @@ function updateFormsNavBadge() {
 }
 
 function renderFormRequests() {
+  if (Array.isArray(syncedFormRows)) {
+    syncedFormRows = syncedFormRows.map(function(r){ return applyForcedFormDecision(r); });
+  }
   updateFormsNavBadge();
   if (!document.getElementById('pg-forms')) return;
   var pending  = syncedFormRows.filter(function(r){ return r.status === 'pending'; });
