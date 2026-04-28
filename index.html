@@ -3584,7 +3584,164 @@ function printStudentsSelectedReport(){
       '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+esc(total.toLocaleString())+' د.إ — عدد السندات: '+pays.length+'</div></div>' +
       '<div class="sec"><h2>المرفقات والوثائق</h2><div class="docs">' + studentDocsHtmlFinal(s) + '</div></div>' +
       '<div class="actions"><button class="btn" onclick="window.print()">طباعة</button> <button class="btn gray" onclick="window.close()">إغلاق</button></div>' +
-      '</body></html>');
+      '
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      // فقط حفظ فردي بدون autoSave وبدون رفع كامل لقاعدة البيانات
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+})();
+</script>
+
+</body></html>');
     w.document.close();
   };
 
@@ -3599,6 +3756,164 @@ function printStudentsSelectedReport(){
       } catch(e){}
     }, 1200);
   });
+})();
+</script>
+
+
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
 })();
 </script>
 
@@ -3932,7 +4247,165 @@ function printStudentsSelectedReport(){
       '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+esc(total.toLocaleString())+' د.إ — عدد السندات: '+pays.length+'</div></div>' +
       '<div class="sec"><h2>المرفقات والوثائق</h2><div class="docs">' + studentDocsHtmlFinal(s) + '</div></div>' +
       '<div class="actions"><button class="btn" onclick="window.print()">طباعة</button> <button class="btn gray" onclick="window.close()">إغلاق</button></div>' +
-      '</body></html>');
+      '
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+})();
+</script>
+
+</body></html>');
     w.document.close();
   };
 
@@ -3947,6 +4420,164 @@ function printStudentsSelectedReport(){
       } catch(e){}
     }, 1200);
   });
+})();
+</script>
+
+
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
 })();
 </script>
 
@@ -4570,7 +5201,165 @@ function printStudentPayments(studentId) {
       '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+esc(total.toLocaleString())+' د.إ — عدد السندات: '+pays.length+'</div></div>' +
       '<div class="sec"><h2>المرفقات والوثائق</h2><div class="docs">' + studentDocsHtmlFinal(s) + '</div></div>' +
       '<div class="actions"><button class="btn" onclick="window.print()">طباعة</button> <button class="btn gray" onclick="window.close()">إغلاق</button></div>' +
-      '</body></html>');
+      '
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+})();
+</script>
+
+</body></html>');
     w.document.close();
   };
 
@@ -4585,6 +5374,164 @@ function printStudentPayments(studentId) {
       } catch(e){}
     }, 1200);
   });
+})();
+</script>
+
+
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
 })();
 </script>
 
@@ -4989,7 +5936,165 @@ function printStudentFullFile(studentId) {
       '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+esc(total.toLocaleString())+' د.إ — عدد السندات: '+pays.length+'</div></div>' +
       '<div class="sec"><h2>المرفقات والوثائق</h2><div class="docs">' + studentDocsHtmlFinal(s) + '</div></div>' +
       '<div class="actions"><button class="btn" onclick="window.print()">طباعة</button> <button class="btn gray" onclick="window.close()">إغلاق</button></div>' +
-      '</body></html>');
+      '
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+})();
+</script>
+
+</body></html>');
     w.document.close();
   };
 
@@ -5004,6 +6109,164 @@ function printStudentFullFile(studentId) {
       } catch(e){}
     }, 1200);
   });
+})();
+</script>
+
+
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
 })();
 </script>
 
@@ -7299,7 +8562,165 @@ function doPrintExport(){
       '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+esc(total.toLocaleString())+' د.إ — عدد السندات: '+pays.length+'</div></div>' +
       '<div class="sec"><h2>المرفقات والوثائق</h2><div class="docs">' + studentDocsHtmlFinal(s) + '</div></div>' +
       '<div class="actions"><button class="btn" onclick="window.print()">طباعة</button> <button class="btn gray" onclick="window.close()">إغلاق</button></div>' +
-      '</body></html>');
+      '
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+})();
+</script>
+
+</body></html>');
     w.document.close();
   };
 
@@ -7314,6 +8735,164 @@ function doPrintExport(){
       } catch(e){}
     }, 1200);
   });
+})();
+</script>
+
+
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
 })();
 </script>
 
@@ -8162,7 +9741,165 @@ function printAllWorksheets() {
       '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+esc(total.toLocaleString())+' د.إ — عدد السندات: '+pays.length+'</div></div>' +
       '<div class="sec"><h2>المرفقات والوثائق</h2><div class="docs">' + studentDocsHtmlFinal(s) + '</div></div>' +
       '<div class="actions"><button class="btn" onclick="window.print()">طباعة</button> <button class="btn gray" onclick="window.close()">إغلاق</button></div>' +
-      '</body></html>');
+      '
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+})();
+</script>
+
+</body></html>');
     w.document.close();
   };
 
@@ -8177,6 +9914,164 @@ function printAllWorksheets() {
       } catch(e){}
     }, 1200);
   });
+})();
+</script>
+
+
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
 })();
 </script>
 
@@ -9030,7 +10925,165 @@ function buildFinancialReportPrintHtml(d) {
       '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+esc(total.toLocaleString())+' د.إ — عدد السندات: '+pays.length+'</div></div>' +
       '<div class="sec"><h2>المرفقات والوثائق</h2><div class="docs">' + studentDocsHtmlFinal(s) + '</div></div>' +
       '<div class="actions"><button class="btn" onclick="window.print()">طباعة</button> <button class="btn gray" onclick="window.close()">إغلاق</button></div>' +
-      '</body></html>');
+      '
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+})();
+</script>
+
+</body></html>');
     w.document.close();
   };
 
@@ -9045,6 +11098,164 @@ function buildFinancialReportPrintHtml(d) {
       } catch(e){}
     }, 1200);
   });
+})();
+</script>
+
+
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
 })();
 </script>
 
@@ -11487,7 +13698,165 @@ document.addEventListener('click', function(e) {
       '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+esc(total.toLocaleString())+' د.إ — عدد السندات: '+pays.length+'</div></div>' +
       '<div class="sec"><h2>المرفقات والوثائق</h2><div class="docs">' + studentDocsHtmlFinal(s) + '</div></div>' +
       '<div class="actions"><button class="btn" onclick="window.print()">طباعة</button> <button class="btn gray" onclick="window.close()">إغلاق</button></div>' +
-      '</body></html>');
+      '
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+})();
+</script>
+
+</body></html>');
     w.document.close();
   };
 
@@ -11502,6 +13871,164 @@ document.addEventListener('click', function(e) {
       } catch(e){}
     }, 1200);
   });
+})();
+</script>
+
+
+<script>
+/* ============================================================
+   STRONG REAL-TIME APPROVAL SYNC OVERRIDE
+   قبول/رفض الطلبات ينعكس مباشرة على Firebase وعلى كل الموظفين
+   ============================================================ */
+(function(){
+  async function saveApprovedStudentImmediately(student){
+    try {
+      if (!student) return false;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({
+          type:'students',
+          activeArrayName:'students',
+          record: student,
+          keyField:'id',
+          label:'الطالب'
+        });
+      } else if (typeof autoSave === 'function') {
+        autoSave();
+      }
+      return true;
+    } catch(e) {
+      console.error('saveApprovedStudentImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function saveFormDecisionImmediately(row, status){
+    try {
+      if (!row) return false;
+      row.status = status;
+      row.decisionAt = row.decisionAt || new Date().toISOString();
+      row.rowUpdatedAt = row.decisionAt;
+
+      if (typeof setFormDecisionRegistryFinal === 'function') setFormDecisionRegistryFinal(row, status);
+
+      if (Array.isArray(window.syncedFormRows)) {
+        var found = false;
+        window.syncedFormRows = window.syncedFormRows.map(function(x){
+          if (!x) return x;
+          var same = (x.timestamp && row.timestamp && x.timestamp === row.timestamp) ||
+                     (x.firebaseKey && row.firebaseKey && x.firebaseKey === row.firebaseKey);
+          if (same) {
+            found = true;
+            return Object.assign({}, x, row);
+          }
+          return x;
+        });
+        if (!found) window.syncedFormRows.push(row);
+        localStorage.setItem('kp_form_rows', JSON.stringify(window.syncedFormRows));
+      }
+
+      if (typeof saveFormRowRemoteAware === 'function') {
+        await saveFormRowRemoteAware(row);
+      }
+
+      if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+        await archiveFirebaseRegistrationRequest(row, status);
+      }
+
+      return true;
+    } catch(e) {
+      console.error('saveFormDecisionImmediately failed:', e);
+      return false;
+    }
+  }
+
+  async function refreshAfterApprovalSync(message){
+    try {
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof showSyncBadge === 'function' && message) showSyncBadge(message);
+    } catch(e) {}
+  }
+
+  window.performApproveNew = async function(r){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري قبول الطالب ورفعه على Firebase...');
+
+      var newId = (typeof getSafeNextStudentId === 'function') ? getSafeNextStudentId() : (Date.now());
+      var newStudent = (typeof buildStudentFromFormRow === 'function')
+        ? buildStudentFromFormRow(r, newId)
+        : Object.assign({}, r, { id: newId, dad: r.dadFull || r.dad, mom: r.momFull || r.mom, dph: r.dadMob || r.dph, mph: r.momMob || r.mph });
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var existing = window.students.find(function(s){ return Number(s.id) === Number(newStudent.id); });
+      if (!existing) window.students.push(newStudent);
+
+      if (typeof getSafeNextStudentId === 'function') window.nextStuId = getSafeNextStudentId();
+
+      r.approvedStudentId = newStudent.id;
+      r.approvedAction = 'new';
+      r.undoData = { createdStudentId: newStudent.id };
+
+      await saveApprovedStudentImmediately(newStudent);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم قبول الطالب ورفعه على Firebase');
+    } catch(e) {
+      console.error('performApproveNew strong override failed:', e);
+      alert('حدث خطأ أثناء قبول الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.performApproveMerge = async function(r, studentId){
+    try {
+      if (!r || r.status !== 'pending') return;
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري دمج الطالب ورفع التعديل على Firebase...');
+
+      if (!Array.isArray(window.students)) window.students = [];
+      var idx = window.students.findIndex(function(s){ return Number(s.id) === Number(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+
+      var before = JSON.parse(JSON.stringify(window.students[idx]));
+      window.students[idx] = (typeof mergeStudentWithFormData === 'function')
+        ? mergeStudentWithFormData(window.students[idx], r)
+        : Object.assign({}, window.students[idx], r);
+
+      r.approvedStudentId = studentId;
+      r.approvedAction = 'merge';
+      r.undoData = { mergedStudentId: studentId, previousStudent: before };
+
+      await saveApprovedStudentImmediately(window.students[idx]);
+      await saveFormDecisionImmediately(r, 'approved');
+
+      await refreshAfterApprovalSync('✅ تم دمج الطالب ورفع التعديل على Firebase');
+    } catch(e) {
+      console.error('performApproveMerge strong override failed:', e);
+      alert('حدث خطأ أثناء دمج الطالب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
+
+  window.rejectFormRow = async function(ts){
+    try {
+      var r = Array.isArray(window.syncedFormRows) ? window.syncedFormRows.find(function(x){ return x.timestamp === ts; }) : null;
+      if (!r) return;
+      if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب ورفعه على Firebase...');
+      r.approvedStudentId = null;
+      r.approvedAction = 'reject';
+      r.undoData = { revertTo: 'pending' };
+
+      await saveFormDecisionImmediately(r, 'rejected');
+      await refreshAfterApprovalSync('✅ تم رفض الطلب ورفعه على Firebase');
+    } catch(e) {
+      console.error('rejectFormRow strong override failed:', e);
+      alert('حدث خطأ أثناء رفض الطلب. راجعي الاتصال أو حاولي مرة أخرى.');
+    }
+  };
 })();
 </script>
 
