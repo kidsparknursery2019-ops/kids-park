@@ -347,7 +347,7 @@ textarea{resize:vertical;min-height:65px}
   </div>
   <div style="display:flex;align-items:center;gap:14px">
   <div class="hdr-time" id="clock"></div>
-  <button id="notif-btn" class="notif-btn" onclick="toggleNotifPanel()" title="تنبيهات التجديدات <span id="renewals-nav-badge" style="background:#e74c3c;color:white;border-radius:50%;min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;padding:0 6px;margin-right:6px;">0</span>">🔔<span class="notif-badge" id="notif-badge-count" style="display:none">0</span></button>
+  <button id="notif-btn" class="notif-btn" onclick="toggleNotifPanel()" title="تنبيهات التجديدات">🔔<span class="notif-badge" id="notif-badge-count" style="display:none">0</span></button>
   <button id="reg-notif-btn" class="notif-btn" onclick="toggleRegNotifPanel()" title="تنبيهات انتهاء التسجيل">⏰<span class="notif-badge" id="reg-notif-badge-count" style="display:none">0</span></button>
   <button id="btn-save-cloud" onclick="pushToFirebase()" style="display:none;padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.5);background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:12px;font-weight:700">☁️ حفظ</button>
   <button id="btn-refresh-cloud" onclick="manualRefreshFromFirebase()" style="display:none;padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.5);background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:12px;font-weight:700;margin-right:6px">🔄 تحديث</button>
@@ -384,7 +384,7 @@ textarea{resize:vertical;min-height:65px}
     <div class="nav"     onclick="go('finance')">  <span class="ni">📈</span><span>الإيرادات</span></div>
     <div class="nav"     onclick="go('worksheets')"><span class="ni">🖼️</span><span>أوراق العمل</span></div>
     <div class="nav" id="nav-forms" onclick="go('forms')">      <span class="ni">📋</span><span>طلبات التسجيل</span><span id="forms-nav-badge" class="nav-badge" style="display:none">0</span></div>
-    <div class="nav"     onclick="go('renewals')">   <span class="ni">🔔</span><span>التجديدات</span></div>
+    <div class="nav"     onclick="go('renewals')">   <span class="ni">🔔</span><span>التجديدات <span id="renewals-nav-badge" style="background:#e74c3c;color:#fff;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:900;margin-right:6px;display:inline-block;">0</span></span></div>
     <div class="nav"     onclick="go('finreport')"> <span class="ni">📈</span><span>التقارير المالية</span></div>
     <div class="nav" id="nav-deleted" onclick="go('deleted')">    <span class="ni">👶</span><span>الطلاب المحذوفون</span></div>
     <div class="nav" id="nav-other-deleted" onclick="go('otherdeleted')">    <span class="ni">🗂️</span><span>باقي المحذوفات</span></div>
@@ -3294,23 +3294,20 @@ function printStudentsSelectedReport(){
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
     <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script>
 <script>
-(function(){
-  function updateRenewalsNavBadge(){
-    try{
-      var list = (window.renewals || window.renData || JSON.parse(localStorage.getItem('renewals')||'[]') || []);
-      var count = Array.isArray(list) ? list.length : 0;
-      var el = document.getElementById('renewals-nav-badge');
-      if(el) el.textContent = count;
-    }catch(e){}
-  }
-  window.updateRenewalsNavBadge = updateRenewalsNavBadge;
-  document.addEventListener('DOMContentLoaded', function(){
-    setTimeout(updateRenewalsNavBadge, 800);
-    setInterval(updateRenewalsNavBadge, 5000);
-  });
-})();
+function updateRenewalsNavBadgeSafe(){
+  try{
+    var list = window.renewals || window.renData || [];
+    if (!Array.isArray(list)) list = [];
+    var el = document.getElementById('renewals-nav-badge');
+    if (el) el.textContent = list.length || 0;
+  }catch(e){}
+}
+document.addEventListener('DOMContentLoaded', function(){
+  setTimeout(updateRenewalsNavBadgeSafe, 1000);
+});
 </script>
-</body></html>`);
+</body>
+</html>`);
     w.document.close();
     return;
   }
@@ -3350,23 +3347,20 @@ function printStudentsSelectedReport(){
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
   <script>window.onload=()=>{setTimeout(()=>window.print(),250)}<\/script>
 <script>
-(function(){
-  function updateRenewalsNavBadge(){
-    try{
-      var list = (window.renewals || window.renData || JSON.parse(localStorage.getItem('renewals')||'[]') || []);
-      var count = Array.isArray(list) ? list.length : 0;
-      var el = document.getElementById('renewals-nav-badge');
-      if(el) el.textContent = count;
-    }catch(e){}
-  }
-  window.updateRenewalsNavBadge = updateRenewalsNavBadge;
-  document.addEventListener('DOMContentLoaded', function(){
-    setTimeout(updateRenewalsNavBadge, 800);
-    setInterval(updateRenewalsNavBadge, 5000);
-  });
-})();
+function updateRenewalsNavBadgeSafe(){
+  try{
+    var list = window.renewals || window.renData || [];
+    if (!Array.isArray(list)) list = [];
+    var el = document.getElementById('renewals-nav-badge');
+    if (el) el.textContent = list.length || 0;
+  }catch(e){}
+}
+document.addEventListener('DOMContentLoaded', function(){
+  setTimeout(updateRenewalsNavBadgeSafe, 1000);
+});
 </script>
-</body></html>`);
+</body>
+</html>`);
   w.document.close();
 }
 
@@ -3696,23 +3690,20 @@ function printStudentPayments(studentId) {
     '</div>' +
     '
 <script>
-(function(){
-  function updateRenewalsNavBadge(){
-    try{
-      var list = (window.renewals || window.renData || JSON.parse(localStorage.getItem('renewals')||'[]') || []);
-      var count = Array.isArray(list) ? list.length : 0;
-      var el = document.getElementById('renewals-nav-badge');
-      if(el) el.textContent = count;
-    }catch(e){}
-  }
-  window.updateRenewalsNavBadge = updateRenewalsNavBadge;
-  document.addEventListener('DOMContentLoaded', function(){
-    setTimeout(updateRenewalsNavBadge, 800);
-    setInterval(updateRenewalsNavBadge, 5000);
-  });
-})();
+function updateRenewalsNavBadgeSafe(){
+  try{
+    var list = window.renewals || window.renData || [];
+    if (!Array.isArray(list)) list = [];
+    var el = document.getElementById('renewals-nav-badge');
+    if (el) el.textContent = list.length || 0;
+  }catch(e){}
+}
+document.addEventListener('DOMContentLoaded', function(){
+  setTimeout(updateRenewalsNavBadgeSafe, 1000);
+});
 </script>
-</body></html>'
+</body>
+</html>'
   );
   w.document.close();
 }
@@ -3823,23 +3814,20 @@ function printStudentFullFile(studentId) {
     '<div class="actions"><button class="btn" onclick="window.print()">🖨 طباعة</button><button class="btn gray" onclick="window.close()">إغلاق</button></div>'+
   '
 <script>
-(function(){
-  function updateRenewalsNavBadge(){
-    try{
-      var list = (window.renewals || window.renData || JSON.parse(localStorage.getItem('renewals')||'[]') || []);
-      var count = Array.isArray(list) ? list.length : 0;
-      var el = document.getElementById('renewals-nav-badge');
-      if(el) el.textContent = count;
-    }catch(e){}
-  }
-  window.updateRenewalsNavBadge = updateRenewalsNavBadge;
-  document.addEventListener('DOMContentLoaded', function(){
-    setTimeout(updateRenewalsNavBadge, 800);
-    setInterval(updateRenewalsNavBadge, 5000);
-  });
-})();
+function updateRenewalsNavBadgeSafe(){
+  try{
+    var list = window.renewals || window.renData || [];
+    if (!Array.isArray(list)) list = [];
+    var el = document.getElementById('renewals-nav-badge');
+    if (el) el.textContent = list.length || 0;
+  }catch(e){}
+}
+document.addEventListener('DOMContentLoaded', function(){
+  setTimeout(updateRenewalsNavBadgeSafe, 1000);
+});
 </script>
-</body></html>');
+</body>
+</html>');
   w.document.close();
 }
 
@@ -5841,23 +5829,20 @@ function doPrintExport(){
   }
   html+='</table>
 <script>
-(function(){
-  function updateRenewalsNavBadge(){
-    try{
-      var list = (window.renewals || window.renData || JSON.parse(localStorage.getItem('renewals')||'[]') || []);
-      var count = Array.isArray(list) ? list.length : 0;
-      var el = document.getElementById('renewals-nav-badge');
-      if(el) el.textContent = count;
-    }catch(e){}
-  }
-  window.updateRenewalsNavBadge = updateRenewalsNavBadge;
-  document.addEventListener('DOMContentLoaded', function(){
-    setTimeout(updateRenewalsNavBadge, 800);
-    setInterval(updateRenewalsNavBadge, 5000);
-  });
-})();
+function updateRenewalsNavBadgeSafe(){
+  try{
+    var list = window.renewals || window.renData || [];
+    if (!Array.isArray(list)) list = [];
+    var el = document.getElementById('renewals-nav-badge');
+    if (el) el.textContent = list.length || 0;
+  }catch(e){}
+}
+document.addEventListener('DOMContentLoaded', function(){
+  setTimeout(updateRenewalsNavBadgeSafe, 1000);
+});
 </script>
-</body></html>';
+</body>
+</html>';
   const w=window.open('','_blank');
   w.document.write(html);
   w.document.close();
@@ -6412,23 +6397,20 @@ function printAllWorksheets() {
 
   printHtml += `
 <script>
-(function(){
-  function updateRenewalsNavBadge(){
-    try{
-      var list = (window.renewals || window.renData || JSON.parse(localStorage.getItem('renewals')||'[]') || []);
-      var count = Array.isArray(list) ? list.length : 0;
-      var el = document.getElementById('renewals-nav-badge');
-      if(el) el.textContent = count;
-    }catch(e){}
-  }
-  window.updateRenewalsNavBadge = updateRenewalsNavBadge;
-  document.addEventListener('DOMContentLoaded', function(){
-    setTimeout(updateRenewalsNavBadge, 800);
-    setInterval(updateRenewalsNavBadge, 5000);
-  });
-})();
+function updateRenewalsNavBadgeSafe(){
+  try{
+    var list = window.renewals || window.renData || [];
+    if (!Array.isArray(list)) list = [];
+    var el = document.getElementById('renewals-nav-badge');
+    if (el) el.textContent = list.length || 0;
+  }catch(e){}
+}
+document.addEventListener('DOMContentLoaded', function(){
+  setTimeout(updateRenewalsNavBadgeSafe, 1000);
+});
 </script>
-</body></html>`;
+</body>
+</html>`;
 
   const win = window.open('', '_blank');
   if(!win) { alert('يرجى السماح بالنوافذ المنبثقة في المتصفح'); return; }
@@ -6988,23 +6970,20 @@ function buildFinancialReportPrintHtml(d) {
   <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
 
 <script>
-(function(){
-  function updateRenewalsNavBadge(){
-    try{
-      var list = (window.renewals || window.renData || JSON.parse(localStorage.getItem('renewals')||'[]') || []);
-      var count = Array.isArray(list) ? list.length : 0;
-      var el = document.getElementById('renewals-nav-badge');
-      if(el) el.textContent = count;
-    }catch(e){}
-  }
-  window.updateRenewalsNavBadge = updateRenewalsNavBadge;
-  document.addEventListener('DOMContentLoaded', function(){
-    setTimeout(updateRenewalsNavBadge, 800);
-    setInterval(updateRenewalsNavBadge, 5000);
-  });
-})();
+function updateRenewalsNavBadgeSafe(){
+  try{
+    var list = window.renewals || window.renData || [];
+    if (!Array.isArray(list)) list = [];
+    var el = document.getElementById('renewals-nav-badge');
+    if (el) el.textContent = list.length || 0;
+  }catch(e){}
+}
+document.addEventListener('DOMContentLoaded', function(){
+  setTimeout(updateRenewalsNavBadgeSafe, 1000);
+});
 </script>
 </body>
+
 </html>`;
 }
 
@@ -9149,21 +9128,18 @@ document.addEventListener('click', function(e) {
 </script>
 
 <script>
-(function(){
-  function updateRenewalsNavBadge(){
-    try{
-      var list = (window.renewals || window.renData || JSON.parse(localStorage.getItem('renewals')||'[]') || []);
-      var count = Array.isArray(list) ? list.length : 0;
-      var el = document.getElementById('renewals-nav-badge');
-      if(el) el.textContent = count;
-    }catch(e){}
-  }
-  window.updateRenewalsNavBadge = updateRenewalsNavBadge;
-  document.addEventListener('DOMContentLoaded', function(){
-    setTimeout(updateRenewalsNavBadge, 800);
-    setInterval(updateRenewalsNavBadge, 5000);
-  });
-})();
+function updateRenewalsNavBadgeSafe(){
+  try{
+    var list = window.renewals || window.renData || [];
+    if (!Array.isArray(list)) list = [];
+    var el = document.getElementById('renewals-nav-badge');
+    if (el) el.textContent = list.length || 0;
+  }catch(e){}
+}
+document.addEventListener('DOMContentLoaded', function(){
+  setTimeout(updateRenewalsNavBadgeSafe, 1000);
+});
 </script>
 </body>
+
 </html>
