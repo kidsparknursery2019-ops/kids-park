@@ -6517,17 +6517,84 @@ function normalizeParentRegistrationRow(raw, firebaseKey) {
   return r;
 }
 
+
+// === Google Sheets decision guard: prevents accepted/rejected rows from returning as new ===
+function gsDecisionText(v) {
+  return String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function gsDecisionDigits(v) {
+  return String(v || '').replace(/\D+/g, '');
+}
+function gsDecisionKeys(row) {
+  row = row || {};
+  var keys = [];
+  function add(prefix, value) {
+    value = String(value || '').trim().toLowerCase();
+    if (value) keys.push(prefix + ':' + value);
+  }
+  add('timestamp', row.timestamp);
+  add('firebaseKey', row.firebaseKey);
+
+  var eid = gsDecisionDigits(row.emiratesId || row.idNo || row.identityNo || row.nationalId);
+  var name = gsDecisionText(row.name);
+  var dob = gsDecisionText(row.dob);
+  var phone = gsDecisionDigits(row.dadMob || row.momMob || row.dph || row.mph || row.fatherMobile || row.motherMobile);
+
+  if (eid) add('emiratesId', eid);
+  if (name && dob) add('nameDob', name + '|' + dob);
+  if (name && phone) add('namePhone', name + '|' + phone);
+  return keys;
+}
+function gsDecisionRegistry() {
+  try { return JSON.parse(localStorage.getItem('kp_gs_decision_registry') || '{}') || {}; }
+  catch(e) { return {}; }
+}
+function gsRememberDecision(row, status) {
+  if (!row || !status || status === 'pending') return;
+  var reg = gsDecisionRegistry();
+  var stamp = row.decisionAt || new Date().toISOString();
+  gsDecisionKeys(row).forEach(function(k) {
+    reg[k] = {
+      status: status,
+      decisionAt: stamp,
+      approvedStudentId: row.approvedStudentId || null,
+      approvedAction: row.approvedAction || ''
+    };
+  });
+  try { localStorage.setItem('kp_gs_decision_registry', JSON.stringify(reg)); } catch(e) {}
+}
+function gsApplyRememberedDecision(row) {
+  if (!row) return row;
+  var reg = gsDecisionRegistry();
+  var found = null;
+  gsDecisionKeys(row).some(function(k) {
+    if (reg[k] && reg[k].status && reg[k].status !== 'pending') {
+      found = reg[k];
+      return true;
+    }
+    return false;
+  });
+  if (found && (!row.status || row.status === 'pending')) {
+    row.status = found.status;
+    row.decisionAt = row.decisionAt || found.decisionAt || new Date().toISOString();
+    row.rowUpdatedAt = row.rowUpdatedAt || row.decisionAt;
+    row.approvedStudentId = row.approvedStudentId || found.approvedStudentId || null;
+    row.approvedAction = row.approvedAction || found.approvedAction || 'remembered';
+  }
+  return row;
+}
+
 function mergeFormRowsByTimestamp(existingRows, incomingRows) {
   var map = {};
   function put(row) {
     if (!row || !row.timestamp) return;
-    row = applyRememberedFormDecision(Object.assign({}, row));
+    row = gsApplyRememberedDecision(Object.assign({}, row));
     var old = map[row.timestamp];
     if (!old) { map[row.timestamp] = row; return; }
-    old = applyRememberedFormDecision(Object.assign({}, old));
+    old = gsApplyRememberedDecision(Object.assign({}, old));
 
-    var rowDecided = row.status && row.status !== 'pending';
     var oldDecided = old.status && old.status !== 'pending';
+    var rowDecided = row.status && row.status !== 'pending';
 
     if (oldDecided && !rowDecided) {
       map[row.timestamp] = Object.assign({}, row, old);
@@ -7925,15 +7992,15 @@ async function syncFromGoogleSheets() {
         cls: '', status: 'pending', source: 'google_sheets'
       };
 
-      mappedRow = applyRememberedFormDecision(mappedRow);
+      mappedRow = gsApplyRememberedDecision(mappedRow);
 
       var existingIndex = syncedFormRows.findIndex(function(r){ return r.timestamp === ts; });
       if (existingIndex >= 0) {
         var prev = syncedFormRows[existingIndex] || {};
         var prevDecided = prev.status && prev.status !== 'pending';
-        var incomingDecided = mappedRow.status && mappedRow.status !== 'pending';
+        var mappedDecided = mappedRow.status && mappedRow.status !== 'pending';
         syncedFormRows[existingIndex] = Object.assign({}, prev, mappedRow, {
-          status: prevDecided ? prev.status : (incomingDecided ? mappedRow.status : (prev.status || mappedRow.status || 'pending')),
+          status: prevDecided ? prev.status : (mappedDecided ? mappedRow.status : (prev.status || mappedRow.status || 'pending')),
           cls: prev.cls || mappedRow.cls,
           rowUpdatedAt: prevDecided ? (prev.rowUpdatedAt || prev.decisionAt || mappedRow.timestamp) : (mappedRow.rowUpdatedAt || prev.rowUpdatedAt || prev.decisionAt || mappedRow.timestamp),
           decisionAt: prevDecided ? (prev.decisionAt || '') : (mappedRow.decisionAt || prev.decisionAt || ''),
@@ -7941,7 +8008,7 @@ async function syncFromGoogleSheets() {
           approvedAction: prevDecided ? (prev.approvedAction || '') : (mappedRow.approvedAction || prev.approvedAction || ''),
           undoData: prevDecided ? (prev.undoData || null) : (mappedRow.undoData || prev.undoData || null)
         });
-        syncedFormRows[existingIndex] = applyRememberedFormDecision(syncedFormRows[existingIndex]);
+        syncedFormRows[existingIndex] = gsApplyRememberedDecision(syncedFormRows[existingIndex]);
         changedRows.push(syncedFormRows[existingIndex]);
       } else {
         syncedFormRows.push(mappedRow);
@@ -8189,80 +8256,6 @@ function findPotentialStudentMatches(r) {
   }).sort(function(a,b){ return b.score - a.score; });
 }
 
-async 
-// ============================================================
-// FORM DECISION REGISTRY — يمنع رجوع طلبات Google Sheets بعد قبول/رفض
-// ============================================================
-function formDecisionNormalizeText(v) {
-  return String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-function formDecisionDigits(v) {
-  return String(v || '').replace(/\D+/g, '');
-}
-function getFormDecisionKeys(row) {
-  row = row || {};
-  var keys = [];
-  function add(prefix, val) {
-    val = String(val || '').trim().toLowerCase();
-    if (val) keys.push(prefix + ':' + val);
-  }
-  add('timestamp', row.timestamp);
-  add('firebaseKey', row.firebaseKey);
-  var eid = formDecisionDigits(row.emiratesId || row.idNo || row.identityNo || row.nationalId);
-  var name = formDecisionNormalizeText(row.name);
-  var dob = formDecisionNormalizeText(row.dob);
-  var phone = formDecisionDigits(row.dadMob || row.momMob || row.dph || row.mph || row.fatherMobile || row.motherMobile);
-  if (eid) add('emiratesId', eid);
-  if (name && dob) add('nameDob', name + '|' + dob);
-  if (name && phone) add('namePhone', name + '|' + phone);
-  return keys;
-}
-function getFormDecisionRegistry() {
-  try { return JSON.parse(localStorage.getItem('kp_form_decision_registry') || '{}') || {}; }
-  catch(e) { return {}; }
-}
-function saveFormDecisionRegistry(reg) {
-  try { localStorage.setItem('kp_form_decision_registry', JSON.stringify(reg || {})); } catch(e) {}
-}
-function rememberFormDecision(row, status) {
-  if (!row || !status || status === 'pending') return;
-  var reg = getFormDecisionRegistry();
-  getFormDecisionKeys(row).forEach(function(key) {
-    reg[key] = {
-      status: status,
-      decisionAt: row.decisionAt || new Date().toISOString(),
-      approvedStudentId: row.approvedStudentId || null,
-      approvedAction: row.approvedAction || ''
-    };
-  });
-  saveFormDecisionRegistry(reg);
-}
-function applyRememberedFormDecision(row) {
-  if (!row) return row;
-  var reg = getFormDecisionRegistry();
-  var found = null;
-  getFormDecisionKeys(row).some(function(key) {
-    if (reg[key] && reg[key].status && reg[key].status !== 'pending') {
-      found = reg[key];
-      return true;
-    }
-    return false;
-  });
-  if (found && (!row.status || row.status === 'pending')) {
-    row.status = found.status;
-    row.decisionAt = row.decisionAt || found.decisionAt || new Date().toISOString();
-    row.rowUpdatedAt = row.rowUpdatedAt || row.decisionAt;
-    row.approvedStudentId = row.approvedStudentId || found.approvedStudentId || null;
-    row.approvedAction = row.approvedAction || found.approvedAction || 'remembered';
-  }
-  return row;
-}
-function applyRememberedDecisionsToAllFormRows() {
-  if (!Array.isArray(syncedFormRows)) return;
-  syncedFormRows = syncedFormRows.map(function(row) { return applyRememberedFormDecision(row); });
-  try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(e) {}
-}
-
 async function persistFormRowsAndSync(formRow) {
   // ✅ حفظ فردي — إذا تم تمرير formRow بنحفظه فردياً
   // إذا ما تم تمرير شي بنحفظ كل المصفوفة (للتراجع عن قرارات قديمة)
@@ -8281,7 +8274,7 @@ function setFormRowDecision(r, status, meta) {
   r.decisionAt = new Date().toISOString();
   r.rowUpdatedAt = r.decisionAt;
   Object.keys(meta).forEach(function(k){ r[k] = meta[k]; });
-  rememberFormDecision(r, status);
+  gsRememberDecision(r, status);
   persistFormRowsAndSync(r);
   if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
     archiveFirebaseRegistrationRequest(r, status);
