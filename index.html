@@ -3292,7 +3292,8 @@ function printStudentsSelectedReport(){
       .moe-grid th:nth-child(15),.moe-grid td:nth-child(15){width:58px}
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
-    <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script></body></html>`);
+    <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script><script>window.addEventListener('load', function(){ setTimeout(updateRenewalsNavBadge, 1200); });</script>
+</body></html>`);
     w.document.close();
     return;
   }
@@ -3330,7 +3331,8 @@ function printStudentsSelectedReport(){
     .meals-grid td.blank-cell{height:30px;width:70px}
   </style>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
-  <script>window.onload=()=>{setTimeout(()=>window.print(),250)}<\/script></body></html>`);
+  <script>window.onload=()=>{setTimeout(()=>window.print(),250)}<\/script><script>window.addEventListener('load', function(){ setTimeout(updateRenewalsNavBadge, 1200); });</script>
+</body></html>`);
   w.document.close();
 }
 
@@ -3658,7 +3660,8 @@ function printStudentPayments(studentId) {
       '<button class="btn" onclick="window.print()">🖨 طباعة</button>' +
       '<button class="btn" onclick="window.close()" style="background:#888">إغلاق</button>' +
     '</div>' +
-    '</body></html>'
+    '<script>window.addEventListener('load', function(){ setTimeout(updateRenewalsNavBadge, 1200); });</script>
+</body></html>'
   );
   w.document.close();
 }
@@ -3767,7 +3770,8 @@ function printStudentFullFile(studentId) {
     '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+total.toLocaleString()+' د.إ — عدد السندات: '+pays.length+'</div></div>'+
     '<div class="sec"><h2>المرفقات والوثائق</h2><div class="docs">'+docCards+'</div></div>'+
     '<div class="actions"><button class="btn" onclick="window.print()">🖨 طباعة</button><button class="btn gray" onclick="window.close()">إغلاق</button></div>'+
-  '</body></html>');
+  '<script>window.addEventListener('load', function(){ setTimeout(updateRenewalsNavBadge, 1200); });</script>
+</body></html>');
   w.document.close();
 }
 
@@ -5767,7 +5771,8 @@ function doPrintExport(){
     d.rows.forEach(r=>{html+=`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`;});
     html+='</tbody>';
   }
-  html+='</table></body></html>';
+  html+='</table><script>window.addEventListener('load', function(){ setTimeout(updateRenewalsNavBadge, 1200); });</script>
+</body></html>';
   const w=window.open('','_blank');
   w.document.write(html);
   w.document.close();
@@ -6320,7 +6325,8 @@ function printAllWorksheets() {
 </div>`;
   });
 
-  printHtml += `</body></html>`;
+  printHtml += `<script>window.addEventListener('load', function(){ setTimeout(updateRenewalsNavBadge, 1200); });</script>
+</body></html>`;
 
   const win = window.open('', '_blank');
   if(!win) { alert('يرجى السماح بالنوافذ المنبثقة في المتصفح'); return; }
@@ -6878,6 +6884,7 @@ function buildFinancialReportPrintHtml(d) {
     <div class="foot">حضانة حديقة الأطفال — تقرير مالي تم إنشاؤه في ${escapeHtml(generatedAt)}</div>
   </div>
   <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
+<script>window.addEventListener('load', function(){ setTimeout(updateRenewalsNavBadge, 1200); });</script>
 </body>
 </html>`;
 }
@@ -8611,19 +8618,10 @@ function updateRenewalsNavBadge() {
   var badge = document.getElementById('renewals-nav-badge');
   if (!badge) return;
 
-  var today = new Date();
-  today.setHours(0,0,0,0);
-
   var count = (Array.isArray(renewals) ? renewals : []).filter(function(r){
-    if (!r || !r.endDate) return false;
-    var d = new Date(r.endDate);
-    if (isNaN(d.getTime())) return false;
-    d.setHours(0,0,0,0);
-
-    var diffDays = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
-
-    // نفس منطق التنبيه: منتهي أو خلال 60 يوم
-    return diffDays <= 60;
+    if (!r || !r.date) return false;
+    var days = (typeof getRenDays === 'function') ? getRenDays(r.date) : null;
+    return days !== null && days <= 60;
   }).length;
 
   badge.textContent = count;
@@ -9046,5 +9044,6 @@ document.addEventListener('click', function(e) {
   }
 })();
 </script>
+<script>window.addEventListener('load', function(){ setTimeout(updateRenewalsNavBadge, 1200); });</script>
 </body>
 </html>
