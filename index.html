@@ -47,6 +47,8 @@ body{font-family:'Tajawal',sans-serif;background:var(--bg);color:var(--text);min
 .nav:hover{background:var(--gp);color:var(--g1)}
 .nav.on{background:var(--gp);color:var(--g1);border-right-color:var(--g1);font-weight:700}
 .nav .ni{font-size:17px}
+.nav-badge{margin-right:auto;min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:var(--r2);color:#fff;font-size:12px;font-weight:900;line-height:22px;text-align:center;box-shadow:0 2px 8px rgba(231,76,60,.25)}
+.nav.on .nav-badge{background:var(--g1)}
 .side-sep{height:1px;background:var(--border);margin:8px 16px}
 
 .main{flex:1;padding:24px;overflow-y:auto;max-width:calc(100vw - 200px)}
@@ -377,11 +379,11 @@ textarea{resize:vertical;min-height:65px}
     <div class="nav"     onclick="go('att')">      <span class="ni">✅</span><span>الحضور</span></div>
     <div class="nav"     onclick="go('payments')"> <span class="ni">💰</span><span>المدفوعات</span></div>
     <div class="nav"     onclick="go('expenses')"> <span class="ni">🧾</span><span>المصاريف</span></div>
-    <div class="nav"     onclick="go('receipts')"> <span class="ni">📄</span><span>سندات القبض</span></div>
+    <div class="nav"     onclick="go('receipts')" style="display:none"> <span class="ni">📄</span><span>سندات القبض</span></div>
     <div class="side-sep"></div>
     <div class="nav"     onclick="go('finance')">  <span class="ni">📈</span><span>الإيرادات</span></div>
     <div class="nav"     onclick="go('worksheets')"><span class="ni">🖼️</span><span>أوراق العمل</span></div>
-    <div class="nav"     onclick="go('forms')">      <span class="ni">📋</span><span>طلبات التسجيل</span></div>
+    <div class="nav" id="nav-forms" onclick="go('forms')">      <span class="ni">📋</span><span>طلبات التسجيل</span><span id="forms-nav-badge" class="nav-badge" style="display:none">0</span></div>
     <div class="nav"     onclick="go('renewals')">   <span class="ni">🔔</span><span>التجديدات</span></div>
     <div class="nav"     onclick="go('finreport')"> <span class="ni">📈</span><span>التقارير المالية</span></div>
     <div class="nav" id="nav-deleted" onclick="go('deleted')">    <span class="ni">👶</span><span>الطلاب المحذوفون</span></div>
@@ -7855,6 +7857,7 @@ function showSyncBadge(msg) {
 const SHEET_ID = '1ZAdT4ohpxxhjnwi8Zwmc7sjeFvRcK12WZ1a1-KvE86Y';
 const SHEETS_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:json';
 let syncedFormRows = JSON.parse(localStorage.getItem('kp_form_rows') || '[]');
+setTimeout(updateFormsNavBadge, 0);
 let autoSyncTimer = null;
 
 function startAutoSync() {
@@ -8276,6 +8279,7 @@ function setFormRowDecision(r, status, meta) {
   r.rowUpdatedAt = r.decisionAt;
   Object.keys(meta).forEach(function(k){ r[k] = meta[k]; });
   persistFormRowsAndSync(r);
+  updateFormsNavBadge();
   if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
     archiveFirebaseRegistrationRequest(r, status);
   }
@@ -8287,7 +8291,16 @@ function refreshAllAfterFormDecision() {
   renderFormRequests();
 }
 
+function updateFormsNavBadge() {
+  var badge = document.getElementById('forms-nav-badge');
+  if (!badge) return;
+  var pendingCount = Array.isArray(syncedFormRows) ? syncedFormRows.filter(function(r){ return (r.status || 'pending') === 'pending'; }).length : 0;
+  badge.textContent = pendingCount;
+  badge.style.display = pendingCount > 0 ? 'inline-block' : 'none';
+}
+
 function renderFormRequests() {
+  updateFormsNavBadge();
   if (!document.getElementById('pg-forms')) return;
   var pending  = syncedFormRows.filter(function(r){ return r.status === 'pending'; });
   var approved = syncedFormRows.filter(function(r){ return r.status === 'approved'; });
@@ -8534,6 +8547,7 @@ function undoFormDecision(ts) {
   r.approvedAction = '';
   r.undoData = null;
   persistFormRowsAndSync(r);
+  updateFormsNavBadge();
   refreshAllAfterFormDecision();
   showSyncBadge('↩️ تم التراجع عن القرار');
 }
