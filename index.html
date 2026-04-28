@@ -3276,8 +3276,8 @@ function printStudentsSelectedReport(){
       @page { size: A4 landscape; margin: 7mm; }
       body{font-family:Tajawal,Arial,sans-serif;color:#111;margin:0;background:#fff;direction:rtl}
       .moe-page{padding:0}
-      .moe-head-img{text-align:center;margin:0 0 2mm 0;height:24mm;overflow:hidden}
-      .moe-head-img img{max-width:100%;height:24mm;object-fit:contain;object-position:center top}
+      .moe-head-img{text-align:center;margin:0 0 4mm 0;height:32mm;overflow:visible}
+      .moe-head-img img{max-width:100%;height:32mm;object-fit:contain;object-position:center center}
       .moe-title{text-align:center;font-size:12px;font-weight:700;margin:1mm 0 6mm 0;color:#333}
       table.moe-grid{width:100%;border-collapse:collapse;table-layout:fixed;font-size:8.2px;direction:rtl}
       .moe-grid th,.moe-grid td{border:1px solid #555;padding:3px 2px;text-align:center;vertical-align:middle;word-break:break-word;line-height:1.25}
@@ -3663,6 +3663,49 @@ function printStudentPayments(studentId) {
   w.document.close();
 }
 
+
+function buildStudentAllStoredFieldsHtml(s) {
+  try {
+    var labels = {
+      id:'رقم الطالب', name:'اسم الطالب', nameEn:'الاسم بالإنجليزية', childNameEn:'اسم الطفل بالإنجليزية',
+      cls:'الفصل', dob:'تاريخ الميلاد', gen:'الجنس', nat:'الجنسية', bpl:'مكان الميلاد',
+      emiratesId:'رقم الهوية', idNo:'رقم الهوية', passport:'رقم الجواز', religion:'الديانة',
+      motherTongue:'اللغة الأم', otherLanguages:'لغات أخرى', addr:'العنوان',
+      dad:'اسم الأب', dadFull:'اسم الأب', dph:'موبايل الأب', dadMob:'موبايل الأب', dadHome:'هاتف منزل الأب',
+      job:'مهنة الأب', dadWork:'جهة عمل الأب', dadEmail:'إيميل الأب', dadNat:'جنسية الأب',
+      dadMotherTongue:'اللغة الأم للأب', dadOtherLanguages:'لغات أخرى للأب',
+      mom:'اسم الأم', momFull:'اسم الأم', mph:'موبايل الأم', momMob:'موبايل الأم', momHome:'هاتف منزل الأم',
+      momJob:'مهنة الأم', momWork:'جهة عمل الأم', momEmail:'إيميل الأم', momNat:'جنسية الأم',
+      momMotherTongue:'اللغة الأم للأم', momOtherLanguages:'لغات أخرى للأم',
+      emergName:'اسم جهة الطوارئ', emergRel:'صلة قرابة الطوارئ', emergMob:'موبايل الطوارئ',
+      pickupAlt:'بديل الاستلام', altPickup:'بديل الاستلام', receiver:'المستلم',
+      health:'الحالة الصحية', healthStatus:'الحالة الصحية', healthOverride:'الحالة الصحية المعدلة',
+      allergy:'حساسية', allergyNote:'ملاحظات الحساسية', allergyType:'نوع الحساسية',
+      diseaseDetails:'تفاصيل الأمراض', accidentDetails:'تفاصيل الحوادث/العمليات',
+      sub_end:'تاريخ انتهاء الاشتراك', note:'ملاحظات', notes:'ملاحظات', internalNote:'ملاحظات داخلية'
+    };
+    var skip = {
+      imgChildPhoto:1,imgEmiratesId:1,imgPassport:1,imgBirthCert:1,imgVaccination:1,imgResidency:1,imgGuardianId:1,imgGuardianPass:1,
+      imgDadId:1,imgDadPassport:1,imgFatherEmiratesId:1,imgFatherPassport:1,imgFatherId:1,imgChildPassport:1
+    };
+    var keys = Object.keys(s || {}).filter(function(k){
+      if (skip[k]) return false;
+      var v = s[k];
+      if (v === null || v === undefined || v === '') return false;
+      if (typeof v === 'object') return false;
+      return true;
+    });
+    if (!keys.length) return '';
+    keys.sort(function(a,b){ return (labels[a]||a).localeCompare(labels[b]||b,'ar'); });
+    return '<div class="sec"><h2>كل البيانات المخزنة في ملف الطالب</h2><div class="grid">' +
+      keys.map(function(k){
+        var v = String(s[k]).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        return '<div class="item"><b>' + (labels[k] || k) + ':</b> ' + v + '</div>';
+      }).join('') +
+      '</div></div>';
+  } catch(e) { return ''; }
+}
+
 function printStudentFullFile(studentId) {
   const s = students.find(function(x){ return x.id === studentId; });
   if (!s) return;
@@ -3751,51 +3794,17 @@ function printStudentFullFile(studentId) {
     '@media print{.actions{display:none} body{padding:10px}.sec,.doc-card,table,.health-card{page-break-inside:avoid}}'+
   '</style></head><body>'+
     '<div class="hdr"><h1>👶 ملف الطالب الكامل</h1><div class="sub">'+((nurserySettings&&nurserySettings.name)||'حضانة حديقة الأطفال')+'</div></div>'+
-    '<div class="sec"><h2>البيانات الأساسية للطالب</h2><div class="grid">'+
+    '<div class="sec"><h2>البيانات الأساسية</h2><div class="grid">'+
       '<div class="item"><b>اسم الطالب:</b> '+(s.name||'—')+'</div>'+
-      '<div class="item"><b>الاسم بالإنجليزية:</b> '+(getStudentEnglishDisplayName ? (getStudentEnglishDisplayName(s)||'—') : (s.nameEn||s.englishName||'—'))+'</div>'+
       '<div class="item"><b>رقم الطالب:</b> #'+(s.id||'—')+'</div>'+
       '<div class="item"><b>الفصل:</b> '+(s.cls||'—')+'</div>'+
       '<div class="item"><b>تاريخ الميلاد:</b> '+(s.dob||'—')+'</div>'+
-      '<div class="item"><b>الجنس:</b> '+(s.gen||'—')+'</div>'+
-      '<div class="item"><b>الجنسية:</b> '+(s.nat||'—')+'</div>'+
-      '<div class="item"><b>مكان الميلاد:</b> '+(s.bpl||'—')+'</div>'+
-      '<div class="item"><b>رقم الهوية:</b> <span dir="ltr">'+(getStudentIdentity(s)||'—')+'</span></div>'+
-      '<div class="item"><b>رقم الجواز:</b> <span dir="ltr">'+(s.passport||'—')+'</span></div>'+
-      '<div class="item"><b>الديانة:</b> '+(s.religion||'—')+'</div>'+
-      '<div class="item"><b>اللغة الأم:</b> '+(s.motherTongue||'—')+'</div>'+
-      '<div class="item"><b>لغات أخرى:</b> '+(s.otherLanguages||'—')+'</div>'+
-      '<div class="item"><b>تاريخ انتهاء الاشتراك:</b> '+(s.sub_end||'—')+'</div>'+
-      '<div class="item" style="grid-column:1/-1"><b>العنوان:</b> '+(s.addr||'—')+'</div>'+
-    '</div></div>'+
-    '<div class="sec"><h2>بيانات الأب</h2><div class="grid">'+
       '<div class="item"><b>اسم الأب:</b> '+(s.dad||'—')+'</div>'+
-      '<div class="item"><b>موبايل الأب:</b> <span dir="ltr">'+(s.dph||'—')+'</span></div>'+
-      '<div class="item"><b>هاتف المنزل:</b> <span dir="ltr">'+(s.dadHome||'—')+'</span></div>'+
-      '<div class="item"><b>المهنة:</b> '+(s.job||'—')+'</div>'+
-      '<div class="item"><b>جهة العمل:</b> '+(s.dadWork||'—')+'</div>'+
-      '<div class="item"><b>الإيميل:</b> <span dir="ltr">'+(s.dadEmail||'—')+'</span></div>'+
-      '<div class="item"><b>الجنسية:</b> '+(s.dadNat||'—')+'</div>'+
-      '<div class="item"><b>اللغة الأم:</b> '+(s.dadMotherTongue||'—')+'</div>'+
-      '<div class="item"><b>لغات أخرى:</b> '+(s.dadOtherLanguages||'—')+'</div>'+
-    '</div></div>'+
-    '<div class="sec"><h2>بيانات الأم</h2><div class="grid">'+
+      '<div class="item"><b>هاتف الأب:</b> '+(s.dph||'—')+'</div>'+
       '<div class="item"><b>اسم الأم:</b> '+(s.mom||'—')+'</div>'+
-      '<div class="item"><b>موبايل الأم:</b> <span dir="ltr">'+(s.mph||'—')+'</span></div>'+
-      '<div class="item"><b>هاتف المنزل:</b> <span dir="ltr">'+(s.momHome||'—')+'</span></div>'+
-      '<div class="item"><b>المهنة:</b> '+(s.momJob||'—')+'</div>'+
-      '<div class="item"><b>جهة العمل:</b> '+(s.momWork||'—')+'</div>'+
-      '<div class="item"><b>الإيميل:</b> <span dir="ltr">'+(s.momEmail||'—')+'</span></div>'+
-      '<div class="item"><b>الجنسية:</b> '+(s.momNat||'—')+'</div>'+
-      '<div class="item"><b>اللغة الأم:</b> '+(s.momMotherTongue||'—')+'</div>'+
-      '<div class="item"><b>لغات أخرى:</b> '+(s.momOtherLanguages||'—')+'</div>'+
-    '</div></div>'+
-    '<div class="sec"><h2>الاستلام والطوارئ والملاحظات</h2><div class="grid">'+
-      '<div class="item"><b>جهة اتصال الطوارئ:</b> '+(s.emergName||'—')+'</div>'+
-      '<div class="item"><b>صلة القرابة:</b> '+(s.emergRel||'—')+'</div>'+
-      '<div class="item"><b>موبايل الطوارئ:</b> <span dir="ltr">'+(s.emergMob||'—')+'</span></div>'+
-      '<div class="item"><b>بديل الاستلام:</b> '+(s.pickupAlt||s.altPickup||s.receiver||'—')+'</div>'+
-      '<div class="item" style="grid-column:1/-1"><b>ملاحظات:</b> '+(s.note||s.notes||s.internalNote||'—')+'</div>'+
+      '<div class="item"><b>هاتف الأم:</b> '+(s.mph||'—')+'</div>'+
+      '<div class="item" style="grid-column:1/-1"><b>العنوان:</b> '+(s.addr||'—')+'</div>'+
+      '<div class="item" style="grid-column:1/-1"><b>ملاحظات:</b> '+(s.note||s.notes||'—')+'</div>'+
     '</div></div>'+
     '<div class="sec"><h2>الحالة الصحية والتوصيات</h2>'+healthHtml+'</div>'+
     '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+total.toLocaleString()+' د.إ — عدد السندات: '+pays.length+'</div></div>'+
@@ -6570,15 +6579,21 @@ function normalizeParentRegistrationRow(raw, firebaseKey) {
   r.imgGuardianPass = raw.imgGuardianPass || raw.imgFatherPassport || raw.imgDadPassport || '';
   r.imgDadPassport = raw.imgDadPassport || raw.imgFatherPassport || raw.imgGuardianPass || '';
   r.source = raw.source || 'parent_registration_link';
-  return r;
+  return applySavedFormDecision(r);
 }
 
 function mergeFormRowsByTimestamp(existingRows, incomingRows) {
   var map = {};
   function put(row) {
     if (!row || !row.timestamp) return;
+    row = applySavedFormDecision(Object.assign({}, row));
     var old = map[row.timestamp];
     if (!old) { map[row.timestamp] = row; return; }
+    old = applySavedFormDecision(Object.assign({}, old));
+    var rowDecided = row.status && row.status !== 'pending';
+    var oldDecided = old.status && old.status !== 'pending';
+    if (oldDecided && !rowDecided) { map[row.timestamp] = Object.assign({}, row, old); return; }
+    if (rowDecided && !oldDecided) { map[row.timestamp] = Object.assign({}, old, row); return; }
     map[row.timestamp] = formRowUpdatedAtValue(row) >= formRowUpdatedAtValue(old) ? Object.assign({}, old, row) : Object.assign({}, row, old);
   }
   (Array.isArray(existingRows) ? existingRows : []).forEach(put);
@@ -6596,7 +6611,7 @@ async function syncRegistrationRequestsFromFirebase() {
       Object.keys(pendingObj).forEach(function(key){
         var row = normalizeParentRegistrationRow(pendingObj[key], key);
         // لا تعيدي إظهار طلب سبق قبوله/رفضه بنفس firebaseKey
-        var decided = syncedFormRows.some(function(x){
+        var decided = !!getSavedFormDecisionStatus(row) || syncedFormRows.some(function(x){
           return x && x.firebaseKey && x.firebaseKey === row.firebaseKey && x.status && x.status !== 'pending';
         });
         if (!decided) incoming.push(row);
@@ -8035,6 +8050,8 @@ async function syncFromGoogleSheets() {
         cls: '', status: 'pending', source: 'google_sheets'
       };
 
+      mappedRow = applySavedFormDecision(mappedRow);
+
       var existingIndex = syncedFormRows.findIndex(function(r){ return r.timestamp === ts; });
       if (existingIndex >= 0) {
         var prev = syncedFormRows[existingIndex] || {};
@@ -8294,7 +8311,56 @@ function findPotentialStudentMatches(r) {
   }).sort(function(a,b){ return b.score - a.score; });
 }
 
-async function persistFormRowsAndSync(formRow) {
+async 
+function getFormDecisionRegistry() {
+  try { return JSON.parse(localStorage.getItem('kp_form_decisions') || '{}') || {}; }
+  catch(e) { return {}; }
+}
+function setFormDecisionRegistry(r, status) {
+  try {
+    var reg = getFormDecisionRegistry();
+    getFormDecisionKeys(r).forEach(function(k){ if (k) reg[k] = {status: status, at: new Date().toISOString()}; });
+    localStorage.setItem('kp_form_decisions', JSON.stringify(reg));
+  } catch(e) {}
+}
+function getFormDecisionKeys(r) {
+  r = r || {};
+  var keys = [];
+  function add(prefix, val){
+    val = String(val || '').trim().toLowerCase();
+    if (val) keys.push(prefix + ':' + val);
+  }
+  add('ts', r.timestamp);
+  add('fb', r.firebaseKey);
+  var name = String(r.name || '').trim().toLowerCase();
+  var dob = String(r.dob || '').trim().toLowerCase();
+  var phone = String(r.dadMob || r.momMob || r.dph || r.mph || '').replace(/\D+/g,'');
+  var eid = String(r.emiratesId || r.idNo || '').replace(/\D+/g,'');
+  if (eid) add('eid', eid);
+  if (name && dob) add('name_dob', name + '|' + dob);
+  if (name && phone) add('name_phone', name + '|' + phone);
+  return keys;
+}
+function getSavedFormDecisionStatus(r) {
+  var reg = getFormDecisionRegistry();
+  var found = '';
+  getFormDecisionKeys(r).some(function(k){
+    if (reg[k] && reg[k].status && reg[k].status !== 'pending') { found = reg[k].status; return true; }
+    return false;
+  });
+  return found;
+}
+function applySavedFormDecision(row) {
+  var st = getSavedFormDecisionStatus(row);
+  if (st) {
+    row.status = st;
+    row.decisionAt = row.decisionAt || new Date().toISOString();
+    row.rowUpdatedAt = row.rowUpdatedAt || row.decisionAt;
+  }
+  return row;
+}
+
+function persistFormRowsAndSync(formRow) {
   // ✅ حفظ فردي — إذا تم تمرير formRow بنحفظه فردياً
   // إذا ما تم تمرير شي بنحفظ كل المصفوفة (للتراجع عن قرارات قديمة)
   localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
@@ -8312,6 +8378,7 @@ function setFormRowDecision(r, status, meta) {
   r.decisionAt = new Date().toISOString();
   r.rowUpdatedAt = r.decisionAt;
   Object.keys(meta).forEach(function(k){ r[k] = meta[k]; });
+  setFormDecisionRegistry(r, status);
   persistFormRowsAndSync(r);
   updateFormsNavBadge();
   if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
@@ -8524,6 +8591,8 @@ function performApproveNew(r) {
   var newStudent = buildStudentFromFormRow(r, getSafeNextStudentId());
   students.push(newStudent);
   nextStuId = getSafeNextStudentId();
+  persistCoreDataToLocalStorage();
+  if (typeof saveRecordRemoteAware === 'function') saveRecordRemoteAware({type:'students', activeArrayName:'students', record:newStudent, keyField:'id', label:'الطالب'});
   setFormRowDecision(r, 'approved', {
     approvedStudentId: newStudent.id,
     approvedAction: 'new',
@@ -8538,6 +8607,8 @@ function performApproveMerge(r, studentId) {
   if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
   var before = JSON.parse(JSON.stringify(students[idx]));
   students[idx] = mergeStudentWithFormData(students[idx], r);
+  persistCoreDataToLocalStorage();
+  if (typeof saveRecordRemoteAware === 'function') saveRecordRemoteAware({type:'students', activeArrayName:'students', record:students[idx], keyField:'id', label:'الطالب'});
   setFormRowDecision(r, 'approved', {
     approvedStudentId: studentId,
     approvedAction: 'merge',
@@ -8580,6 +8651,7 @@ function undoFormDecision(ts) {
   r.approvedStudentId = null;
   r.approvedAction = '';
   r.undoData = null;
+  setFormDecisionRegistry(r, 'pending');
   persistFormRowsAndSync(r);
   updateFormsNavBadge();
   refreshAllAfterFormDecision();
