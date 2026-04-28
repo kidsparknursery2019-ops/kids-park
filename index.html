@@ -8605,15 +8605,6 @@ let renewals = [
   {id:48,name:'بطاقة العمل ايتل',date:'2026-07-24',cost:'',cat:'بطاقات',notes:''},
   {id:49,name:'بطاقة العمل بيل',date:'2026-12-25',cost:'',cat:'بطاقات',notes:''}
 ];
-setTimeout(function(){ if (typeof updateRenewalsNavBadge === 'function') updateRenewalsNavBadge(); }, 0);
-
-function updateRenewalsNavBadge() {
-  var badge = document.getElementById('renewals-nav-badge');
-  if (!badge) return;
-  var count = Array.isArray(renewals) ? renewals.length : 0;
-  badge.textContent = count;
-  badge.style.display = count > 0 ? 'inline-block' : 'none';
-}
 
 
 const CAT_EMOJI = {
@@ -8670,7 +8661,6 @@ function renderRenewals() {
   document.getElementById('ren-30-count').textContent = within30;
   document.getElementById('ren-60-count').textContent = within60;
   document.getElementById('ren-total-count').textContent = renewals.length;
-  updateRenewalsNavBadge();
 
   const list = document.getElementById('ren-list');
   if (!list) return;
@@ -8831,9 +8821,13 @@ function updateNotifications() {
     if (alerts.length > 0) {
       btn.classList.add('has-alerts');
       if (badge) { badge.style.display = 'flex'; badge.textContent = alerts.length > 99 ? '99+' : alerts.length; }
+      var navBadge = document.getElementById('renewals-nav-badge');
+      if (navBadge) { navBadge.style.display = 'inline-block'; navBadge.textContent = alerts.length > 99 ? '99+' : alerts.length; }
     } else {
       btn.classList.remove('has-alerts');
       if (badge) badge.style.display = 'none';
+      var navBadge = document.getElementById('renewals-nav-badge');
+      if (navBadge) navBadge.style.display = 'none';
     }
   }
 
