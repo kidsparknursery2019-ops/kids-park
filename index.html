@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260427-backup-schema-compatible-registration-requests-storage-links -->
+<!-- v20260428-safe-record-sync-rest-streaming-no-schema-break -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -1280,17 +1280,58 @@ var nextExpId = 600;
 var nextRenId = 51;
 
 function getSafeNextReceiptId() {
-  if (!Array.isArray(payments) || !payments.length) return 1;
-  const ids = payments
-    .map(function(p){ return parseInt(p.id, 10) || 0; })
-    .filter(function(id){ return id > 0; })
-    .sort(function(a,b){ return a - b; });
-  if (!ids.length) return 1;
-  const maxId = ids[ids.length - 1];
-  const prevId = ids.length > 1 ? ids[ids.length - 2] : 0;
-  // حماية من قفز غير منطقي مثل 2031 -> 3001 بسبب رقم شاذ وحيد
-  if (prevId > 0 && maxId - prevId >= 500) return prevId + 1;
-  return maxId + 1;
+  // ✅ FIX: نتأكد إنو ما نعيد رقم استخدمه سند محذوف أو فيه tombstone
+  const usedIds = new Set();
+  function addUsedFromArray(arr){
+    if (!Array.isArray(arr)) return;
+    arr.forEach(function(p){
+      const raw = (p && typeof p === 'object') ? p.id : p;
+      const id = parseInt(raw, 10);
+      if (Number.isFinite(id) && id > 0) usedIds.add(id);
+    });
+  }
+  addUsedFromArray(typeof payments !== 'undefined' ? payments : []);
+  addUsedFromArray(typeof deletedPayments !== 'undefined' ? deletedPayments : []);
+  if (typeof tombstones !== 'undefined' && tombstones) addUsedFromArray(tombstones.payments);
+  try {
+    addUsedFromArray(JSON.parse(localStorage.getItem('kp_payments_data') || '[]'));
+    addUsedFromArray(JSON.parse(localStorage.getItem('kp_deleted_payments') || '[]'));
+    const localTs = JSON.parse(localStorage.getItem('kp_tombstones') || '{}');
+    addUsedFromArray(localTs && localTs.payments);
+  } catch(_) {}
+  if (!usedIds.size) return 1;
+  // ابدأ من أعلى رقم +1 — أضمن طريقة لمنع التعارض مع المحذوفات
+  let candidate = 1;
+  usedIds.forEach(function(id){ if (id >= candidate) candidate = id + 1; });
+  return candidate;
+}
+
+async function getSafeNextReceiptIdRemoteAware() {
+  const usedIds = new Set();
+  function addUsedFromArray(arr){
+    if (!Array.isArray(arr)) return;
+    arr.forEach(function(p){
+      const raw = (p && typeof p === 'object') ? p.id : p;
+      const id = parseInt(raw, 10);
+      if (Number.isFinite(id) && id > 0) usedIds.add(id);
+    });
+  }
+  addUsedFromArray(typeof payments !== 'undefined' ? payments : []);
+  addUsedFromArray(typeof deletedPayments !== 'undefined' ? deletedPayments : []);
+  if (typeof tombstones !== 'undefined' && tombstones) addUsedFromArray(tombstones.payments);
+  try {
+    const res = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      addUsedFromArray(data && data.payments);
+      addUsedFromArray(data && data.deletedPayments);
+      addUsedFromArray(data && data.tombstones && data.tombstones.payments);
+    }
+  } catch(_) {}
+  if (!usedIds.size) return 1;
+  let candidate = 1;
+  usedIds.forEach(function(id){ if (id >= candidate) candidate = id + 1; });
+  return candidate;
 }
 
 function getSafeNextExpenseId(){
@@ -1375,14 +1416,90 @@ async function getSafeNextStudentIdRemoteAware() {
   return getSafeNextStudentId(Array.from(usedIds));
 }
 
+function getSafeNextRenewalId() {
+  // ✅ FIX: نتأكد إنو ما نعيد رقم لتجديد محذوف أو فيه tombstone
+  const usedIds = new Set();
+  function addUsedFromArray(arr){
+    if (!Array.isArray(arr)) return;
+    arr.forEach(function(r){
+      const raw = (r && typeof r === 'object') ? r.id : r;
+      const id = parseInt(raw, 10);
+      if (Number.isFinite(id) && id > 0) usedIds.add(id);
+    });
+  }
+  addUsedFromArray(typeof renewals !== 'undefined' ? renewals : []);
+  addUsedFromArray(typeof deletedRenewals !== 'undefined' ? deletedRenewals : []);
+  if (typeof tombstones !== 'undefined' && tombstones) addUsedFromArray(tombstones.renewals);
+  try {
+    addUsedFromArray(JSON.parse(localStorage.getItem('kp_renewals_data') || '[]'));
+    addUsedFromArray(JSON.parse(localStorage.getItem('kp_deleted_renewals') || '[]'));
+    const localTs = JSON.parse(localStorage.getItem('kp_tombstones') || '{}');
+    addUsedFromArray(localTs && localTs.renewals);
+  } catch(_) {}
+  let candidate = 51;
+  while (usedIds.has(candidate)) candidate++;
+  return candidate;
+}
+
+async function getSafeNextRenewalIdRemoteAware() {
+  const usedIds = new Set();
+  function addUsedFromArray(arr){
+    if (!Array.isArray(arr)) return;
+    arr.forEach(function(r){
+      const raw = (r && typeof r === 'object') ? r.id : r;
+      const id = parseInt(raw, 10);
+      if (Number.isFinite(id) && id > 0) usedIds.add(id);
+    });
+  }
+  addUsedFromArray(typeof renewals !== 'undefined' ? renewals : []);
+  addUsedFromArray(typeof deletedRenewals !== 'undefined' ? deletedRenewals : []);
+  if (typeof tombstones !== 'undefined' && tombstones) addUsedFromArray(tombstones.renewals);
+  try {
+    const res = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      addUsedFromArray(data && data.renewals);
+      addUsedFromArray(data && data.deletedRenewals);
+      addUsedFromArray(data && data.tombstones && data.tombstones.renewals);
+    }
+  } catch(_) {}
+  let candidate = 51;
+  while (usedIds.has(candidate)) candidate++;
+  return candidate;
+}
+
+async function getSafeNextExpenseIdRemoteAware() {
+  const usedIds = new Set();
+  function addUsedFromArray(arr){
+    if (!Array.isArray(arr)) return;
+    arr.forEach(function(e){
+      const raw = (e && typeof e === 'object') ? e.id : e;
+      const id = Number(raw);
+      if (Number.isFinite(id) && id > 0) usedIds.add(id);
+    });
+  }
+  addUsedFromArray(typeof expenses !== 'undefined' ? expenses : []);
+  addUsedFromArray(typeof deletedExpenses !== 'undefined' ? deletedExpenses : []);
+  if (typeof tombstones !== 'undefined' && tombstones) addUsedFromArray(tombstones.expenses);
+  try {
+    const res = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      addUsedFromArray(data && data.expenses);
+      addUsedFromArray(data && data.deletedExpenses);
+      addUsedFromArray(data && data.tombstones && data.tombstones.expenses);
+    }
+  } catch(_) {}
+  let candidate = 600;
+  while (usedIds.has(candidate)) candidate++;
+  return candidate;
+}
+
 function refreshNextIds(){
   nextStuId = getSafeNextStudentId();
-
   nextPayId = getSafeNextReceiptId();
   nextExpId = getSafeNextExpenseId();
-
-  if (Array.isArray(renewals) && renewals.length) nextRenId = Math.max.apply(null, renewals.map(function(r){ return r.id || 0; }).concat([50])) + 1;
-  else nextRenId = 51;
+  nextRenId = getSafeNextRenewalId();
 }
 
 let deletedStudents = JSON.parse(localStorage.getItem('kp_deleted_students') || '[]');
@@ -1588,20 +1705,27 @@ async function moveRecordToTrashRemoteAware(config) {
     remoteRestored[type] = remoteRestored[type].filter(function(x){ return normKey(x) !== normKey(id); });
     remoteData.restoredKeys = remoteRestored;
 
-    remoteData.savedAt = new Date().toISOString();
-    remoteData.version = remoteData.version || 2;
+    const savedAt = new Date().toISOString();
+    const patchPayload = {
+      savedAt: savedAt,
+      version: remoteData.version || 2,
+      tombstones: remoteData.tombstones,
+      restoredKeys: remoteData.restoredKeys
+    };
+    patchPayload[activeArrayName] = remoteData[activeArrayName];
+    patchPayload[deletedArrayName] = remoteData[deletedArrayName];
 
     const putRes = await fetch(FB_URL + '.json', {
-      method: 'PUT',
+      method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(remoteData)
+      body: JSON.stringify(patchPayload)
     });
     if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
 
     if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم نقل ' + label + ' إلى سلة المحذوفات');
     hasUnsavedChanges = false;
-    lastSavedAt = remoteData.savedAt;
-    localStorage.setItem('kp_last_synced_at', remoteData.savedAt);
+    lastSavedAt = savedAt;
+    localStorage.setItem('kp_last_synced_at', savedAt);
     return true;
   } catch (e) {
     console.error('moveRecordToTrashRemoteAware failed:', type, id, e);
@@ -1619,9 +1743,9 @@ async function moveClassToTrashRemoteAware(className, deletedItem) {
     if (fetchRes.ok) remoteData = await fetchRes.json();
     if (!remoteData || typeof remoteData !== 'object') remoteData = {};
 
-    const classesObj = (remoteData.classes && typeof remoteData.classes === 'object' && !Array.isArray(remoteData.classes)) ? remoteData.classes : {};
+    const classesObj = (remoteData.CLASSES && typeof remoteData.CLASSES === 'object' && !Array.isArray(remoteData.CLASSES)) ? remoteData.CLASSES : {};
     if (Object.prototype.hasOwnProperty.call(classesObj, className)) delete classesObj[className];
-    remoteData.classes = classesObj;
+    remoteData.CLASSES = classesObj;
 
     const deleted = Array.isArray(remoteData.deletedClasses) ? remoteData.deletedClasses : [];
     remoteData.deletedClasses = [deletedItem].concat(deleted.filter(function(x){ return normKey(x && x.key) !== normKey(className); }));
@@ -1637,18 +1761,244 @@ async function moveClassToTrashRemoteAware(className, deletedItem) {
     remoteRestored.classes = remoteRestored.classes.filter(function(x){ return normKey(x) !== normKey(className); });
     remoteData.restoredKeys = remoteRestored;
 
-    remoteData.savedAt = new Date().toISOString();
-    remoteData.version = remoteData.version || 2;
-    const putRes = await fetch(FB_URL + '.json', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(remoteData) });
+    const savedAt = new Date().toISOString();
+    const patchPayload = {
+      CLASSES: remoteData.CLASSES,
+      deletedClasses: remoteData.deletedClasses || [],
+      tombstones: remoteData.tombstones,
+      restoredKeys: remoteData.restoredKeys,
+      savedAt: savedAt,
+      version: remoteData.version || 2
+    };
+    const putRes = await fetch(FB_URL + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(patchPayload) });
     if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
     if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم نقل الفصل إلى سلة المحذوفات');
     hasUnsavedChanges = false;
-    lastSavedAt = remoteData.savedAt;
-    localStorage.setItem('kp_last_synced_at', remoteData.savedAt);
+    lastSavedAt = savedAt;
+    localStorage.setItem('kp_last_synced_at', savedAt);
     return true;
   } catch(e) {
     console.error('moveClassToTrashRemoteAware failed:', className, e);
     if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل حذف الفصل إلى Firebase');
+    try { autoSave(); } catch(_e) {}
+    return false;
+  }
+}
+
+// ============================================================
+// ✅ INDIVIDUAL (PER-RECORD) SAVE HELPERS
+// كل عملية حفظ بتجلب بيانات Firebase الحالية، تعدّل سجل واحد بس،
+// وترجّع التحديث. هيك إذا في موظفين عم يشتغلوا بنفس الوقت،
+// ما حدا يكتب فوق تغييرات حدا.
+// ============================================================
+async function saveRecordRemoteAware(config) {
+  // config: {activeArrayName, record, keyField, label, type}
+  // type: 'students'|'payments'|'expenses'|'renewals'  — لتنظيف tombstone/restoredKey إذا بدنا
+  const activeArrayName = config.activeArrayName;
+  const record = config.record;
+  const keyField = config.keyField || 'id';
+  const label = config.label || 'السجل';
+  const type = config.type;
+  try {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ ' + label + '...');
+    let remoteData = null;
+    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (fetchRes.ok) remoteData = await fetchRes.json();
+    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
+
+    const active = Array.isArray(remoteData[activeArrayName]) ? remoteData[activeArrayName] : [];
+    const saveRecord = Object.assign({}, record || {});
+    saveRecord.updatedAt = new Date().toISOString();
+    saveRecord.updatedBy = (currentUser && (currentUser.username || currentUser.name)) ? (currentUser.username || currentUser.name) : 'system';
+    saveRecord.version = (parseInt(saveRecord.version || 0, 10) || 0) + 1;
+    // شيل أي نسخة قديمة بنفس الـ key وضيف السجل الجديد
+    const updatedActive = active.filter(function(x){ return normKey(x && x[keyField]) !== normKey(saveRecord[keyField]); });
+    updatedActive.push(saveRecord);
+
+    // إذا في tombstone للسجل (مثلاً مستعاد من السلة) شيلو من tombstones
+    if (type && remoteData.tombstones && Array.isArray(remoteData.tombstones[type])) {
+      remoteData.tombstones[type] = remoteData.tombstones[type].filter(function(x){ return normKey(x) !== normKey(saveRecord[keyField]); });
+    }
+    // وأضف للـ restoredKeys حتى ما يرجع يختفي بسبب tombstone قديم
+    if (type) {
+      if (!remoteData.restoredKeys || typeof remoteData.restoredKeys !== 'object') remoteData.restoredKeys = {};
+      if (!Array.isArray(remoteData.restoredKeys[type])) remoteData.restoredKeys[type] = [];
+      if (!hasKey(remoteData.restoredKeys[type], saveRecord[keyField])) {
+        remoteData.restoredKeys[type].push(saveRecord[keyField]);
+      }
+    }
+    // كمان شيل من سلة المحذوفات (في حالة الاستعادة)
+    const deletedArrayName = 'deleted' + activeArrayName.charAt(0).toUpperCase() + activeArrayName.slice(1);
+    if (Array.isArray(remoteData[deletedArrayName])) {
+      remoteData[deletedArrayName] = remoteData[deletedArrayName].filter(function(x){ return normKey(x && x[keyField]) !== normKey(saveRecord[keyField]); });
+    }
+
+    const savedAt = new Date().toISOString();
+    // PATCH بدل PUT — يعدّل بس الحقول اللي بدنا ياها بدون ما يطغى على باقي البيانات
+    const patchPayload = {};
+    patchPayload[activeArrayName] = updatedActive;
+    if (remoteData.tombstones)   patchPayload.tombstones   = remoteData.tombstones;
+    if (remoteData.restoredKeys) patchPayload.restoredKeys = remoteData.restoredKeys;
+    if (remoteData[deletedArrayName] !== undefined) patchPayload[deletedArrayName] = remoteData[deletedArrayName];
+    patchPayload.savedAt = savedAt;
+    patchPayload.version = remoteData.version || 2;
+
+    const putRes = await fetch(FB_URL + '.json', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(patchPayload)
+    });
+    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ ' + label);
+    hasUnsavedChanges = false;
+    lastSavedAt = savedAt;
+    localStorage.setItem('kp_last_synced_at', savedAt);
+    return true;
+  } catch (e) {
+    console.error('saveRecordRemoteAware failed:', activeArrayName, e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل ' + label + ' إلى Firebase');
+    try { autoSave(); } catch(_e) {}
+    return false;
+  }
+}
+
+async function saveClassRemoteAware(className, classData) {
+  try {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ الفصل...');
+    let remoteData = null;
+    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (fetchRes.ok) remoteData = await fetchRes.json();
+    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
+
+    const classesObj = (remoteData.CLASSES && typeof remoteData.CLASSES === 'object' && !Array.isArray(remoteData.CLASSES)) ? remoteData.CLASSES : {};
+    classesObj[className] = classData;
+    // شيل من tombstones
+    if (remoteData.tombstones && Array.isArray(remoteData.tombstones.classes)) {
+      remoteData.tombstones.classes = remoteData.tombstones.classes.filter(function(x){ return normKey(x) !== normKey(className); });
+    }
+    // شيل من سلة المحذوفات
+    if (Array.isArray(remoteData.deletedClasses)) {
+      remoteData.deletedClasses = remoteData.deletedClasses.filter(function(x){ return normKey(x && x.key) !== normKey(className); });
+    }
+
+    const savedAt = new Date().toISOString();
+    const patchPayload = { CLASSES: classesObj, savedAt: savedAt, version: remoteData.version || 2 };
+    if (remoteData.tombstones) patchPayload.tombstones = remoteData.tombstones;
+    if (remoteData.deletedClasses !== undefined) patchPayload.deletedClasses = remoteData.deletedClasses;
+
+    const putRes = await fetch(FB_URL + '.json', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(patchPayload)
+    });
+    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ الفصل');
+    hasUnsavedChanges = false;
+    lastSavedAt = savedAt;
+    localStorage.setItem('kp_last_synced_at', savedAt);
+    return true;
+  } catch (e) {
+    console.error('saveClassRemoteAware failed:', className, e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل الفصل إلى Firebase');
+    try { autoSave(); } catch(_e) {}
+    return false;
+  }
+}
+
+async function renameClassRemoteAware(oldName, newName, newData) {
+  // حذف القديم وإضافة الجديد بـ PATCH واحد
+  try {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري إعادة تسمية الفصل...');
+    let remoteData = null;
+    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (fetchRes.ok) remoteData = await fetchRes.json();
+    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
+
+    const classesObj = (remoteData.CLASSES && typeof remoteData.CLASSES === 'object' && !Array.isArray(remoteData.CLASSES)) ? remoteData.CLASSES : {};
+    if (Object.prototype.hasOwnProperty.call(classesObj, oldName)) delete classesObj[oldName];
+    classesObj[newName] = newData;
+
+    if (remoteData.tombstones && Array.isArray(remoteData.tombstones.classes)) {
+      remoteData.tombstones.classes = remoteData.tombstones.classes.filter(function(x){ return normKey(x) !== normKey(newName); });
+    }
+
+    const savedAt = new Date().toISOString();
+    const patchPayload = { CLASSES: classesObj, savedAt: savedAt, version: remoteData.version || 2 };
+    if (remoteData.tombstones) patchPayload.tombstones = remoteData.tombstones;
+
+    const putRes = await fetch(FB_URL + '.json', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(patchPayload)
+    });
+    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم إعادة تسمية الفصل');
+    hasUnsavedChanges = false;
+    lastSavedAt = savedAt;
+    localStorage.setItem('kp_last_synced_at', savedAt);
+    return true;
+  } catch(e) {
+    console.error('renameClassRemoteAware failed:', e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط');
+    try { autoSave(); } catch(_e) {}
+    return false;
+  }
+}
+
+async function permanentDeleteRemoteAware(config) {
+  // config: {type, key, deletedArrayName, keyField, label, isClass}
+  const type = config.type;
+  const key = config.key;
+  const deletedArrayName = config.deletedArrayName;
+  const keyField = config.keyField || 'id';
+  const label = config.label || 'السجل';
+  try {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري الحذف النهائي لـ ' + label + '...');
+    let remoteData = null;
+    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (fetchRes.ok) remoteData = await fetchRes.json();
+    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
+
+    // شيل من سلة المحذوفات
+    if (Array.isArray(remoteData[deletedArrayName])) {
+      remoteData[deletedArrayName] = remoteData[deletedArrayName].filter(function(x){ return normKey(x && x[keyField]) !== normKey(key); });
+    }
+    // أضف tombstone
+    if (!remoteData.tombstones || typeof remoteData.tombstones !== 'object') remoteData.tombstones = {};
+    if (!Array.isArray(remoteData.tombstones[type])) remoteData.tombstones[type] = [];
+    if (!hasKey(remoteData.tombstones[type], key)) remoteData.tombstones[type].push(key);
+    // شيل من restoredKeys (لأن الحذف النهائي يلغي أي استعادة سابقة)
+    if (remoteData.restoredKeys && Array.isArray(remoteData.restoredKeys[type])) {
+      remoteData.restoredKeys[type] = remoteData.restoredKeys[type].filter(function(x){ return normKey(x) !== normKey(key); });
+    }
+
+    const savedAt = new Date().toISOString();
+    const patchPayload = {
+      tombstones: remoteData.tombstones,
+      savedAt: savedAt,
+      version: remoteData.version || 2
+    };
+    patchPayload[deletedArrayName] = remoteData[deletedArrayName] || [];
+    if (remoteData.restoredKeys) patchPayload.restoredKeys = remoteData.restoredKeys;
+
+    const putRes = await fetch(FB_URL + '.json', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(patchPayload)
+    });
+    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم الحذف النهائي لـ ' + label);
+    hasUnsavedChanges = false;
+    lastSavedAt = savedAt;
+    localStorage.setItem('kp_last_synced_at', savedAt);
+    return true;
+  } catch(e) {
+    console.error('permanentDeleteRemoteAware failed:', type, key, e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل الحذف النهائي إلى Firebase');
     try { autoSave(); } catch(_e) {}
     return false;
   }
@@ -1667,6 +2017,124 @@ function refreshAllViewsAfterSync() {
   if (typeof renderAdminClasses === 'function') renderAdminClasses();
   if (typeof updateNotifications === 'function') updateNotifications();
   if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
+}
+
+// ============================================================
+// ✅ MORE PER-RECORD HELPERS — لباقي العمليات
+// ============================================================
+
+// حفظ سجل حضور واحد أو أكثر (entries: {key: status, key: status, ...})
+async function saveAttendanceEntriesRemoteAware(entries) {
+  try {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ الحضور...');
+    // PATCH على /attLog مباشرة بالمفاتيح الجديدة فقط — Firebase بيدمج تلقائياً
+    const res = await fetch(FB_URL + '/attLog.json', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(entries)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    // كمان بدنا نحدث savedAt
+    await fetch(FB_URL + '.json', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ savedAt: new Date().toISOString() })
+    }).catch(function(){});
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ الحضور');
+    return true;
+  } catch (e) {
+    console.error('saveAttendanceEntriesRemoteAware failed:', e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط');
+    try { autoSave(); } catch(_e) {}
+    return false;
+  }
+}
+
+// حفظ إعدادات الحضانة (الاسم، العنوان، الشعار، إلخ)
+async function saveSettingsRemoteAware() {
+  try {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ الإعدادات...');
+    const cleanSettings = Object.assign({}, nurserySettings || {});
+    delete cleanSettings.logoDataUrl; // الشعار له endpoint منفصل
+    const res = await fetch(FB_URL + '.json', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        nurserySettings: cleanSettings,
+        savedAt: new Date().toISOString()
+      })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ الإعدادات');
+    return true;
+  } catch (e) {
+    console.error('saveSettingsRemoteAware failed:', e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط');
+    try { autoSave(); } catch(_e) {}
+    return false;
+  }
+}
+
+// حفظ صف نموذج تسجيل واحد (بحسب timestamp)
+async function saveFormRowRemoteAware(formRow) {
+  try {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ طلب التسجيل...');
+    let remoteData = null;
+    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (fetchRes.ok) remoteData = await fetchRes.json();
+    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
+    const arr = Array.isArray(remoteData.kp_form_rows) ? remoteData.kp_form_rows : [];
+    const ts = formRow && formRow.timestamp;
+    const updated = arr.filter(function(r){ return !(r && r.timestamp === ts); });
+    updated.push(formRow);
+    const res = await fetch(FB_URL + '.json', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        kp_form_rows: updated,
+        savedAt: new Date().toISOString()
+      })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ الطلب');
+    return true;
+  } catch (e) {
+    console.error('saveFormRowRemoteAware failed:', e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط');
+    try { autoSave(); } catch(_e) {}
+    return false;
+  }
+}
+
+// حفظ مجموعة صفوف نماذج دفعة واحدة (للاستيراد من Google Sheets)
+async function saveFormRowsBatchRemoteAware(formRows) {
+  if (!Array.isArray(formRows) || !formRows.length) return true;
+  try {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ ' + formRows.length + ' طلب...');
+    let remoteData = null;
+    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (fetchRes.ok) remoteData = await fetchRes.json();
+    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
+    const arr = Array.isArray(remoteData.kp_form_rows) ? remoteData.kp_form_rows : [];
+    const incomingTs = new Set(formRows.map(function(r){ return r && r.timestamp; }).filter(Boolean));
+    const merged = arr.filter(function(r){ return !(r && incomingTs.has(r.timestamp)); }).concat(formRows);
+    const res = await fetch(FB_URL + '.json', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        kp_form_rows: merged,
+        savedAt: new Date().toISOString()
+      })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ ' + formRows.length + ' طلب');
+    return true;
+  } catch (e) {
+    console.error('saveFormRowsBatchRemoteAware failed:', e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط');
+    try { autoSave(); } catch(_e) {}
+    return false;
+  }
 }
 
 let students = [
@@ -3009,20 +3477,26 @@ function getPaymentMatchInfo(payment){
 }
 
 
-function approveAllSuggestedPaymentMatches(options){
+async function approveAllSuggestedPaymentMatches(options){
   options = options || {};
   let approved = 0;
+  const approvedPayments = [];
   payments.forEach(function(p){
     if (!p || p.stuId) return;
     const info = getPaymentMatchInfo(p);
     if (info && info.student && (info.status === 'suggested' || info.status === 'suggested-strong')) {
       p.stuId = info.student.id;
+      approvedPayments.push(p);
       approved++;
     }
   });
   if (approved > 0) {
     resetPaymentMatchCache();
-    autoSave();
+    persistCoreDataToLocalStorage();
+    // ✅ حفظ فردي لكل سند مربوط
+    for (const p of approvedPayments) {
+      await saveRecordRemoteAware({type:'payments', activeArrayName:'payments', record:p, keyField:'id', label:'السند'});
+    }
     if (!options.skipRender) {
       if (typeof renderPayments === 'function') renderPayments();
       if (typeof renderReceipts === 'function') renderReceipts();
@@ -3038,12 +3512,17 @@ function approveAllSuggestedPaymentMatches(options){
 function runOneTimeBulkMatchApproval(){
   const stampKey = 'kp_bulk_match_approval_v1';
   if (localStorage.getItem(stampKey) === 'done') return 0;
-  const approved = approveAllSuggestedPaymentMatches({silent:true, skipRender:true});
-  if (approved > 0) localStorage.setItem(stampKey, 'done');
-  return approved;
+  // نشغّلها بدون انتظار — العملية مرة واحدة عند تشغيل النسخة
+  const result = approveAllSuggestedPaymentMatches({silent:true, skipRender:true});
+  if (result && typeof result.then === 'function') {
+    result.then(function(approved){ if (approved > 0) localStorage.setItem(stampKey, 'done'); });
+    return 0;
+  }
+  if (result > 0) localStorage.setItem(stampKey, 'done');
+  return result;
 }
 
-function approvePaymentMatch(paymentId, studentId){
+async function approvePaymentMatch(paymentId, studentId){
   const p = payments.find(function(x){ return x.id === paymentId; });
   if (!p) return;
   let sid = parseInt(studentId);
@@ -3055,20 +3534,24 @@ function approvePaymentMatch(paymentId, studentId){
   if (!s) { alert('لم يتم العثور على طالب صالح لهذا الربط'); return; }
   p.stuId = s.id;
   resetPaymentMatchCache();
-  autoSave();
+  persistCoreDataToLocalStorage();
+  // ✅ حفظ فردي
+  await saveRecordRemoteAware({type:'payments', activeArrayName:'payments', record:p, keyField:'id', label:'السند'});
   renderPayments();
   if (typeof renderReceipts === 'function') renderReceipts();
   renderDash();
   alert('✅ تم اعتماد ربط السند #' + p.id + ' مع ملف الطالب: ' + s.name);
 }
 
-function unlinkPaymentMatch(paymentId){
+async function unlinkPaymentMatch(paymentId){
   const p = payments.find(function(x){ return x.id === paymentId; });
   if (!p || !p.stuId) return;
   if (!confirm('فك ربط السند #' + p.id + ' من ملف الطالب؟')) return;
   p.stuId = null;
   resetPaymentMatchCache();
-  autoSave();
+  persistCoreDataToLocalStorage();
+  // ✅ حفظ فردي
+  await saveRecordRemoteAware({type:'payments', activeArrayName:'payments', record:p, keyField:'id', label:'السند'});
   renderPayments();
   if (typeof renderReceipts === 'function') renderReceipts();
   renderDash();
@@ -3421,6 +3904,8 @@ function restoreStudentsSnapshotIfNeeded(beforeCount){
           renderStudents();
           if(typeof renderPayments==='function') renderPayments();
           if(typeof renderReceipts==='function') renderReceipts();
+          // ⚠️ هذي حالة استرجاع طارئة (snapshot rollback) — متل استعادة نسخة احتياطية
+          // فلازم نرفع البيانات الكاملة على Firebase
           autoSave();
           alert('⚠️ تم اكتشاف خلل غير متوقع أثناء تعديل الحالة الصحية، لذلك تم استرجاع قائمة الطلاب تلقائيًا لحماية البيانات.');
           return true;
@@ -3431,7 +3916,7 @@ function restoreStudentsSnapshotIfNeeded(beforeCount){
   return false;
 }
 
-function quickEditStudentHealth(id){
+async function quickEditStudentHealth(id){
   const s = students.find(function(x){ return x.id === id; });
   if (!s) return;
   const current = String(getStudentHealthSummary(s) || s.healthOverride || s.health || s.healthStatus || '');
@@ -3453,14 +3938,16 @@ function quickEditStudentHealth(id){
   target.updatedAt = target.healthUpdatedAt;
   if (restoreStudentsSnapshotIfNeeded(beforeCount)) return;
   resetPaymentMatchCache();
-  autoSave();
+  persistCoreDataToLocalStorage();
+  // ✅ حفظ فردي
+  await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:target, keyField:'id', label:'الطالب'});
   renderStudents();
   if(typeof renderPayments==='function') renderPayments();
   if(typeof renderReceipts==='function') renderReceipts();
   alert('✅ تم تحديث الحالة الصحية للطالب: ' + target.name);
 }
 
-function clearStudentHealth(id){
+async function clearStudentHealth(id){
   const s = students.find(function(x){ return x.id === id; });
   if (!s) return;
   const current = String(getStudentHealthSummary(s) || s.healthOverride || s.health || s.healthStatus || '');
@@ -3481,7 +3968,9 @@ function clearStudentHealth(id){
   target.updatedAt = target.healthUpdatedAt;
   if (restoreStudentsSnapshotIfNeeded(beforeCount)) return;
   resetPaymentMatchCache();
-  autoSave();
+  persistCoreDataToLocalStorage();
+  // ✅ حفظ فردي
+  await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:target, keyField:'id', label:'الطالب'});
   renderStudents();
   if(typeof renderPayments==='function') renderPayments();
   if(typeof renderReceipts==='function') renderReceipts();
@@ -3530,18 +4019,28 @@ async function saveStudent(){
   const healthChanged = !editingStuId || previousHealthValue !== manualHealthValue;
   const healthStamp = healthChanged ? new Date().toISOString() : (existingStudent && (existingStudent.healthUpdatedAt || existingStudent.healthChangedAt)) || '';
   const data={name,nameEn:(nameEnInput || transliterateArabicName(name)),dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,addr:document.getElementById('ns-addr').value,idNo:document.getElementById('ns-idno').value,health:manualHealthValue,healthStatus:manualHealthValue,healthOverride:manualHealthValue,healthDeleted:false,healthUpdatedAt:healthStamp,note:document.getElementById('ns-note').value,internalNote:document.getElementById('ns-internal-note').value,sub_end:(document.getElementById('ns-sub-end')||{}).value||'',updatedAt:new Date().toISOString()};
+  let savedRecord;
   if(editingStuId){
     const i=students.findIndex(x=>x.id===editingStuId);
-    if(i>=0)students[i]={...students[i],...data};
+    if(i>=0){
+      students[i]={...students[i],...data};
+      savedRecord = students[i];
+    }
   } else {
     const safeStudentId = await getSafeNextStudentIdRemoteAware();
-    students.push({id:safeStudentId,...data});
+    savedRecord = {id:safeStudentId,...data};
+    students.push(savedRecord);
     nextStuId = getSafeNextStudentId();
   }
   resetPaymentMatchCache();
+  persistCoreDataToLocalStorage();
   closeAll();renderStudents();renderDash();
   if(typeof renderPayments==='function') renderPayments(); if(typeof renderReceipts==='function') renderReceipts();
-  autoSave(); alert(`✅ تم ${editingStuId?'تعديل':'إضافة'} الطالب "${name}" بنجاح`);
+  // ✅ حفظ فردي بدل autoSave (ما بيكتب فوق تغييرات المستخدمين الآخرين)
+  if (savedRecord) {
+    await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:savedRecord, keyField:'id', label:'الطالب'});
+  }
+  alert(`✅ تم ${editingStuId?'تعديل':'إضافة'} الطالب "${name}" بنجاح`);
 }
 
 async function delStudent(id){
@@ -3569,7 +4068,7 @@ async function delStudent(id){
 }
 
 // استعادة طالب محذوف
-function restoreStudent(id) {
+async function restoreStudent(id) {
   const s = deletedStudents.find(x => x.id === id);
   if (!s) return;
   if (!confirm('استعادة الطالب "' + s.name + '"؟')) return;
@@ -3586,8 +4085,10 @@ function restoreStudent(id) {
     tombstones.students = tombstones.students.filter(function(x){ return x !== id; });
     localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
   }
+  markRestored('students', id);
   cleanupDeletedBuckets();
-  autoSave();
+  // ✅ حفظ فردي — saveRecordRemoteAware بيحط السجل بـ active وبيشيله من tombstones وdeletedStudents و restoredKeys
+  await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:restored, keyField:'id', label:'الطالب'});
   renderStudents();
   renderDash();
   renderDeletedStudents();
@@ -3597,17 +4098,16 @@ function restoreStudent(id) {
 }
 
 // حذف نهائي
-function permanentDeleteStudent(id) {
+async function permanentDeleteStudent(id) {
   const s = deletedStudents.find(x => x.id === id);
   if (!s) return;
   if (!confirm('⚠️ حذف نهائي للطالب "' + s.name + '"؟\nلا يمكن التراجع!')) return;
   if (!confirm('تأكيد أخير: حذف نهائي؟')) return;
   deletedStudents = deletedStudents.filter(x => x.id !== id);
   localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
-  // تأكد من إضافة tombstone (في حال ما كان موجود)
   addTombstone('students', id);
-  // ✅ ارفع التغيير لـ Firebase ليصل للأجهزة الأخرى
-  autoSave();
+  // ✅ حذف نهائي فردي بدل autoSave كامل
+  await permanentDeleteRemoteAware({type:'students', key:id, deletedArrayName:'deletedStudents', keyField:'id', label:'الطالب'});
   renderDeletedStudents();
   renderOtherDeletedItems();
 }
@@ -3625,7 +4125,7 @@ function viewDeletedStudent(id) {
 }
 
 
-function restorePayment(id) {
+async function restorePayment(id) {
   const p = deletedPayments.find(function(x){ return x.id === id; });
   if (!p) return;
   if (!confirm('استعادة السند #' + id + '؟')) return;
@@ -3641,12 +4141,14 @@ function restorePayment(id) {
   }
   markRestored('payments', id);
   persistCoreDataToLocalStorage();
-  autoSave(); renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
+  // ✅ حفظ فردي
+  await saveRecordRemoteAware({type:'payments', activeArrayName:'payments', record:restored, keyField:'id', label:'السند'});
+  renderPayments(); if(typeof renderReceipts==='function') renderReceipts(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
   if (typeof updateNotifications === 'function') updateNotifications();
   if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
 }
 
-function restoreExpense(id) {
+async function restoreExpense(id) {
   const e = deletedExpenses.find(function(x){ return x.id === id; });
   if (!e) return;
   if (!confirm('استعادة المصروف #' + id + '؟')) return;
@@ -3662,11 +4164,13 @@ function restoreExpense(id) {
   }
   markRestored('expenses', id);
   persistCoreDataToLocalStorage();
-  autoSave(); renderExpenses(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
+  // ✅ حفظ فردي
+  await saveRecordRemoteAware({type:'expenses', activeArrayName:'expenses', record:restored, keyField:'id', label:'المصروف'});
+  renderExpenses(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
   if (typeof updateNotifications === 'function') updateNotifications();
 }
 
-function restoreRenewal(id) {
+async function restoreRenewal(id) {
   const r = deletedRenewals.find(function(x){ return x.id === id; });
   if (!r) return;
   if (!confirm('استعادة التجديد #' + id + '؟')) return;
@@ -3682,15 +4186,18 @@ function restoreRenewal(id) {
   }
   markRestored('renewals', id);
   persistCoreDataToLocalStorage();
-  autoSave(); renderRenewals(); renderDeletedStudents(); renderOtherDeletedItems();
+  // ✅ حفظ فردي
+  await saveRecordRemoteAware({type:'renewals', activeArrayName:'renewals', record:restored, keyField:'id', label:'التجديد'});
+  renderRenewals(); renderDeletedStudents(); renderOtherDeletedItems();
   if (typeof updateNotifications === 'function') updateNotifications();
 }
 
-function restoreClass(name) {
+async function restoreClass(name) {
   const c = deletedClasses.find(function(x){ return x.key === name; });
   if (!c) return;
   if (!confirm('استعادة الفصل "' + name + '"؟')) return;
-  CLASSES[name] = c.data || {teacher:'', emoji:'🏫'};
+  const classData = c.data || {teacher:'', emoji:'🏫'};
+  CLASSES[name] = classData;
   CLASSES_DATA = CLASSES;
   deletedClasses = deletedClasses.filter(function(x){ return x.key !== name; });
   localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
@@ -3700,30 +4207,41 @@ function restoreClass(name) {
   }
   markRestored('classes', name);
   localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
-  autoSave(); populateClassDropdowns(); renderAdminClasses(); renderStudents(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
+  // ✅ حفظ فردي
+  await saveClassRemoteAware(name, classData);
+  populateClassDropdowns(); renderAdminClasses(); renderStudents(); renderDash(); renderDeletedStudents(); renderOtherDeletedItems();
 }
 
-function permanentDeleteGeneric(type, key) {
+async function permanentDeleteGeneric(type, key) {
   if (!confirm('⚠️ حذف نهائي؟ لا يمكن التراجع!')) return;
+  let deletedArrayName, keyField, label;
   if (type === 'payments') {
     deletedPayments = deletedPayments.filter(function(x){ return x.id !== key; });
     localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
     addTombstone('payments', key);
+    deletedArrayName = 'deletedPayments'; keyField = 'id'; label = 'السند';
   } else if (type === 'expenses') {
     deletedExpenses = deletedExpenses.filter(function(x){ return x.id !== key; });
     localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
     addTombstone('expenses', key);
+    deletedArrayName = 'deletedExpenses'; keyField = 'id'; label = 'المصروف';
   } else if (type === 'renewals') {
     deletedRenewals = deletedRenewals.filter(function(x){ return x.id !== key; });
     localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
     addTombstone('renewals', key);
+    deletedArrayName = 'deletedRenewals'; keyField = 'id'; label = 'التجديد';
   } else if (type === 'classes') {
     deletedClasses = deletedClasses.filter(function(x){ return x.key !== key; });
     localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
     addTombstone('classes', key);
+    deletedArrayName = 'deletedClasses'; keyField = 'key'; label = 'الفصل';
   }
   cleanupDeletedBuckets();
-  autoSave(); renderDeletedStudents(); renderOtherDeletedItems();
+  // ✅ حذف نهائي فردي
+  if (deletedArrayName) {
+    await permanentDeleteRemoteAware({type:type, key:key, deletedArrayName:deletedArrayName, keyField:keyField, label:label});
+  }
+  renderDeletedStudents(); renderOtherDeletedItems();
 }
 
 function renderDeletedSectionCard(icon, title, subtitle, actionsHtml) {
@@ -3920,17 +4438,28 @@ function renderAttGrid(){
   document.getElementById('att-summary').textContent=`${cls} — حاضر: ${p} | غائب: ${a} | متأخر: ${l} | إجمالي: ${list.length}`;
 }
 
-function setAtt(date,id,status){
-  attLog[date+'_'+id]=status;
+async function setAtt(date,id,status){
+  const key = date+'_'+id;
+  attLog[key]=status;
+  localStorage.setItem('kp_attlog_data', JSON.stringify(attLog));
   renderAttGrid();renderAttLog();renderDash();
-  autoSave();
+  // ✅ حفظ فردي — PATCH على /attLog مباشرة
+  const entries = {}; entries[key] = status;
+  await saveAttendanceEntriesRemoteAware(entries);
 }
 
-function markAll(status){
+async function markAll(status){
   const date=document.getElementById('att-date').value;
-  students.filter(function(s){ return s && s.cls===currentClsTab; }).forEach(function(s){ attLog[date+'_'+s.id]=status; });
+  const entries = {};
+  students.filter(function(s){ return s && s.cls===currentClsTab; }).forEach(function(s){
+    const key = date+'_'+s.id;
+    attLog[key] = status;
+    entries[key] = status;
+  });
+  localStorage.setItem('kp_attlog_data', JSON.stringify(attLog));
   renderAttGrid();renderAttLog();renderDash();
-  autoSave();
+  // ✅ حفظ فردي بدفعة واحدة لكل الطلاب بنفس اليوم
+  await saveAttendanceEntriesRemoteAware(entries);
 }
 
 function renderAttLog(){
@@ -4208,7 +4737,7 @@ async function deletePayment(){
   await moveRecordToTrashRemoteAware({type:'payments', id:delId, deletedItem:deletedItem, activeArrayName:'payments', deletedArrayName:'deletedPayments', keyField:'id', label:'السند'});
 }
 
-function savePayment(){
+async function savePayment(){
   const who = document.getElementById('np-who').value.trim();
   const amt = +document.getElementById('np-amt').value;
   const desc = document.getElementById('np-desc').value.trim();
@@ -4216,6 +4745,9 @@ function savePayment(){
   const internalValue = (document.getElementById('np-internal') || {}).value || '';
   const amtWordsValue = ((document.getElementById('np-amtwords') || {}).value || '').trim();
   if(!who || !amt || !desc){ alert('يرجى تعبئة الحقول المطلوبة'); return; }
+
+  let savedPayment = null;
+  let savedStudent = null; // إذا انغير sub_end لطالب، نحفظه برضو
 
   if(editingPayId){
     const p = payments.find(function(x){ return x.id === editingPayId; });
@@ -4233,7 +4765,7 @@ function savePayment(){
     p.internalNote = internalValue;
     p.amtWords = amtWordsValue || amtToWords(amt);
     p.stuId = parseInt((document.getElementById('np-stuid')||{}).value) || null;
-    if (p.stuId && p.sub_end) { const sp = students.find(function(x){ return x.id === p.stuId; }); if (sp) sp.sub_end = p.sub_end; }
+    if (p.stuId && p.sub_end) { const sp = students.find(function(x){ return x.id === p.stuId; }); if (sp) { sp.sub_end = p.sub_end; savedStudent = sp; } }
 
     if (currentUser && currentUser.role === 'admin') {
       const requestedId = parseInt(idInput && idInput.value);
@@ -4242,16 +4774,21 @@ function savePayment(){
         p.id = requestedId;
       }
     }
+    savedPayment = p;
 
     refreshNextIds();
+    persistCoreDataToLocalStorage();
     closeAll();
     renderPayments();
     renderReceipts();
     renderDash();
-    autoSave();
-    alert('✅ تم تعديل السند #' + p.id);
+    // ✅ حفظ فردي
+    await saveRecordRemoteAware({type:'payments', activeArrayName:'payments', record:savedPayment, keyField:'id', label:'السند'});
+    if (savedStudent) await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:savedStudent, keyField:'id', label:'الطالب'});
+    alert('✅ تم تعديل السند #' + savedPayment.id);
   } else {
-    let newId = nextPayId;
+    // ✅ FIX: استخدم الرقم الآمن مع فحص remote حتى ما يصير تعارض مع رقم محذوف
+    let newId = await getSafeNextReceiptIdRemoteAware();
     if (currentUser && currentUser.role === 'admin') {
       const requestedId = parseInt(idInput && idInput.value);
       if (requestedId) newId = requestedId;
@@ -4274,15 +4811,19 @@ function savePayment(){
       amtWords: amtWordsValue || amtToWords(amt),
       stuId: stuid
     };
-    if (p.stuId && p.sub_end) { const sp = students.find(function(x){ return x.id === p.stuId; }); if (sp) sp.sub_end = p.sub_end; }
+    if (p.stuId && p.sub_end) { const sp = students.find(function(x){ return x.id === p.stuId; }); if (sp) { sp.sub_end = p.sub_end; savedStudent = sp; } }
     payments.push(p);
+    savedPayment = p;
     refreshNextIds();
+    persistCoreDataToLocalStorage();
     closeAll();
     renderPayments();
     renderReceipts();
     renderDash();
-    autoSave();
-    alert('✅ تم تسجيل الدفعة بنجاح (#' + p.id + ')');
+    // ✅ حفظ فردي
+    await saveRecordRemoteAware({type:'payments', activeArrayName:'payments', record:savedPayment, keyField:'id', label:'السند'});
+    if (savedStudent) await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:savedStudent, keyField:'id', label:'الطالب'});
+    alert('✅ تم تسجيل الدفعة بنجاح (#' + savedPayment.id + ')');
   }
 }
 
@@ -4348,7 +4889,7 @@ function openEditExp(id){
   document.getElementById('mo-exp').classList.add('on');
 }
 
-function saveExpense(){
+async function saveExpense(){
   const desc=document.getElementById('ne-desc').value.trim();
   const amt=+document.getElementById('ne-amt').value;
   if(!desc||!amt){alert('يرجى تعبئة الحقول المطلوبة');return;}
@@ -4361,15 +4902,23 @@ function saveExpense(){
     e.date = document.getElementById('ne-date').value;
     e.exp_date = document.getElementById('ne-date').value;
     e.note = document.getElementById('ne-note').value||'';
+    persistCoreDataToLocalStorage();
     closeAll();renderExpenses();renderDash();
-    autoSave(); alert('✅ تم تعديل المصروف بنجاح');
+    // ✅ حفظ فردي
+    await saveRecordRemoteAware({type:'expenses', activeArrayName:'expenses', record:e, keyField:'id', label:'المصروف'});
+    alert('✅ تم تعديل المصروف بنجاح');
   } else {
     const expDate = document.getElementById('ne-date').value;
-    const newExpenseId = getSafeNextExpenseId();
+    // ✅ FIX: استخدم الرقم الآمن مع فحص remote
+    const newExpenseId = await getSafeNextExpenseIdRemoteAware();
     nextExpId = newExpenseId + 1;
-    expenses.push({id:newExpenseId,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:expDate,exp_date:expDate,note:document.getElementById('ne-note').value||''});
+    const newExp = {id:newExpenseId,desc,amt,cat:document.getElementById('ne-cat').value,method:document.getElementById('ne-method').value,date:expDate,exp_date:expDate,note:document.getElementById('ne-note').value||''};
+    expenses.push(newExp);
+    persistCoreDataToLocalStorage();
     closeAll();renderExpenses();renderDash();
-    autoSave(); alert('✅ تم حفظ المصروف بنجاح');
+    // ✅ حفظ فردي
+    await saveRecordRemoteAware({type:'expenses', activeArrayName:'expenses', record:newExp, keyField:'id', label:'المصروف'});
+    alert('✅ تم حفظ المصروف بنجاح');
   }
 }
 
@@ -5019,7 +5568,7 @@ function handleImportFile(e) {
   reader.readAsArrayBuffer(file);
 }
 
-function doImport() {
+async function doImport() {
   if (!importParsedData || !importParsedData.length) { alert('لا توجد بيانات'); return; }
   if (!confirm('استيراد ' + importParsedData.length + ' سجل؟')) return;
   let added = 0;
@@ -5035,7 +5584,10 @@ function doImport() {
   } else if (importTarget === 'payments' || importTarget === 'receipts') {
     importParsedData.forEach(function(item){
       if (!item.who || !item.amt || !item.desc) return;
-      payments.push({ id: nextPayId++, stuId: parseInt(item.stuId)||null, who:item.who, amt:+item.amt, desc:item.desc, type:item.type||'قسط شهري', method:item.method||'نقدي', date:item.date, rcvr:item.rcvr, note:item.note, internalNote:item.internalNote||'' });
+      // ✅ FIX: استخدم getSafeNextReceiptId بعد كل إضافة لتجنب التعارض مع المحذوفات
+      const safeId = getSafeNextReceiptId();
+      payments.push({ id: safeId, stuId: parseInt(item.stuId)||null, who:item.who, amt:+item.amt, desc:item.desc, type:item.type||'قسط شهري', method:item.method||'نقدي', date:item.date, rcvr:item.rcvr, note:item.note, internalNote:item.internalNote||'' });
+      nextPayId = getSafeNextReceiptId();
       added++;
     });
     resetPaymentMatchCache();
@@ -5043,27 +5595,60 @@ function doImport() {
   } else if (importTarget === 'expenses') {
     importParsedData.forEach(function(item){
       if (!item.desc || !item.amt) return;
-      expenses.push({ id: nextExpId++, desc:item.desc, amt:+item.amt, cat:item.cat||'أخرى', method:item.method||'نقدي', date:item.date, exp_date:item.date, note:item.note });
+      // ✅ FIX
+      const safeId = getSafeNextExpenseId();
+      expenses.push({ id: safeId, desc:item.desc, amt:+item.amt, cat:item.cat||'أخرى', method:item.method||'نقدي', date:item.date, exp_date:item.date, note:item.note });
+      nextExpId = getSafeNextExpenseId();
       added++;
     });
     renderExpenses();
   } else if (importTarget === 'renewals') {
     importParsedData.forEach(function(item){
       if (!item.name) return;
-      renewals.push({ id: nextRenId++, name:item.name, date:item.date, cat:item.cat||'أخرى', cost:item.cost, notes:item.notes });
+      // ✅ FIX
+      const safeId = getSafeNextRenewalId();
+      renewals.push({ id: safeId, name:item.name, date:item.date, cat:item.cat||'أخرى', cost:item.cost, notes:item.notes });
+      nextRenId = getSafeNextRenewalId();
       added++;
     });
     renderRenewals();
   } else if (importTarget === 'attendance') {
+    const attEntries = {};
     importParsedData.forEach(function(item){
       if (!item.date || !item.stuId || !item.status) return;
       const status = item.status === 'حاضر' ? 'present' : item.status === 'غائب' ? 'absent' : item.status === 'متأخر' ? 'late' : '';
       if (!status) return;
-      attLog[item.date + '_' + parseInt(item.stuId)] = status;
+      const key = item.date + '_' + parseInt(item.stuId);
+      attLog[key] = status;
+      attEntries[key] = status;
       added++;
     });
+    localStorage.setItem('kp_attlog_data', JSON.stringify(attLog));
+    if (Object.keys(attEntries).length) {
+      // ✅ حفظ فردي للحضور المستورد
+      await saveAttendanceEntriesRemoteAware(attEntries);
+    }
   }
-  autoSave();
+  // الاستيراد الجماعي للطلاب/السندات/المصاريف/التجديدات — نحفظ كل سجل فردياً
+  // حتى ما يصير تعارض مع موظف ثاني عم يعمل تعديل بنفس الوقت
+  persistCoreDataToLocalStorage();
+  if (importTarget === 'students') {
+    for (const stu of students.slice(-added)) {
+      await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:stu, keyField:'id', label:'الطالب'});
+    }
+  } else if (importTarget === 'payments' || importTarget === 'receipts') {
+    for (const p of payments.slice(-added)) {
+      await saveRecordRemoteAware({type:'payments', activeArrayName:'payments', record:p, keyField:'id', label:'السند'});
+    }
+  } else if (importTarget === 'expenses') {
+    for (const ex of expenses.slice(-added)) {
+      await saveRecordRemoteAware({type:'expenses', activeArrayName:'expenses', record:ex, keyField:'id', label:'المصروف'});
+    }
+  } else if (importTarget === 'renewals') {
+    for (const r of renewals.slice(-added)) {
+      await saveRecordRemoteAware({type:'renewals', activeArrayName:'renewals', record:r, keyField:'id', label:'التجديد'});
+    }
+  }
   renderDash();
   closeAll();
   alert('✅ تم استيراد ' + added + ' سجل بنجاح');
@@ -5279,15 +5864,17 @@ function applyLogin() {
     renderDash();
     updateNotifications();
     updateRegExpiryNotifications();
+    startFirebaseRealtimeListener();
     if (approvedAfterSync > 0) {
       setTimeout(function(){ alert('✅ تم اعتماد ' + approvedAfterSync + ' عملية ربط إضافية بعد مزامنة البيانات'); }, 500);
     }
   });
-  setInterval(checkForUpdates, 5000);
+  if (!firebasePollInterval) firebasePollInterval = setInterval(checkForUpdates, 8000);
   startAutoSync();
 }
 
 function doLogout() {
+  stopFirebaseRealtimeListener();
   currentUser = null;
   sessionStorage.removeItem('kp_session');
   document.getElementById('login-screen').style.display = 'flex';
@@ -5331,7 +5918,7 @@ function loadSettings() {
   updateLogoDisplay();
 }
 
-function saveNurseryInfo() {
+async function saveNurseryInfo() {
   nurserySettings.name = document.getElementById('set-name').value;
   nurserySettings.addr_ar = document.getElementById('set-addr-ar').value;
   nurserySettings.addr_en = document.getElementById('set-addr-en').value;
@@ -5339,16 +5926,18 @@ function saveNurseryInfo() {
   nurserySettings.email = document.getElementById('set-email').value;
   nurserySettings.logoDataUrl = logoDataUrl || '';
   localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
-  autoSave();
+  // ✅ حفظ فردي للإعدادات بس
+  await saveSettingsRemoteAware();
   alert('✅ تم حفظ معلومات الحضانة');
 }
 
-function saveRefundPolicy() {
+async function saveRefundPolicy() {
   nurserySettings.refund_ar = document.getElementById('set-refund-ar').value;
   nurserySettings.refund_en = document.getElementById('set-refund-en').value;
   nurserySettings.logoDataUrl = logoDataUrl || '';
   localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
-  autoSave();
+  // ✅ حفظ فردي
+  await saveSettingsRemoteAware();
   alert('✅ تم حفظ السياسة');
 }
 
@@ -5362,20 +5951,22 @@ function uploadLogo(input) {
     localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
     updateLogoDisplay();
     await saveLogoToFirebase();
-    autoSave();
+    // ✅ حفظ الإعدادات فردياً (الشعار له endpoint منفصل أصلاً)
+    await saveSettingsRemoteAware();
   };
   reader.readAsDataURL(file);
 }
 
-function removeLogo() {
+async function removeLogo() {
   if(!confirm('حذف الشعار؟')) return;
   logoDataUrl = '';
   nurserySettings.logoDataUrl = '';
   localStorage.removeItem('kp_logo');
   localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
   updateLogoDisplay();
-  saveLogoToFirebase();
-  autoSave();
+  await saveLogoToFirebase();
+  // ✅ حفظ فردي
+  await saveSettingsRemoteAware();
 }
 
 function updateLogoDisplay() {
@@ -5459,12 +6050,13 @@ function deleteUser(username) {
 // CLASSES_DATA = CLASSES (defined above)
 
 function saveClasses() {
+  // دالة قديمة — مش مستخدمة فعلياً بعد التحويل للحفظ الفردي
+  // كل عمليات الفصول الآن تستخدم saveClassRemoteAware/renameClassRemoteAware/permanentDeleteRemoteAware
   const nextClasses = JSON.parse(JSON.stringify(CLASSES_DATA || {}));
   Object.keys(CLASSES || {}).forEach(function(key){ if (!Object.prototype.hasOwnProperty.call(nextClasses, key)) delete CLASSES[key]; });
   Object.assign(CLASSES, nextClasses);
   CLASSES_DATA = CLASSES;
   localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
-  autoSave();
 }
 
 function renderAdminClasses() {
@@ -5480,29 +6072,47 @@ function renderAdminClasses() {
     </div>`).join('');
 }
 
-function openAddClass() {
+async function openAddClass() {
   const name = prompt('اسم الفصل الجديد:'); if(!name) return;
   if(CLASSES_DATA[name]) return alert('الفصل موجود مسبقاً');
   const emoji = prompt('ايموجي الفصل:', '🌟') || '🌟';
   const teacher = prompt('اسم المعلمة:') || '';
-  CLASSES_DATA[name] = {teacher, emoji};
-  saveClasses(); populateClassDropdowns(); renderAdminClasses();
+  const newClassData = {teacher, emoji};
+  CLASSES_DATA[name] = newClassData;
+  CLASSES[name] = newClassData;
+  CLASSES_DATA = CLASSES;
+  localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
+  populateClassDropdowns(); renderAdminClasses();
+  // ✅ حفظ فردي بدل autoSave كامل
+  await saveClassRemoteAware(name, newClassData);
   alert(`✅ تم إضافة فصل ${name}`);
 }
 
-function editClass(name) {
+async function editClass(name) {
   const c = CLASSES_DATA[name];
   const newName = prompt('اسم الفصل:', name);
   if(!newName) return;
   const newEmoji = prompt('الايموجي:', c.emoji) || c.emoji;
   const newTeacher = prompt('المعلمة:', c.teacher);
+  const newData = {teacher: newTeacher||'', emoji: newEmoji};
   if(newName !== name) {
     delete CLASSES_DATA[name];
-    CLASSES_DATA[newName] = {teacher: newTeacher||'', emoji: newEmoji};
+    delete CLASSES[name];
+    CLASSES_DATA[newName] = newData;
+    CLASSES[newName] = newData;
   } else {
-    CLASSES_DATA[name] = {teacher: newTeacher||'', emoji: newEmoji};
+    CLASSES_DATA[name] = newData;
+    CLASSES[name] = newData;
   }
-  saveClasses(); populateClassDropdowns(); renderAdminClasses();
+  CLASSES_DATA = CLASSES;
+  localStorage.setItem('kp_classes', JSON.stringify(CLASSES));
+  populateClassDropdowns(); renderAdminClasses();
+  // ✅ حفظ فردي
+  if (newName !== name) {
+    await renameClassRemoteAware(name, newName, newData);
+  } else {
+    await saveClassRemoteAware(newName, newData);
+  }
 }
 
 async function deleteClass(name) {
@@ -5959,8 +6569,8 @@ async function syncRegistrationRequestsFromFirebase() {
     if (incoming.length) {
       syncedFormRows = mergeFormRowsByTimestamp(syncedFormRows, incoming);
       localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-      // ثبّت الطلبات المباشرة داخل kp_form_rows أيضاً حتى تظهر لكل الأجهزة مثل طلبات Google Sheets.
-      if (typeof autoSave === 'function') autoSave();
+      // ✅ حفظ فردي للطلبات الواردة بدفعة واحدة
+      await saveFormRowsBatchRemoteAware(incoming);
       renderFormRequests();
       showSyncBadge('✅ تم تحميل طلبات التسجيل من رابط الأهالي');
     }
@@ -5991,6 +6601,11 @@ let syncTimeout = null;
 let lastSavedAt = '';
 let forceFullReplaceOnNextSync = false;
 let hasUnsavedChanges = false; // تتبع التغييرات غير المحفوظة
+let initialCloudReadFinished = false; // يمنع أي كتابة قبل أول محاولة قراءة من Firebase
+let firebaseStream = null;
+let firebaseStreamReady = false;
+let firebaseStreamReloadTimer = null;
+let firebasePollInterval = null;
 
 function getAllData() {
   const cleanSettings = Object.assign({}, nurserySettings);
@@ -6049,6 +6664,14 @@ function loadCoreDataFromLocalStorage() {
 function autoSave() {
   hasUnsavedChanges = true;
   persistCoreDataToLocalStorage();
+
+  // حماية مهمة: عند فتح النظام لا نكتب أي كاش محلي فوق Firebase قبل أن تكتمل أول قراءة.
+  // هذا يمنع رجوع بيانات قديمة أو اختفاء بيانات أضافها جهاز آخر.
+  if (!initialCloudReadFinished && forceFullReplaceOnNextSync !== true) {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ بانتظار قراءة Firebase قبل الحفظ السحابي');
+    return;
+  }
+
   if (isSyncing) {
     pendingSync = true;
     return;
@@ -6057,7 +6680,7 @@ function autoSave() {
   syncTimeout = setTimeout(function(){
     syncTimeout = null;
     pushToFirebase();
-  }, 300);
+  }, 700);
 }
 
 async function saveLogoToFirebaseSilent() {
@@ -6708,31 +7331,9 @@ async function pushToFirebase() {
     const mergedFormRows = Object.values(formRowsMap);
 
     // دمج سلة المحذوفات — احترم tombstones والمُستعادين
-    const localDeleted = typeof deletedStudents !== 'undefined' ? deletedStudents : [];
-    const remoteDeleted = (remoteData && Array.isArray(remoteData.deletedStudents)) ? remoteData.deletedStudents : [];
-    const deletedMap = {};
-    // ابدأ بالبيانات البعيدة
-    remoteDeleted.forEach(function(s){ if(s && s.id) deletedMap[s.id] = s; });
-    // البيانات المحلية تأخذ الأولوية (تشمل الحذف الجديد أو شطب الاستعادة)
-    localDeleted.forEach(function(s){ if(s && s.id) deletedMap[s.id] = s; });
-    // أي عنصر تمت استعادته محلياً (غير موجود في localDeleted لكن موجود في remoteDeleted) يُحذف
-    // أي عنصر tombstone يجب ألا يكون في deletedStudents أيضاً (حذف نهائي)
-    const finalTsStudents = mergedTombstones.students || [];
-    const mergedDeleted = Object.values(deletedMap).filter(function(s){
-      // إذا لم يعد في القائمة المحلية وكان قد استُعيد (ليس في tombstones) فلا نُدرجه
-      const inLocal = localDeleted.some(function(x){ return x && normKey(x.id) === normKey(s.id); });
-      const inTombstone = hasKey(finalTsStudents, s.id);
-      // إذا كان في tombstone (حذف نهائي) لا يظهر في سلة المحذوفات
-      if (inTombstone) return false;
-      // إذا لم يكن في البيانات المحلية وقد جاء فقط من Firebase، تحقق أنه لم يُستعد محلياً
-      // (أي أن students المحلي يحتوي عليه — إذاً قد استُعيد)
-      if (!inLocal) {
-        const restoredLocally = (typeof students !== 'undefined') && students.some(function(x){ return x && normKey(x.id) === normKey(s.id); });
-        if (restoredLocally) return false;
-      }
-      return true;
-    });
-
+    // ✅ FIX: نقل تعريف mergeDeletedByKey للأعلى واستخدامه للطلاب أيضاً
+    // البق السابق: كانت دالة دمج الطلاب inline تشطب أي طالب فيه tombstone حتى لو كان لسا بالسلة محلياً
+    // (لأن delStudent يضيف tombstone عند النقل للسلة) — هذا كان يفرّغ السلة عند أي مزامنة لاحقة
     const mergeDeletedByKey = function(localArr, remoteArr, keyField, tombstoneArr, activeArr, restoredArr) {
       const localDeletedKeys = new Set((Array.isArray(localArr) ? localArr : []).map(function(item){ return item && normKey(item[keyField]); }).filter(function(v){ return v !== undefined && v !== null && v !== ''; }));
       const restoredSet = new Set((Array.isArray(restoredArr) ? restoredArr : []).map(function(x){ return normKey(x); }));
@@ -6755,6 +7356,14 @@ async function pushToFirebase() {
         return true;
       });
     };
+    const mergedDeleted = mergeDeletedByKey(
+      typeof deletedStudents !== 'undefined' ? deletedStudents : [],
+      remoteData && remoteData.deletedStudents,
+      'id',
+      mergedTombstones.students,
+      mergedStudents,
+      mergedRestoredKeys.students
+    );
     const mergedDeletedPayments = mergeDeletedByKey(typeof deletedPayments !== 'undefined' ? deletedPayments : [], remoteData && remoteData.deletedPayments, 'id', mergedTombstones.payments, mergedPayments, mergedRestoredKeys.payments);
     const mergedDeletedExpenses = mergeDeletedByKey(typeof deletedExpenses !== 'undefined' ? deletedExpenses : [], remoteData && remoteData.deletedExpenses, 'id', mergedTombstones.expenses, mergedExpenses, mergedRestoredKeys.expenses);
     const mergedDeletedRenewals = mergeDeletedByKey(typeof deletedRenewals !== 'undefined' ? deletedRenewals : [], remoteData && remoteData.deletedRenewals, 'id', mergedTombstones.renewals, mergedRenewals, mergedRestoredKeys.renewals);
@@ -7068,6 +7677,43 @@ async function loadFromFirebase() {
       deletedClasses = mergeDeletedClasses(deletedClasses, data.deletedClasses, tombstones.classes || [], CLASSES, restoredKeys.classes);
       localStorage.setItem('kp_deleted_classes', JSON.stringify(deletedClasses));
     }
+
+    // ✅ FIX: نشر "الحذف النهائي" بين الأجهزة
+    // إذا كان السجل عندو tombstone من remote، ومش موجود في remote.deletedXxx،
+    // وكمان مش في restoredKeys → معناه إنو انحذف نهائياً من جهاز تاني،
+    // فلازم نشيلو من سلة المحذوفات المحلية كمان.
+    function purgePermanentlyDeletedFromLocalTrash(localTrashArr, remoteTrashArr, remoteTombstones, restoredArr, keyField) {
+      if (!Array.isArray(localTrashArr) || localTrashArr.length === 0) return localTrashArr || [];
+      const remoteTrashKeys = new Set((Array.isArray(remoteTrashArr) ? remoteTrashArr : [])
+        .map(function(item){ return item && item[keyField] != null ? normKey(item[keyField]) : null; })
+        .filter(function(v){ return v !== null; }));
+      const remoteTsKeys = new Set((Array.isArray(remoteTombstones) ? remoteTombstones : [])
+        .map(function(x){ return normKey(x); }));
+      const restoredSet = new Set((Array.isArray(restoredArr) ? restoredArr : [])
+        .map(function(x){ return normKey(x); }));
+      return localTrashArr.filter(function(item){
+        if (!item || item[keyField] == null) return true;
+        const key = normKey(item[keyField]);
+        if (restoredSet.has(key)) return false; // مستعاد — ما يضل بالسلة
+        // محذوف نهائياً من remote: tombstone موجود + مش في remote.deletedXxx
+        if (remoteTsKeys.has(key) && !remoteTrashKeys.has(key)) return false;
+        return true;
+      });
+    }
+    if (data && data.tombstones) {
+      const remoteTs = data.tombstones || {};
+      deletedStudents = purgePermanentlyDeletedFromLocalTrash(deletedStudents, data.deletedStudents, remoteTs.students, restoredKeys.students, 'id');
+      deletedPayments = purgePermanentlyDeletedFromLocalTrash(deletedPayments, data.deletedPayments, remoteTs.payments, restoredKeys.payments, 'id');
+      deletedExpenses = purgePermanentlyDeletedFromLocalTrash(deletedExpenses, data.deletedExpenses, remoteTs.expenses, restoredKeys.expenses, 'id');
+      deletedRenewals = purgePermanentlyDeletedFromLocalTrash(deletedRenewals, data.deletedRenewals, remoteTs.renewals, restoredKeys.renewals, 'id');
+      deletedClasses  = purgePermanentlyDeletedFromLocalTrash(deletedClasses,  data.deletedClasses,  remoteTs.classes,  restoredKeys.classes,  'key');
+      localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents));
+      localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments));
+      localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
+      localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals));
+      localStorage.setItem('kp_deleted_classes',  JSON.stringify(deletedClasses));
+    }
+
     applyTombstones();
     cleanupDeletedBuckets();
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
@@ -7097,10 +7743,63 @@ async function loadFromFirebase() {
     console.log('Firebase load failed:', msg);
     sanitizeCoreData();
     try { refreshNextIds(); renderDash(); if (typeof renderStudents==='function') renderStudents(); if (typeof renderPayments==='function') renderPayments(); if (typeof renderExpenses==='function') renderExpenses(); if (typeof renderReceipts==='function') renderReceipts(); if (typeof renderAtt==='function') renderAtt(); } catch(_) {}
+  } finally {
+    initialCloudReadFinished = true;
   }
 }
 
 let syncPollCounter = 0;
+
+function startFirebaseRealtimeListener() {
+  // Firebase Realtime Database REST streaming: بديل آمن عن onSnapshot بدون تغيير SDK.
+  // عند أي تغيير من جهاز آخر، نعيد القراءة ونرسم الواجهات بدون ضغط Refresh يدوي.
+  if (firebaseStream || !currentUser || typeof EventSource === 'undefined') return;
+  try {
+    firebaseStream = new EventSource(FB_URL + '.json');
+    firebaseStream.addEventListener('open', function(){ firebaseStreamReady = true; });
+    firebaseStream.addEventListener('put', handleFirebaseStreamEvent);
+    firebaseStream.addEventListener('patch', handleFirebaseStreamEvent);
+    firebaseStream.onerror = function(){
+      firebaseStreamReady = false;
+      try { firebaseStream.close(); } catch(_) {}
+      firebaseStream = null;
+      if (currentUser) setTimeout(startFirebaseRealtimeListener, 10000);
+    };
+  } catch(e) {
+    firebaseStream = null;
+    firebaseStreamReady = false;
+  }
+}
+
+function stopFirebaseRealtimeListener() {
+  try { if (firebaseStream) firebaseStream.close(); } catch(_) {}
+  firebaseStream = null;
+  firebaseStreamReady = false;
+  clearTimeout(firebaseStreamReloadTimer);
+}
+
+function handleFirebaseStreamEvent(evt) {
+  if (!currentUser || isSyncing || hasUnsavedChanges || syncTimeout) return;
+  let payload = null;
+  try { payload = JSON.parse(evt.data || '{}'); } catch(_) { payload = null; }
+  if (!payload) return;
+  const path = payload.path || '';
+  const data = payload.data;
+  let incomingSavedAt = '';
+  if (path === '/savedAt' && data) incomingSavedAt = data;
+  else if ((path === '/' || path === '') && data && data.savedAt) incomingSavedAt = data.savedAt;
+  if (incomingSavedAt && incomingSavedAt === lastSavedAt) return;
+  clearTimeout(firebaseStreamReloadTimer);
+  firebaseStreamReloadTimer = setTimeout(async function(){
+    if (!currentUser || isSyncing || hasUnsavedChanges || syncTimeout) return;
+    try {
+      await loadFromFirebase();
+      refreshAllViewsAfterSync();
+      if (incomingSavedAt) lastSavedAt = incomingSavedAt;
+      showSyncBadge('🔄 تحديث مباشر من Firebase');
+    } catch(e) {}
+  }, 600);
+}
 
 async function manualRefreshFromFirebase() {
   showSyncBadge('⏳ جاري التحديث...');
@@ -7115,6 +7814,7 @@ async function manualRefreshFromFirebase() {
 }
 
 async function checkForUpdates() {
+  if (firebaseStreamReady) return;
   if (isSyncing || hasUnsavedChanges || syncTimeout) return;
   try {
     syncPollCounter++;
@@ -7179,6 +7879,7 @@ async function syncFromGoogleSheets() {
     const rows = table.rows || [];
     const cols = table.cols || [];
     let added = 0;
+    var changedRows = []; // ✅ نتتبع الصفوف المحدثة للحفظ الفردي
 
     function normKey(s) {
       return String(s || '')
@@ -7309,14 +8010,19 @@ async function syncFromGoogleSheets() {
           approvedAction: prev.approvedAction || '',
           undoData: prev.undoData || null
         });
+        changedRows.push(syncedFormRows[existingIndex]);
       } else {
         syncedFormRows.push(mappedRow);
+        changedRows.push(mappedRow);
         added++;
       }
     });
 
     localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-    autoSave();
+    // ✅ حفظ فردي للطلبات الجديدة/المعدلة بدفعة واحدة (بدل autoSave كامل)
+    if (changedRows.length) {
+      await saveFormRowsBatchRemoteAware(changedRows);
+    }
     var el = document.getElementById('forms-last-sync');
     if (el) el.textContent = new Date().toLocaleTimeString('ar');
     if (added > 0) showSyncBadge('✅ ' + added + ' طلب تسجيل جديد من Google Sheets');
@@ -7551,9 +8257,16 @@ function findPotentialStudentMatches(r) {
   }).sort(function(a,b){ return b.score - a.score; });
 }
 
-function persistFormRowsAndSync() {
+async function persistFormRowsAndSync(formRow) {
+  // ✅ حفظ فردي — إذا تم تمرير formRow بنحفظه فردياً
+  // إذا ما تم تمرير شي بنحفظ كل المصفوفة (للتراجع عن قرارات قديمة)
   localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-  autoSave();
+  if (formRow) {
+    await saveFormRowRemoteAware(formRow);
+  } else {
+    // حالة fallback — نادرة جداً
+    autoSave();
+  }
 }
 
 function setFormRowDecision(r, status, meta) {
@@ -7562,7 +8275,7 @@ function setFormRowDecision(r, status, meta) {
   r.decisionAt = new Date().toISOString();
   r.rowUpdatedAt = r.decisionAt;
   Object.keys(meta).forEach(function(k){ r[k] = meta[k]; });
-  persistFormRowsAndSync();
+  persistFormRowsAndSync(r);
   if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
     archiveFirebaseRegistrationRequest(r, status);
   }
@@ -7760,8 +8473,10 @@ function openDuplicateDecisionModal(r, matches) {
 }
 
 function performApproveNew(r) {
-  var newStudent = buildStudentFromFormRow(r);
+  // ✅ FIX: استخدم رقم آمن لا يتعارض مع المحذوفين
+  var newStudent = buildStudentFromFormRow(r, getSafeNextStudentId());
   students.push(newStudent);
+  nextStuId = getSafeNextStudentId();
   setFormRowDecision(r, 'approved', {
     approvedStudentId: newStudent.id,
     approvedAction: 'new',
@@ -7818,7 +8533,7 @@ function undoFormDecision(ts) {
   r.approvedStudentId = null;
   r.approvedAction = '';
   r.undoData = null;
-  persistFormRowsAndSync();
+  persistFormRowsAndSync(r);
   refreshAllAfterFormDecision();
   showSyncBadge('↩️ تم التراجع عن القرار');
 }
@@ -7997,7 +8712,7 @@ function openEditRenewal(id) {
   document.getElementById('mo-renewal').classList.add('on');
 }
 
-function saveRenewal() {
+async function saveRenewal() {
   const name  = document.getElementById('ren-nm').value.trim();
   const date  = document.getElementById('ren-dt').value;
   const cost  = document.getElementById('ren-cost').value;
@@ -8005,15 +8720,27 @@ function saveRenewal() {
   const notes = document.getElementById('ren-notes-txt').value.trim();
   if (!name) { alert('يرجى إدخال الاسم'); return; }
 
+  let savedRenewal = null;
   if (editingRenId) {
     const r = renewals.find(x => x.id === editingRenId);
-    if (r) { r.name = name; r.date = date; r.cost = cost; r.cat = cat; r.notes = notes; }
+    if (r) {
+      r.name = name; r.date = date; r.cost = cost; r.cat = cat; r.notes = notes;
+      savedRenewal = r;
+    }
   } else {
-    renewals.push({ id: nextRenId++, name, date, cost, cat, notes });
+    // ✅ FIX: استخدم رقم آمن مع فحص remote حتى ما يصير تعارض مع تجديد محذوف
+    const newId = await getSafeNextRenewalIdRemoteAware();
+    nextRenId = newId + 1;
+    savedRenewal = { id: newId, name, date, cost, cat, notes };
+    renewals.push(savedRenewal);
   }
-  autoSave();
+  persistCoreDataToLocalStorage();
   closeAll();
   renderRenewals();
+  // ✅ حفظ فردي
+  if (savedRenewal) {
+    await saveRecordRemoteAware({type:'renewals', activeArrayName:'renewals', record:savedRenewal, keyField:'id', label:'التجديد'});
+  }
 }
 
 async function deleteRenewal() {
