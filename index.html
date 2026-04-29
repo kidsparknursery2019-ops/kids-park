@@ -906,6 +906,91 @@ textarea{resize:vertical;min-height:70px}
 body.kp-admin .admin-only-mistral{display:flex!important}
 body.kp-admin .email-hint.admin-only-mistral{display:block!important}
 
+
+/* ✉️ تخطيط البريد المحسن: المعاينة يسار، قائمة الإيميلات يمين */
+.email-main-layout{
+  display:grid;
+  grid-template-columns:minmax(360px,.95fr) minmax(430px,1.25fr);
+  gap:18px;
+  align-items:stretch;
+  direction:ltr;
+}
+.email-main-layout > *{direction:rtl}
+.email-preview-panel{
+  grid-column:1;
+  min-height:580px;
+  display:flex;
+  flex-direction:column;
+  position:sticky;
+  top:86px;
+  border-color:#bfe6cf;
+  background:linear-gradient(180deg,#ffffff 0%,#fbfdfb 100%);
+}
+.email-list-panel{
+  grid-column:2;
+  min-height:580px;
+  display:flex;
+  flex-direction:column;
+  background:linear-gradient(180deg,#ffffff 0%,#f8fcfa 100%);
+}
+.email-list-panel .ct,.email-preview-panel .ct{
+  padding-bottom:10px;
+  border-bottom:2px dashed var(--border);
+  margin-bottom:12px;
+}
+.email-ms-grid{
+  max-height:610px;
+  overflow:auto;
+  padding-left:4px;
+  padding-right:2px;
+}
+.email-inbox-item{
+  border:1.5px solid #e8f3ed;
+  border-right:5px solid transparent;
+  border-radius:16px;
+  padding:12px 13px;
+  margin-bottom:9px;
+  background:#fff;
+  box-shadow:0 2px 10px rgba(46,139,84,.05);
+}
+.email-inbox-item:hover{
+  border-color:var(--g3);
+  border-right-color:var(--g2);
+  background:linear-gradient(135deg,#fff 0%,#f3fbf6 100%);
+}
+.email-inbox-subject{font-size:14px;line-height:1.35}
+.email-inbox-meta{margin-top:5px}
+.email-preview{
+  white-space:pre-wrap;
+  flex:1;
+  min-height:360px;
+  max-height:560px;
+  overflow:auto;
+  border:1.5px solid #e8f3ed;
+  border-radius:16px;
+  background:#fff;
+  padding:16px;
+  font-size:13.5px;
+  line-height:1.85;
+  direction:rtl;
+  box-shadow:inset 0 1px 8px rgba(46,139,84,.04);
+}
+.email-preview-panel #email-preview-actions{
+  background:#f8fdfa;
+  border:1.5px solid #eef4ee;
+  border-radius:14px;
+  padding:8px;
+}
+.email-attachment-list,.email-attachments-view{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.email-attach-chip{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--border);background:#fbfdfb;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800;color:var(--muted)}
+.email-attach-chip span,.email-attach-chip small{font-weight:700;color:var(--muted)}
+@media(max-width:980px){
+  .email-main-layout{grid-template-columns:1fr;direction:rtl}
+  .email-preview-panel,.email-list-panel{grid-column:auto;position:static;min-height:auto}
+  .email-preview{max-height:340px;min-height:220px}
+  .email-ms-grid{max-height:420px}
+}
+
 </style>
 </head>
 <body>
@@ -1082,16 +1167,88 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
 
     <!-- EMAIL CENTER -->
     <div class="pg" id="pg-email">
-      <div class="pt">✉️ مركز البريد <span id="graph-status-pill" class="graph-pill">غير مربوط</span><button class="btn btn-g" onclick="connectOutlookGraph()">🔗 ربط Outlook</button><button class="btn btn-b" onclick="loadOutlookInbox()">📥 تحديث الوارد</button><button class="btn btn-out" onclick="saveEmailSettings()">💾 حفظ الإعدادات</button></div>
-      <div class="email-grid">
-        <div class="email-panel"><div class="ct">إنشاء رسالة بريد</div><div class="fg">
-          <div class="fl"><label>إلى</label><input id="email-to" type="email" placeholder="parent@example.com"></div>
-          <div class="fl"><label>نسخة CC</label><input id="email-cc" type="email" placeholder="اختياري"></div>
+      <div class="pt">✉️ مركز البريد <span id="graph-status-pill" class="graph-pill">غير مربوط</span>
+        <button class="btn btn-g" onclick="connectOutlookGraph()">🔗 ربط Outlook</button>
+        <button class="btn btn-b" onclick="loadOutlookFolder()">🔄 تحديث المجلد</button>
+        <button class="btn btn-y" onclick="openEmailComposeModal()">➕ إنشاء رسالة</button>
+        <button class="btn btn-out" onclick="saveEmailSettings()">💾 حفظ الإعدادات</button>
+      </div>
+
+      <div class="email-main-layout">
+        <div class="email-panel email-list-panel">
+          <div class="ct">صندوق البريد</div>
+          <div class="email-toolbar">
+            <button id="email-tab-inbox" class="ftab on" onclick="switchEmailFolder('inbox')">📥 الوارد</button>
+            <button id="email-tab-sentitems" class="ftab" onclick="switchEmailFolder('sentitems')">📤 المرسلة</button>
+            <button id="email-tab-junkemail" class="ftab" onclick="switchEmailFolder('junkemail')">🚫 Spam / Junk</button>
+            <button class="btn btn-out btn-sm" onclick="disconnectOutlookGraph()">فصل الربط</button>
+          </div>
+          <div id="email-inbox" class="email-ms-grid"><div class="email-hint">اضغطي “ربط Outlook” ثم “تحديث المجلد”.</div></div>
+        </div>
+
+        <div class="email-panel email-preview-panel">
+          <div class="ct">معاينة الرسالة</div>
+          <div id="email-preview-actions" class="email-toolbar" style="display:none">
+            <button class="btn btn-g btn-sm" onclick="replyToSelectedEmail()">↩️ رد</button>
+            <button class="btn btn-b btn-sm" onclick="replyAllToSelectedEmail()">↪️ رد للجميع</button>
+            <button class="btn btn-out btn-sm" onclick="copySelectedEmailText()">📋 نسخ النص</button>
+          </div>
+          <div id="email-preview" class="email-preview">لا توجد رسالة محددة.</div>
+          <div id="email-attachments-view" class="email-attachments-view"></div>
+        </div>
+      </div>
+
+      <div class="email-grid" style="margin-top:16px">
+        <div class="email-panel">
+          <div class="ct">إعدادات البريد والذكاء الاصطناعي</div>
+          <div class="fg" style="grid-template-columns:1fr">
+            <div class="fl"><label>بريد الحضانة Outlook</label><input id="email-from" type="email" placeholder="kidsparknursery@outlook.com"></div>
+            <div class="fl admin-only-mistral"><label>Microsoft Client ID للأدمن فقط</label><input id="ms-client-id" dir="ltr" placeholder="Application (client) ID من Azure"></div>
+            <div class="fl admin-only-mistral"><label>Microsoft Tenant</label><input id="ms-tenant" dir="ltr" value="common" placeholder="common أو رقم Tenant ID"></div>
+            <div class="fl admin-only-mistral"><label>Mistral API Key</label><input id="mistral-api-key" type="password" placeholder="ضعي المفتاح هنا — يبقى على نفس الجهاز فقط"></div>
+            <div class="fl admin-only-mistral"><label>نموذج Mistral</label><input id="mistral-model" value="mistral-small-latest"></div>
+          </div>
+          <div class="email-toolbar admin-only-mistral" style="margin-top:12px">
+            <button class="btn btn-out btn-sm" onclick="testMistralSettings()">🧪 اختبار الذكاء</button>
+            <button class="btn btn-out btn-sm" onclick="openMistralConsole()">🔑 فتح Mistral</button>
+          </div>
+          <div class="email-hint admin-only-mistral">للوارد الحقيقي: أنشئي App في Azure، ضعي Client ID، واجعلي Redirect URI هو نفس رابط فتح النظام. الصلاحيات المطلوبة: User.Read وMail.Read وMail.Send.</div>
+        </div>
+        <div class="email-panel">
+          <div class="ct">آخر الرسائل المحفوظة</div>
+          <div id="email-history"></div>
+        </div>
+      </div>
+
+      <div id="email-status" class="email-status"></div>
+      <div class="email-hint">عند ربط Outlook يتم عرض الوارد والمرسلة وSpam والإرسال من داخل النظام عبر Microsoft Graph. إذا لم يتم الربط، يستخدم النظام فتح Outlook Web كخطة بديلة.</div>
+    </div>
+
+    <!-- EMAIL COMPOSE MODAL -->
+    <div class="ov" id="email-compose-ov">
+      <div class="mo mo-lg">
+        <div class="mot">✉️ <span id="email-compose-title">إنشاء رسالة بريد</span></div>
+        <div class="fg">
+          <div class="fl"><label>إلى</label><input id="email-to" type="text" dir="ltr" placeholder="parent@example.com"></div>
+          <div class="fl"><label>نسخة CC</label><input id="email-cc" type="text" dir="ltr" placeholder="اختياري"></div>
+          <div class="fl"><label>نسخة مخفية BCC</label><input id="email-bcc" type="text" dir="ltr" placeholder="اختياري"></div>
+          <div class="fl"><label>المرفقات</label><input id="email-attachments" type="file" multiple onchange="renderSelectedAttachments()"></div>
           <div class="fl fgr"><label>الموضوع</label><input id="email-subject" placeholder="موضوع الرسالة"></div>
           <div class="fl fgr"><label>نص الرسالة</label><textarea id="email-body" rows="10" placeholder="اكتبي نص الرسالة هنا..."></textarea></div>
-        </div><div class="email-toolbar" style="margin-top:12px"><button class="btn btn-g" onclick="sendEmailSmart()">📨 إرسال من داخل النظام</button><button class="btn btn-y" onclick="improveEmailWithMistral()">✨ تحسين النص بالذكاء الاصطناعي</button><button class="btn btn-out" onclick="copyEmailBody()">📋 نسخ النص</button><button class="btn btn-r" onclick="clearEmailForm()">🧹 تفريغ</button></div><div id="email-status" class="email-status"></div><div class="email-hint">عند ربط Outlook يتم الإرسال وقراءة الوارد من داخل النظام عبر Microsoft Graph. إذا لم يتم الربط، يستخدم النظام فتح Outlook Web كخطة بديلة.</div></div>
-        <div class="email-panel"><div class="ct">الوارد داخل النظام <button class="btn btn-out btn-sm" onclick="disconnectOutlookGraph()">فصل الربط</button></div><div id="email-inbox" class="email-ms-grid"><div class="email-hint">اضغطي “ربط Outlook” ثم “تحديث الوارد”.</div></div><div class="ct" style="margin-top:16px">معاينة الرسالة</div><div id="email-preview" class="email-preview">لا توجد رسالة محددة.</div></div>
-        <div class="email-panel"><div class="ct">إعدادات البريد والذكاء الاصطناعي</div><div class="fg" style="grid-template-columns:1fr"><div class="fl"><label>بريد الحضانة Outlook</label><input id="email-from" type="email" placeholder="kidsparknursery@outlook.com"></div><div class="fl admin-only-mistral"><label>Microsoft Client ID للأدمن فقط</label><input id="ms-client-id" dir="ltr" placeholder="Application (client) ID من Azure"></div><div class="fl admin-only-mistral"><label>Microsoft Tenant</label><input id="ms-tenant" dir="ltr" value="common" placeholder="common أو رقم Tenant ID"></div><div class="fl admin-only-mistral"><label>Mistral API Key</label><input id="mistral-api-key" type="password" placeholder="ضعي المفتاح هنا — يبقى على نفس الجهاز فقط"></div><div class="fl admin-only-mistral"><label>نموذج Mistral</label><input id="mistral-model" value="mistral-small-latest"></div></div><div class="email-toolbar admin-only-mistral" style="margin-top:12px"><button class="btn btn-out btn-sm" onclick="testMistralSettings()">🧪 اختبار الذكاء</button><button class="btn btn-out btn-sm" onclick="openMistralConsole()">🔑 فتح Mistral</button></div><div class="email-hint admin-only-mistral">للوارد الحقيقي: أنشئي App في Azure، ضعي Client ID، واجعلي Redirect URI هو نفس رابط فتح النظام. الصلاحيات المطلوبة: User.Read وMail.Read وMail.Send.</div><div class="ct" style="margin-top:16px">آخر الرسائل المحفوظة</div><div id="email-history"></div></div>
+        </div>
+        <div id="email-attachment-list" class="email-attachment-list"></div>
+        <div class="email-toolbar" style="margin-top:12px">
+          <button class="btn btn-g" onclick="sendEmailSmart()">📨 إرسال من داخل النظام</button>
+          <button class="btn btn-y" onclick="improveEmailWithMistral()">✨ تحسين النص بالذكاء الاصطناعي</button>
+          <button class="btn btn-b" onclick="previewOutgoingEmail()">👁️ معاينة قبل الإرسال</button>
+          <button class="btn btn-out" onclick="copyEmailBody()">📋 نسخ النص</button>
+          <button class="btn btn-r" onclick="clearEmailForm()">🧹 تفريغ</button>
+        </div>
+        <div id="email-compose-status" class="email-status"></div>
+        <div id="email-send-preview" class="email-preview" style="display:none;margin-top:10px"></div>
+        <div class="mof">
+          <button class="btn btn-out" onclick="closeEmailComposeModal()">إغلاق</button>
+        </div>
       </div>
     </div>
 
@@ -1755,17 +1912,24 @@ let CLASSES = JSON.parse(localStorage.getItem('kp_classes') || 'null') || {
 };
 let CLASSES_DATA = CLASSES;
 
-const SYRIA_NEW_FLAG_SVG = '<svg class="nat-flag-svg" viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" aria-label="علم سوريا"><rect width="30" height="6.666" y="0" fill="#007A3D"/><rect width="30" height="6.666" y="6.666" fill="#fff"/><rect width="30" height="6.668" y="13.332" fill="#000"/><g fill="#CE1126" transform="translate(0 .15) scale(.75)"><path d="M8 8.2l.58 1.78h1.87l-1.51 1.1.58 1.78L8 11.76l-1.52 1.1.58-1.78-1.51-1.1h1.87z"/><path d="M20 8.2l.58 1.78h1.87l-1.51 1.1.58 1.78L20 11.76l-1.52 1.1.58-1.78-1.51-1.1h1.87z"/><path d="M32 8.2l.58 1.78h1.87l-1.51 1.1.58 1.78L32 11.76l-1.52 1.1.58-1.78-1.51-1.1h1.87z"/></g></svg>';
+// Nationality display: keep the original emoji-based display for all countries,
+// and override Syria only with the new Syrian flag drawn as inline SVG.
+const SYRIA_NEW_FLAG_SVG = '<svg class="nat-flag-svg" viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" aria-label="علم سوريا الجديد"><rect width="30" height="6.666" y="0" fill="#007A3D"/><rect width="30" height="6.666" y="6.666" fill="#fff"/><rect width="30" height="6.668" y="13.332" fill="#000"/><g fill="#CE1126"><path d="M7.5 8.1l.47 1.44h1.52l-1.23.89.47 1.44-1.23-.89-1.23.89.47-1.44-1.23-.89h1.52z"/><path d="M15 8.1l.47 1.44h1.52l-1.23.89.47 1.44-1.23-.89-1.23.89.47-1.44-1.23-.89h1.52z"/><path d="M22.5 8.1l.47 1.44h1.52l-1.23.89.47 1.44-1.23-.89-1.23.89.47-1.44-1.23-.89h1.52z"/></g></svg>';
 const NATIONALITIES_SHORT = {
-  'الإمارات':'🇦🇪','السعودية':'🇸🇦','سوريا':SYRIA_NEW_FLAG_SVG,'مصر':'🇪🇬','الأردن':'🇯🇴',
+  'الإمارات':'🇦🇪','السعودية':'🇸🇦','مصر':'🇪🇬','الأردن':'🇯🇴',
   'لبنان':'🇱🇧','فلسطين':'🇵🇸','العراق':'🇮🇶','تونس':'🇹🇳','الجزائر':'🇩🇿',
   'السودان':'🇸🇩','المغرب':'🇲🇦','فرنسا':'🇫🇷','النمسا':'🇦🇹','أوكرانيا':'🇺🇦',
-  'أثيوبيا':'🇪🇹','الأردن':'🇯🇴',
+  'أثيوبيا':'🇪🇹','اثيوبيا':'🇪🇹','إثيوبيا':'🇪🇹'
 };
+function isSyrianNationality(nat){
+  const v = String(nat || '').trim().replace(/[ـ\s]/g,'');
+  return ['سوريا','سورية','سوري','السورية','الجمهوريةالعربيةالسورية'].includes(v);
+}
 function formatNationalityWithFlag(nat){
   nat = String(nat || '').trim();
   if(!nat) return '—';
-  return '<span class="nat-with-flag">' + (NATIONALITIES_SHORT[nat] || '') + '<span>' + escapeHtml(nat) + '</span></span>';
+  const flag = isSyrianNationality(nat) ? SYRIA_NEW_FLAG_SVG : (NATIONALITIES_SHORT[nat] || '');
+  return '<span class="nat-with-flag">' + flag + '<span>' + escapeHtml(nat) + '</span></span>';
 }
 
 var attLog = {};
@@ -9826,19 +9990,24 @@ document.addEventListener('click', function(e) {
 
 // OUTLOOK EMAIL CENTER + MISTRAL TEXT IMPROVER — safe local add-on
 const EMAIL_SETTINGS_KEY='kp_email_settings_v1', EMAIL_HISTORY_KEY='kp_email_history_v1';
-let graphMsalApp=null, graphAccount=null, graphInbox=[];
+const EMBEDDED_MISTRAL_KEY='wr5qiFDypdr7RwmKBAhRT4TQoleKg4OW';
+let graphMsalApp=null, graphAccount=null, graphInbox=[], currentEmailFolder='inbox', selectedGraphMessage=null, selectedGraphMessageFull=null;
 const GRAPH_SCOPES=['User.Read','Mail.Read','Mail.Send'];
+const EMAIL_FOLDER_CONFIG={
+  inbox:{id:'inbox',label:'الوارد',dateField:'receivedDateTime'},
+  sentitems:{id:'sentitems',label:'المرسلة',dateField:'sentDateTime'},
+  junkemail:{id:'junkemail',label:'Spam / Junk',dateField:'receivedDateTime'}
+};
 function getEmailSettings(){
   let local={};
   try{local=JSON.parse(localStorage.getItem(EMAIL_SETTINGS_KEY)||'{}')||{}}catch(e){local={}}
   const remote=(nurserySettings&&nurserySettings.emailSettings&&typeof nurserySettings.emailSettings==='object')?nurserySettings.emailSettings:{};
-  // إعدادات Microsoft العامة تأتي أولاً من Firebase، أما المفاتيح السرية تبقى محلية على جهاز الأدمن فقط.
   return Object.assign({}, remote, local, {
     from: local.from || remote.from || (nurserySettings&&nurserySettings.email) || 'kidsparknursery@outlook.com',
     msClientId: local.msClientId || remote.msClientId || '',
     msTenant: local.msTenant || remote.msTenant || 'common',
     model: local.model || remote.model || 'mistral-small-latest',
-    mistralKey: local.mistralKey || ''
+    mistralKey: local.mistralKey || EMBEDDED_MISTRAL_KEY || ''
   });
 }
 function getPublicEmailSettings(){
@@ -9867,17 +10036,20 @@ async function saveEmailSettingsRemoteAware(publicSettings){
     return false;
   }
 }
-function setEmailStatus(msg,type){const el=document.getElementById('email-status');if(!el)return;el.textContent=msg||'';el.className='email-status '+(type||'')}
+function setEmailStatus(msg,type){
+  const el=document.getElementById('email-status');
+  const el2=document.getElementById('email-compose-status');
+  [el,el2].forEach(function(x){if(!x)return;x.textContent=msg||'';x.className='email-status '+(type||'')});
+}
 function updateGraphStatus(){const pill=document.getElementById('graph-status-pill');if(!pill)return;const st=getEmailSettings();const ok=!!(graphAccount||sessionStorage.getItem('kp_graph_connected'));if(!st.msClientId){pill.className='graph-pill err';pill.textContent='Client ID غير مضبوط'}else if(ok){pill.className='graph-pill connected';pill.textContent='Outlook مربوط'}else{pill.className='graph-pill';pill.textContent='Outlook غير مربوط'}}
 function initGraphMail(){const st=getEmailSettings();updateGraphStatus();if(!st.msClientId||!window.msal)return null;try{const redirect=(location.origin+location.pathname).replace(/index\.html$/,'');graphMsalApp=new msal.PublicClientApplication({auth:{clientId:st.msClientId,authority:'https://login.microsoftonline.com/'+(st.msTenant||'common'),redirectUri:redirect},cache:{cacheLocation:'sessionStorage',storeAuthStateInCookie:true}});const accounts=graphMsalApp.getAllAccounts();if(accounts&&accounts.length)graphAccount=accounts[0];updateGraphStatus();return graphMsalApp}catch(e){setEmailStatus('تعذر تجهيز ربط Microsoft: '+(e.message||e),'err');return null}}
-function renderEmailCenter(){const st=getEmailSettings();const from=document.getElementById('email-from'),key=document.getElementById('mistral-api-key'),model=document.getElementById('mistral-model'),cid=document.getElementById('ms-client-id'),tenant=document.getElementById('ms-tenant');if(from)from.value=st.from||(nurserySettings&&nurserySettings.email)||'kidsparknursery@outlook.com';if(key)key.value=st.mistralKey||'';if(model)model.value=st.model||'mistral-small-latest';if(cid)cid.value=st.msClientId||'';if(tenant)tenant.value=st.msTenant||'common';initGraphMail();renderEmailHistory();renderGraphInbox()}
+function renderEmailCenter(){const st=getEmailSettings();const from=document.getElementById('email-from'),key=document.getElementById('mistral-api-key'),model=document.getElementById('mistral-model'),cid=document.getElementById('ms-client-id'),tenant=document.getElementById('ms-tenant');if(from)from.value=st.from||(nurserySettings&&nurserySettings.email)||'kidsparknursery@outlook.com';if(key)key.value=st.mistralKey||'';if(model)model.value=st.model||'mistral-small-latest';if(cid)cid.value=st.msClientId||'';if(tenant)tenant.value=st.msTenant||'common';initGraphMail();renderEmailHistory();renderGraphInbox();updateEmailFolderTabs()}
 async function saveEmailSettings(){
   const old=getEmailSettings();
   const isAdmin=!!(currentUser&&currentUser.role==='admin');
   const settings={
     from:(document.getElementById('email-from')?.value||old.from||'').trim(),
-    // المفتاح السري يبقى محلياً فقط ولا يُرفع إلى Firebase
-    mistralKey:(document.getElementById('mistral-api-key')?.value||old.mistralKey||'').trim(),
+    mistralKey:(document.getElementById('mistral-api-key')?.value||old.mistralKey||EMBEDDED_MISTRAL_KEY||'').trim(),
     model:(document.getElementById('mistral-model')?.value||old.model||'mistral-small-latest').trim(),
     msClientId:(document.getElementById('ms-client-id')?.value||old.msClientId||'').trim(),
     msTenant:(document.getElementById('ms-tenant')?.value||old.msTenant||'common').trim()
@@ -9893,25 +10065,118 @@ async function saveEmailSettings(){
 }
 function openOutlookInbox(){window.open('https://outlook.office.com/mail/inbox','_blank')}
 function openMistralConsole(){window.open('https://console.mistral.ai/','_blank')}
-async function connectOutlookGraph(){await saveEmailSettings();const st=getEmailSettings();if(!st.msClientId){setEmailStatus('يجب على الأدمن وضع Microsoft Client ID أولاً.','err');return}try{setEmailStatus('جاري تحميل مكتبة Microsoft وتسجيل الدخول...','');if(window.ensureMsalLoaded)await window.ensureMsalLoaded();}catch(loadErr){setEmailStatus((loadErr.message||loadErr)+' إذا استمرت المشكلة افتحي الرابط عبر HTTPS وتأكدي أن Redirect URI مطابق لرابط GitHub Pages.','err');return}const app=initGraphMail();if(!app)return;try{const res=await app.loginPopup({scopes:GRAPH_SCOPES,prompt:'select_account'});graphAccount=res.account;sessionStorage.setItem('kp_graph_connected','1');updateGraphStatus();setEmailStatus('تم ربط Outlook بنجاح. يمكنك الآن تحديث الوارد والإرسال من داخل النظام.','ok');await loadOutlookInbox()}catch(e){setEmailStatus('لم يتم ربط Outlook: '+(e.message||e),'err');updateGraphStatus()}}
-function disconnectOutlookGraph(){try{sessionStorage.removeItem('kp_graph_connected');if(graphMsalApp&&graphAccount)graphMsalApp.logoutPopup({account:graphAccount})}catch(e){}graphAccount=null;graphInbox=[];renderGraphInbox();const prev=document.getElementById('email-preview');if(prev)prev.textContent='لا توجد رسالة محددة.';updateGraphStatus();setEmailStatus('تم فصل ربط Outlook من هذه الجلسة.','ok')}
+async function connectOutlookGraph(){await saveEmailSettings();const st=getEmailSettings();if(!st.msClientId){setEmailStatus('يجب على الأدمن وضع Microsoft Client ID أولاً.','err');return}try{setEmailStatus('جاري تحميل مكتبة Microsoft وتسجيل الدخول...','');if(window.ensureMsalLoaded)await window.ensureMsalLoaded();}catch(loadErr){setEmailStatus((loadErr.message||loadErr)+' إذا استمرت المشكلة افتحي الرابط عبر HTTPS وليس ملف محلي.','err');return}const app=initGraphMail();if(!app)return;try{const res=await app.loginPopup({scopes:GRAPH_SCOPES,prompt:'select_account'});graphAccount=res.account;sessionStorage.setItem('kp_graph_connected','1');updateGraphStatus();setEmailStatus('تم ربط Outlook بنجاح. يمكنك الآن تحديث البريد والإرسال من داخل النظام.','ok');await loadOutlookFolder()}catch(e){setEmailStatus('لم يتم ربط Outlook: '+(e.message||e),'err');updateGraphStatus()}}
+function disconnectOutlookGraph(){try{sessionStorage.removeItem('kp_graph_connected');if(graphMsalApp&&graphAccount)graphMsalApp.logoutPopup({account:graphAccount})}catch(e){}graphAccount=null;graphInbox=[];selectedGraphMessage=null;selectedGraphMessageFull=null;renderGraphInbox();const prev=document.getElementById('email-preview');if(prev)prev.textContent='لا توجد رسالة محددة.';const act=document.getElementById('email-preview-actions');if(act)act.style.display='none';const av=document.getElementById('email-attachments-view');if(av)av.innerHTML='';updateGraphStatus();setEmailStatus('تم فصل ربط Outlook من هذه الجلسة.','ok')}
 async function getGraphToken(){if(window.ensureMsalLoaded)await window.ensureMsalLoaded();const app=graphMsalApp||initGraphMail();if(!app)throw new Error('إعدادات Microsoft غير مكتملة.');if(!graphAccount){const accounts=app.getAllAccounts();if(accounts&&accounts.length)graphAccount=accounts[0]}if(!graphAccount)throw new Error('Outlook غير مربوط. اضغطي ربط Outlook أولاً.');try{return (await app.acquireTokenSilent({scopes:GRAPH_SCOPES,account:graphAccount})).accessToken}catch(e){return (await app.acquireTokenPopup({scopes:GRAPH_SCOPES,account:graphAccount})).accessToken}}
-async function graphFetch(path,opts){const token=await getGraphToken();const res=await fetch('https://graph.microsoft.com/v1.0'+path,Object.assign({headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json','Prefer':'outlook.body-content-type="text"'}},opts||{}));if(!res.ok){let msg='HTTP '+res.status;try{const d=await res.json();msg=d?.error?.message||msg}catch(e){}throw new Error(msg)}if(res.status===202||res.status===204)return null;return await res.json()}
-async function loadOutlookInbox(){setEmailStatus('جاري تحميل الوارد من Outlook...','');try{const data=await graphFetch('/me/mailFolders/inbox/messages?$top=15&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments&$orderby=receivedDateTime desc');graphInbox=data.value||[];renderGraphInbox();setEmailStatus('تم تحديث الوارد داخل النظام.','ok')}catch(e){renderGraphInbox(e.message||e);setEmailStatus('تعذر تحميل الوارد: '+(e.message||e),'err')}}
-function renderGraphInbox(err){const box=document.getElementById('email-inbox');if(!box)return;if(err){box.innerHTML='<div class="email-hint">'+escapeHtml(err)+'</div>';return}if(!graphInbox.length){box.innerHTML='<div class="email-hint">لا توجد رسائل محملة بعد.</div>';return}box.innerHTML=graphInbox.map(function(m,i){const from=m.from&&m.from.emailAddress?m.from.emailAddress:{};const date=(m.receivedDateTime||'').slice(0,16).replace('T',' ');return '<div class="email-inbox-item" onclick="readOutlookMessage('+i+')"><div class="email-inbox-subject">'+escapeHtml(m.subject||'بدون موضوع')+'</div><div class="email-inbox-meta"><span>'+escapeHtml(from.name||from.address||'')+'</span><span>'+escapeHtml(date)+'</span>'+(m.hasAttachments?'<span>📎 مرفقات</span>':'')+'</div><div style="font-size:12px;color:var(--muted);margin-top:5px">'+escapeHtml(m.bodyPreview||'')+'</div></div>'}).join('')}
-async function readOutlookMessage(i){const m=graphInbox[i];if(!m)return;const prev=document.getElementById('email-preview');prev.textContent='جاري فتح الرسالة...';try{const data=await graphFetch('/me/messages/'+encodeURIComponent(m.id)+'?$select=subject,from,receivedDateTime,body');const from=data.from&&data.from.emailAddress?data.from.emailAddress:{};prev.textContent='من: '+(from.name||from.address||'')+'\nالموضوع: '+(data.subject||'')+'\nالتاريخ: '+((data.receivedDateTime||'').slice(0,16).replace('T',' '))+'\n\n'+((data.body&&data.body.content)||'');setEmailStatus('تم فتح الرسالة داخل النظام.','ok')}catch(e){prev.textContent='تعذر فتح الرسالة: '+(e.message||e)}}
-function buildOutlookComposeUrl(to,cc,subject,body){const p=new URLSearchParams();if(to)p.set('to',to);if(cc)p.set('cc',cc);if(subject)p.set('subject',subject);if(body)p.set('body',body);return 'https://outlook.office.com/mail/deeplink/compose?'+p.toString()}
-function sendEmailViaOutlook(){const to=(document.getElementById('email-to')?.value||'').trim(),cc=(document.getElementById('email-cc')?.value||'').trim(),subject=(document.getElementById('email-subject')?.value||'').trim(),body=(document.getElementById('email-body')?.value||'').trim();if(!to){setEmailStatus('اكتبي بريد المستلم أولاً.','err');return}if(!subject&&!body){setEmailStatus('اكتبي موضوع الرسالة أو نصها أولاً.','err');return}saveEmailDraftToHistory(to,cc,subject,body);window.open(buildOutlookComposeUrl(to,cc,subject,body),'_blank');setEmailStatus('تم فتح Outlook برسالة جاهزة. راجعيها ثم اضغطي Send من Outlook.','ok')}
+async function graphFetch(path,opts){
+  const token=await getGraphToken();
+  const headers=Object.assign({'Authorization':'Bearer '+token,'Prefer':'outlook.body-content-type="text"'},(opts&&opts.headers)||{});
+  if(!(opts&&opts.skipJsonHeader)) headers['Content-Type']='application/json';
+  const res=await fetch('https://graph.microsoft.com/v1.0'+path,Object.assign({},opts||{},{headers}));
+  if(!res.ok){let msg='HTTP '+res.status;try{const d=await res.json();msg=d?.error?.message||msg}catch(e){}throw new Error(msg)}
+  if(res.status===202||res.status===204)return null;
+  return await res.json();
+}
+function updateEmailFolderTabs(){
+  ['inbox','sentitems','junkemail'].forEach(function(f){
+    const el=document.getElementById('email-tab-'+f);
+    if(el) el.className='ftab '+(currentEmailFolder===f?'on':'');
+  });
+}
+function switchEmailFolder(folder){currentEmailFolder=folder||'inbox';selectedGraphMessage=null;selectedGraphMessageFull=null;updateEmailFolderTabs();const prev=document.getElementById('email-preview');if(prev)prev.textContent='لا توجد رسالة محددة.';const act=document.getElementById('email-preview-actions');if(act)act.style.display='none';const av=document.getElementById('email-attachments-view');if(av)av.innerHTML='';loadOutlookFolder()}
+async function loadOutlookInbox(){currentEmailFolder='inbox';updateEmailFolderTabs();return loadOutlookFolder()}
+async function loadOutlookFolder(){const cfg=EMAIL_FOLDER_CONFIG[currentEmailFolder]||EMAIL_FOLDER_CONFIG.inbox;setEmailStatus('جاري تحميل '+cfg.label+' من Outlook...','');try{const df=cfg.dateField;const data=await graphFetch('/me/mailFolders/'+cfg.id+'/messages?$top=25&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,hasAttachments&$orderby='+df+' desc');graphInbox=data.value||[];renderGraphInbox();setEmailStatus('تم تحديث '+cfg.label+' داخل النظام.','ok')}catch(e){renderGraphInbox(e.message||e);setEmailStatus('تعذر تحميل '+cfg.label+': '+(e.message||e),'err')}}
+function renderGraphInbox(err){const box=document.getElementById('email-inbox');if(!box)return;const cfg=EMAIL_FOLDER_CONFIG[currentEmailFolder]||EMAIL_FOLDER_CONFIG.inbox;if(err){box.innerHTML='<div class="email-hint">'+escapeHtml(err)+'</div>';return}if(!graphInbox.length){box.innerHTML='<div class="email-hint">لا توجد رسائل في '+escapeHtml(cfg.label)+' بعد.</div>';return}box.innerHTML=graphInbox.map(function(m,i){const from=m.from&&m.from.emailAddress?m.from.emailAddress:{};const to=(m.toRecipients||[]).map(r=>r.emailAddress&&r.emailAddress.address).filter(Boolean).join(', ');const date=((m.receivedDateTime||m.sentDateTime||'').slice(0,16).replace('T',' '));const who=currentEmailFolder==='sentitems'?(to?'إلى: '+to:'مرسلة'):(from.name||from.address||'');return '<div class="email-inbox-item" onclick="readOutlookMessage('+i+')"><div class="email-inbox-subject">'+escapeHtml(m.subject||'بدون موضوع')+'</div><div class="email-inbox-meta"><span>'+escapeHtml(who)+'</span><span>'+escapeHtml(date)+'</span>'+(m.hasAttachments?'<span>📎 مرفقات</span>':'')+'</div><div style="font-size:12px;color:var(--muted);margin-top:5px">'+escapeHtml(m.bodyPreview||'')+'</div></div>'}).join('')}
+async function readOutlookMessage(i){
+  const m=graphInbox[i];if(!m)return;selectedGraphMessage=m;selectedGraphMessageFull=null;
+  const prev=document.getElementById('email-preview');const act=document.getElementById('email-preview-actions');const av=document.getElementById('email-attachments-view');
+  if(prev)prev.textContent='جاري فتح الرسالة...';if(act)act.style.display='flex';if(av)av.innerHTML='';
+  try{
+    const data=await graphFetch('/me/messages/'+encodeURIComponent(m.id)+'?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,body,hasAttachments');
+    selectedGraphMessageFull=data;
+    const from=data.from&&data.from.emailAddress?data.from.emailAddress:{};
+    const tos=(data.toRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
+    const ccs=(data.ccRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
+    const date=((data.receivedDateTime||data.sentDateTime||'').slice(0,16).replace('T',' '));
+    if(prev)prev.textContent='من: '+(from.name||from.address||'')+'\nإلى: '+tos+(ccs?'\nCC: '+ccs:'')+'\nالموضوع: '+(data.subject||'')+'\nالتاريخ: '+date+'\n\n'+((data.body&&data.body.content)||'');
+    if(data.hasAttachments) await renderMessageAttachments(data.id);
+    setEmailStatus('تم فتح الرسالة داخل النظام.','ok')
+  }catch(e){if(prev)prev.textContent='تعذر فتح الرسالة: '+(e.message||e)}
+}
+async function renderMessageAttachments(messageId){
+  const av=document.getElementById('email-attachments-view');if(!av)return;
+  av.innerHTML='<div class="email-hint">جاري تحميل المرفقات...</div>';
+  try{
+    const data=await graphFetch('/me/messages/'+encodeURIComponent(messageId)+'/attachments?$select=id,name,contentType,size,isInline');
+    const arr=(data.value||[]).filter(a=>!a.isInline);
+    if(!arr.length){av.innerHTML='';return}
+    av.innerHTML='<div class="ct" style="margin-top:12px">المرفقات</div>'+arr.map(a=>'<div class="email-attach-chip">📎 '+escapeHtml(a.name||'مرفق')+' <span>'+Math.round((a.size||0)/1024)+' KB</span></div>').join('');
+  }catch(e){av.innerHTML='<div class="email-hint">تعذر تحميل المرفقات: '+escapeHtml(e.message||e)+'</div>'}
+}
+function copySelectedEmailText(){const txt=document.getElementById('email-preview')?.textContent||'';if(!txt.trim()){setEmailStatus('لا توجد رسالة لنسخها.','err');return}navigator.clipboard?.writeText(txt).then(()=>setEmailStatus('تم نسخ الرسالة.','ok')).catch(()=>setEmailStatus('تعذر النسخ تلقائيًا.','err'))}
+function getAddresses(list){return (list||[]).map(r=>r.emailAddress&&r.emailAddress.address).filter(Boolean)}
+function replyToSelectedEmail(){if(!selectedGraphMessageFull){setEmailStatus('افتحي رسالة أولاً للرد عليها.','err');return}const m=selectedGraphMessageFull;const from=m.from&&m.from.emailAddress?m.from.emailAddress.address:'';openEmailComposeModal('reply');document.getElementById('email-to').value=from;document.getElementById('email-cc').value='';document.getElementById('email-bcc').value='';document.getElementById('email-subject').value=/^re:/i.test(m.subject||'')?(m.subject||''):'Re: '+(m.subject||'');document.getElementById('email-body').value='';}
+function replyAllToSelectedEmail(){
+  if(!selectedGraphMessageFull){setEmailStatus('افتحي رسالة أولاً للرد للجميع.','err');return}
+  const m=selectedGraphMessageFull;const me=(graphAccount&&graphAccount.username||'').toLowerCase();
+  let tos=[];const from=m.from&&m.from.emailAddress?m.from.emailAddress.address:'';
+  if(from&&from.toLowerCase()!==me)tos.push(from);
+  tos=tos.concat(getAddresses(m.toRecipients).filter(a=>a.toLowerCase()!==me));
+  const unique=a=>Array.from(new Set(a.filter(Boolean)));
+  openEmailComposeModal('replyAll');
+  document.getElementById('email-to').value=unique(tos).join('; ');
+  document.getElementById('email-cc').value=unique(getAddresses(m.ccRecipients).filter(a=>a.toLowerCase()!==me)).join('; ');
+  document.getElementById('email-bcc').value='';
+  document.getElementById('email-subject').value=/^re:/i.test(m.subject||'')?(m.subject||''):'Re: '+(m.subject||'');
+  document.getElementById('email-body').value='';
+}
+function openEmailComposeModal(mode){
+  const ov=document.getElementById('email-compose-ov');if(ov)ov.classList.add('on');
+  const t=document.getElementById('email-compose-title');if(t)t.textContent=mode==='reply'?'رد على الرسالة':(mode==='replyAll'?'رد للجميع':'إنشاء رسالة بريد');
+  const pv=document.getElementById('email-send-preview');if(pv){pv.style.display='none';pv.textContent=''}
+  setEmailStatus('', '');
+}
+function closeEmailComposeModal(){const ov=document.getElementById('email-compose-ov');if(ov)ov.classList.remove('on')}
+function splitEmails(v){return String(v||'').split(/[;,]+/).map(a=>a.trim()).filter(Boolean)}
+function buildRecipients(v){return splitEmails(v).map(a=>({emailAddress:{address:a}}))}
+function buildOutlookComposeUrl(to,cc,subject,body,bcc){const p=new URLSearchParams();if(to)p.set('to',to);if(cc)p.set('cc',cc);if(bcc)p.set('bcc',bcc);if(subject)p.set('subject',subject);if(body)p.set('body',body);return 'https://outlook.office.com/mail/deeplink/compose?'+p.toString()}
+function getComposeValues(){return {to:(document.getElementById('email-to')?.value||'').trim(),cc:(document.getElementById('email-cc')?.value||'').trim(),bcc:(document.getElementById('email-bcc')?.value||'').trim(),subject:(document.getElementById('email-subject')?.value||'').trim(),body:(document.getElementById('email-body')?.value||'').trim()}}
+function previewOutgoingEmail(){const v=getComposeValues();const box=document.getElementById('email-send-preview');if(!box)return;if(!v.to&&!v.cc&&!v.bcc&&!v.subject&&!v.body){setEmailStatus('لا توجد رسالة لمعاينتها.','err');return}box.style.display='block';box.textContent='إلى: '+v.to+'\nCC: '+(v.cc||'-')+'\nBCC: '+(v.bcc||'-')+'\nالموضوع: '+(v.subject||'(بدون موضوع)')+'\n\n'+(v.body||'');}
+function renderSelectedAttachments(){const input=document.getElementById('email-attachments');const list=document.getElementById('email-attachment-list');if(!list)return;const files=Array.from(input?.files||[]);if(!files.length){list.innerHTML='';return}list.innerHTML=files.map(f=>'<span class="email-attach-chip">📎 '+escapeHtml(f.name)+' <small>'+Math.round(f.size/1024)+' KB</small></span>').join('')}
+function fileToAttachment(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onerror=()=>reject(new Error('تعذر قراءة المرفق: '+file.name));r.onload=()=>{const base64=String(r.result||'').split(',')[1]||'';resolve({'@odata.type':'#microsoft.graph.fileAttachment',name:file.name,contentType:file.type||'application/octet-stream',contentBytes:base64})};r.readAsDataURL(file)})}
+async function getSelectedFileAttachments(){
+  const files=Array.from(document.getElementById('email-attachments')?.files||[]);
+  const max=3*1024*1024;
+  for(const f of files){if(f.size>max)throw new Error('المرفق '+f.name+' أكبر من 3MB. استخدمي ملف أصغر أو أرسليه من Outlook مباشرة.')}
+  const out=[];for(const f of files)out.push(await fileToAttachment(f));return out;
+}
+function sendEmailViaOutlook(){const v=getComposeValues();if(!v.to){setEmailStatus('اكتبي بريد المستلم أولاً.','err');return}if(!v.subject&&!v.body){setEmailStatus('اكتبي موضوع الرسالة أو نصها أولاً.','err');return}saveEmailDraftToHistory(v.to,v.cc,v.subject,v.body,v.bcc);window.open(buildOutlookComposeUrl(v.to,v.cc,v.subject,v.body,v.bcc),'_blank');setEmailStatus('تم فتح Outlook برسالة جاهزة. المرفقات لا تنتقل في الخطة البديلة؛ أضيفيها من Outlook عند الحاجة.','ok')}
 async function sendEmailSmart(){if(graphAccount||sessionStorage.getItem('kp_graph_connected'))return await sendEmailViaGraph();return sendEmailViaOutlook()}
-async function sendEmailViaGraph(){const to=(document.getElementById('email-to')?.value||'').trim(),cc=(document.getElementById('email-cc')?.value||'').trim(),subject=(document.getElementById('email-subject')?.value||'').trim(),body=(document.getElementById('email-body')?.value||'').trim();if(!to){setEmailStatus('اكتبي بريد المستلم أولاً.','err');return}if(!subject&&!body){setEmailStatus('اكتبي موضوع الرسالة أو نصها أولاً.','err');return}setEmailStatus('جاري الإرسال من داخل النظام عبر Outlook...','');try{const payload={message:{subject:subject||'(بدون موضوع)',body:{contentType:'Text',content:body||''},toRecipients:to.split(/[;,]+/).map(a=>a.trim()).filter(Boolean).map(a=>({emailAddress:{address:a}})),ccRecipients:cc.split(/[;,]+/).map(a=>a.trim()).filter(Boolean).map(a=>({emailAddress:{address:a}}))},saveToSentItems:true};await graphFetch('/me/sendMail',{method:'POST',body:JSON.stringify(payload)});saveEmailDraftToHistory(to,cc,subject,body);setEmailStatus('تم إرسال الرسالة من داخل النظام وحفظها في Sent Items.','ok')}catch(e){setEmailStatus('تعذر الإرسال من داخل النظام: '+(e.message||e)+' — سيتم فتح Outlook كخطة بديلة.','err');setTimeout(()=>sendEmailViaOutlook(),800)}}
-function saveEmailDraftToHistory(to,cc,subject,body){let h=[];try{h=JSON.parse(localStorage.getItem(EMAIL_HISTORY_KEY)||'[]')}catch(e){}h.unshift({to,cc,subject,body,date:new Date().toISOString()});h=h.slice(0,25);localStorage.setItem(EMAIL_HISTORY_KEY,JSON.stringify(h));renderEmailHistory()}
+async function sendEmailViaGraph(){
+  const v=getComposeValues();
+  if(!v.to){setEmailStatus('اكتبي بريد المستلم أولاً.','err');return}
+  if(!v.subject&&!v.body){setEmailStatus('اكتبي موضوع الرسالة أو نصها أولاً.','err');return}
+  setEmailStatus('جاري الإرسال من داخل النظام عبر Outlook...','');
+  try{
+    const attachments=await getSelectedFileAttachments();
+    const payload={message:{subject:v.subject||'(بدون موضوع)',body:{contentType:'Text',content:v.body||''},toRecipients:buildRecipients(v.to),ccRecipients:buildRecipients(v.cc),bccRecipients:buildRecipients(v.bcc)},saveToSentItems:true};
+    if(attachments.length)payload.message.attachments=attachments;
+    await graphFetch('/me/sendMail',{method:'POST',body:JSON.stringify(payload)});
+    saveEmailDraftToHistory(v.to,v.cc,v.subject,v.body,v.bcc);
+    setEmailStatus('تم إرسال الرسالة من داخل النظام وحفظها في Sent Items.','ok');
+    closeEmailComposeModal();
+    if(currentEmailFolder==='sentitems')setTimeout(loadOutlookFolder,1000);
+  }catch(e){setEmailStatus('تعذر الإرسال من داخل النظام: '+(e.message||e)+' — سيتم فتح Outlook كخطة بديلة.','err');setTimeout(()=>sendEmailViaOutlook(),900)}
+}
+function saveEmailDraftToHistory(to,cc,subject,body,bcc){let h=[];try{h=JSON.parse(localStorage.getItem(EMAIL_HISTORY_KEY)||'[]')}catch(e){}h.unshift({to,cc,bcc,subject,body,date:new Date().toISOString()});h=h.slice(0,25);localStorage.setItem(EMAIL_HISTORY_KEY,JSON.stringify(h));renderEmailHistory()}
 function renderEmailHistory(){const box=document.getElementById('email-history');if(!box)return;let h=[];try{h=JSON.parse(localStorage.getItem(EMAIL_HISTORY_KEY)||'[]')}catch(e){}if(!h.length){box.innerHTML='<div class="email-hint">لا توجد رسائل محفوظة بعد.</div>';return}box.innerHTML=h.map(function(m,i){return '<div class="email-history-item" onclick="loadEmailHistory('+i+')"><div class="email-history-title">'+escapeHtml(m.subject||'بدون موضوع')+'</div><div class="email-history-meta"><span>إلى: '+escapeHtml(m.to||'')+'</span><span>'+formatDate((m.date||'').slice(0,10))+'</span></div></div>'}).join('')}
-function loadEmailHistory(i){let h=[];try{h=JSON.parse(localStorage.getItem(EMAIL_HISTORY_KEY)||'[]')}catch(e){}const m=h[i];if(!m)return;document.getElementById('email-to').value=m.to||'';document.getElementById('email-cc').value=m.cc||'';document.getElementById('email-subject').value=m.subject||'';document.getElementById('email-body').value=m.body||'';setEmailStatus('تم تحميل الرسالة من السجل.','ok')}
-function clearEmailForm(){['email-to','email-cc','email-subject','email-body'].forEach(function(id){const el=document.getElementById(id);if(el)el.value=''});setEmailStatus('','')}
+function loadEmailHistory(i){let h=[];try{h=JSON.parse(localStorage.getItem(EMAIL_HISTORY_KEY)||'[]')}catch(e){}const m=h[i];if(!m)return;openEmailComposeModal();document.getElementById('email-to').value=m.to||'';document.getElementById('email-cc').value=m.cc||'';document.getElementById('email-bcc').value=m.bcc||'';document.getElementById('email-subject').value=m.subject||'';document.getElementById('email-body').value=m.body||'';renderSelectedAttachments();setEmailStatus('تم تحميل الرسالة من السجل.','ok')}
+function clearEmailForm(){['email-to','email-cc','email-bcc','email-subject','email-body'].forEach(function(id){const el=document.getElementById(id);if(el)el.value=''});const f=document.getElementById('email-attachments');if(f)f.value='';renderSelectedAttachments();const pv=document.getElementById('email-send-preview');if(pv){pv.style.display='none';pv.textContent=''}setEmailStatus('','')}
 function copyEmailBody(){const body=document.getElementById('email-body')?.value||'';if(!body){setEmailStatus('لا يوجد نص لنسخه.','err');return}navigator.clipboard?.writeText(body).then(function(){setEmailStatus('تم نسخ نص الرسالة.','ok')}).catch(function(){setEmailStatus('تعذر النسخ تلقائيًا.','err')})}
-async function testMistralSettings(){const el=document.getElementById('email-body');if(el&&!el.value.trim())el.value='نرجو منكم تسديد الرسوم الشهرية في أقرب وقت. شكراً لتعاونكم.';await improveEmailWithMistral(true)}
-async function improveEmailWithMistral(isTest){const st=getEmailSettings();const key=(document.getElementById('mistral-api-key')?.value||st.mistralKey||'').trim();const model=(document.getElementById('mistral-model')?.value||st.model||'mistral-small-latest').trim();const bodyEl=document.getElementById('email-body');const original=(bodyEl?.value||'').trim();if(!key){setEmailStatus((currentUser&&currentUser.role==='admin')?'ضعي Mistral API Key أولاً ثم احفظي الإعدادات.':'لم يتم إعداد مفتاح الذكاء الاصطناعي بعد. يرجى مراجعة الأدمن.','err');return}if(!original){setEmailStatus('اكتبي نص الرسالة أولاً ليتم تحسينه.','err');return}await saveEmailSettings();setEmailStatus('جاري تحسين النص عبر Mistral...','');try{const res=await fetch('https://api.mistral.ai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:model,temperature:.25,messages:[{role:'system',content:'أنت مساعد مراسلات رسمي لحضانة أطفال في الإمارات. حسّن نص البريد ليكون مهذبًا وواضحًا ومختصرًا ومناسبًا لأولياء الأمور. أعد النص فقط بدون شرح. إذا كان النص عربيًا أعده بالعربية، وإذا كان إنجليزيًا أعده بالإنجليزية، وإذا كان ثنائي اللغة رتبه عربي/إنجليزي.'},{role:'user',content:original}]})});const data=await res.json();if(!res.ok)throw new Error((data&&(data.message||(data.error&&data.error.message)))||('HTTP '+res.status));const improved=data?.choices?.[0]?.message?.content?.trim();if(!improved)throw new Error('لم يصل نص محسّن من Mistral.');bodyEl.value=improved;setEmailStatus(isTest?'تم اختبار Mistral وتحسين النص بنجاح.':'تم تحسين نص الرسالة بنجاح.','ok')}catch(err){setEmailStatus('تعذر استخدام Mistral: '+(err.message||err),'err')}}
+async function testMistralSettings(){openEmailComposeModal();const el=document.getElementById('email-body');if(el&&!el.value.trim())el.value='نرجو منكم تسديد الرسوم الشهرية في أقرب وقت. شكراً لتعاونكم.';await improveEmailWithMistral(true)}
+async function improveEmailWithMistral(isTest){const st=getEmailSettings();const key=(document.getElementById('mistral-api-key')?.value||st.mistralKey||EMBEDDED_MISTRAL_KEY||'').trim();const model=(document.getElementById('mistral-model')?.value||st.model||'mistral-small-latest').trim();const bodyEl=document.getElementById('email-body');const original=(bodyEl?.value||'').trim();if(!key){setEmailStatus((currentUser&&currentUser.role==='admin')?'ضعي Mistral API Key أولاً ثم احفظي الإعدادات.':'لم يتم إعداد مفتاح الذكاء الاصطناعي بعد. يرجى مراجعة الأدمن.','err');return}if(!original){setEmailStatus('اكتبي نص الرسالة أولاً ليتم تحسينه.','err');return}await saveEmailSettings();setEmailStatus('جاري تحسين النص عبر Mistral...','');try{const res=await fetch('https://api.mistral.ai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:model,temperature:.25,messages:[{role:'system',content:'أنت مساعد مراسلات رسمي لحضانة أطفال في الإمارات. حسّن نص البريد ليكون مهذبًا وواضحًا ومختصرًا ومناسبًا لأولياء الأمور. أعد النص فقط بدون شرح. إذا كان النص عربيًا أعده بالعربية، وإذا كان إنجليزيًا أعده بالإنجليزية، وإذا كان ثنائي اللغة رتبه عربي/إنجليزي.'},{role:'user',content:original}]})});const data=await res.json();if(!res.ok)throw new Error((data&&(data.message||(data.error&&data.error.message)))||('HTTP '+res.status));const improved=data?.choices?.[0]?.message?.content?.trim();if(!improved)throw new Error('لم يصل نص محسّن من Mistral.');bodyEl.value=improved;setEmailStatus(isTest?'تم اختبار Mistral وتحسين النص بنجاح.':'تم تحسين نص الرسالة بنجاح.','ok');previewOutgoingEmail()}catch(err){setEmailStatus('تعذر استخدام Mistral: '+(err.message||err),'err')}}
 function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]})}
+
 
 </script>
 </body>
