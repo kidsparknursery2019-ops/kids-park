@@ -4683,7 +4683,150 @@ function printStudentsSelectedReport(){
       .moe-grid th:nth-child(15),.moe-grid td:nth-child(15){width:58px}
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
-    <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script></body></html>`);
+    <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script>
+/* ============================================================
+   HOTFIX 20260429J — إصلاح اختفاء الطلبات الجديدة بعد القفل
+   السبب: القفل السابق كان يعتبر بعض الطلبات الجديدة مطابقة لقرارات قديمة
+   بسبب مفاتيح غير دقيقة، فكانت تنحجب من "الجديدة".
+   هذا الإصلاح يجعل الحجب فقط بمطابقة قوية: رقم هوية/جواز، أو اسم+ميلاد+هاتف،
+   أو المفتاح الفعلي لنفس الطلب. وباقي الطلبات تظهر pending طبيعي.
+   ============================================================ */
+(function(){
+  'use strict';
+  if(window.__kp_registration_safe_visibility_20260429J) return;
+  window.__kp_registration_safe_visibility_20260429J = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function safeKey(s){ return txt(s).replace(/[.#$\[\]\/\s]/g,'_').replace(/_+/g,'_').substring(0,220); }
+  function hash(seed){ var h=0; seed=txt(seed); for(var i=0;i<seed.length;i++){ h=((h<<5)-h)+seed.charCodeAt(i); h|=0; } return Math.abs(h).toString(36); }
+  function norm(s){ return txt(s).toLowerCase().replace(/[ً-ٰٟ]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^؀-ۿa-z0-9]+/gi,' ').replace(/\s+/g,' ').trim(); }
+  function digits(s){ return txt(s).replace(/\D+/g,''); }
+  function childName(r){ r=r||{}; return txt(r.name || r.childName || r.studentName || ([r.firstName,r.familyName].filter(Boolean).join(' '))); }
+  function childDob(r){ r=r||{}; return txt(r.dob || r.birthDate || r.dateOfBirth || r.childDob).slice(0,10); }
+  function phone(r){ r=r||{}; return digits(r.dadMob || r.fatherMobile || r.dph || r.momMob || r.motherMobile || r.mph || r.phone || r.mobile); }
+  function root(){ return String(FB_URL||'').replace(/\/nursery_data\/?$/,''); }
+  function exactKeys(r){
+    r=r||{};
+    return [r.firebaseKey,r.requestId,r._fbKey,r.timestamp,r.formTimestamp,r.submittedAt,r.createdAt]
+      .map(txt).filter(Boolean).map(safeKey).filter(Boolean);
+  }
+  function strongKey(r){
+    r=r||{};
+    var id = digits(r.emiratesId || r.idNo || r.identityNo || r.nationalId || r.passport || r.childPassport);
+    if(id && id.length >= 6) return 'id_' + safeKey(id);
+    var name = norm(childName(r)), dob = childDob(r), ph = phone(r).slice(-7), dad = norm(r.dadFull || r.fatherName || r.dad);
+    if(name && dob && ph) return 'ndp_' + hash(name+'|'+dob+'|'+ph);
+    if(name && dob && dad) return 'ndf_' + hash(name+'|'+dob+'|'+dad);
+    return '';
+  }
+  function rowKey(r){ return strongKey(r) || (exactKeys(r)[0] || 'row_' + hash(JSON.stringify(r||{}).slice(0,250))); }
+  function rowUpdated(r){ return Date.parse(txt((r||{}).rowUpdatedAt || (r||{}).decisionAt || (r||{}).approvedAt || (r||{}).timestamp || (r||{}).createdAt || (r||{}).submittedAt)) || 0; }
+  async function fetchJson(url){ var sep=url.indexOf('?')>=0?'&':'?'; var res=await fetch(url+sep+'ts='+Date.now(),{cache:'no-store'}); if(!res.ok) throw new Error('HTTP '+res.status); return await res.json(); }
+  function normalizeObj(obj, folder, source){
+    var out=[]; if(!obj || typeof obj!=='object') return out;
+    if(Array.isArray(obj)){
+      obj.forEach(function(v,i){ if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v, v.firebaseKey||v.requestId||String(i)):Object.assign({firebaseKey:String(i)},v); r.status=folder; r.sourcePath=source; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||String(i)); out.push(r); }});
+    } else {
+      Object.keys(obj).forEach(function(k){ var v=obj[k]; if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v,k):Object.assign({firebaseKey:k},v); r._fbKey=k; r.status=folder; r.sourcePath=source; if(!r.firebaseKey) r.firebaseKey=safeKey(k); if(!r.requestId) r.requestId=r.firebaseKey; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||k); out.push(r); }});
+    }
+    return out;
+  }
+  async function readPath(url, folder, source){ try{return normalizeObj(await fetchJson(url), folder, source);}catch(_e){return [];} }
+  async function readAll(){
+    var base=FB_URL, rt=root();
+    var groups = [
+      [base+'/registrationRequests/pending.json','pending','pending'], [rt+'/registrationRequests/pending.json','pending','pending-root'],
+      [base+'/registrationRequests/accepted.json','approved','accepted'], [rt+'/registrationRequests/accepted.json','approved','accepted-root'],
+      [base+'/registrationRequests/rejected.json','rejected','rejected'], [rt+'/registrationRequests/rejected.json','rejected','rejected-root'],
+      [base+'/kp_form_rows.json','legacy','legacy'], [rt+'/kp_form_rows.json','legacy','legacy-root']
+    ];
+    var all=[];
+    for(var i=0;i<groups.length;i++) all=all.concat(await readPath(groups[i][0],groups[i][1],groups[i][2]));
+    return all;
+  }
+  function buildDecisionMaps(rows){
+    var exact={}, strong={};
+    (rows||[]).forEach(function(r){
+      var st=r&&r.status; if(st!=='approved' && st!=='rejected') return;
+      var item={status:st, decisionAt:r.decisionAt||r.rowUpdatedAt||new Date().toISOString(), row:r};
+      exactKeys(r).forEach(function(k){ if(k) exact[k]=item; });
+      var sk=strongKey(r); if(sk) strong[sk]=item;
+    });
+    try{
+      var saved=JSON.parse(localStorage.getItem('kp_form_decisions_v2')||'{}')||{};
+      Object.keys(saved).forEach(function(k){ var d=saved[k]; if(d&&d.status&&d.status!=='pending'){ exact[safeKey(k)]={status:d.status,decisionAt:d.decisionAt||d.savedAt,row:{}}; } });
+    }catch(_e){}
+    return {exact:exact,strong:strong};
+  }
+  function decisionFor(r,maps){
+    var ex=exactKeys(r); for(var i=0;i<ex.length;i++){ if(maps.exact[ex[i]]) return maps.exact[ex[i]]; }
+    var sk=strongKey(r); if(sk && maps.strong[sk]) return maps.strong[sk];
+    return null;
+  }
+  function mergeRows(rows){
+    rows=Array.isArray(rows)?rows:[];
+    var maps=buildDecisionMaps(rows.concat(Array.isArray(syncedFormRows)?syncedFormRows:[]));
+    var out={};
+    function add(r){
+      if(!r || !childName(r)) return;
+      var d=decisionFor(r,maps);
+      if(d && d.status && d.status!=='pending') r=Object.assign({}, r, {status:d.status, decisionAt:d.decisionAt||r.decisionAt, rowUpdatedAt:d.decisionAt||r.rowUpdatedAt});
+      if(r.status==='legacy') r.status = d ? d.status : (r.status && r.status!=='legacy'?r.status:'pending');
+      var k=rowKey(r); var old=out[k];
+      if(!old){ out[k]=r; return; }
+      var rank=function(s){return s==='rejected'?4:s==='approved'?3:s==='pending'?1:0;};
+      var rr=rank(r.status), ro=rank(old.status);
+      out[k]=(rr>ro || (rr===ro && rowUpdated(r)>=rowUpdated(old))) ? Object.assign({}, old, r) : Object.assign({}, r, old);
+    }
+    rows.forEach(add);
+    (Array.isArray(syncedFormRows)?syncedFormRows:[]).forEach(add);
+    return Object.values(out);
+  }
+  window.syncRegistrationRequestsFromFirebase = async function(options){
+    options=options||{};
+    try{
+      var rows=await readAll();
+      syncedFormRows = mergeRows(rows);
+      try{ localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); }catch(_e){}
+      if(typeof updateFormsNavBadge==='function') updateFormsNavBadge();
+      if(typeof renderFormRequests==='function') renderFormRequests();
+      if(!options.silent && typeof showSyncBadge==='function') showSyncBadge('✅ ظهرت الطلبات الجديدة وتم تثبيت حالات القديمة');
+      return {total:syncedFormRows.length, pending:syncedFormRows.filter(function(r){return (r.status||'pending')==='pending';}).length};
+    }catch(e){ console.warn('safe registration sync failed',e); if(!options.silent&&typeof showSyncBadge==='function') showSyncBadge('⚠️ تعذرت مزامنة طلبات التسجيل'); return {error:e&&e.message}; }
+  };
+  window.renderFormRequests = function(){
+    try{ if(typeof updateFormsNavBadge==='function') updateFormsNavBadge(); }catch(_e){}
+    var page=document.getElementById('pg-forms'); if(!page) return;
+    var rowsAll=Array.isArray(syncedFormRows)?syncedFormRows:[];
+    var pending=rowsAll.filter(function(r){return (r.status||'pending')==='pending';});
+    var approved=rowsAll.filter(function(r){return r.status==='approved';});
+    var rejected=rowsAll.filter(function(r){return r.status==='rejected';});
+    var pc=document.getElementById('forms-pending-count'), ac=document.getElementById('forms-approved-count'); if(pc)pc.textContent=pending.length; if(ac)ac.textContent=approved.length;
+    var filter=(document.getElementById('forms-filter')||{}).value||'pending';
+    var search=((document.getElementById('forms-search')||{}).value||'').toLowerCase();
+    var rows=filter==='all'?rowsAll:filter==='approved'?approved:filter==='rejected'?rejected:pending;
+    rows=rows.filter(function(r){return !search || [r.name,r.dadFull,r.momFull,r.nat,r.dob,r.emiratesId,r.idNo].join(' ').toLowerCase().indexOf(search)>=0;}).sort(function(a,b){return rowUpdated(b)-rowUpdated(a);});
+    var list=document.getElementById('forms-list'); if(!list) return;
+    if(!rows.length){ list.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">'+(filter==='pending'?'لا توجد طلبات جديدة':filter==='approved'?'لا توجد طلبات مقبولة':filter==='rejected'?'لا توجد طلبات مرفوضة':'لا توجد نتائج')+'</div>'; return; }
+    list.innerHTML=rows.map(function(r){
+      if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||rowKey(r));
+      var tsSafe=encodeURIComponent(String(r.timestamp||''));
+      var view='<button class="btn btn-b btn-sm" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">👁 عرض الطلب</button>';
+      var actions='';
+      if((r.status||'pending')==='pending') actions=view+'<button class="btn btn-g btn-sm" onclick="quickApprove(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">✅ قبول</button><button class="btn btn-r btn-sm" onclick="rejectFormRow(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">❌ رفض</button>';
+      else if(r.status==='approved') actions=view+'<span class="b bg">✅ مقبول</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      else actions=view+'<span class="b br">❌ مرفوض</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      return '<div class="form-req-card" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'))">'+
+        '<div class="form-req-left">'+(r.imgChildPhoto?'<img src="'+driveImgUrl(r.imgChildPhoto)+'" class="form-req-photo" onerror="this.style.display=\'none\'">':'<div class="form-req-photo-empty">👶</div>')+'</div>'+
+        '<div class="form-req-info"><div class="form-req-name">'+escapeHtml(childName(r))+'</div><div class="form-req-meta"><span>🌍 '+formatNationalityWithFlag(cleanArabicOnlyValue(r.nat)||r.nat||'—')+'</span><span>📅 '+escapeHtml(r.dob||'—')+'</span><span>'+escapeHtml(r.gen||'—')+'</span></div><div class="form-req-meta"><span>👨 '+escapeHtml(r.dadFull||r.dad||'—')+'</span><span>📱 '+escapeHtml(r.dadMob||r.dph||r.momMob||r.mph||'—')+'</span><span>📌 '+escapeHtml(r.source==='google_sheets'?'Google Sheets':(r.source||r.sourcePath||'رابط التسجيل'))+'</span></div></div>'+
+        '<div class="form-req-actions" onclick="event.stopPropagation()">'+actions+'</div></div>';
+    }).join('');
+  };
+  window.kpSafeRegistrationRefresh = async function(){ var r=await window.syncRegistrationRequestsFromFirebase({silent:false}); return r; };
+  setTimeout(function(){ try{ window.syncRegistrationRequestsFromFirebase({silent:true}); }catch(_e){} }, 700);
+})();
+
+</body></html>`);
     w.document.close();
     return;
   }
@@ -4721,7 +4864,150 @@ function printStudentsSelectedReport(){
     .meals-grid td.blank-cell{height:30px;width:70px}
   </style>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
-  <script>window.onload=()=>{setTimeout(()=>window.print(),250)}<\/script></body></html>`);
+  <script>window.onload=()=>{setTimeout(()=>window.print(),250)}<\/script>
+/* ============================================================
+   HOTFIX 20260429J — إصلاح اختفاء الطلبات الجديدة بعد القفل
+   السبب: القفل السابق كان يعتبر بعض الطلبات الجديدة مطابقة لقرارات قديمة
+   بسبب مفاتيح غير دقيقة، فكانت تنحجب من "الجديدة".
+   هذا الإصلاح يجعل الحجب فقط بمطابقة قوية: رقم هوية/جواز، أو اسم+ميلاد+هاتف،
+   أو المفتاح الفعلي لنفس الطلب. وباقي الطلبات تظهر pending طبيعي.
+   ============================================================ */
+(function(){
+  'use strict';
+  if(window.__kp_registration_safe_visibility_20260429J) return;
+  window.__kp_registration_safe_visibility_20260429J = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function safeKey(s){ return txt(s).replace(/[.#$\[\]\/\s]/g,'_').replace(/_+/g,'_').substring(0,220); }
+  function hash(seed){ var h=0; seed=txt(seed); for(var i=0;i<seed.length;i++){ h=((h<<5)-h)+seed.charCodeAt(i); h|=0; } return Math.abs(h).toString(36); }
+  function norm(s){ return txt(s).toLowerCase().replace(/[ً-ٰٟ]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^؀-ۿa-z0-9]+/gi,' ').replace(/\s+/g,' ').trim(); }
+  function digits(s){ return txt(s).replace(/\D+/g,''); }
+  function childName(r){ r=r||{}; return txt(r.name || r.childName || r.studentName || ([r.firstName,r.familyName].filter(Boolean).join(' '))); }
+  function childDob(r){ r=r||{}; return txt(r.dob || r.birthDate || r.dateOfBirth || r.childDob).slice(0,10); }
+  function phone(r){ r=r||{}; return digits(r.dadMob || r.fatherMobile || r.dph || r.momMob || r.motherMobile || r.mph || r.phone || r.mobile); }
+  function root(){ return String(FB_URL||'').replace(/\/nursery_data\/?$/,''); }
+  function exactKeys(r){
+    r=r||{};
+    return [r.firebaseKey,r.requestId,r._fbKey,r.timestamp,r.formTimestamp,r.submittedAt,r.createdAt]
+      .map(txt).filter(Boolean).map(safeKey).filter(Boolean);
+  }
+  function strongKey(r){
+    r=r||{};
+    var id = digits(r.emiratesId || r.idNo || r.identityNo || r.nationalId || r.passport || r.childPassport);
+    if(id && id.length >= 6) return 'id_' + safeKey(id);
+    var name = norm(childName(r)), dob = childDob(r), ph = phone(r).slice(-7), dad = norm(r.dadFull || r.fatherName || r.dad);
+    if(name && dob && ph) return 'ndp_' + hash(name+'|'+dob+'|'+ph);
+    if(name && dob && dad) return 'ndf_' + hash(name+'|'+dob+'|'+dad);
+    return '';
+  }
+  function rowKey(r){ return strongKey(r) || (exactKeys(r)[0] || 'row_' + hash(JSON.stringify(r||{}).slice(0,250))); }
+  function rowUpdated(r){ return Date.parse(txt((r||{}).rowUpdatedAt || (r||{}).decisionAt || (r||{}).approvedAt || (r||{}).timestamp || (r||{}).createdAt || (r||{}).submittedAt)) || 0; }
+  async function fetchJson(url){ var sep=url.indexOf('?')>=0?'&':'?'; var res=await fetch(url+sep+'ts='+Date.now(),{cache:'no-store'}); if(!res.ok) throw new Error('HTTP '+res.status); return await res.json(); }
+  function normalizeObj(obj, folder, source){
+    var out=[]; if(!obj || typeof obj!=='object') return out;
+    if(Array.isArray(obj)){
+      obj.forEach(function(v,i){ if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v, v.firebaseKey||v.requestId||String(i)):Object.assign({firebaseKey:String(i)},v); r.status=folder; r.sourcePath=source; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||String(i)); out.push(r); }});
+    } else {
+      Object.keys(obj).forEach(function(k){ var v=obj[k]; if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v,k):Object.assign({firebaseKey:k},v); r._fbKey=k; r.status=folder; r.sourcePath=source; if(!r.firebaseKey) r.firebaseKey=safeKey(k); if(!r.requestId) r.requestId=r.firebaseKey; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||k); out.push(r); }});
+    }
+    return out;
+  }
+  async function readPath(url, folder, source){ try{return normalizeObj(await fetchJson(url), folder, source);}catch(_e){return [];} }
+  async function readAll(){
+    var base=FB_URL, rt=root();
+    var groups = [
+      [base+'/registrationRequests/pending.json','pending','pending'], [rt+'/registrationRequests/pending.json','pending','pending-root'],
+      [base+'/registrationRequests/accepted.json','approved','accepted'], [rt+'/registrationRequests/accepted.json','approved','accepted-root'],
+      [base+'/registrationRequests/rejected.json','rejected','rejected'], [rt+'/registrationRequests/rejected.json','rejected','rejected-root'],
+      [base+'/kp_form_rows.json','legacy','legacy'], [rt+'/kp_form_rows.json','legacy','legacy-root']
+    ];
+    var all=[];
+    for(var i=0;i<groups.length;i++) all=all.concat(await readPath(groups[i][0],groups[i][1],groups[i][2]));
+    return all;
+  }
+  function buildDecisionMaps(rows){
+    var exact={}, strong={};
+    (rows||[]).forEach(function(r){
+      var st=r&&r.status; if(st!=='approved' && st!=='rejected') return;
+      var item={status:st, decisionAt:r.decisionAt||r.rowUpdatedAt||new Date().toISOString(), row:r};
+      exactKeys(r).forEach(function(k){ if(k) exact[k]=item; });
+      var sk=strongKey(r); if(sk) strong[sk]=item;
+    });
+    try{
+      var saved=JSON.parse(localStorage.getItem('kp_form_decisions_v2')||'{}')||{};
+      Object.keys(saved).forEach(function(k){ var d=saved[k]; if(d&&d.status&&d.status!=='pending'){ exact[safeKey(k)]={status:d.status,decisionAt:d.decisionAt||d.savedAt,row:{}}; } });
+    }catch(_e){}
+    return {exact:exact,strong:strong};
+  }
+  function decisionFor(r,maps){
+    var ex=exactKeys(r); for(var i=0;i<ex.length;i++){ if(maps.exact[ex[i]]) return maps.exact[ex[i]]; }
+    var sk=strongKey(r); if(sk && maps.strong[sk]) return maps.strong[sk];
+    return null;
+  }
+  function mergeRows(rows){
+    rows=Array.isArray(rows)?rows:[];
+    var maps=buildDecisionMaps(rows.concat(Array.isArray(syncedFormRows)?syncedFormRows:[]));
+    var out={};
+    function add(r){
+      if(!r || !childName(r)) return;
+      var d=decisionFor(r,maps);
+      if(d && d.status && d.status!=='pending') r=Object.assign({}, r, {status:d.status, decisionAt:d.decisionAt||r.decisionAt, rowUpdatedAt:d.decisionAt||r.rowUpdatedAt});
+      if(r.status==='legacy') r.status = d ? d.status : (r.status && r.status!=='legacy'?r.status:'pending');
+      var k=rowKey(r); var old=out[k];
+      if(!old){ out[k]=r; return; }
+      var rank=function(s){return s==='rejected'?4:s==='approved'?3:s==='pending'?1:0;};
+      var rr=rank(r.status), ro=rank(old.status);
+      out[k]=(rr>ro || (rr===ro && rowUpdated(r)>=rowUpdated(old))) ? Object.assign({}, old, r) : Object.assign({}, r, old);
+    }
+    rows.forEach(add);
+    (Array.isArray(syncedFormRows)?syncedFormRows:[]).forEach(add);
+    return Object.values(out);
+  }
+  window.syncRegistrationRequestsFromFirebase = async function(options){
+    options=options||{};
+    try{
+      var rows=await readAll();
+      syncedFormRows = mergeRows(rows);
+      try{ localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); }catch(_e){}
+      if(typeof updateFormsNavBadge==='function') updateFormsNavBadge();
+      if(typeof renderFormRequests==='function') renderFormRequests();
+      if(!options.silent && typeof showSyncBadge==='function') showSyncBadge('✅ ظهرت الطلبات الجديدة وتم تثبيت حالات القديمة');
+      return {total:syncedFormRows.length, pending:syncedFormRows.filter(function(r){return (r.status||'pending')==='pending';}).length};
+    }catch(e){ console.warn('safe registration sync failed',e); if(!options.silent&&typeof showSyncBadge==='function') showSyncBadge('⚠️ تعذرت مزامنة طلبات التسجيل'); return {error:e&&e.message}; }
+  };
+  window.renderFormRequests = function(){
+    try{ if(typeof updateFormsNavBadge==='function') updateFormsNavBadge(); }catch(_e){}
+    var page=document.getElementById('pg-forms'); if(!page) return;
+    var rowsAll=Array.isArray(syncedFormRows)?syncedFormRows:[];
+    var pending=rowsAll.filter(function(r){return (r.status||'pending')==='pending';});
+    var approved=rowsAll.filter(function(r){return r.status==='approved';});
+    var rejected=rowsAll.filter(function(r){return r.status==='rejected';});
+    var pc=document.getElementById('forms-pending-count'), ac=document.getElementById('forms-approved-count'); if(pc)pc.textContent=pending.length; if(ac)ac.textContent=approved.length;
+    var filter=(document.getElementById('forms-filter')||{}).value||'pending';
+    var search=((document.getElementById('forms-search')||{}).value||'').toLowerCase();
+    var rows=filter==='all'?rowsAll:filter==='approved'?approved:filter==='rejected'?rejected:pending;
+    rows=rows.filter(function(r){return !search || [r.name,r.dadFull,r.momFull,r.nat,r.dob,r.emiratesId,r.idNo].join(' ').toLowerCase().indexOf(search)>=0;}).sort(function(a,b){return rowUpdated(b)-rowUpdated(a);});
+    var list=document.getElementById('forms-list'); if(!list) return;
+    if(!rows.length){ list.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">'+(filter==='pending'?'لا توجد طلبات جديدة':filter==='approved'?'لا توجد طلبات مقبولة':filter==='rejected'?'لا توجد طلبات مرفوضة':'لا توجد نتائج')+'</div>'; return; }
+    list.innerHTML=rows.map(function(r){
+      if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||rowKey(r));
+      var tsSafe=encodeURIComponent(String(r.timestamp||''));
+      var view='<button class="btn btn-b btn-sm" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">👁 عرض الطلب</button>';
+      var actions='';
+      if((r.status||'pending')==='pending') actions=view+'<button class="btn btn-g btn-sm" onclick="quickApprove(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">✅ قبول</button><button class="btn btn-r btn-sm" onclick="rejectFormRow(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">❌ رفض</button>';
+      else if(r.status==='approved') actions=view+'<span class="b bg">✅ مقبول</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      else actions=view+'<span class="b br">❌ مرفوض</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      return '<div class="form-req-card" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'))">'+
+        '<div class="form-req-left">'+(r.imgChildPhoto?'<img src="'+driveImgUrl(r.imgChildPhoto)+'" class="form-req-photo" onerror="this.style.display=\'none\'">':'<div class="form-req-photo-empty">👶</div>')+'</div>'+
+        '<div class="form-req-info"><div class="form-req-name">'+escapeHtml(childName(r))+'</div><div class="form-req-meta"><span>🌍 '+formatNationalityWithFlag(cleanArabicOnlyValue(r.nat)||r.nat||'—')+'</span><span>📅 '+escapeHtml(r.dob||'—')+'</span><span>'+escapeHtml(r.gen||'—')+'</span></div><div class="form-req-meta"><span>👨 '+escapeHtml(r.dadFull||r.dad||'—')+'</span><span>📱 '+escapeHtml(r.dadMob||r.dph||r.momMob||r.mph||'—')+'</span><span>📌 '+escapeHtml(r.source==='google_sheets'?'Google Sheets':(r.source||r.sourcePath||'رابط التسجيل'))+'</span></div></div>'+
+        '<div class="form-req-actions" onclick="event.stopPropagation()">'+actions+'</div></div>';
+    }).join('');
+  };
+  window.kpSafeRegistrationRefresh = async function(){ var r=await window.syncRegistrationRequestsFromFirebase({silent:false}); return r; };
+  setTimeout(function(){ try{ window.syncRegistrationRequestsFromFirebase({silent:true}); }catch(_e){} }, 700);
+})();
+
+</body></html>`);
   w.document.close();
 }
 
@@ -5049,7 +5335,150 @@ function printStudentPayments(studentId) {
       '<button class="btn" onclick="window.print()">🖨 طباعة</button>' +
       '<button class="btn" onclick="window.close()" style="background:#888">إغلاق</button>' +
     '</div>' +
-    '</body></html>'
+    '
+/* ============================================================
+   HOTFIX 20260429J — إصلاح اختفاء الطلبات الجديدة بعد القفل
+   السبب: القفل السابق كان يعتبر بعض الطلبات الجديدة مطابقة لقرارات قديمة
+   بسبب مفاتيح غير دقيقة، فكانت تنحجب من "الجديدة".
+   هذا الإصلاح يجعل الحجب فقط بمطابقة قوية: رقم هوية/جواز، أو اسم+ميلاد+هاتف،
+   أو المفتاح الفعلي لنفس الطلب. وباقي الطلبات تظهر pending طبيعي.
+   ============================================================ */
+(function(){
+  'use strict';
+  if(window.__kp_registration_safe_visibility_20260429J) return;
+  window.__kp_registration_safe_visibility_20260429J = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function safeKey(s){ return txt(s).replace(/[.#$\[\]\/\s]/g,'_').replace(/_+/g,'_').substring(0,220); }
+  function hash(seed){ var h=0; seed=txt(seed); for(var i=0;i<seed.length;i++){ h=((h<<5)-h)+seed.charCodeAt(i); h|=0; } return Math.abs(h).toString(36); }
+  function norm(s){ return txt(s).toLowerCase().replace(/[ً-ٰٟ]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^؀-ۿa-z0-9]+/gi,' ').replace(/\s+/g,' ').trim(); }
+  function digits(s){ return txt(s).replace(/\D+/g,''); }
+  function childName(r){ r=r||{}; return txt(r.name || r.childName || r.studentName || ([r.firstName,r.familyName].filter(Boolean).join(' '))); }
+  function childDob(r){ r=r||{}; return txt(r.dob || r.birthDate || r.dateOfBirth || r.childDob).slice(0,10); }
+  function phone(r){ r=r||{}; return digits(r.dadMob || r.fatherMobile || r.dph || r.momMob || r.motherMobile || r.mph || r.phone || r.mobile); }
+  function root(){ return String(FB_URL||'').replace(/\/nursery_data\/?$/,''); }
+  function exactKeys(r){
+    r=r||{};
+    return [r.firebaseKey,r.requestId,r._fbKey,r.timestamp,r.formTimestamp,r.submittedAt,r.createdAt]
+      .map(txt).filter(Boolean).map(safeKey).filter(Boolean);
+  }
+  function strongKey(r){
+    r=r||{};
+    var id = digits(r.emiratesId || r.idNo || r.identityNo || r.nationalId || r.passport || r.childPassport);
+    if(id && id.length >= 6) return 'id_' + safeKey(id);
+    var name = norm(childName(r)), dob = childDob(r), ph = phone(r).slice(-7), dad = norm(r.dadFull || r.fatherName || r.dad);
+    if(name && dob && ph) return 'ndp_' + hash(name+'|'+dob+'|'+ph);
+    if(name && dob && dad) return 'ndf_' + hash(name+'|'+dob+'|'+dad);
+    return '';
+  }
+  function rowKey(r){ return strongKey(r) || (exactKeys(r)[0] || 'row_' + hash(JSON.stringify(r||{}).slice(0,250))); }
+  function rowUpdated(r){ return Date.parse(txt((r||{}).rowUpdatedAt || (r||{}).decisionAt || (r||{}).approvedAt || (r||{}).timestamp || (r||{}).createdAt || (r||{}).submittedAt)) || 0; }
+  async function fetchJson(url){ var sep=url.indexOf('?')>=0?'&':'?'; var res=await fetch(url+sep+'ts='+Date.now(),{cache:'no-store'}); if(!res.ok) throw new Error('HTTP '+res.status); return await res.json(); }
+  function normalizeObj(obj, folder, source){
+    var out=[]; if(!obj || typeof obj!=='object') return out;
+    if(Array.isArray(obj)){
+      obj.forEach(function(v,i){ if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v, v.firebaseKey||v.requestId||String(i)):Object.assign({firebaseKey:String(i)},v); r.status=folder; r.sourcePath=source; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||String(i)); out.push(r); }});
+    } else {
+      Object.keys(obj).forEach(function(k){ var v=obj[k]; if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v,k):Object.assign({firebaseKey:k},v); r._fbKey=k; r.status=folder; r.sourcePath=source; if(!r.firebaseKey) r.firebaseKey=safeKey(k); if(!r.requestId) r.requestId=r.firebaseKey; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||k); out.push(r); }});
+    }
+    return out;
+  }
+  async function readPath(url, folder, source){ try{return normalizeObj(await fetchJson(url), folder, source);}catch(_e){return [];} }
+  async function readAll(){
+    var base=FB_URL, rt=root();
+    var groups = [
+      [base+'/registrationRequests/pending.json','pending','pending'], [rt+'/registrationRequests/pending.json','pending','pending-root'],
+      [base+'/registrationRequests/accepted.json','approved','accepted'], [rt+'/registrationRequests/accepted.json','approved','accepted-root'],
+      [base+'/registrationRequests/rejected.json','rejected','rejected'], [rt+'/registrationRequests/rejected.json','rejected','rejected-root'],
+      [base+'/kp_form_rows.json','legacy','legacy'], [rt+'/kp_form_rows.json','legacy','legacy-root']
+    ];
+    var all=[];
+    for(var i=0;i<groups.length;i++) all=all.concat(await readPath(groups[i][0],groups[i][1],groups[i][2]));
+    return all;
+  }
+  function buildDecisionMaps(rows){
+    var exact={}, strong={};
+    (rows||[]).forEach(function(r){
+      var st=r&&r.status; if(st!=='approved' && st!=='rejected') return;
+      var item={status:st, decisionAt:r.decisionAt||r.rowUpdatedAt||new Date().toISOString(), row:r};
+      exactKeys(r).forEach(function(k){ if(k) exact[k]=item; });
+      var sk=strongKey(r); if(sk) strong[sk]=item;
+    });
+    try{
+      var saved=JSON.parse(localStorage.getItem('kp_form_decisions_v2')||'{}')||{};
+      Object.keys(saved).forEach(function(k){ var d=saved[k]; if(d&&d.status&&d.status!=='pending'){ exact[safeKey(k)]={status:d.status,decisionAt:d.decisionAt||d.savedAt,row:{}}; } });
+    }catch(_e){}
+    return {exact:exact,strong:strong};
+  }
+  function decisionFor(r,maps){
+    var ex=exactKeys(r); for(var i=0;i<ex.length;i++){ if(maps.exact[ex[i]]) return maps.exact[ex[i]]; }
+    var sk=strongKey(r); if(sk && maps.strong[sk]) return maps.strong[sk];
+    return null;
+  }
+  function mergeRows(rows){
+    rows=Array.isArray(rows)?rows:[];
+    var maps=buildDecisionMaps(rows.concat(Array.isArray(syncedFormRows)?syncedFormRows:[]));
+    var out={};
+    function add(r){
+      if(!r || !childName(r)) return;
+      var d=decisionFor(r,maps);
+      if(d && d.status && d.status!=='pending') r=Object.assign({}, r, {status:d.status, decisionAt:d.decisionAt||r.decisionAt, rowUpdatedAt:d.decisionAt||r.rowUpdatedAt});
+      if(r.status==='legacy') r.status = d ? d.status : (r.status && r.status!=='legacy'?r.status:'pending');
+      var k=rowKey(r); var old=out[k];
+      if(!old){ out[k]=r; return; }
+      var rank=function(s){return s==='rejected'?4:s==='approved'?3:s==='pending'?1:0;};
+      var rr=rank(r.status), ro=rank(old.status);
+      out[k]=(rr>ro || (rr===ro && rowUpdated(r)>=rowUpdated(old))) ? Object.assign({}, old, r) : Object.assign({}, r, old);
+    }
+    rows.forEach(add);
+    (Array.isArray(syncedFormRows)?syncedFormRows:[]).forEach(add);
+    return Object.values(out);
+  }
+  window.syncRegistrationRequestsFromFirebase = async function(options){
+    options=options||{};
+    try{
+      var rows=await readAll();
+      syncedFormRows = mergeRows(rows);
+      try{ localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); }catch(_e){}
+      if(typeof updateFormsNavBadge==='function') updateFormsNavBadge();
+      if(typeof renderFormRequests==='function') renderFormRequests();
+      if(!options.silent && typeof showSyncBadge==='function') showSyncBadge('✅ ظهرت الطلبات الجديدة وتم تثبيت حالات القديمة');
+      return {total:syncedFormRows.length, pending:syncedFormRows.filter(function(r){return (r.status||'pending')==='pending';}).length};
+    }catch(e){ console.warn('safe registration sync failed',e); if(!options.silent&&typeof showSyncBadge==='function') showSyncBadge('⚠️ تعذرت مزامنة طلبات التسجيل'); return {error:e&&e.message}; }
+  };
+  window.renderFormRequests = function(){
+    try{ if(typeof updateFormsNavBadge==='function') updateFormsNavBadge(); }catch(_e){}
+    var page=document.getElementById('pg-forms'); if(!page) return;
+    var rowsAll=Array.isArray(syncedFormRows)?syncedFormRows:[];
+    var pending=rowsAll.filter(function(r){return (r.status||'pending')==='pending';});
+    var approved=rowsAll.filter(function(r){return r.status==='approved';});
+    var rejected=rowsAll.filter(function(r){return r.status==='rejected';});
+    var pc=document.getElementById('forms-pending-count'), ac=document.getElementById('forms-approved-count'); if(pc)pc.textContent=pending.length; if(ac)ac.textContent=approved.length;
+    var filter=(document.getElementById('forms-filter')||{}).value||'pending';
+    var search=((document.getElementById('forms-search')||{}).value||'').toLowerCase();
+    var rows=filter==='all'?rowsAll:filter==='approved'?approved:filter==='rejected'?rejected:pending;
+    rows=rows.filter(function(r){return !search || [r.name,r.dadFull,r.momFull,r.nat,r.dob,r.emiratesId,r.idNo].join(' ').toLowerCase().indexOf(search)>=0;}).sort(function(a,b){return rowUpdated(b)-rowUpdated(a);});
+    var list=document.getElementById('forms-list'); if(!list) return;
+    if(!rows.length){ list.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">'+(filter==='pending'?'لا توجد طلبات جديدة':filter==='approved'?'لا توجد طلبات مقبولة':filter==='rejected'?'لا توجد طلبات مرفوضة':'لا توجد نتائج')+'</div>'; return; }
+    list.innerHTML=rows.map(function(r){
+      if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||rowKey(r));
+      var tsSafe=encodeURIComponent(String(r.timestamp||''));
+      var view='<button class="btn btn-b btn-sm" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">👁 عرض الطلب</button>';
+      var actions='';
+      if((r.status||'pending')==='pending') actions=view+'<button class="btn btn-g btn-sm" onclick="quickApprove(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">✅ قبول</button><button class="btn btn-r btn-sm" onclick="rejectFormRow(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">❌ رفض</button>';
+      else if(r.status==='approved') actions=view+'<span class="b bg">✅ مقبول</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      else actions=view+'<span class="b br">❌ مرفوض</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      return '<div class="form-req-card" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'))">'+
+        '<div class="form-req-left">'+(r.imgChildPhoto?'<img src="'+driveImgUrl(r.imgChildPhoto)+'" class="form-req-photo" onerror="this.style.display=\'none\'">':'<div class="form-req-photo-empty">👶</div>')+'</div>'+
+        '<div class="form-req-info"><div class="form-req-name">'+escapeHtml(childName(r))+'</div><div class="form-req-meta"><span>🌍 '+formatNationalityWithFlag(cleanArabicOnlyValue(r.nat)||r.nat||'—')+'</span><span>📅 '+escapeHtml(r.dob||'—')+'</span><span>'+escapeHtml(r.gen||'—')+'</span></div><div class="form-req-meta"><span>👨 '+escapeHtml(r.dadFull||r.dad||'—')+'</span><span>📱 '+escapeHtml(r.dadMob||r.dph||r.momMob||r.mph||'—')+'</span><span>📌 '+escapeHtml(r.source==='google_sheets'?'Google Sheets':(r.source||r.sourcePath||'رابط التسجيل'))+'</span></div></div>'+
+        '<div class="form-req-actions" onclick="event.stopPropagation()">'+actions+'</div></div>';
+    }).join('');
+  };
+  window.kpSafeRegistrationRefresh = async function(){ var r=await window.syncRegistrationRequestsFromFirebase({silent:false}); return r; };
+  setTimeout(function(){ try{ window.syncRegistrationRequestsFromFirebase({silent:true}); }catch(_e){} }, 700);
+})();
+
+</body></html>'
   );
   w.document.close();
 }
@@ -5225,7 +5654,150 @@ function printStudentFullFile(studentId) {
     '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+total.toLocaleString()+' د.إ — عدد السندات: '+pays.length+'</div></div>'+
     '<div class="sec"><h2>المرفقات والوثائق</h2><div class="docs">'+docCards+'</div></div>'+
     '<div class="actions"><button class="btn" onclick="window.print()">🖨 طباعة</button><button class="btn gray" onclick="window.close()">إغلاق</button></div>'+
-  '</body></html>');
+  '
+/* ============================================================
+   HOTFIX 20260429J — إصلاح اختفاء الطلبات الجديدة بعد القفل
+   السبب: القفل السابق كان يعتبر بعض الطلبات الجديدة مطابقة لقرارات قديمة
+   بسبب مفاتيح غير دقيقة، فكانت تنحجب من "الجديدة".
+   هذا الإصلاح يجعل الحجب فقط بمطابقة قوية: رقم هوية/جواز، أو اسم+ميلاد+هاتف،
+   أو المفتاح الفعلي لنفس الطلب. وباقي الطلبات تظهر pending طبيعي.
+   ============================================================ */
+(function(){
+  'use strict';
+  if(window.__kp_registration_safe_visibility_20260429J) return;
+  window.__kp_registration_safe_visibility_20260429J = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function safeKey(s){ return txt(s).replace(/[.#$\[\]\/\s]/g,'_').replace(/_+/g,'_').substring(0,220); }
+  function hash(seed){ var h=0; seed=txt(seed); for(var i=0;i<seed.length;i++){ h=((h<<5)-h)+seed.charCodeAt(i); h|=0; } return Math.abs(h).toString(36); }
+  function norm(s){ return txt(s).toLowerCase().replace(/[ً-ٰٟ]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^؀-ۿa-z0-9]+/gi,' ').replace(/\s+/g,' ').trim(); }
+  function digits(s){ return txt(s).replace(/\D+/g,''); }
+  function childName(r){ r=r||{}; return txt(r.name || r.childName || r.studentName || ([r.firstName,r.familyName].filter(Boolean).join(' '))); }
+  function childDob(r){ r=r||{}; return txt(r.dob || r.birthDate || r.dateOfBirth || r.childDob).slice(0,10); }
+  function phone(r){ r=r||{}; return digits(r.dadMob || r.fatherMobile || r.dph || r.momMob || r.motherMobile || r.mph || r.phone || r.mobile); }
+  function root(){ return String(FB_URL||'').replace(/\/nursery_data\/?$/,''); }
+  function exactKeys(r){
+    r=r||{};
+    return [r.firebaseKey,r.requestId,r._fbKey,r.timestamp,r.formTimestamp,r.submittedAt,r.createdAt]
+      .map(txt).filter(Boolean).map(safeKey).filter(Boolean);
+  }
+  function strongKey(r){
+    r=r||{};
+    var id = digits(r.emiratesId || r.idNo || r.identityNo || r.nationalId || r.passport || r.childPassport);
+    if(id && id.length >= 6) return 'id_' + safeKey(id);
+    var name = norm(childName(r)), dob = childDob(r), ph = phone(r).slice(-7), dad = norm(r.dadFull || r.fatherName || r.dad);
+    if(name && dob && ph) return 'ndp_' + hash(name+'|'+dob+'|'+ph);
+    if(name && dob && dad) return 'ndf_' + hash(name+'|'+dob+'|'+dad);
+    return '';
+  }
+  function rowKey(r){ return strongKey(r) || (exactKeys(r)[0] || 'row_' + hash(JSON.stringify(r||{}).slice(0,250))); }
+  function rowUpdated(r){ return Date.parse(txt((r||{}).rowUpdatedAt || (r||{}).decisionAt || (r||{}).approvedAt || (r||{}).timestamp || (r||{}).createdAt || (r||{}).submittedAt)) || 0; }
+  async function fetchJson(url){ var sep=url.indexOf('?')>=0?'&':'?'; var res=await fetch(url+sep+'ts='+Date.now(),{cache:'no-store'}); if(!res.ok) throw new Error('HTTP '+res.status); return await res.json(); }
+  function normalizeObj(obj, folder, source){
+    var out=[]; if(!obj || typeof obj!=='object') return out;
+    if(Array.isArray(obj)){
+      obj.forEach(function(v,i){ if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v, v.firebaseKey||v.requestId||String(i)):Object.assign({firebaseKey:String(i)},v); r.status=folder; r.sourcePath=source; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||String(i)); out.push(r); }});
+    } else {
+      Object.keys(obj).forEach(function(k){ var v=obj[k]; if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v,k):Object.assign({firebaseKey:k},v); r._fbKey=k; r.status=folder; r.sourcePath=source; if(!r.firebaseKey) r.firebaseKey=safeKey(k); if(!r.requestId) r.requestId=r.firebaseKey; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||k); out.push(r); }});
+    }
+    return out;
+  }
+  async function readPath(url, folder, source){ try{return normalizeObj(await fetchJson(url), folder, source);}catch(_e){return [];} }
+  async function readAll(){
+    var base=FB_URL, rt=root();
+    var groups = [
+      [base+'/registrationRequests/pending.json','pending','pending'], [rt+'/registrationRequests/pending.json','pending','pending-root'],
+      [base+'/registrationRequests/accepted.json','approved','accepted'], [rt+'/registrationRequests/accepted.json','approved','accepted-root'],
+      [base+'/registrationRequests/rejected.json','rejected','rejected'], [rt+'/registrationRequests/rejected.json','rejected','rejected-root'],
+      [base+'/kp_form_rows.json','legacy','legacy'], [rt+'/kp_form_rows.json','legacy','legacy-root']
+    ];
+    var all=[];
+    for(var i=0;i<groups.length;i++) all=all.concat(await readPath(groups[i][0],groups[i][1],groups[i][2]));
+    return all;
+  }
+  function buildDecisionMaps(rows){
+    var exact={}, strong={};
+    (rows||[]).forEach(function(r){
+      var st=r&&r.status; if(st!=='approved' && st!=='rejected') return;
+      var item={status:st, decisionAt:r.decisionAt||r.rowUpdatedAt||new Date().toISOString(), row:r};
+      exactKeys(r).forEach(function(k){ if(k) exact[k]=item; });
+      var sk=strongKey(r); if(sk) strong[sk]=item;
+    });
+    try{
+      var saved=JSON.parse(localStorage.getItem('kp_form_decisions_v2')||'{}')||{};
+      Object.keys(saved).forEach(function(k){ var d=saved[k]; if(d&&d.status&&d.status!=='pending'){ exact[safeKey(k)]={status:d.status,decisionAt:d.decisionAt||d.savedAt,row:{}}; } });
+    }catch(_e){}
+    return {exact:exact,strong:strong};
+  }
+  function decisionFor(r,maps){
+    var ex=exactKeys(r); for(var i=0;i<ex.length;i++){ if(maps.exact[ex[i]]) return maps.exact[ex[i]]; }
+    var sk=strongKey(r); if(sk && maps.strong[sk]) return maps.strong[sk];
+    return null;
+  }
+  function mergeRows(rows){
+    rows=Array.isArray(rows)?rows:[];
+    var maps=buildDecisionMaps(rows.concat(Array.isArray(syncedFormRows)?syncedFormRows:[]));
+    var out={};
+    function add(r){
+      if(!r || !childName(r)) return;
+      var d=decisionFor(r,maps);
+      if(d && d.status && d.status!=='pending') r=Object.assign({}, r, {status:d.status, decisionAt:d.decisionAt||r.decisionAt, rowUpdatedAt:d.decisionAt||r.rowUpdatedAt});
+      if(r.status==='legacy') r.status = d ? d.status : (r.status && r.status!=='legacy'?r.status:'pending');
+      var k=rowKey(r); var old=out[k];
+      if(!old){ out[k]=r; return; }
+      var rank=function(s){return s==='rejected'?4:s==='approved'?3:s==='pending'?1:0;};
+      var rr=rank(r.status), ro=rank(old.status);
+      out[k]=(rr>ro || (rr===ro && rowUpdated(r)>=rowUpdated(old))) ? Object.assign({}, old, r) : Object.assign({}, r, old);
+    }
+    rows.forEach(add);
+    (Array.isArray(syncedFormRows)?syncedFormRows:[]).forEach(add);
+    return Object.values(out);
+  }
+  window.syncRegistrationRequestsFromFirebase = async function(options){
+    options=options||{};
+    try{
+      var rows=await readAll();
+      syncedFormRows = mergeRows(rows);
+      try{ localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); }catch(_e){}
+      if(typeof updateFormsNavBadge==='function') updateFormsNavBadge();
+      if(typeof renderFormRequests==='function') renderFormRequests();
+      if(!options.silent && typeof showSyncBadge==='function') showSyncBadge('✅ ظهرت الطلبات الجديدة وتم تثبيت حالات القديمة');
+      return {total:syncedFormRows.length, pending:syncedFormRows.filter(function(r){return (r.status||'pending')==='pending';}).length};
+    }catch(e){ console.warn('safe registration sync failed',e); if(!options.silent&&typeof showSyncBadge==='function') showSyncBadge('⚠️ تعذرت مزامنة طلبات التسجيل'); return {error:e&&e.message}; }
+  };
+  window.renderFormRequests = function(){
+    try{ if(typeof updateFormsNavBadge==='function') updateFormsNavBadge(); }catch(_e){}
+    var page=document.getElementById('pg-forms'); if(!page) return;
+    var rowsAll=Array.isArray(syncedFormRows)?syncedFormRows:[];
+    var pending=rowsAll.filter(function(r){return (r.status||'pending')==='pending';});
+    var approved=rowsAll.filter(function(r){return r.status==='approved';});
+    var rejected=rowsAll.filter(function(r){return r.status==='rejected';});
+    var pc=document.getElementById('forms-pending-count'), ac=document.getElementById('forms-approved-count'); if(pc)pc.textContent=pending.length; if(ac)ac.textContent=approved.length;
+    var filter=(document.getElementById('forms-filter')||{}).value||'pending';
+    var search=((document.getElementById('forms-search')||{}).value||'').toLowerCase();
+    var rows=filter==='all'?rowsAll:filter==='approved'?approved:filter==='rejected'?rejected:pending;
+    rows=rows.filter(function(r){return !search || [r.name,r.dadFull,r.momFull,r.nat,r.dob,r.emiratesId,r.idNo].join(' ').toLowerCase().indexOf(search)>=0;}).sort(function(a,b){return rowUpdated(b)-rowUpdated(a);});
+    var list=document.getElementById('forms-list'); if(!list) return;
+    if(!rows.length){ list.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">'+(filter==='pending'?'لا توجد طلبات جديدة':filter==='approved'?'لا توجد طلبات مقبولة':filter==='rejected'?'لا توجد طلبات مرفوضة':'لا توجد نتائج')+'</div>'; return; }
+    list.innerHTML=rows.map(function(r){
+      if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||rowKey(r));
+      var tsSafe=encodeURIComponent(String(r.timestamp||''));
+      var view='<button class="btn btn-b btn-sm" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">👁 عرض الطلب</button>';
+      var actions='';
+      if((r.status||'pending')==='pending') actions=view+'<button class="btn btn-g btn-sm" onclick="quickApprove(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">✅ قبول</button><button class="btn btn-r btn-sm" onclick="rejectFormRow(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">❌ رفض</button>';
+      else if(r.status==='approved') actions=view+'<span class="b bg">✅ مقبول</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      else actions=view+'<span class="b br">❌ مرفوض</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      return '<div class="form-req-card" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'))">'+
+        '<div class="form-req-left">'+(r.imgChildPhoto?'<img src="'+driveImgUrl(r.imgChildPhoto)+'" class="form-req-photo" onerror="this.style.display=\'none\'">':'<div class="form-req-photo-empty">👶</div>')+'</div>'+
+        '<div class="form-req-info"><div class="form-req-name">'+escapeHtml(childName(r))+'</div><div class="form-req-meta"><span>🌍 '+formatNationalityWithFlag(cleanArabicOnlyValue(r.nat)||r.nat||'—')+'</span><span>📅 '+escapeHtml(r.dob||'—')+'</span><span>'+escapeHtml(r.gen||'—')+'</span></div><div class="form-req-meta"><span>👨 '+escapeHtml(r.dadFull||r.dad||'—')+'</span><span>📱 '+escapeHtml(r.dadMob||r.dph||r.momMob||r.mph||'—')+'</span><span>📌 '+escapeHtml(r.source==='google_sheets'?'Google Sheets':(r.source||r.sourcePath||'رابط التسجيل'))+'</span></div></div>'+
+        '<div class="form-req-actions" onclick="event.stopPropagation()">'+actions+'</div></div>';
+    }).join('');
+  };
+  window.kpSafeRegistrationRefresh = async function(){ var r=await window.syncRegistrationRequestsFromFirebase({silent:false}); return r; };
+  setTimeout(function(){ try{ window.syncRegistrationRequestsFromFirebase({silent:true}); }catch(_e){} }, 700);
+})();
+
+</body></html>');
   w.document.close();
 }
 
@@ -7225,7 +7797,150 @@ function doPrintExport(){
     d.rows.forEach(r=>{html+=`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`;});
     html+='</tbody>';
   }
-  html+='</table></body></html>';
+  html+='</table>
+/* ============================================================
+   HOTFIX 20260429J — إصلاح اختفاء الطلبات الجديدة بعد القفل
+   السبب: القفل السابق كان يعتبر بعض الطلبات الجديدة مطابقة لقرارات قديمة
+   بسبب مفاتيح غير دقيقة، فكانت تنحجب من "الجديدة".
+   هذا الإصلاح يجعل الحجب فقط بمطابقة قوية: رقم هوية/جواز، أو اسم+ميلاد+هاتف،
+   أو المفتاح الفعلي لنفس الطلب. وباقي الطلبات تظهر pending طبيعي.
+   ============================================================ */
+(function(){
+  'use strict';
+  if(window.__kp_registration_safe_visibility_20260429J) return;
+  window.__kp_registration_safe_visibility_20260429J = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function safeKey(s){ return txt(s).replace(/[.#$\[\]\/\s]/g,'_').replace(/_+/g,'_').substring(0,220); }
+  function hash(seed){ var h=0; seed=txt(seed); for(var i=0;i<seed.length;i++){ h=((h<<5)-h)+seed.charCodeAt(i); h|=0; } return Math.abs(h).toString(36); }
+  function norm(s){ return txt(s).toLowerCase().replace(/[ً-ٰٟ]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^؀-ۿa-z0-9]+/gi,' ').replace(/\s+/g,' ').trim(); }
+  function digits(s){ return txt(s).replace(/\D+/g,''); }
+  function childName(r){ r=r||{}; return txt(r.name || r.childName || r.studentName || ([r.firstName,r.familyName].filter(Boolean).join(' '))); }
+  function childDob(r){ r=r||{}; return txt(r.dob || r.birthDate || r.dateOfBirth || r.childDob).slice(0,10); }
+  function phone(r){ r=r||{}; return digits(r.dadMob || r.fatherMobile || r.dph || r.momMob || r.motherMobile || r.mph || r.phone || r.mobile); }
+  function root(){ return String(FB_URL||'').replace(/\/nursery_data\/?$/,''); }
+  function exactKeys(r){
+    r=r||{};
+    return [r.firebaseKey,r.requestId,r._fbKey,r.timestamp,r.formTimestamp,r.submittedAt,r.createdAt]
+      .map(txt).filter(Boolean).map(safeKey).filter(Boolean);
+  }
+  function strongKey(r){
+    r=r||{};
+    var id = digits(r.emiratesId || r.idNo || r.identityNo || r.nationalId || r.passport || r.childPassport);
+    if(id && id.length >= 6) return 'id_' + safeKey(id);
+    var name = norm(childName(r)), dob = childDob(r), ph = phone(r).slice(-7), dad = norm(r.dadFull || r.fatherName || r.dad);
+    if(name && dob && ph) return 'ndp_' + hash(name+'|'+dob+'|'+ph);
+    if(name && dob && dad) return 'ndf_' + hash(name+'|'+dob+'|'+dad);
+    return '';
+  }
+  function rowKey(r){ return strongKey(r) || (exactKeys(r)[0] || 'row_' + hash(JSON.stringify(r||{}).slice(0,250))); }
+  function rowUpdated(r){ return Date.parse(txt((r||{}).rowUpdatedAt || (r||{}).decisionAt || (r||{}).approvedAt || (r||{}).timestamp || (r||{}).createdAt || (r||{}).submittedAt)) || 0; }
+  async function fetchJson(url){ var sep=url.indexOf('?')>=0?'&':'?'; var res=await fetch(url+sep+'ts='+Date.now(),{cache:'no-store'}); if(!res.ok) throw new Error('HTTP '+res.status); return await res.json(); }
+  function normalizeObj(obj, folder, source){
+    var out=[]; if(!obj || typeof obj!=='object') return out;
+    if(Array.isArray(obj)){
+      obj.forEach(function(v,i){ if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v, v.firebaseKey||v.requestId||String(i)):Object.assign({firebaseKey:String(i)},v); r.status=folder; r.sourcePath=source; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||String(i)); out.push(r); }});
+    } else {
+      Object.keys(obj).forEach(function(k){ var v=obj[k]; if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v,k):Object.assign({firebaseKey:k},v); r._fbKey=k; r.status=folder; r.sourcePath=source; if(!r.firebaseKey) r.firebaseKey=safeKey(k); if(!r.requestId) r.requestId=r.firebaseKey; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||k); out.push(r); }});
+    }
+    return out;
+  }
+  async function readPath(url, folder, source){ try{return normalizeObj(await fetchJson(url), folder, source);}catch(_e){return [];} }
+  async function readAll(){
+    var base=FB_URL, rt=root();
+    var groups = [
+      [base+'/registrationRequests/pending.json','pending','pending'], [rt+'/registrationRequests/pending.json','pending','pending-root'],
+      [base+'/registrationRequests/accepted.json','approved','accepted'], [rt+'/registrationRequests/accepted.json','approved','accepted-root'],
+      [base+'/registrationRequests/rejected.json','rejected','rejected'], [rt+'/registrationRequests/rejected.json','rejected','rejected-root'],
+      [base+'/kp_form_rows.json','legacy','legacy'], [rt+'/kp_form_rows.json','legacy','legacy-root']
+    ];
+    var all=[];
+    for(var i=0;i<groups.length;i++) all=all.concat(await readPath(groups[i][0],groups[i][1],groups[i][2]));
+    return all;
+  }
+  function buildDecisionMaps(rows){
+    var exact={}, strong={};
+    (rows||[]).forEach(function(r){
+      var st=r&&r.status; if(st!=='approved' && st!=='rejected') return;
+      var item={status:st, decisionAt:r.decisionAt||r.rowUpdatedAt||new Date().toISOString(), row:r};
+      exactKeys(r).forEach(function(k){ if(k) exact[k]=item; });
+      var sk=strongKey(r); if(sk) strong[sk]=item;
+    });
+    try{
+      var saved=JSON.parse(localStorage.getItem('kp_form_decisions_v2')||'{}')||{};
+      Object.keys(saved).forEach(function(k){ var d=saved[k]; if(d&&d.status&&d.status!=='pending'){ exact[safeKey(k)]={status:d.status,decisionAt:d.decisionAt||d.savedAt,row:{}}; } });
+    }catch(_e){}
+    return {exact:exact,strong:strong};
+  }
+  function decisionFor(r,maps){
+    var ex=exactKeys(r); for(var i=0;i<ex.length;i++){ if(maps.exact[ex[i]]) return maps.exact[ex[i]]; }
+    var sk=strongKey(r); if(sk && maps.strong[sk]) return maps.strong[sk];
+    return null;
+  }
+  function mergeRows(rows){
+    rows=Array.isArray(rows)?rows:[];
+    var maps=buildDecisionMaps(rows.concat(Array.isArray(syncedFormRows)?syncedFormRows:[]));
+    var out={};
+    function add(r){
+      if(!r || !childName(r)) return;
+      var d=decisionFor(r,maps);
+      if(d && d.status && d.status!=='pending') r=Object.assign({}, r, {status:d.status, decisionAt:d.decisionAt||r.decisionAt, rowUpdatedAt:d.decisionAt||r.rowUpdatedAt});
+      if(r.status==='legacy') r.status = d ? d.status : (r.status && r.status!=='legacy'?r.status:'pending');
+      var k=rowKey(r); var old=out[k];
+      if(!old){ out[k]=r; return; }
+      var rank=function(s){return s==='rejected'?4:s==='approved'?3:s==='pending'?1:0;};
+      var rr=rank(r.status), ro=rank(old.status);
+      out[k]=(rr>ro || (rr===ro && rowUpdated(r)>=rowUpdated(old))) ? Object.assign({}, old, r) : Object.assign({}, r, old);
+    }
+    rows.forEach(add);
+    (Array.isArray(syncedFormRows)?syncedFormRows:[]).forEach(add);
+    return Object.values(out);
+  }
+  window.syncRegistrationRequestsFromFirebase = async function(options){
+    options=options||{};
+    try{
+      var rows=await readAll();
+      syncedFormRows = mergeRows(rows);
+      try{ localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); }catch(_e){}
+      if(typeof updateFormsNavBadge==='function') updateFormsNavBadge();
+      if(typeof renderFormRequests==='function') renderFormRequests();
+      if(!options.silent && typeof showSyncBadge==='function') showSyncBadge('✅ ظهرت الطلبات الجديدة وتم تثبيت حالات القديمة');
+      return {total:syncedFormRows.length, pending:syncedFormRows.filter(function(r){return (r.status||'pending')==='pending';}).length};
+    }catch(e){ console.warn('safe registration sync failed',e); if(!options.silent&&typeof showSyncBadge==='function') showSyncBadge('⚠️ تعذرت مزامنة طلبات التسجيل'); return {error:e&&e.message}; }
+  };
+  window.renderFormRequests = function(){
+    try{ if(typeof updateFormsNavBadge==='function') updateFormsNavBadge(); }catch(_e){}
+    var page=document.getElementById('pg-forms'); if(!page) return;
+    var rowsAll=Array.isArray(syncedFormRows)?syncedFormRows:[];
+    var pending=rowsAll.filter(function(r){return (r.status||'pending')==='pending';});
+    var approved=rowsAll.filter(function(r){return r.status==='approved';});
+    var rejected=rowsAll.filter(function(r){return r.status==='rejected';});
+    var pc=document.getElementById('forms-pending-count'), ac=document.getElementById('forms-approved-count'); if(pc)pc.textContent=pending.length; if(ac)ac.textContent=approved.length;
+    var filter=(document.getElementById('forms-filter')||{}).value||'pending';
+    var search=((document.getElementById('forms-search')||{}).value||'').toLowerCase();
+    var rows=filter==='all'?rowsAll:filter==='approved'?approved:filter==='rejected'?rejected:pending;
+    rows=rows.filter(function(r){return !search || [r.name,r.dadFull,r.momFull,r.nat,r.dob,r.emiratesId,r.idNo].join(' ').toLowerCase().indexOf(search)>=0;}).sort(function(a,b){return rowUpdated(b)-rowUpdated(a);});
+    var list=document.getElementById('forms-list'); if(!list) return;
+    if(!rows.length){ list.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">'+(filter==='pending'?'لا توجد طلبات جديدة':filter==='approved'?'لا توجد طلبات مقبولة':filter==='rejected'?'لا توجد طلبات مرفوضة':'لا توجد نتائج')+'</div>'; return; }
+    list.innerHTML=rows.map(function(r){
+      if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||rowKey(r));
+      var tsSafe=encodeURIComponent(String(r.timestamp||''));
+      var view='<button class="btn btn-b btn-sm" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">👁 عرض الطلب</button>';
+      var actions='';
+      if((r.status||'pending')==='pending') actions=view+'<button class="btn btn-g btn-sm" onclick="quickApprove(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">✅ قبول</button><button class="btn btn-r btn-sm" onclick="rejectFormRow(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">❌ رفض</button>';
+      else if(r.status==='approved') actions=view+'<span class="b bg">✅ مقبول</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      else actions=view+'<span class="b br">❌ مرفوض</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      return '<div class="form-req-card" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'))">'+
+        '<div class="form-req-left">'+(r.imgChildPhoto?'<img src="'+driveImgUrl(r.imgChildPhoto)+'" class="form-req-photo" onerror="this.style.display=\'none\'">':'<div class="form-req-photo-empty">👶</div>')+'</div>'+
+        '<div class="form-req-info"><div class="form-req-name">'+escapeHtml(childName(r))+'</div><div class="form-req-meta"><span>🌍 '+formatNationalityWithFlag(cleanArabicOnlyValue(r.nat)||r.nat||'—')+'</span><span>📅 '+escapeHtml(r.dob||'—')+'</span><span>'+escapeHtml(r.gen||'—')+'</span></div><div class="form-req-meta"><span>👨 '+escapeHtml(r.dadFull||r.dad||'—')+'</span><span>📱 '+escapeHtml(r.dadMob||r.dph||r.momMob||r.mph||'—')+'</span><span>📌 '+escapeHtml(r.source==='google_sheets'?'Google Sheets':(r.source||r.sourcePath||'رابط التسجيل'))+'</span></div></div>'+
+        '<div class="form-req-actions" onclick="event.stopPropagation()">'+actions+'</div></div>';
+    }).join('');
+  };
+  window.kpSafeRegistrationRefresh = async function(){ var r=await window.syncRegistrationRequestsFromFirebase({silent:false}); return r; };
+  setTimeout(function(){ try{ window.syncRegistrationRequestsFromFirebase({silent:true}); }catch(_e){} }, 700);
+})();
+
+</body></html>';
   const w=window.open('','_blank');
   w.document.write(html);
   w.document.close();
@@ -7865,7 +8580,150 @@ function printAllWorksheets() {
 </div>`;
   });
 
-  printHtml += `</body></html>`;
+  printHtml += `
+/* ============================================================
+   HOTFIX 20260429J — إصلاح اختفاء الطلبات الجديدة بعد القفل
+   السبب: القفل السابق كان يعتبر بعض الطلبات الجديدة مطابقة لقرارات قديمة
+   بسبب مفاتيح غير دقيقة، فكانت تنحجب من "الجديدة".
+   هذا الإصلاح يجعل الحجب فقط بمطابقة قوية: رقم هوية/جواز، أو اسم+ميلاد+هاتف،
+   أو المفتاح الفعلي لنفس الطلب. وباقي الطلبات تظهر pending طبيعي.
+   ============================================================ */
+(function(){
+  'use strict';
+  if(window.__kp_registration_safe_visibility_20260429J) return;
+  window.__kp_registration_safe_visibility_20260429J = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function safeKey(s){ return txt(s).replace(/[.#$\[\]\/\s]/g,'_').replace(/_+/g,'_').substring(0,220); }
+  function hash(seed){ var h=0; seed=txt(seed); for(var i=0;i<seed.length;i++){ h=((h<<5)-h)+seed.charCodeAt(i); h|=0; } return Math.abs(h).toString(36); }
+  function norm(s){ return txt(s).toLowerCase().replace(/[ً-ٰٟ]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^؀-ۿa-z0-9]+/gi,' ').replace(/\s+/g,' ').trim(); }
+  function digits(s){ return txt(s).replace(/\D+/g,''); }
+  function childName(r){ r=r||{}; return txt(r.name || r.childName || r.studentName || ([r.firstName,r.familyName].filter(Boolean).join(' '))); }
+  function childDob(r){ r=r||{}; return txt(r.dob || r.birthDate || r.dateOfBirth || r.childDob).slice(0,10); }
+  function phone(r){ r=r||{}; return digits(r.dadMob || r.fatherMobile || r.dph || r.momMob || r.motherMobile || r.mph || r.phone || r.mobile); }
+  function root(){ return String(FB_URL||'').replace(/\/nursery_data\/?$/,''); }
+  function exactKeys(r){
+    r=r||{};
+    return [r.firebaseKey,r.requestId,r._fbKey,r.timestamp,r.formTimestamp,r.submittedAt,r.createdAt]
+      .map(txt).filter(Boolean).map(safeKey).filter(Boolean);
+  }
+  function strongKey(r){
+    r=r||{};
+    var id = digits(r.emiratesId || r.idNo || r.identityNo || r.nationalId || r.passport || r.childPassport);
+    if(id && id.length >= 6) return 'id_' + safeKey(id);
+    var name = norm(childName(r)), dob = childDob(r), ph = phone(r).slice(-7), dad = norm(r.dadFull || r.fatherName || r.dad);
+    if(name && dob && ph) return 'ndp_' + hash(name+'|'+dob+'|'+ph);
+    if(name && dob && dad) return 'ndf_' + hash(name+'|'+dob+'|'+dad);
+    return '';
+  }
+  function rowKey(r){ return strongKey(r) || (exactKeys(r)[0] || 'row_' + hash(JSON.stringify(r||{}).slice(0,250))); }
+  function rowUpdated(r){ return Date.parse(txt((r||{}).rowUpdatedAt || (r||{}).decisionAt || (r||{}).approvedAt || (r||{}).timestamp || (r||{}).createdAt || (r||{}).submittedAt)) || 0; }
+  async function fetchJson(url){ var sep=url.indexOf('?')>=0?'&':'?'; var res=await fetch(url+sep+'ts='+Date.now(),{cache:'no-store'}); if(!res.ok) throw new Error('HTTP '+res.status); return await res.json(); }
+  function normalizeObj(obj, folder, source){
+    var out=[]; if(!obj || typeof obj!=='object') return out;
+    if(Array.isArray(obj)){
+      obj.forEach(function(v,i){ if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v, v.firebaseKey||v.requestId||String(i)):Object.assign({firebaseKey:String(i)},v); r.status=folder; r.sourcePath=source; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||String(i)); out.push(r); }});
+    } else {
+      Object.keys(obj).forEach(function(k){ var v=obj[k]; if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v,k):Object.assign({firebaseKey:k},v); r._fbKey=k; r.status=folder; r.sourcePath=source; if(!r.firebaseKey) r.firebaseKey=safeKey(k); if(!r.requestId) r.requestId=r.firebaseKey; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||k); out.push(r); }});
+    }
+    return out;
+  }
+  async function readPath(url, folder, source){ try{return normalizeObj(await fetchJson(url), folder, source);}catch(_e){return [];} }
+  async function readAll(){
+    var base=FB_URL, rt=root();
+    var groups = [
+      [base+'/registrationRequests/pending.json','pending','pending'], [rt+'/registrationRequests/pending.json','pending','pending-root'],
+      [base+'/registrationRequests/accepted.json','approved','accepted'], [rt+'/registrationRequests/accepted.json','approved','accepted-root'],
+      [base+'/registrationRequests/rejected.json','rejected','rejected'], [rt+'/registrationRequests/rejected.json','rejected','rejected-root'],
+      [base+'/kp_form_rows.json','legacy','legacy'], [rt+'/kp_form_rows.json','legacy','legacy-root']
+    ];
+    var all=[];
+    for(var i=0;i<groups.length;i++) all=all.concat(await readPath(groups[i][0],groups[i][1],groups[i][2]));
+    return all;
+  }
+  function buildDecisionMaps(rows){
+    var exact={}, strong={};
+    (rows||[]).forEach(function(r){
+      var st=r&&r.status; if(st!=='approved' && st!=='rejected') return;
+      var item={status:st, decisionAt:r.decisionAt||r.rowUpdatedAt||new Date().toISOString(), row:r};
+      exactKeys(r).forEach(function(k){ if(k) exact[k]=item; });
+      var sk=strongKey(r); if(sk) strong[sk]=item;
+    });
+    try{
+      var saved=JSON.parse(localStorage.getItem('kp_form_decisions_v2')||'{}')||{};
+      Object.keys(saved).forEach(function(k){ var d=saved[k]; if(d&&d.status&&d.status!=='pending'){ exact[safeKey(k)]={status:d.status,decisionAt:d.decisionAt||d.savedAt,row:{}}; } });
+    }catch(_e){}
+    return {exact:exact,strong:strong};
+  }
+  function decisionFor(r,maps){
+    var ex=exactKeys(r); for(var i=0;i<ex.length;i++){ if(maps.exact[ex[i]]) return maps.exact[ex[i]]; }
+    var sk=strongKey(r); if(sk && maps.strong[sk]) return maps.strong[sk];
+    return null;
+  }
+  function mergeRows(rows){
+    rows=Array.isArray(rows)?rows:[];
+    var maps=buildDecisionMaps(rows.concat(Array.isArray(syncedFormRows)?syncedFormRows:[]));
+    var out={};
+    function add(r){
+      if(!r || !childName(r)) return;
+      var d=decisionFor(r,maps);
+      if(d && d.status && d.status!=='pending') r=Object.assign({}, r, {status:d.status, decisionAt:d.decisionAt||r.decisionAt, rowUpdatedAt:d.decisionAt||r.rowUpdatedAt});
+      if(r.status==='legacy') r.status = d ? d.status : (r.status && r.status!=='legacy'?r.status:'pending');
+      var k=rowKey(r); var old=out[k];
+      if(!old){ out[k]=r; return; }
+      var rank=function(s){return s==='rejected'?4:s==='approved'?3:s==='pending'?1:0;};
+      var rr=rank(r.status), ro=rank(old.status);
+      out[k]=(rr>ro || (rr===ro && rowUpdated(r)>=rowUpdated(old))) ? Object.assign({}, old, r) : Object.assign({}, r, old);
+    }
+    rows.forEach(add);
+    (Array.isArray(syncedFormRows)?syncedFormRows:[]).forEach(add);
+    return Object.values(out);
+  }
+  window.syncRegistrationRequestsFromFirebase = async function(options){
+    options=options||{};
+    try{
+      var rows=await readAll();
+      syncedFormRows = mergeRows(rows);
+      try{ localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); }catch(_e){}
+      if(typeof updateFormsNavBadge==='function') updateFormsNavBadge();
+      if(typeof renderFormRequests==='function') renderFormRequests();
+      if(!options.silent && typeof showSyncBadge==='function') showSyncBadge('✅ ظهرت الطلبات الجديدة وتم تثبيت حالات القديمة');
+      return {total:syncedFormRows.length, pending:syncedFormRows.filter(function(r){return (r.status||'pending')==='pending';}).length};
+    }catch(e){ console.warn('safe registration sync failed',e); if(!options.silent&&typeof showSyncBadge==='function') showSyncBadge('⚠️ تعذرت مزامنة طلبات التسجيل'); return {error:e&&e.message}; }
+  };
+  window.renderFormRequests = function(){
+    try{ if(typeof updateFormsNavBadge==='function') updateFormsNavBadge(); }catch(_e){}
+    var page=document.getElementById('pg-forms'); if(!page) return;
+    var rowsAll=Array.isArray(syncedFormRows)?syncedFormRows:[];
+    var pending=rowsAll.filter(function(r){return (r.status||'pending')==='pending';});
+    var approved=rowsAll.filter(function(r){return r.status==='approved';});
+    var rejected=rowsAll.filter(function(r){return r.status==='rejected';});
+    var pc=document.getElementById('forms-pending-count'), ac=document.getElementById('forms-approved-count'); if(pc)pc.textContent=pending.length; if(ac)ac.textContent=approved.length;
+    var filter=(document.getElementById('forms-filter')||{}).value||'pending';
+    var search=((document.getElementById('forms-search')||{}).value||'').toLowerCase();
+    var rows=filter==='all'?rowsAll:filter==='approved'?approved:filter==='rejected'?rejected:pending;
+    rows=rows.filter(function(r){return !search || [r.name,r.dadFull,r.momFull,r.nat,r.dob,r.emiratesId,r.idNo].join(' ').toLowerCase().indexOf(search)>=0;}).sort(function(a,b){return rowUpdated(b)-rowUpdated(a);});
+    var list=document.getElementById('forms-list'); if(!list) return;
+    if(!rows.length){ list.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">'+(filter==='pending'?'لا توجد طلبات جديدة':filter==='approved'?'لا توجد طلبات مقبولة':filter==='rejected'?'لا توجد طلبات مرفوضة':'لا توجد نتائج')+'</div>'; return; }
+    list.innerHTML=rows.map(function(r){
+      if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||rowKey(r));
+      var tsSafe=encodeURIComponent(String(r.timestamp||''));
+      var view='<button class="btn btn-b btn-sm" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">👁 عرض الطلب</button>';
+      var actions='';
+      if((r.status||'pending')==='pending') actions=view+'<button class="btn btn-g btn-sm" onclick="quickApprove(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">✅ قبول</button><button class="btn btn-r btn-sm" onclick="rejectFormRow(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">❌ رفض</button>';
+      else if(r.status==='approved') actions=view+'<span class="b bg">✅ مقبول</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      else actions=view+'<span class="b br">❌ مرفوض</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      return '<div class="form-req-card" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'))">'+
+        '<div class="form-req-left">'+(r.imgChildPhoto?'<img src="'+driveImgUrl(r.imgChildPhoto)+'" class="form-req-photo" onerror="this.style.display=\'none\'">':'<div class="form-req-photo-empty">👶</div>')+'</div>'+
+        '<div class="form-req-info"><div class="form-req-name">'+escapeHtml(childName(r))+'</div><div class="form-req-meta"><span>🌍 '+formatNationalityWithFlag(cleanArabicOnlyValue(r.nat)||r.nat||'—')+'</span><span>📅 '+escapeHtml(r.dob||'—')+'</span><span>'+escapeHtml(r.gen||'—')+'</span></div><div class="form-req-meta"><span>👨 '+escapeHtml(r.dadFull||r.dad||'—')+'</span><span>📱 '+escapeHtml(r.dadMob||r.dph||r.momMob||r.mph||'—')+'</span><span>📌 '+escapeHtml(r.source==='google_sheets'?'Google Sheets':(r.source||r.sourcePath||'رابط التسجيل'))+'</span></div></div>'+
+        '<div class="form-req-actions" onclick="event.stopPropagation()">'+actions+'</div></div>';
+    }).join('');
+  };
+  window.kpSafeRegistrationRefresh = async function(){ var r=await window.syncRegistrationRequestsFromFirebase({silent:false}); return r; };
+  setTimeout(function(){ try{ window.syncRegistrationRequestsFromFirebase({silent:true}); }catch(_e){} }, 700);
+})();
+
+</body></html>`;
 
   const win = window.open('', '_blank');
   if(!win) { alert('يرجى السماح بالنوافذ المنبثقة في المتصفح'); return; }
@@ -8745,6 +9603,149 @@ function buildFinancialReportPrintHtml(d) {
     <div class="foot">حضانة حديقة الأطفال — تقرير مالي تم إنشاؤه في ${escapeHtml(generatedAt)}</div>
   </div>
   <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
+
+/* ============================================================
+   HOTFIX 20260429J — إصلاح اختفاء الطلبات الجديدة بعد القفل
+   السبب: القفل السابق كان يعتبر بعض الطلبات الجديدة مطابقة لقرارات قديمة
+   بسبب مفاتيح غير دقيقة، فكانت تنحجب من "الجديدة".
+   هذا الإصلاح يجعل الحجب فقط بمطابقة قوية: رقم هوية/جواز، أو اسم+ميلاد+هاتف،
+   أو المفتاح الفعلي لنفس الطلب. وباقي الطلبات تظهر pending طبيعي.
+   ============================================================ */
+(function(){
+  'use strict';
+  if(window.__kp_registration_safe_visibility_20260429J) return;
+  window.__kp_registration_safe_visibility_20260429J = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function safeKey(s){ return txt(s).replace(/[.#$\[\]\/\s]/g,'_').replace(/_+/g,'_').substring(0,220); }
+  function hash(seed){ var h=0; seed=txt(seed); for(var i=0;i<seed.length;i++){ h=((h<<5)-h)+seed.charCodeAt(i); h|=0; } return Math.abs(h).toString(36); }
+  function norm(s){ return txt(s).toLowerCase().replace(/[ً-ٰٟ]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^؀-ۿa-z0-9]+/gi,' ').replace(/\s+/g,' ').trim(); }
+  function digits(s){ return txt(s).replace(/\D+/g,''); }
+  function childName(r){ r=r||{}; return txt(r.name || r.childName || r.studentName || ([r.firstName,r.familyName].filter(Boolean).join(' '))); }
+  function childDob(r){ r=r||{}; return txt(r.dob || r.birthDate || r.dateOfBirth || r.childDob).slice(0,10); }
+  function phone(r){ r=r||{}; return digits(r.dadMob || r.fatherMobile || r.dph || r.momMob || r.motherMobile || r.mph || r.phone || r.mobile); }
+  function root(){ return String(FB_URL||'').replace(/\/nursery_data\/?$/,''); }
+  function exactKeys(r){
+    r=r||{};
+    return [r.firebaseKey,r.requestId,r._fbKey,r.timestamp,r.formTimestamp,r.submittedAt,r.createdAt]
+      .map(txt).filter(Boolean).map(safeKey).filter(Boolean);
+  }
+  function strongKey(r){
+    r=r||{};
+    var id = digits(r.emiratesId || r.idNo || r.identityNo || r.nationalId || r.passport || r.childPassport);
+    if(id && id.length >= 6) return 'id_' + safeKey(id);
+    var name = norm(childName(r)), dob = childDob(r), ph = phone(r).slice(-7), dad = norm(r.dadFull || r.fatherName || r.dad);
+    if(name && dob && ph) return 'ndp_' + hash(name+'|'+dob+'|'+ph);
+    if(name && dob && dad) return 'ndf_' + hash(name+'|'+dob+'|'+dad);
+    return '';
+  }
+  function rowKey(r){ return strongKey(r) || (exactKeys(r)[0] || 'row_' + hash(JSON.stringify(r||{}).slice(0,250))); }
+  function rowUpdated(r){ return Date.parse(txt((r||{}).rowUpdatedAt || (r||{}).decisionAt || (r||{}).approvedAt || (r||{}).timestamp || (r||{}).createdAt || (r||{}).submittedAt)) || 0; }
+  async function fetchJson(url){ var sep=url.indexOf('?')>=0?'&':'?'; var res=await fetch(url+sep+'ts='+Date.now(),{cache:'no-store'}); if(!res.ok) throw new Error('HTTP '+res.status); return await res.json(); }
+  function normalizeObj(obj, folder, source){
+    var out=[]; if(!obj || typeof obj!=='object') return out;
+    if(Array.isArray(obj)){
+      obj.forEach(function(v,i){ if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v, v.firebaseKey||v.requestId||String(i)):Object.assign({firebaseKey:String(i)},v); r.status=folder; r.sourcePath=source; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||String(i)); out.push(r); }});
+    } else {
+      Object.keys(obj).forEach(function(k){ var v=obj[k]; if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v,k):Object.assign({firebaseKey:k},v); r._fbKey=k; r.status=folder; r.sourcePath=source; if(!r.firebaseKey) r.firebaseKey=safeKey(k); if(!r.requestId) r.requestId=r.firebaseKey; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||k); out.push(r); }});
+    }
+    return out;
+  }
+  async function readPath(url, folder, source){ try{return normalizeObj(await fetchJson(url), folder, source);}catch(_e){return [];} }
+  async function readAll(){
+    var base=FB_URL, rt=root();
+    var groups = [
+      [base+'/registrationRequests/pending.json','pending','pending'], [rt+'/registrationRequests/pending.json','pending','pending-root'],
+      [base+'/registrationRequests/accepted.json','approved','accepted'], [rt+'/registrationRequests/accepted.json','approved','accepted-root'],
+      [base+'/registrationRequests/rejected.json','rejected','rejected'], [rt+'/registrationRequests/rejected.json','rejected','rejected-root'],
+      [base+'/kp_form_rows.json','legacy','legacy'], [rt+'/kp_form_rows.json','legacy','legacy-root']
+    ];
+    var all=[];
+    for(var i=0;i<groups.length;i++) all=all.concat(await readPath(groups[i][0],groups[i][1],groups[i][2]));
+    return all;
+  }
+  function buildDecisionMaps(rows){
+    var exact={}, strong={};
+    (rows||[]).forEach(function(r){
+      var st=r&&r.status; if(st!=='approved' && st!=='rejected') return;
+      var item={status:st, decisionAt:r.decisionAt||r.rowUpdatedAt||new Date().toISOString(), row:r};
+      exactKeys(r).forEach(function(k){ if(k) exact[k]=item; });
+      var sk=strongKey(r); if(sk) strong[sk]=item;
+    });
+    try{
+      var saved=JSON.parse(localStorage.getItem('kp_form_decisions_v2')||'{}')||{};
+      Object.keys(saved).forEach(function(k){ var d=saved[k]; if(d&&d.status&&d.status!=='pending'){ exact[safeKey(k)]={status:d.status,decisionAt:d.decisionAt||d.savedAt,row:{}}; } });
+    }catch(_e){}
+    return {exact:exact,strong:strong};
+  }
+  function decisionFor(r,maps){
+    var ex=exactKeys(r); for(var i=0;i<ex.length;i++){ if(maps.exact[ex[i]]) return maps.exact[ex[i]]; }
+    var sk=strongKey(r); if(sk && maps.strong[sk]) return maps.strong[sk];
+    return null;
+  }
+  function mergeRows(rows){
+    rows=Array.isArray(rows)?rows:[];
+    var maps=buildDecisionMaps(rows.concat(Array.isArray(syncedFormRows)?syncedFormRows:[]));
+    var out={};
+    function add(r){
+      if(!r || !childName(r)) return;
+      var d=decisionFor(r,maps);
+      if(d && d.status && d.status!=='pending') r=Object.assign({}, r, {status:d.status, decisionAt:d.decisionAt||r.decisionAt, rowUpdatedAt:d.decisionAt||r.rowUpdatedAt});
+      if(r.status==='legacy') r.status = d ? d.status : (r.status && r.status!=='legacy'?r.status:'pending');
+      var k=rowKey(r); var old=out[k];
+      if(!old){ out[k]=r; return; }
+      var rank=function(s){return s==='rejected'?4:s==='approved'?3:s==='pending'?1:0;};
+      var rr=rank(r.status), ro=rank(old.status);
+      out[k]=(rr>ro || (rr===ro && rowUpdated(r)>=rowUpdated(old))) ? Object.assign({}, old, r) : Object.assign({}, r, old);
+    }
+    rows.forEach(add);
+    (Array.isArray(syncedFormRows)?syncedFormRows:[]).forEach(add);
+    return Object.values(out);
+  }
+  window.syncRegistrationRequestsFromFirebase = async function(options){
+    options=options||{};
+    try{
+      var rows=await readAll();
+      syncedFormRows = mergeRows(rows);
+      try{ localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); }catch(_e){}
+      if(typeof updateFormsNavBadge==='function') updateFormsNavBadge();
+      if(typeof renderFormRequests==='function') renderFormRequests();
+      if(!options.silent && typeof showSyncBadge==='function') showSyncBadge('✅ ظهرت الطلبات الجديدة وتم تثبيت حالات القديمة');
+      return {total:syncedFormRows.length, pending:syncedFormRows.filter(function(r){return (r.status||'pending')==='pending';}).length};
+    }catch(e){ console.warn('safe registration sync failed',e); if(!options.silent&&typeof showSyncBadge==='function') showSyncBadge('⚠️ تعذرت مزامنة طلبات التسجيل'); return {error:e&&e.message}; }
+  };
+  window.renderFormRequests = function(){
+    try{ if(typeof updateFormsNavBadge==='function') updateFormsNavBadge(); }catch(_e){}
+    var page=document.getElementById('pg-forms'); if(!page) return;
+    var rowsAll=Array.isArray(syncedFormRows)?syncedFormRows:[];
+    var pending=rowsAll.filter(function(r){return (r.status||'pending')==='pending';});
+    var approved=rowsAll.filter(function(r){return r.status==='approved';});
+    var rejected=rowsAll.filter(function(r){return r.status==='rejected';});
+    var pc=document.getElementById('forms-pending-count'), ac=document.getElementById('forms-approved-count'); if(pc)pc.textContent=pending.length; if(ac)ac.textContent=approved.length;
+    var filter=(document.getElementById('forms-filter')||{}).value||'pending';
+    var search=((document.getElementById('forms-search')||{}).value||'').toLowerCase();
+    var rows=filter==='all'?rowsAll:filter==='approved'?approved:filter==='rejected'?rejected:pending;
+    rows=rows.filter(function(r){return !search || [r.name,r.dadFull,r.momFull,r.nat,r.dob,r.emiratesId,r.idNo].join(' ').toLowerCase().indexOf(search)>=0;}).sort(function(a,b){return rowUpdated(b)-rowUpdated(a);});
+    var list=document.getElementById('forms-list'); if(!list) return;
+    if(!rows.length){ list.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">'+(filter==='pending'?'لا توجد طلبات جديدة':filter==='approved'?'لا توجد طلبات مقبولة':filter==='rejected'?'لا توجد طلبات مرفوضة':'لا توجد نتائج')+'</div>'; return; }
+    list.innerHTML=rows.map(function(r){
+      if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||rowKey(r));
+      var tsSafe=encodeURIComponent(String(r.timestamp||''));
+      var view='<button class="btn btn-b btn-sm" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">👁 عرض الطلب</button>';
+      var actions='';
+      if((r.status||'pending')==='pending') actions=view+'<button class="btn btn-g btn-sm" onclick="quickApprove(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">✅ قبول</button><button class="btn btn-r btn-sm" onclick="rejectFormRow(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">❌ رفض</button>';
+      else if(r.status==='approved') actions=view+'<span class="b bg">✅ مقبول</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      else actions=view+'<span class="b br">❌ مرفوض</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      return '<div class="form-req-card" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'))">'+
+        '<div class="form-req-left">'+(r.imgChildPhoto?'<img src="'+driveImgUrl(r.imgChildPhoto)+'" class="form-req-photo" onerror="this.style.display=\'none\'">':'<div class="form-req-photo-empty">👶</div>')+'</div>'+
+        '<div class="form-req-info"><div class="form-req-name">'+escapeHtml(childName(r))+'</div><div class="form-req-meta"><span>🌍 '+formatNationalityWithFlag(cleanArabicOnlyValue(r.nat)||r.nat||'—')+'</span><span>📅 '+escapeHtml(r.dob||'—')+'</span><span>'+escapeHtml(r.gen||'—')+'</span></div><div class="form-req-meta"><span>👨 '+escapeHtml(r.dadFull||r.dad||'—')+'</span><span>📱 '+escapeHtml(r.dadMob||r.dph||r.momMob||r.mph||'—')+'</span><span>📌 '+escapeHtml(r.source==='google_sheets'?'Google Sheets':(r.source||r.sourcePath||'رابط التسجيل'))+'</span></div></div>'+
+        '<div class="form-req-actions" onclick="event.stopPropagation()">'+actions+'</div></div>';
+    }).join('');
+  };
+  window.kpSafeRegistrationRefresh = async function(){ var r=await window.syncRegistrationRequestsFromFirebase({silent:false}); return r; };
+  setTimeout(function(){ try{ window.syncRegistrationRequestsFromFirebase({silent:true}); }catch(_e){} }, 700);
+})();
+
 </body>
 </html>`;
 }
@@ -11212,7 +12213,150 @@ function emailHtmlDocument(rawHtml){
     +'table{max-width:100%!important;border-collapse:collapse}'
     +'td,th{word-break:normal;overflow-wrap:anywhere}'
     +'a{color:#0b63ce}'
-    +'</style></head><body>'+html+'</body></html>';
+    +'</style></head><body>'+html+'
+/* ============================================================
+   HOTFIX 20260429J — إصلاح اختفاء الطلبات الجديدة بعد القفل
+   السبب: القفل السابق كان يعتبر بعض الطلبات الجديدة مطابقة لقرارات قديمة
+   بسبب مفاتيح غير دقيقة، فكانت تنحجب من "الجديدة".
+   هذا الإصلاح يجعل الحجب فقط بمطابقة قوية: رقم هوية/جواز، أو اسم+ميلاد+هاتف،
+   أو المفتاح الفعلي لنفس الطلب. وباقي الطلبات تظهر pending طبيعي.
+   ============================================================ */
+(function(){
+  'use strict';
+  if(window.__kp_registration_safe_visibility_20260429J) return;
+  window.__kp_registration_safe_visibility_20260429J = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function safeKey(s){ return txt(s).replace(/[.#$\[\]\/\s]/g,'_').replace(/_+/g,'_').substring(0,220); }
+  function hash(seed){ var h=0; seed=txt(seed); for(var i=0;i<seed.length;i++){ h=((h<<5)-h)+seed.charCodeAt(i); h|=0; } return Math.abs(h).toString(36); }
+  function norm(s){ return txt(s).toLowerCase().replace(/[ً-ٰٟ]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^؀-ۿa-z0-9]+/gi,' ').replace(/\s+/g,' ').trim(); }
+  function digits(s){ return txt(s).replace(/\D+/g,''); }
+  function childName(r){ r=r||{}; return txt(r.name || r.childName || r.studentName || ([r.firstName,r.familyName].filter(Boolean).join(' '))); }
+  function childDob(r){ r=r||{}; return txt(r.dob || r.birthDate || r.dateOfBirth || r.childDob).slice(0,10); }
+  function phone(r){ r=r||{}; return digits(r.dadMob || r.fatherMobile || r.dph || r.momMob || r.motherMobile || r.mph || r.phone || r.mobile); }
+  function root(){ return String(FB_URL||'').replace(/\/nursery_data\/?$/,''); }
+  function exactKeys(r){
+    r=r||{};
+    return [r.firebaseKey,r.requestId,r._fbKey,r.timestamp,r.formTimestamp,r.submittedAt,r.createdAt]
+      .map(txt).filter(Boolean).map(safeKey).filter(Boolean);
+  }
+  function strongKey(r){
+    r=r||{};
+    var id = digits(r.emiratesId || r.idNo || r.identityNo || r.nationalId || r.passport || r.childPassport);
+    if(id && id.length >= 6) return 'id_' + safeKey(id);
+    var name = norm(childName(r)), dob = childDob(r), ph = phone(r).slice(-7), dad = norm(r.dadFull || r.fatherName || r.dad);
+    if(name && dob && ph) return 'ndp_' + hash(name+'|'+dob+'|'+ph);
+    if(name && dob && dad) return 'ndf_' + hash(name+'|'+dob+'|'+dad);
+    return '';
+  }
+  function rowKey(r){ return strongKey(r) || (exactKeys(r)[0] || 'row_' + hash(JSON.stringify(r||{}).slice(0,250))); }
+  function rowUpdated(r){ return Date.parse(txt((r||{}).rowUpdatedAt || (r||{}).decisionAt || (r||{}).approvedAt || (r||{}).timestamp || (r||{}).createdAt || (r||{}).submittedAt)) || 0; }
+  async function fetchJson(url){ var sep=url.indexOf('?')>=0?'&':'?'; var res=await fetch(url+sep+'ts='+Date.now(),{cache:'no-store'}); if(!res.ok) throw new Error('HTTP '+res.status); return await res.json(); }
+  function normalizeObj(obj, folder, source){
+    var out=[]; if(!obj || typeof obj!=='object') return out;
+    if(Array.isArray(obj)){
+      obj.forEach(function(v,i){ if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v, v.firebaseKey||v.requestId||String(i)):Object.assign({firebaseKey:String(i)},v); r.status=folder; r.sourcePath=source; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||String(i)); out.push(r); }});
+    } else {
+      Object.keys(obj).forEach(function(k){ var v=obj[k]; if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v,k):Object.assign({firebaseKey:k},v); r._fbKey=k; r.status=folder; r.sourcePath=source; if(!r.firebaseKey) r.firebaseKey=safeKey(k); if(!r.requestId) r.requestId=r.firebaseKey; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||k); out.push(r); }});
+    }
+    return out;
+  }
+  async function readPath(url, folder, source){ try{return normalizeObj(await fetchJson(url), folder, source);}catch(_e){return [];} }
+  async function readAll(){
+    var base=FB_URL, rt=root();
+    var groups = [
+      [base+'/registrationRequests/pending.json','pending','pending'], [rt+'/registrationRequests/pending.json','pending','pending-root'],
+      [base+'/registrationRequests/accepted.json','approved','accepted'], [rt+'/registrationRequests/accepted.json','approved','accepted-root'],
+      [base+'/registrationRequests/rejected.json','rejected','rejected'], [rt+'/registrationRequests/rejected.json','rejected','rejected-root'],
+      [base+'/kp_form_rows.json','legacy','legacy'], [rt+'/kp_form_rows.json','legacy','legacy-root']
+    ];
+    var all=[];
+    for(var i=0;i<groups.length;i++) all=all.concat(await readPath(groups[i][0],groups[i][1],groups[i][2]));
+    return all;
+  }
+  function buildDecisionMaps(rows){
+    var exact={}, strong={};
+    (rows||[]).forEach(function(r){
+      var st=r&&r.status; if(st!=='approved' && st!=='rejected') return;
+      var item={status:st, decisionAt:r.decisionAt||r.rowUpdatedAt||new Date().toISOString(), row:r};
+      exactKeys(r).forEach(function(k){ if(k) exact[k]=item; });
+      var sk=strongKey(r); if(sk) strong[sk]=item;
+    });
+    try{
+      var saved=JSON.parse(localStorage.getItem('kp_form_decisions_v2')||'{}')||{};
+      Object.keys(saved).forEach(function(k){ var d=saved[k]; if(d&&d.status&&d.status!=='pending'){ exact[safeKey(k)]={status:d.status,decisionAt:d.decisionAt||d.savedAt,row:{}}; } });
+    }catch(_e){}
+    return {exact:exact,strong:strong};
+  }
+  function decisionFor(r,maps){
+    var ex=exactKeys(r); for(var i=0;i<ex.length;i++){ if(maps.exact[ex[i]]) return maps.exact[ex[i]]; }
+    var sk=strongKey(r); if(sk && maps.strong[sk]) return maps.strong[sk];
+    return null;
+  }
+  function mergeRows(rows){
+    rows=Array.isArray(rows)?rows:[];
+    var maps=buildDecisionMaps(rows.concat(Array.isArray(syncedFormRows)?syncedFormRows:[]));
+    var out={};
+    function add(r){
+      if(!r || !childName(r)) return;
+      var d=decisionFor(r,maps);
+      if(d && d.status && d.status!=='pending') r=Object.assign({}, r, {status:d.status, decisionAt:d.decisionAt||r.decisionAt, rowUpdatedAt:d.decisionAt||r.rowUpdatedAt});
+      if(r.status==='legacy') r.status = d ? d.status : (r.status && r.status!=='legacy'?r.status:'pending');
+      var k=rowKey(r); var old=out[k];
+      if(!old){ out[k]=r; return; }
+      var rank=function(s){return s==='rejected'?4:s==='approved'?3:s==='pending'?1:0;};
+      var rr=rank(r.status), ro=rank(old.status);
+      out[k]=(rr>ro || (rr===ro && rowUpdated(r)>=rowUpdated(old))) ? Object.assign({}, old, r) : Object.assign({}, r, old);
+    }
+    rows.forEach(add);
+    (Array.isArray(syncedFormRows)?syncedFormRows:[]).forEach(add);
+    return Object.values(out);
+  }
+  window.syncRegistrationRequestsFromFirebase = async function(options){
+    options=options||{};
+    try{
+      var rows=await readAll();
+      syncedFormRows = mergeRows(rows);
+      try{ localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); }catch(_e){}
+      if(typeof updateFormsNavBadge==='function') updateFormsNavBadge();
+      if(typeof renderFormRequests==='function') renderFormRequests();
+      if(!options.silent && typeof showSyncBadge==='function') showSyncBadge('✅ ظهرت الطلبات الجديدة وتم تثبيت حالات القديمة');
+      return {total:syncedFormRows.length, pending:syncedFormRows.filter(function(r){return (r.status||'pending')==='pending';}).length};
+    }catch(e){ console.warn('safe registration sync failed',e); if(!options.silent&&typeof showSyncBadge==='function') showSyncBadge('⚠️ تعذرت مزامنة طلبات التسجيل'); return {error:e&&e.message}; }
+  };
+  window.renderFormRequests = function(){
+    try{ if(typeof updateFormsNavBadge==='function') updateFormsNavBadge(); }catch(_e){}
+    var page=document.getElementById('pg-forms'); if(!page) return;
+    var rowsAll=Array.isArray(syncedFormRows)?syncedFormRows:[];
+    var pending=rowsAll.filter(function(r){return (r.status||'pending')==='pending';});
+    var approved=rowsAll.filter(function(r){return r.status==='approved';});
+    var rejected=rowsAll.filter(function(r){return r.status==='rejected';});
+    var pc=document.getElementById('forms-pending-count'), ac=document.getElementById('forms-approved-count'); if(pc)pc.textContent=pending.length; if(ac)ac.textContent=approved.length;
+    var filter=(document.getElementById('forms-filter')||{}).value||'pending';
+    var search=((document.getElementById('forms-search')||{}).value||'').toLowerCase();
+    var rows=filter==='all'?rowsAll:filter==='approved'?approved:filter==='rejected'?rejected:pending;
+    rows=rows.filter(function(r){return !search || [r.name,r.dadFull,r.momFull,r.nat,r.dob,r.emiratesId,r.idNo].join(' ').toLowerCase().indexOf(search)>=0;}).sort(function(a,b){return rowUpdated(b)-rowUpdated(a);});
+    var list=document.getElementById('forms-list'); if(!list) return;
+    if(!rows.length){ list.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">'+(filter==='pending'?'لا توجد طلبات جديدة':filter==='approved'?'لا توجد طلبات مقبولة':filter==='rejected'?'لا توجد طلبات مرفوضة':'لا توجد نتائج')+'</div>'; return; }
+    list.innerHTML=rows.map(function(r){
+      if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||rowKey(r));
+      var tsSafe=encodeURIComponent(String(r.timestamp||''));
+      var view='<button class="btn btn-b btn-sm" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">👁 عرض الطلب</button>';
+      var actions='';
+      if((r.status||'pending')==='pending') actions=view+'<button class="btn btn-g btn-sm" onclick="quickApprove(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">✅ قبول</button><button class="btn btn-r btn-sm" onclick="rejectFormRow(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">❌ رفض</button>';
+      else if(r.status==='approved') actions=view+'<span class="b bg">✅ مقبول</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      else actions=view+'<span class="b br">❌ مرفوض</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      return '<div class="form-req-card" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'))">'+
+        '<div class="form-req-left">'+(r.imgChildPhoto?'<img src="'+driveImgUrl(r.imgChildPhoto)+'" class="form-req-photo" onerror="this.style.display=\'none\'">':'<div class="form-req-photo-empty">👶</div>')+'</div>'+
+        '<div class="form-req-info"><div class="form-req-name">'+escapeHtml(childName(r))+'</div><div class="form-req-meta"><span>🌍 '+formatNationalityWithFlag(cleanArabicOnlyValue(r.nat)||r.nat||'—')+'</span><span>📅 '+escapeHtml(r.dob||'—')+'</span><span>'+escapeHtml(r.gen||'—')+'</span></div><div class="form-req-meta"><span>👨 '+escapeHtml(r.dadFull||r.dad||'—')+'</span><span>📱 '+escapeHtml(r.dadMob||r.dph||r.momMob||r.mph||'—')+'</span><span>📌 '+escapeHtml(r.source==='google_sheets'?'Google Sheets':(r.source||r.sourcePath||'رابط التسجيل'))+'</span></div></div>'+
+        '<div class="form-req-actions" onclick="event.stopPropagation()">'+actions+'</div></div>';
+    }).join('');
+  };
+  window.kpSafeRegistrationRefresh = async function(){ var r=await window.syncRegistrationRequestsFromFirebase({silent:false}); return r; };
+  setTimeout(function(){ try{ window.syncRegistrationRequestsFromFirebase({silent:true}); }catch(_e){} }, 700);
+})();
+
+</body></html>';
 }
 async function getInlineAttachmentMap(messageId){
   const map={};
@@ -12621,6 +13765,349 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   setTimeout(function(){ try{ window.kpHardCleanRegistration(); }catch(_e){} }, 800);
 })();
 
+
+
+/* ============================================================
+   HOTFIX 20260429I — تأكيد الرفض السابق ورفعه لكل الموظفين
+   الهدف:
+   - إذا كان الطلب مرفوض سابقاً لكنه ظهر/علق كأنه جديد، ضغط رفض مرة ثانية لا ينشئ حالة معلقة.
+   - يتم اعتبارها "تأكيد رفض" لنفس الطلب وكل نسخه المكررة.
+   - يكتب القرار على Firebase كقفل قرار عام + ينقل نسخة مؤكدة إلى rejected + يحذف كل النسخ من pending.
+   ============================================================ */
+(function(){
+  'use strict';
+  if (window.__kp_confirm_reject_lock_20260429I) return;
+  window.__kp_confirm_reject_lock_20260429I = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function lower(v){ return txt(v).toLowerCase(); }
+  function safeKey(s){ return txt(s).replace(/[.#$\[\]\/\s]/g, '_').replace(/_+/g, '_').substring(0, 220); }
+  function hashSeed(seed){ var h=0; seed=txt(seed); for(var i=0;i<seed.length;i++){ h=((h<<5)-h)+seed.charCodeAt(i); h|=0; } return Math.abs(h).toString(36); }
+  function childName(r){ r=r||{}; return txt(r.name || r.childName || r.studentName || ((txt(r.firstName)+' '+txt(r.familyName)).trim()) || r.firstName); }
+  function childDob(r){ r=r||{}; return txt(r.dob || r.birthDate || r.dateOfBirth || r.childDob); }
+  function idNo(r){ r=r||{}; return txt(r.emiratesId || r.idNo || r.studentIdNo || r.passport || r.childPassport); }
+  function phone(r){ r=r||{}; return txt(r.mph || r.dph || r.momPhone || r.dadPhone || r.mobile || r.phone || r.guardianPhone).replace(/\D/g,''); }
+  function naturalKey(r){
+    r=r||{};
+    var id = idNo(r);
+    if(id) return 'nat_id_' + safeKey(id);
+    var seed = [lower(childName(r)), childDob(r), phone(r).slice(-7)].filter(Boolean).join('|');
+    return seed ? ('nat_' + hashSeed(seed)) : '';
+  }
+  function stableKey(r){
+    r=r||{};
+    var existing = txt(r.firebaseKey || r.requestId || r._fbKey);
+    if(existing) return safeKey(existing);
+    var seed = [txt(r.timestamp || r.formTimestamp || r.submittedAt || r.createdAt), idNo(r), childName(r), childDob(r), phone(r).slice(-7)].join('|');
+    return seed.replace(/\|/g,'').trim() ? ('sheet_' + hashSeed(seed) + '_' + safeKey(seed.substring(0,45))) : naturalKey(r);
+  }
+  function rowKeys(r){
+    r=r||{};
+    var raw=[r.firebaseKey,r.requestId,r._fbKey,r.timestamp,r.formTimestamp,r.submittedAt,r.createdAt,idNo(r),stableKey(r),naturalKey(r)].map(txt).filter(Boolean);
+    var out=[];
+    raw.forEach(function(k){ var sk=safeKey(k); if(k && out.indexOf(k)<0) out.push(k); if(sk && out.indexOf(sk)<0) out.push(sk); });
+    return out;
+  }
+  function matches(a,b){
+    if(!a||!b) return false;
+    var nka=naturalKey(a), nkb=naturalKey(b);
+    if(nka && nkb && nka===nkb) return true;
+    var ska=stableKey(a), skb=stableKey(b);
+    if(ska && skb && ska===skb) return true;
+    var ak=rowKeys(a), bk=rowKeys(b);
+    return ak.some(function(k){ return bk.indexOf(k)>=0; });
+  }
+  function fbRoot(){ return String(FB_URL || '').replace(/\/nursery_data\/?$/, ''); }
+  async function put(url,payload){ try{ var res=await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); return !!res.ok; }catch(e){ console.warn('PUT failed',url,e); return false; } }
+  async function patch(url,payload){ try{ var res=await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); return !!res.ok; }catch(e){ console.warn('PATCH failed',url,e); return false; } }
+  async function del(url){ try{ await fetch(url,{method:'DELETE'}); }catch(_e){} }
+
+  function rememberEverywhere(row,status){
+    if(!row || !status || status==='pending') return;
+    var at=row.decisionAt || new Date().toISOString();
+    var entry={status:status, decisionAt:at, savedAt:at, naturalKey:naturalKey(row)};
+    window.__localFormDecisions = window.__localFormDecisions || {};
+    var saved={}; try{ saved=JSON.parse(localStorage.getItem('kp_form_decisions_v2')||'{}')||{}; }catch(_e){}
+    rowKeys(row).forEach(function(k){ window.__localFormDecisions[k]=entry; saved[k]=entry; });
+    if(entry.naturalKey){ window.__localFormDecisions[entry.naturalKey]=entry; saved[entry.naturalKey]=entry; }
+    try{ localStorage.setItem('kp_form_decisions_v2', JSON.stringify(saved)); }catch(_e){}
+  }
+
+  async function writeRemoteDecision(row,status){
+    var nk=naturalKey(row) || stableKey(row); if(!nk) return false;
+    var at=row.decisionAt || new Date().toISOString();
+    var payload={status:status, decisionAt:at, rowUpdatedAt:at, firebaseKey:stableKey(row), requestId:stableKey(row), naturalKey:naturalKey(row), name:childName(row), dob:childDob(row), idNo:idNo(row), phone:phone(row).slice(-9)};
+    var ok=false;
+    ok = (await put(FB_URL + '/registrationDecisionLocks/' + encodeURIComponent(nk) + '.json', payload)) || ok;
+    ok = (await put(fbRoot() + '/registrationDecisionLocks/' + encodeURIComponent(nk) + '.json', payload)) || ok;
+    return ok;
+  }
+
+  async function forceArchiveDecision(row,status){
+    row = Object.assign({}, row || {});
+    var at = new Date().toISOString();
+    row.status = status;
+    row.decisionAt = at;
+    row.rowUpdatedAt = at;
+    row.firebaseKey = stableKey(row) || naturalKey(row) || safeKey(txt(row.timestamp));
+    row.requestId = row.firebaseKey;
+    row.naturalKey = naturalKey(row);
+    row.reconfirmedAt = at;
+    row.decisionConfirmed = true;
+
+    rememberEverywhere(row,status);
+
+    var ok=false;
+    if(typeof window.archiveFirebaseRegistrationRequest === 'function') {
+      try { ok = (await window.archiveFirebaseRegistrationRequest(row,status)) || ok; } catch(e){ console.warn('archive failed',e); }
+    }
+
+    var folder = status==='approved' ? 'accepted' : 'rejected';
+    var bases=[FB_URL+'/registrationRequests', fbRoot()+'/registrationRequests'];
+    for(var b=0;b<bases.length;b++){
+      ok = (await put(bases[b]+'/'+folder+'/'+encodeURIComponent(row.firebaseKey)+'.json', row)) || ok;
+      if(row.naturalKey) ok = (await put(bases[b]+'/'+folder+'/'+encodeURIComponent(row.naturalKey)+'.json', row)) || ok;
+    }
+    await writeRemoteDecision(row,status);
+
+    // امسح كل مفاتيح هذا الطلب من pending حتى لا يرجع عند الموظفين الآخرين
+    var keys=rowKeys(row).map(safeKey).filter(Boolean); keys=keys.filter(function(x,i){return keys.indexOf(x)===i;});
+    for(var bb=0;bb<bases.length;bb++){
+      for(var i=0;i<keys.length;i++) await del(bases[bb]+'/pending/'+encodeURIComponent(keys[i])+'.json');
+      if(row.naturalKey) await del(bases[bb]+'/pending/'+encodeURIComponent(row.naturalKey)+'.json');
+    }
+
+    // حدّث kp_form_rows القديمة: أي نسخة مطابقة تصير rejected بدل pending
+    var legacyUrls=[FB_URL+'/kp_form_rows.json', fbRoot()+'/kp_form_rows.json'];
+    for(var u=0;u<legacyUrls.length;u++){
+      try{
+        var res=await fetch(legacyUrls[u]+'?ts='+Date.now(),{cache:'no-store'}); if(!res.ok) continue;
+        var arr=await res.json(); if(!Array.isArray(arr)) continue;
+        var changed=false;
+        arr=arr.map(function(x){ if(!x) return x; if(matches(x,row)){ changed=true; return Object.assign({}, x, row, {status:status, decisionAt:at, rowUpdatedAt:at}); } return x; });
+        if(changed) await put(legacyUrls[u], arr);
+      }catch(_e){}
+    }
+
+    try { await patch(FB_URL + '.json', {savedAt: at}); } catch(_e){}
+    try { await patch(fbRoot() + '/nursery_data.json', {savedAt: at}); } catch(_e){}
+    return ok;
+  }
+
+  async function loadRemoteDecisionLocks(){
+    var locks={};
+    var urls=[FB_URL+'/registrationDecisionLocks.json', fbRoot()+'/registrationDecisionLocks.json'];
+    for(var i=0;i<urls.length;i++){
+      try{ var res=await fetch(urls[i]+'?ts='+Date.now(),{cache:'no-store'}); if(!res.ok) continue; var obj=await res.json(); if(obj&&typeof obj==='object') Object.assign(locks,obj); }catch(_e){}
+    }
+    Object.keys(locks).forEach(function(k){ var d=locks[k]; if(d&&d.status&&d.status!=='pending'){ window.__localFormDecisions=window.__localFormDecisions||{}; window.__localFormDecisions[k]={status:d.status,decisionAt:d.decisionAt||d.rowUpdatedAt,savedAt:d.decisionAt||d.rowUpdatedAt,naturalKey:d.naturalKey||k}; } });
+    return locks;
+  }
+
+  if(typeof window.syncRegistrationRequestsFromFirebase === 'function'){
+    var __oldSyncRegI = window.syncRegistrationRequestsFromFirebase;
+    window.syncRegistrationRequestsFromFirebase = async function(options){
+      var locks = await loadRemoteDecisionLocks();
+      var res = await __oldSyncRegI.apply(this, arguments);
+      try{
+        var rows=Array.isArray(syncedFormRows)?syncedFormRows:[];
+        syncedFormRows = rows.map(function(r){ var nk=naturalKey(r); var d=nk&&locks[nk]; if(d&&d.status&&d.status!=='pending') return Object.assign({}, r, {status:d.status, decisionAt:d.decisionAt||r.decisionAt, rowUpdatedAt:d.decisionAt||r.rowUpdatedAt}); return r; });
+        if(typeof renderFormRequests==='function') renderFormRequests();
+        if(typeof updateFormsNavBadge==='function') updateFormsNavBadge();
+      }catch(_e){}
+      return res;
+    };
+  }
+
+  var __oldSetDecisionI = window.setFormRowDecision;
+  window.setFormRowDecision = async function(r,status,meta){
+    if(!r) return false;
+    // أي رفض/قبول يعامل كقرار مؤكد لكل النسخ المتطابقة، حتى لو كان مرفوض سابقاً ومعلق بالواجهة
+    if(status==='rejected' || status==='approved'){
+      meta=meta||{}; Object.keys(meta).forEach(function(k){ r[k]=meta[k]; });
+      var all=Array.isArray(syncedFormRows)?syncedFormRows:[];
+      var target=Object.assign({}, r);
+      var matching=all.filter(function(x){ return matches(x,target); });
+      var at=new Date().toISOString();
+      matching.forEach(function(x){ x.status=status; x.decisionAt=at; x.rowUpdatedAt=at; x.decisionConfirmed=true; });
+      if(!matching.length) all.push(target);
+      target.status=status; target.decisionAt=at; target.rowUpdatedAt=at; target.decisionConfirmed=true;
+      syncedFormRows = all.map(function(x){ return matches(x,target) ? Object.assign({}, x, target, {status:status, decisionAt:at, rowUpdatedAt:at, decisionConfirmed:true}) : x; });
+      try{ localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); }catch(_e){}
+      if(typeof renderFormRequests==='function') renderFormRequests();
+      if(typeof updateFormsNavBadge==='function') updateFormsNavBadge();
+      if(typeof showSyncBadge==='function') showSyncBadge(status==='rejected'?'⏳ جاري تأكيد الرفض ورفعه لكل الموظفين...':'⏳ جاري تأكيد القرار...');
+      var ok=await forceArchiveDecision(target,status);
+      if(typeof window.syncRegistrationRequestsFromFirebase==='function') await window.syncRegistrationRequestsFromFirebase({silent:true});
+      if(typeof showSyncBadge==='function') showSyncBadge(ok?(status==='rejected'?'✅ تم تأكيد الرفض على Firebase لكل الموظفين':'✅ تم تثبيت القرار على Firebase'):'⚠️ تم تثبيت القرار محلياً وسيُرفع عند توفر الاتصال');
+      return ok;
+    }
+    return __oldSetDecisionI ? await __oldSetDecisionI.apply(this, arguments) : false;
+  };
+
+  window.rejectFormRow = async function(ts){
+    var rows=Array.isArray(syncedFormRows)?syncedFormRows:[];
+    var r=rows.find(function(x){ return x && (txt(x.timestamp)===txt(ts) || safeKey(txt(x.timestamp))===txt(ts) || txt(x.firebaseKey)===txt(ts) || txt(x.requestId)===txt(ts) || stableKey(x)===txt(ts) || naturalKey(x)===txt(ts)); });
+    if(!r) { if(typeof showSyncBadge==='function') showSyncBadge('⚠️ لم يتم العثور على الطلب'); return; }
+    var already = r.status === 'rejected';
+    var msg = already ? 'هذا الطلب مرفوض سابقاً. سيتم الآن تأكيد الرفض ورفعه على Firebase لكل الموظفين. متابعة؟' : 'سيتم رفض هذا الطلب وتثبيت الرفض على Firebase لكل الموظفين. متابعة؟';
+    if(!confirm(msg)) return;
+    await window.setFormRowDecision(r,'rejected',{approvedStudentId:null, approvedAction:'reject', undoData:{revertTo:'pending'}, rejectionConfirmed:true});
+  };
+
+  window.kpConfirmAllVisibleRejected = async function(){
+    var rows=Array.isArray(syncedFormRows)?syncedFormRows:[];
+    var rejected=rows.filter(function(r){ return r && r.status==='rejected'; });
+    for(var i=0;i<rejected.length;i++) await forceArchiveDecision(rejected[i],'rejected');
+    if(typeof window.syncRegistrationRequestsFromFirebase==='function') await window.syncRegistrationRequestsFromFirebase({silent:true});
+    if(typeof showSyncBadge==='function') showSyncBadge('✅ تم تأكيد كل الطلبات المرفوضة على Firebase');
+    return rejected.length;
+  };
+})();
+
 </script>
+
+/* ============================================================
+   HOTFIX 20260429J — إصلاح اختفاء الطلبات الجديدة بعد القفل
+   السبب: القفل السابق كان يعتبر بعض الطلبات الجديدة مطابقة لقرارات قديمة
+   بسبب مفاتيح غير دقيقة، فكانت تنحجب من "الجديدة".
+   هذا الإصلاح يجعل الحجب فقط بمطابقة قوية: رقم هوية/جواز، أو اسم+ميلاد+هاتف،
+   أو المفتاح الفعلي لنفس الطلب. وباقي الطلبات تظهر pending طبيعي.
+   ============================================================ */
+(function(){
+  'use strict';
+  if(window.__kp_registration_safe_visibility_20260429J) return;
+  window.__kp_registration_safe_visibility_20260429J = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function safeKey(s){ return txt(s).replace(/[.#$\[\]\/\s]/g,'_').replace(/_+/g,'_').substring(0,220); }
+  function hash(seed){ var h=0; seed=txt(seed); for(var i=0;i<seed.length;i++){ h=((h<<5)-h)+seed.charCodeAt(i); h|=0; } return Math.abs(h).toString(36); }
+  function norm(s){ return txt(s).toLowerCase().replace(/[ً-ٰٟ]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^؀-ۿa-z0-9]+/gi,' ').replace(/\s+/g,' ').trim(); }
+  function digits(s){ return txt(s).replace(/\D+/g,''); }
+  function childName(r){ r=r||{}; return txt(r.name || r.childName || r.studentName || ([r.firstName,r.familyName].filter(Boolean).join(' '))); }
+  function childDob(r){ r=r||{}; return txt(r.dob || r.birthDate || r.dateOfBirth || r.childDob).slice(0,10); }
+  function phone(r){ r=r||{}; return digits(r.dadMob || r.fatherMobile || r.dph || r.momMob || r.motherMobile || r.mph || r.phone || r.mobile); }
+  function root(){ return String(FB_URL||'').replace(/\/nursery_data\/?$/,''); }
+  function exactKeys(r){
+    r=r||{};
+    return [r.firebaseKey,r.requestId,r._fbKey,r.timestamp,r.formTimestamp,r.submittedAt,r.createdAt]
+      .map(txt).filter(Boolean).map(safeKey).filter(Boolean);
+  }
+  function strongKey(r){
+    r=r||{};
+    var id = digits(r.emiratesId || r.idNo || r.identityNo || r.nationalId || r.passport || r.childPassport);
+    if(id && id.length >= 6) return 'id_' + safeKey(id);
+    var name = norm(childName(r)), dob = childDob(r), ph = phone(r).slice(-7), dad = norm(r.dadFull || r.fatherName || r.dad);
+    if(name && dob && ph) return 'ndp_' + hash(name+'|'+dob+'|'+ph);
+    if(name && dob && dad) return 'ndf_' + hash(name+'|'+dob+'|'+dad);
+    return '';
+  }
+  function rowKey(r){ return strongKey(r) || (exactKeys(r)[0] || 'row_' + hash(JSON.stringify(r||{}).slice(0,250))); }
+  function rowUpdated(r){ return Date.parse(txt((r||{}).rowUpdatedAt || (r||{}).decisionAt || (r||{}).approvedAt || (r||{}).timestamp || (r||{}).createdAt || (r||{}).submittedAt)) || 0; }
+  async function fetchJson(url){ var sep=url.indexOf('?')>=0?'&':'?'; var res=await fetch(url+sep+'ts='+Date.now(),{cache:'no-store'}); if(!res.ok) throw new Error('HTTP '+res.status); return await res.json(); }
+  function normalizeObj(obj, folder, source){
+    var out=[]; if(!obj || typeof obj!=='object') return out;
+    if(Array.isArray(obj)){
+      obj.forEach(function(v,i){ if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v, v.firebaseKey||v.requestId||String(i)):Object.assign({firebaseKey:String(i)},v); r.status=folder; r.sourcePath=source; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||String(i)); out.push(r); }});
+    } else {
+      Object.keys(obj).forEach(function(k){ var v=obj[k]; if(v&&typeof v==='object'){ var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v,k):Object.assign({firebaseKey:k},v); r._fbKey=k; r.status=folder; r.sourcePath=source; if(!r.firebaseKey) r.firebaseKey=safeKey(k); if(!r.requestId) r.requestId=r.firebaseKey; if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||k); out.push(r); }});
+    }
+    return out;
+  }
+  async function readPath(url, folder, source){ try{return normalizeObj(await fetchJson(url), folder, source);}catch(_e){return [];} }
+  async function readAll(){
+    var base=FB_URL, rt=root();
+    var groups = [
+      [base+'/registrationRequests/pending.json','pending','pending'], [rt+'/registrationRequests/pending.json','pending','pending-root'],
+      [base+'/registrationRequests/accepted.json','approved','accepted'], [rt+'/registrationRequests/accepted.json','approved','accepted-root'],
+      [base+'/registrationRequests/rejected.json','rejected','rejected'], [rt+'/registrationRequests/rejected.json','rejected','rejected-root'],
+      [base+'/kp_form_rows.json','legacy','legacy'], [rt+'/kp_form_rows.json','legacy','legacy-root']
+    ];
+    var all=[];
+    for(var i=0;i<groups.length;i++) all=all.concat(await readPath(groups[i][0],groups[i][1],groups[i][2]));
+    return all;
+  }
+  function buildDecisionMaps(rows){
+    var exact={}, strong={};
+    (rows||[]).forEach(function(r){
+      var st=r&&r.status; if(st!=='approved' && st!=='rejected') return;
+      var item={status:st, decisionAt:r.decisionAt||r.rowUpdatedAt||new Date().toISOString(), row:r};
+      exactKeys(r).forEach(function(k){ if(k) exact[k]=item; });
+      var sk=strongKey(r); if(sk) strong[sk]=item;
+    });
+    try{
+      var saved=JSON.parse(localStorage.getItem('kp_form_decisions_v2')||'{}')||{};
+      Object.keys(saved).forEach(function(k){ var d=saved[k]; if(d&&d.status&&d.status!=='pending'){ exact[safeKey(k)]={status:d.status,decisionAt:d.decisionAt||d.savedAt,row:{}}; } });
+    }catch(_e){}
+    return {exact:exact,strong:strong};
+  }
+  function decisionFor(r,maps){
+    var ex=exactKeys(r); for(var i=0;i<ex.length;i++){ if(maps.exact[ex[i]]) return maps.exact[ex[i]]; }
+    var sk=strongKey(r); if(sk && maps.strong[sk]) return maps.strong[sk];
+    return null;
+  }
+  function mergeRows(rows){
+    rows=Array.isArray(rows)?rows:[];
+    var maps=buildDecisionMaps(rows.concat(Array.isArray(syncedFormRows)?syncedFormRows:[]));
+    var out={};
+    function add(r){
+      if(!r || !childName(r)) return;
+      var d=decisionFor(r,maps);
+      if(d && d.status && d.status!=='pending') r=Object.assign({}, r, {status:d.status, decisionAt:d.decisionAt||r.decisionAt, rowUpdatedAt:d.decisionAt||r.rowUpdatedAt});
+      if(r.status==='legacy') r.status = d ? d.status : (r.status && r.status!=='legacy'?r.status:'pending');
+      var k=rowKey(r); var old=out[k];
+      if(!old){ out[k]=r; return; }
+      var rank=function(s){return s==='rejected'?4:s==='approved'?3:s==='pending'?1:0;};
+      var rr=rank(r.status), ro=rank(old.status);
+      out[k]=(rr>ro || (rr===ro && rowUpdated(r)>=rowUpdated(old))) ? Object.assign({}, old, r) : Object.assign({}, r, old);
+    }
+    rows.forEach(add);
+    (Array.isArray(syncedFormRows)?syncedFormRows:[]).forEach(add);
+    return Object.values(out);
+  }
+  window.syncRegistrationRequestsFromFirebase = async function(options){
+    options=options||{};
+    try{
+      var rows=await readAll();
+      syncedFormRows = mergeRows(rows);
+      try{ localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); }catch(_e){}
+      if(typeof updateFormsNavBadge==='function') updateFormsNavBadge();
+      if(typeof renderFormRequests==='function') renderFormRequests();
+      if(!options.silent && typeof showSyncBadge==='function') showSyncBadge('✅ ظهرت الطلبات الجديدة وتم تثبيت حالات القديمة');
+      return {total:syncedFormRows.length, pending:syncedFormRows.filter(function(r){return (r.status||'pending')==='pending';}).length};
+    }catch(e){ console.warn('safe registration sync failed',e); if(!options.silent&&typeof showSyncBadge==='function') showSyncBadge('⚠️ تعذرت مزامنة طلبات التسجيل'); return {error:e&&e.message}; }
+  };
+  window.renderFormRequests = function(){
+    try{ if(typeof updateFormsNavBadge==='function') updateFormsNavBadge(); }catch(_e){}
+    var page=document.getElementById('pg-forms'); if(!page) return;
+    var rowsAll=Array.isArray(syncedFormRows)?syncedFormRows:[];
+    var pending=rowsAll.filter(function(r){return (r.status||'pending')==='pending';});
+    var approved=rowsAll.filter(function(r){return r.status==='approved';});
+    var rejected=rowsAll.filter(function(r){return r.status==='rejected';});
+    var pc=document.getElementById('forms-pending-count'), ac=document.getElementById('forms-approved-count'); if(pc)pc.textContent=pending.length; if(ac)ac.textContent=approved.length;
+    var filter=(document.getElementById('forms-filter')||{}).value||'pending';
+    var search=((document.getElementById('forms-search')||{}).value||'').toLowerCase();
+    var rows=filter==='all'?rowsAll:filter==='approved'?approved:filter==='rejected'?rejected:pending;
+    rows=rows.filter(function(r){return !search || [r.name,r.dadFull,r.momFull,r.nat,r.dob,r.emiratesId,r.idNo].join(' ').toLowerCase().indexOf(search)>=0;}).sort(function(a,b){return rowUpdated(b)-rowUpdated(a);});
+    var list=document.getElementById('forms-list'); if(!list) return;
+    if(!rows.length){ list.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">'+(filter==='pending'?'لا توجد طلبات جديدة':filter==='approved'?'لا توجد طلبات مقبولة':filter==='rejected'?'لا توجد طلبات مرفوضة':'لا توجد نتائج')+'</div>'; return; }
+    list.innerHTML=rows.map(function(r){
+      if(!r.timestamp) r.timestamp=txt(r.formTimestamp||r.submittedAt||r.createdAt||r.firebaseKey||r.requestId||rowKey(r));
+      var tsSafe=encodeURIComponent(String(r.timestamp||''));
+      var view='<button class="btn btn-b btn-sm" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">👁 عرض الطلب</button>';
+      var actions='';
+      if((r.status||'pending')==='pending') actions=view+'<button class="btn btn-g btn-sm" onclick="quickApprove(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">✅ قبول</button><button class="btn btn-r btn-sm" onclick="rejectFormRow(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">❌ رفض</button>';
+      else if(r.status==='approved') actions=view+'<span class="b bg">✅ مقبول</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      else actions=view+'<span class="b br">❌ مرفوض</span><button class="btn btn-out btn-sm" onclick="undoFormDecision(decodeURIComponent(\''+tsSafe+'\'));event.stopPropagation()">↩️ تراجع</button>';
+      return '<div class="form-req-card" onclick="openFormDetail(decodeURIComponent(\''+tsSafe+'\'))">'+
+        '<div class="form-req-left">'+(r.imgChildPhoto?'<img src="'+driveImgUrl(r.imgChildPhoto)+'" class="form-req-photo" onerror="this.style.display=\'none\'">':'<div class="form-req-photo-empty">👶</div>')+'</div>'+
+        '<div class="form-req-info"><div class="form-req-name">'+escapeHtml(childName(r))+'</div><div class="form-req-meta"><span>🌍 '+formatNationalityWithFlag(cleanArabicOnlyValue(r.nat)||r.nat||'—')+'</span><span>📅 '+escapeHtml(r.dob||'—')+'</span><span>'+escapeHtml(r.gen||'—')+'</span></div><div class="form-req-meta"><span>👨 '+escapeHtml(r.dadFull||r.dad||'—')+'</span><span>📱 '+escapeHtml(r.dadMob||r.dph||r.momMob||r.mph||'—')+'</span><span>📌 '+escapeHtml(r.source==='google_sheets'?'Google Sheets':(r.source||r.sourcePath||'رابط التسجيل'))+'</span></div></div>'+
+        '<div class="form-req-actions" onclick="event.stopPropagation()">'+actions+'</div></div>';
+    }).join('');
+  };
+  window.kpSafeRegistrationRefresh = async function(){ var r=await window.syncRegistrationRequestsFromFirebase({silent:false}); return r; };
+  setTimeout(function(){ try{ window.syncRegistrationRequestsFromFirebase({silent:true}); }catch(_e){} }, 700);
+})();
+
 </body>
 </html>
