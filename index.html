@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260429-registration-pending-read-fix-system-only -->
+<!-- v20260429-registration-pending-force-merge-fixed -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Marhey:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -8093,62 +8093,44 @@ function mergeFormRowsByTimestamp(existingRows, incomingRows) {
 }
 
 async function syncRegistrationRequestsFromFirebase() {
-  // ✅ قراءة مباشرة من نفس مسار صفحة تسجيل الأهالي بدون تعديل صفحة الطلب.
   try {
-    if (!Array.isArray(syncedFormRows)) syncedFormRows = [];
-    const res = await fetch(REGISTRATION_PENDING_URL + '.json?ts=' + Date.now(), { cache: 'no-store' });
+    const res = await fetch(REGISTRATION_PENDING_URL + '.json', { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const pendingObj = await res.json();
     const incoming = [];
-    function alreadyDecided(row) {
-      if (!row) return false;
-      return syncedFormRows.some(function(x){
-        if (!x) return false;
-        var xStatus = x.status || 'pending';
-        if (xStatus === 'pending') return false;
-        return (row.firebaseKey && x.firebaseKey && x.firebaseKey === row.firebaseKey) ||
-               (row.requestId && x.requestId && x.requestId === row.requestId) ||
-               (row.timestamp && x.timestamp && x.timestamp === row.timestamp);
-      }) || !!((window.__localFormDecisions || {})[row.timestamp] && (window.__localFormDecisions || {})[row.timestamp].status !== 'pending');
-    }
     if (pendingObj && typeof pendingObj === 'object') {
       Object.keys(pendingObj).forEach(function(key){
-        var raw = pendingObj[key];
-        if (!raw || typeof raw !== 'object') return;
-        var row = normalizeParentRegistrationRow(raw, key);
-        row.firebaseKey = row.firebaseKey || key;
-        row.requestId = row.requestId || key;
-        row.source = row.source || 'parent_registration_link';
-        row.status = row.status || 'pending';
-        if (alreadyDecided(row)) return;
-        incoming.push(row);
+        var row = normalizeParentRegistrationRow(pendingObj[key], key);
+        // لا تعيدي إظهار طلب سبق قبوله/رفضه بنفس firebaseKey
+        var decided = syncedFormRows.some(function(x){
+          return x && x.firebaseKey && x.firebaseKey === row.firebaseKey && x.status && x.status !== 'pending';
+        });
+        // ✅ تحقق أيضاً من القرار المحلي بحسب timestamp
+        var localDecision = (window.__localFormDecisions || {})[row.timestamp];
+        if (localDecision && localDecision.status && localDecision.status !== 'pending') decided = true;
+        if (!decided) incoming.push(row);
       });
     }
     if (incoming.length) {
-      var existingKeys = {};
-      syncedFormRows.forEach(function(x){
-        if (!x) return;
-        if (x.timestamp) existingKeys['ts:' + x.timestamp] = true;
-        if (x.firebaseKey) existingKeys['fb:' + x.firebaseKey] = true;
-        if (x.requestId) existingKeys['rq:' + x.requestId] = true;
-      });
-      var newOnly = incoming.filter(function(r){
-        return !(existingKeys['ts:' + r.timestamp] || existingKeys['fb:' + r.firebaseKey] || existingKeys['rq:' + r.requestId]);
-      });
       syncedFormRows = mergeFormRowsByTimestamp(syncedFormRows, incoming);
+      // ✅ احترام القرارات المحلية بعد الدمج
       if (typeof applyLocalDecisionsToFormRows === 'function') {
         try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e){}
       }
       localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
-      if (newOnly.length) await saveFormRowsBatchRemoteAware(newOnly);
-      showSyncBadge(newOnly.length ? ('✅ تم تحميل ' + newOnly.length + ' طلب من رابط الأهالي') : '✅ تم تحديث طلبات رابط الأهالي');
+      // ✅ حفظ فردي للطلبات الواردة بدفعة واحدة (الجديدة فقط)
+      var trulyNew = incoming.filter(function(r){
+        var existsDecided = syncedFormRows.some(function(x){
+          return x && x.timestamp === r.timestamp && x.status && x.status !== 'pending';
+        });
+        return !existsDecided;
+      });
+      if (trulyNew.length) await saveFormRowsBatchRemoteAware(trulyNew);
+      renderFormRequests();
+      showSyncBadge('✅ تم تحميل طلبات التسجيل من رابط الأهالي');
     }
-    renderFormRequests();
-    updateFormsNavBadge();
-    var el = document.getElementById('forms-last-sync');
-    if (el) el.textContent = new Date().toLocaleTimeString('ar');
   } catch(e) {
-    console.log('Parent registration sync skipped:', e && e.message ? e.message : e);
+    console.log('Parent registration sync skipped:', e.message);
   }
 }
 
@@ -8167,6 +8149,178 @@ async function archiveFirebaseRegistrationRequest(r, status) {
     console.log('archiveFirebaseRegistrationRequest failed:', e.message);
   }
 }
+
+
+// ============================================================
+// ✅ FIX 2026-04-29 — ربط طلبات التسجيل من رابط الأهالي بشكل إجباري وآمن
+// السبب: كانت الطلبات المحفوظة في registrationRequests/pending ممكن لا تظهر
+// إذا تمت إعادة تحميل kp_form_rows من جذر Firebase قبل/بعد قراءة مسار الطلبات.
+// هذا الإصلاح لا يغيّر صفحة التسجيل ولا طريقة إرسالها، فقط يقوّي قراءة السيستم.
+// ============================================================
+(function(){
+  function kpSafeText(v){ return String(v == null ? '' : v).trim(); }
+  function kpArabicOnly(v){
+    v = kpSafeText(v);
+    if (!v) return '';
+    if (typeof getArabicOnlyValue === 'function') return getArabicOnlyValue(v);
+    if (v.indexOf(' - ') >= 0) return v.split(' - ')[0].trim();
+    var m = v.match(/[\u0600-\u06FF][\u0600-\u06FF\s،]+/g);
+    return m && m.length ? m[m.length-1].trim() : v;
+  }
+  function kpRowKey(r){
+    r = r || {};
+    return kpSafeText(r.firebaseKey || r.requestId || r.timestamp || r.emiratesId || r.name);
+  }
+  function kpIsDecided(r){ return r && r.status && r.status !== 'pending'; }
+
+  // تطبيع شامل لحقول صفحة التسجيل الحالية + أي نسخة قديمة من Google Forms/Sheets
+  window.normalizeParentRegistrationRow = function(raw, firebaseKey) {
+    raw = raw || {};
+    var r = Object.assign({}, raw);
+    r.firebaseKey = kpSafeText(raw.firebaseKey || raw.requestId || firebaseKey || raw.id || '');
+    r.requestId = kpSafeText(raw.requestId || r.firebaseKey);
+    r.timestamp = kpSafeText(raw.timestamp || raw.submittedAt || raw.createdAt || r.firebaseKey || new Date().toISOString());
+    r.status = kpSafeText(raw.status || 'pending') || 'pending';
+
+    var firstName = kpSafeText(raw.firstName || raw.childFirstName || '');
+    var familyName = kpSafeText(raw.familyName || raw.lastName || raw.childFamilyName || '');
+    r.firstName = kpSafeText(raw.firstName || firstName);
+    r.familyName = kpSafeText(raw.familyName || familyName);
+    r.name = kpSafeText(raw.name || [firstName, familyName].filter(Boolean).join(' ') || raw.childName || raw.studentName || '');
+    r.nameEn = kpSafeText(raw.nameEn || raw.childNameEnglish || raw.childNameEn || raw.childEnglishName || raw.englishName || '');
+    r.childNameEn = r.nameEn;
+
+    r.dob = kpSafeText(raw.dob || raw.dateOfBirth || raw.birthDate || '');
+    r.gen = kpSafeText(raw.gen || raw.gender || '');
+    r.nat = kpArabicOnly(raw.nat || raw.nationality || '');
+    r.passport = kpSafeText(raw.passport || raw.passportNo || raw.childPassport || '');
+    r.religion = kpSafeText(raw.religion || '');
+    r.motherTongue = kpSafeText(raw.motherTongue || '');
+    r.otherLanguages = kpSafeText(raw.otherLanguages || '');
+    r.addr = kpSafeText(raw.addr || raw.address || raw.detailedAddress || '');
+
+    r.momFull = kpSafeText(raw.momFull || raw.motherName || raw.mom || '');
+    r.momNat = kpArabicOnly(raw.momNat || raw.motherNationality || '');
+    r.momHome = kpSafeText(raw.momHome || '');
+    r.momMob = kpSafeText(raw.momMob || raw.motherMobile || raw.mph || '');
+    r.momJob = kpSafeText(raw.momJob || raw.motherJob || '');
+    r.momWork = kpSafeText(raw.momWork || '');
+    r.momEmail = kpSafeText(raw.momEmail || raw.motherEmail || '');
+    r.momMotherTongue = kpSafeText(raw.momMotherTongue || '');
+    r.momOtherLanguages = kpSafeText(raw.momOtherLanguages || '');
+
+    r.dadFull = kpSafeText(raw.dadFull || raw.fatherName || raw.dad || '');
+    r.dadNat = kpArabicOnly(raw.dadNat || raw.fatherNationality || '');
+    r.dadHome = kpSafeText(raw.dadHome || '');
+    r.dadMob = kpSafeText(raw.dadMob || raw.fatherMobile || raw.dph || '');
+    r.dadJob = kpSafeText(raw.dadJob || raw.fatherJob || '');
+    r.dadWork = kpSafeText(raw.dadWork || '');
+    r.dadEmail = kpSafeText(raw.dadEmail || raw.fatherEmail || '');
+    r.dadMotherTongue = kpSafeText(raw.dadMotherTongue || '');
+    r.dadOtherLanguages = kpSafeText(raw.dadOtherLanguages || '');
+
+    r.emergName = kpSafeText(raw.emergName || raw.emergencyName || '');
+    r.emergRel = kpSafeText(raw.emergRel || raw.emergencyRelation || '');
+    r.emergMob = kpSafeText(raw.emergMob || raw.emergencyMobile || '');
+
+    r.emiratesId = kpSafeText(raw.emiratesId || raw.idNo || raw.identityNo || raw.nationalId || '');
+    r.notes = kpSafeText(raw.notes || raw.note || '');
+    r.photoConsent = kpSafeText(raw.photoConsent || '');
+    r.socialConsent = kpSafeText(raw.socialConsent || '');
+    r.guardianUndertake = kpSafeText(raw.guardianUndertake || '');
+    r.contagious = kpSafeText(raw.contagious || '');
+    r.surgical = kpSafeText(raw.surgical || '');
+    r.diseaseDetails = kpSafeText(raw.diseaseDetails || '');
+    r.accidentDetails = kpSafeText(raw.accidentDetails || '');
+    r.allergyMedicationFood = kpSafeText(raw.allergyMedicationFood || '');
+    r.allergyNote = kpSafeText(raw.allergyNote || '');
+    r.allergy = kpSafeText(raw.allergy || '');
+    r.allergyType = kpSafeText(raw.allergyType || '');
+    r.nurseConsent = kpSafeText(raw.nurseConsent || '');
+
+    // صور صفحة التسجيل الحالية محفوظة base64 داخل نفس الطلب
+    r.imgChildPhoto = raw.imgChildPhoto || (raw.imageUrls && raw.imageUrls.imgChildPhoto) || '';
+    r.imgEmiratesId = raw.imgEmiratesId || (raw.imageUrls && raw.imageUrls.imgEmiratesId) || '';
+    r.imgVaccination = raw.imgVaccination || (raw.imageUrls && raw.imageUrls.imgVaccination) || '';
+    r.imgBirthCert = raw.imgBirthCert || (raw.imageUrls && raw.imageUrls.imgBirthCert) || '';
+    r.imgPassport = raw.imgPassport || raw.imgChildPassport || (raw.imageUrls && (raw.imageUrls.imgChildPassport || raw.imageUrls.imgPassport)) || '';
+    r.imgChildPassport = r.imgPassport;
+    r.imgGuardianId = raw.imgGuardianId || raw.imgFatherEmiratesId || raw.imgFatherId || raw.imgDadId || (raw.imageUrls && (raw.imageUrls.imgFatherEmiratesId || raw.imageUrls.imgGuardianId)) || '';
+    r.imgDadId = r.imgGuardianId;
+    r.imgGuardianPass = raw.imgGuardianPass || raw.imgFatherPassport || raw.imgDadPassport || (raw.imageUrls && (raw.imageUrls.imgFatherPassport || raw.imageUrls.imgGuardianPass)) || '';
+    r.imgDadPassport = r.imgGuardianPass;
+
+    r.rowUpdatedAt = kpSafeText(raw.rowUpdatedAt || raw.decisionAt || raw.submittedAt || raw.timestamp || r.timestamp);
+    r.source = kpSafeText(raw.source || 'parent_registration_link');
+    return r;
+  };
+
+  // دمج آمن: المفتاح الأساسي firebaseKey/requestId ثم timestamp، مع الحفاظ على القبول/الرفض الأحدث
+  window.mergeFormRowsByTimestamp = function(existingRows, incomingRows) {
+    var map = {};
+    function put(row) {
+      if (!row) return;
+      var key = kpRowKey(row);
+      if (!key) return;
+      var old = map[key];
+      if (!old) { map[key] = row; return; }
+      var oldTime = (typeof formRowUpdatedAtValue === 'function' ? formRowUpdatedAtValue(old) : Date.parse(old.rowUpdatedAt || old.timestamp || '') || 0);
+      var newTime = (typeof formRowUpdatedAtValue === 'function' ? formRowUpdatedAtValue(row) : Date.parse(row.rowUpdatedAt || row.timestamp || '') || 0);
+      if (kpIsDecided(old) && !kpIsDecided(row) && oldTime >= newTime) { map[key] = Object.assign({}, row, old); return; }
+      if (kpIsDecided(row) && !kpIsDecided(old) && newTime >= oldTime) { map[key] = Object.assign({}, old, row); return; }
+      map[key] = newTime >= oldTime ? Object.assign({}, old, row) : Object.assign({}, row, old);
+    }
+    (Array.isArray(existingRows) ? existingRows : []).forEach(put);
+    (Array.isArray(incomingRows) ? incomingRows : []).forEach(put);
+    return Object.values(map);
+  };
+
+  // قراءة إجبارية من مسار صفحة تسجيل الأهالي، ثم دمجه مع kp_form_rows وعدم السماح لاختفاءه بعد refresh
+  window.syncRegistrationRequestsFromFirebase = async function(options) {
+    options = options || {};
+    try {
+      const res = await fetch(REGISTRATION_PENDING_URL + '.json?ts=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const pendingObj = await res.json();
+      const incoming = [];
+      if (pendingObj && typeof pendingObj === 'object') {
+        Object.keys(pendingObj).forEach(function(key){
+          var row = normalizeParentRegistrationRow(pendingObj[key], key);
+          var rowKey = kpRowKey(row);
+          var decided = (Array.isArray(syncedFormRows) ? syncedFormRows : []).some(function(x){
+            return x && kpRowKey(x) === rowKey && x.status && x.status !== 'pending';
+          });
+          var localDecision = (window.__localFormDecisions || {})[row.timestamp] || (window.__localFormDecisions || {})[rowKey];
+          if (localDecision && localDecision.status && localDecision.status !== 'pending') decided = true;
+          if (!decided) incoming.push(row);
+        });
+      }
+
+      var before = Array.isArray(syncedFormRows) ? syncedFormRows.length : 0;
+      syncedFormRows = mergeFormRowsByTimestamp(syncedFormRows, incoming);
+      if (typeof applyLocalDecisionsToFormRows === 'function') {
+        try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e){}
+      }
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+
+      // احفظ فقط الطلبات الجديدة القادمة من صفحة الأهالي داخل kp_form_rows كي تظهر لباقي الأجهزة حتى لو مسار pending لم يُقرأ لاحقاً
+      if (incoming.length && typeof saveFormRowsBatchRemoteAware === 'function') {
+        try { await saveFormRowsBatchRemoteAware(incoming); } catch(_e){}
+      }
+      updateFormsNavBadge();
+      renderFormRequests();
+      var after = Array.isArray(syncedFormRows) ? syncedFormRows.length : 0;
+      if (!options.silent) {
+        showSyncBadge(incoming.length ? ('✅ تم تحميل ' + incoming.length + ' طلب من رابط الأهالي') : '✅ تم فحص طلبات الأهالي');
+      }
+      return { incoming: incoming.length, before: before, after: after };
+    } catch(e) {
+      console.error('Parent registration sync failed:', e);
+      if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('⚠️ تعذر قراءة طلبات الأهالي');
+      return { incoming: 0, error: e && e.message };
+    }
+  };
+})();
 
 let isSyncing = false;
 let pendingSync = false;
@@ -9307,9 +9461,6 @@ async function loadFromFirebase() {
       syncedFormRows = incomingFormRows;
       localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
     }
-    if (typeof syncRegistrationRequestsFromFirebase === 'function') {
-      try { await syncRegistrationRequestsFromFirebase(); } catch(_e) {}
-    }
     await loadLogoFromFirebase();
     if (!logoDataUrl && nurserySettings.logoDataUrl) {
       logoDataUrl = nurserySettings.logoDataUrl;
@@ -9335,6 +9486,15 @@ async function loadFromFirebase() {
     initialCloudReadFinished = true;
   }
 }
+
+
+// ✅ بعد أي تحميل كامل من Firebase، اقرأ مسار registrationRequests/pending فوراً وادمجه.
+const __kp_original_loadFromFirebase_20260429 = loadFromFirebase;
+loadFromFirebase = async function() {
+  const result = await __kp_original_loadFromFirebase_20260429.apply(this, arguments);
+  try { await syncRegistrationRequestsFromFirebase({ silent: true }); } catch(_e) {}
+  return result;
+};
 
 let syncPollCounter = 0;
 
@@ -9447,12 +9607,13 @@ setTimeout(updateFormsNavBadge, 0);
 let autoSyncTimer = null;
 
 function startAutoSync() {
-  syncFromGoogleSheets();
-  if (typeof syncRegistrationRequestsFromFirebase === 'function') syncRegistrationRequestsFromFirebase();
+  // اقرأ المصدرين دائماً، ولا تجعل فشل Google Sheets يمنع قراءة طلبات صفحة التسجيل
+  Promise.resolve().then(function(){ return syncRegistrationRequestsFromFirebase({ silent: true }); });
+  Promise.resolve().then(function(){ return syncFromGoogleSheets(); }).catch(function(e){ console.log('Sheets auto-sync failed:', e && e.message); });
   clearInterval(autoSyncTimer);
   autoSyncTimer = setInterval(function(){
-    syncFromGoogleSheets();
-    if (typeof syncRegistrationRequestsFromFirebase === 'function') syncRegistrationRequestsFromFirebase();
+    Promise.resolve().then(function(){ return syncRegistrationRequestsFromFirebase({ silent: true }); });
+    Promise.resolve().then(function(){ return syncFromGoogleSheets(); }).catch(function(e){ console.log('Sheets auto-sync failed:', e && e.message); });
   }, 5 * 60 * 1000);
 }
 
@@ -9642,11 +9803,9 @@ async function syncFromGoogleSheets() {
     renderFormRequests();
   } catch(e) {
     console.log('Sheets sync error:', e.message);
-    showSyncBadge('⚠️ تعذر مزامنة Google Sheets — سيتم سحب طلبات Firebase المباشرة');
-    if (typeof syncRegistrationRequestsFromFirebase === 'function') {
-      try { await syncRegistrationRequestsFromFirebase(); } catch(_e) {}
-    }
+    showSyncBadge('⚠️ تأكد أن الشيت عام (Anyone with link)');
   } finally {
+    try { if (typeof syncRegistrationRequestsFromFirebase === 'function') await syncRegistrationRequestsFromFirebase({ silent: true }); } catch(_e) {}
     if (btn) { btn.disabled = false; btn.textContent = '🔄 مزامنة من المصدرين'; }
   }
 }
