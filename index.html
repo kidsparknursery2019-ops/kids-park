@@ -1029,6 +1029,8 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
 .email-full-reader-body .email-preview{max-height:none;min-height:100%;padding:0;background:#fff}
 .email-full-reader-body .email-html-frame{width:100%;min-height:78vh;height:78vh;border:0;background:#fff}
 @media(max-width:760px){.email-full-reader-modal{width:98vw;height:95vh;border-radius:16px}.email-full-reader-title{max-width:52%;font-size:13px}.email-full-reader-head{padding:10px;align-items:flex-start}.email-full-reader-actions .btn{padding:5px 9px;font-size:11px}}
+.email-attach-chip a{color:var(--g1);text-decoration:none;font-weight:900}.email-attach-actions{display:inline-flex;gap:6px;margin-inline-start:6px}.email-draft-badge{display:inline-block;background:#fff3c4;color:#8a5c00;border:1px solid #ffe49b;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:900;margin-inline-start:6px}
+
 
 </style>
 </head>
@@ -1219,6 +1221,7 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
           <div class="email-toolbar">
             <button id="email-tab-inbox" class="ftab on" onclick="switchEmailFolder('inbox')">📥 الوارد</button>
             <button id="email-tab-sentitems" class="ftab" onclick="switchEmailFolder('sentitems')">📤 المرسلة</button>
+            <button id="email-tab-drafts" class="ftab" onclick="switchEmailFolder('drafts')">📝 Drafts / المسودات</button>
             <button id="email-tab-junkemail" class="ftab" onclick="switchEmailFolder('junkemail')">🚫 Spam / Junk</button>
             <button class="btn btn-out btn-sm" onclick="disconnectOutlookGraph()">فصل الربط</button>
           </div>
@@ -1231,6 +1234,7 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
             <button class="btn btn-y btn-sm" onclick="openSelectedEmailFull()">⛶ فتح كامل</button>
             <button class="btn btn-g btn-sm" onclick="replyToSelectedEmail()">↩️ رد</button>
             <button class="btn btn-b btn-sm" onclick="replyAllToSelectedEmail()">↪️ رد للجميع</button>
+            <button class="btn btn-y btn-sm" onclick="forwardSelectedEmail()">➡️ Forward</button>
             <button class="btn btn-out btn-sm" onclick="copySelectedEmailText()">📋 نسخ النص</button>
           </div>
           <div id="email-preview" class="email-preview" ondblclick="openSelectedEmailFull()">لا توجد رسالة محددة.</div>
@@ -1252,7 +1256,7 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
             <button class="btn btn-out btn-sm" onclick="testMistralSettings()">🧪 اختبار الذكاء</button>
             <button class="btn btn-out btn-sm" onclick="openMistralConsole()">🔑 فتح Mistral</button>
           </div>
-          <div class="email-hint admin-only-mistral">للوارد الحقيقي: أنشئي App في Azure، ضعي Client ID، واجعلي Redirect URI هو نفس رابط فتح النظام. الصلاحيات المطلوبة: User.Read وMail.Read وMail.Send.</div>
+          <div class="email-hint admin-only-mistral">للوارد الحقيقي: أنشئي App في Azure، ضعي Client ID، واجعلي Redirect URI هو نفس رابط فتح النظام. الصلاحيات المطلوبة: User.Read وMail.Read وMail.Send وMail.ReadWrite.</div>
         </div>
         <div class="email-panel">
           <div class="ct">آخر الرسائل المحفوظة</div>
@@ -1281,6 +1285,7 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
           <button class="btn btn-g" onclick="sendEmailSmart()">📨 إرسال من داخل النظام</button>
           <button class="btn btn-y" onclick="improveEmailWithMistral()">✨ تحسين النص بالذكاء الاصطناعي</button>
           <button class="btn btn-b" onclick="previewOutgoingEmail()">👁️ معاينة قبل الإرسال</button>
+          <button class="btn btn-out" onclick="saveEmailDraftGraph()">📝 حفظ كمسودة</button>
           <button class="btn btn-out" onclick="copyEmailBody()">📋 نسخ النص</button>
           <button class="btn btn-r" onclick="clearEmailForm()">🧹 تفريغ</button>
         </div>
@@ -10032,11 +10037,12 @@ document.addEventListener('click', function(e) {
 const EMAIL_SETTINGS_KEY='kp_email_settings_v1', EMAIL_HISTORY_KEY='kp_email_history_v1';
 const EMBEDDED_MISTRAL_KEY='wr5qiFDypdr7RwmKBAhRT4TQoleKg4OW';
 let graphMsalApp=null, graphAccount=null, graphInbox=[], currentEmailFolder='inbox', selectedGraphMessage=null, selectedGraphMessageFull=null, selectedGraphInlineMap={};
-const GRAPH_SCOPES=['User.Read','Mail.Read','Mail.Send'];
+const GRAPH_SCOPES=['User.Read','Mail.Read','Mail.Send','Mail.ReadWrite'];
 const EMAIL_FOLDER_CONFIG={
   inbox:{id:'inbox',label:'الوارد',dateField:'receivedDateTime'},
   sentitems:{id:'sentitems',label:'المرسلة',dateField:'sentDateTime'},
-  junkemail:{id:'junkemail',label:'Spam / Junk',dateField:'receivedDateTime'}
+  junkemail:{id:'junkemail',label:'Spam / Junk',dateField:'receivedDateTime'},
+  drafts:{id:'drafts',label:'Drafts / المسودات',dateField:'lastModifiedDateTime'}
 };
 function getEmailSettings(){
   let local={};
@@ -10118,15 +10124,15 @@ async function graphFetch(path,opts){
   return await res.json();
 }
 function updateEmailFolderTabs(){
-  ['inbox','sentitems','junkemail'].forEach(function(f){
+  ['inbox','sentitems','drafts','junkemail'].forEach(function(f){
     const el=document.getElementById('email-tab-'+f);
     if(el) el.className='ftab '+(currentEmailFolder===f?'on':'');
   });
 }
 function switchEmailFolder(folder){currentEmailFolder=folder||'inbox';selectedGraphMessage=null;selectedGraphMessageFull=null;updateEmailFolderTabs();const prev=document.getElementById('email-preview');if(prev)prev.textContent='لا توجد رسالة محددة.';const act=document.getElementById('email-preview-actions');if(act)act.style.display='none';const av=document.getElementById('email-attachments-view');if(av)av.innerHTML='';loadOutlookFolder()}
 async function loadOutlookInbox(){currentEmailFolder='inbox';updateEmailFolderTabs();return loadOutlookFolder()}
-async function loadOutlookFolder(){const cfg=EMAIL_FOLDER_CONFIG[currentEmailFolder]||EMAIL_FOLDER_CONFIG.inbox;setEmailStatus('جاري تحميل '+cfg.label+' من Outlook...','');try{const df=cfg.dateField;const data=await graphFetch('/me/mailFolders/'+cfg.id+'/messages?$top=25&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,hasAttachments&$orderby='+df+' desc');graphInbox=data.value||[];renderGraphInbox();setEmailStatus('تم تحديث '+cfg.label+' داخل النظام.','ok')}catch(e){renderGraphInbox(e.message||e);setEmailStatus('تعذر تحميل '+cfg.label+': '+(e.message||e),'err')}}
-function renderGraphInbox(err){const box=document.getElementById('email-inbox');if(!box)return;const cfg=EMAIL_FOLDER_CONFIG[currentEmailFolder]||EMAIL_FOLDER_CONFIG.inbox;if(err){box.innerHTML='<div class="email-hint">'+escapeHtml(err)+'</div>';return}if(!graphInbox.length){box.innerHTML='<div class="email-hint">ÙØ§ ØªÙØ¬Ø¯ Ø±Ø³Ø§Ø¦Ù ÙÙ '+escapeHtml(cfg.label)+' Ø¨Ø¹Ø¯.</div>';return}box.innerHTML='<div class="email-hint" style="margin-bottom:10px">Ø§Ø¶ØºØ·Ù ÙØ±Ø© ÙØ§Ø­Ø¯Ø© ÙÙÙØ¹Ø§ÙÙØ©Ø Ø£Ù ÙØ±ØªÙÙ ÙÙØªØ­ Ø§ÙØ±Ø³Ø§ÙØ© Ø¨Ø­Ø¬Ù ÙØ§ÙÙ.</div>'+graphInbox.map(function(m,i){const from=m.from&&m.from.emailAddress?m.from.emailAddress:{};const to=(m.toRecipients||[]).map(r=>r.emailAddress&&r.emailAddress.address).filter(Boolean).join(', ');const date=((m.receivedDateTime||m.sentDateTime||'').slice(0,16).replace('T',' '));const who=currentEmailFolder==='sentitems'?(to?'Ø¥ÙÙ: '+to:'ÙØ±Ø³ÙØ©'):(from.name||from.address||'');return '<div class="email-inbox-item" onclick="readOutlookMessage('+i+')" ondblclick="openOutlookMessageFull('+i+')" title="Ø§Ø¶ØºØ·Ù ÙØ±ØªÙÙ ÙÙØªØ­ Ø§ÙØ±Ø³Ø§ÙØ© ÙØ§ÙÙØ©"><div class="email-inbox-subject">'+escapeHtml(m.subject||'Ø¨Ø¯ÙÙ ÙÙØ¶ÙØ¹')+'</div><div class="email-inbox-meta"><span>'+escapeHtml(who)+'</span><span>'+escapeHtml(date)+'</span>'+(m.hasAttachments?'<span>ð ÙØ±ÙÙØ§Øª</span>':'')+'</div><div style="font-size:12px;color:var(--muted);margin-top:5px">'+escapeHtml(m.bodyPreview||'')+'</div></div>'}).join('')}
+async function loadOutlookFolder(){const cfg=EMAIL_FOLDER_CONFIG[currentEmailFolder]||EMAIL_FOLDER_CONFIG.inbox;setEmailStatus('جاري تحميل '+cfg.label+' من Outlook...','');try{const df=cfg.dateField;const data=await graphFetch('/me/mailFolders/'+cfg.id+'/messages?$top=25&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,lastModifiedDateTime,bodyPreview,hasAttachments&$orderby='+df+' desc');graphInbox=data.value||[];renderGraphInbox();setEmailStatus('تم تحديث '+cfg.label+' داخل النظام.','ok')}catch(e){renderGraphInbox(e.message||e);setEmailStatus('تعذر تحميل '+cfg.label+': '+(e.message||e),'err')}}
+function renderGraphInbox(err){const box=document.getElementById('email-inbox');if(!box)return;const cfg=EMAIL_FOLDER_CONFIG[currentEmailFolder]||EMAIL_FOLDER_CONFIG.inbox;if(err){box.innerHTML='<div class="email-hint">'+escapeHtml(err)+'</div>';return}if(!graphInbox.length){box.innerHTML='<div class="email-hint">ÙØ§ ØªÙØ¬Ø¯ Ø±Ø³Ø§Ø¦Ù ÙÙ '+escapeHtml(cfg.label)+' Ø¨Ø¹Ø¯.</div>';return}box.innerHTML='<div class="email-hint" style="margin-bottom:10px">Ø§Ø¶ØºØ·Ù ÙØ±Ø© ÙØ§Ø­Ø¯Ø© ÙÙÙØ¹Ø§ÙÙØ©Ø Ø£Ù ÙØ±ØªÙÙ ÙÙØªØ­ Ø§ÙØ±Ø³Ø§ÙØ© Ø¨Ø­Ø¬Ù ÙØ§ÙÙ.</div>'+graphInbox.map(function(m,i){const from=m.from&&m.from.emailAddress?m.from.emailAddress:{};const to=(m.toRecipients||[]).map(r=>r.emailAddress&&r.emailAddress.address).filter(Boolean).join(', ');const date=((m.receivedDateTime||m.sentDateTime||m.lastModifiedDateTime||'').slice(0,16).replace('T',' '));const who=(currentEmailFolder==='sentitems'||currentEmailFolder==='drafts')?(to?'إلى: '+to:(currentEmailFolder==='drafts'?'مسودة':'مرسلة')):(from.name||from.address||'');const draftBadge=currentEmailFolder==='drafts'?'<span class="email-draft-badge">مسودة</span>':'';return '<div class="email-inbox-item" onclick="readOutlookMessage('+i+')" ondblclick="openOutlookMessageFull('+i+')" title="Ø§Ø¶ØºØ·Ù ÙØ±ØªÙÙ ÙÙØªØ­ Ø§ÙØ±Ø³Ø§ÙØ© ÙØ§ÙÙØ©"><div class="email-inbox-subject">'+escapeHtml(m.subject||'بدون موضوع')+draftBadge+'</div><div class="email-inbox-meta"><span>'+escapeHtml(who)+'</span><span>'+escapeHtml(date)+'</span>'+(m.hasAttachments?'<span>ð ÙØ±ÙÙØ§Øª</span>':'')+'</div><div style="font-size:12px;color:var(--muted);margin-top:5px">'+escapeHtml(m.bodyPreview||'')+'</div></div>'}).join('')}
 
 
 function escapeAttr(s){return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
@@ -10181,11 +10187,13 @@ function buildOriginalEmailPreview(data, inlineMap){
   const from=data.from&&data.from.emailAddress?data.from.emailAddress:{};
   const tos=(data.toRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
   const ccs=(data.ccRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
-  const date=((data.receivedDateTime||data.sentDateTime||'').slice(0,16).replace('T',' '));
+  const bccs=(data.bccRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
+  const date=((data.receivedDateTime||data.sentDateTime||data.lastModifiedDateTime||'').slice(0,16).replace('T',' '));
   const meta='<div class="email-original-meta">'
     +'<div><b>من:</b> '+escapeHtml(from.name||from.address||'')+'</div>'
     +'<div><b>إلى:</b> '+escapeHtml(tos||'')+'</div>'
     +(ccs?'<div><b>CC:</b> '+escapeHtml(ccs)+'</div>':'')
+    +(bccs?'<div><b>BCC:</b> '+escapeHtml(bccs)+'</div>':'')
     +'<div><b>الموضوع:</b> '+escapeHtml(data.subject||'')+'</div>'
     +'<div><b>التاريخ:</b> '+escapeHtml(date)+'</div>'
     +'</div>';
@@ -10203,12 +10211,13 @@ async function readOutlookMessage(i){
   const prev=document.getElementById('email-preview');const act=document.getElementById('email-preview-actions');const av=document.getElementById('email-attachments-view');
   if(prev)prev.textContent='جاري فتح الرسالة...';if(act)act.style.display='flex';if(av)av.innerHTML='';
   try{
-    const data=await graphFetch('/me/messages/'+encodeURIComponent(m.id)+'?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,body,hasAttachments');
+    const data=await graphFetch('/me/messages/'+encodeURIComponent(m.id)+'?$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,sentDateTime,lastModifiedDateTime,body,hasAttachments');
     selectedGraphMessageFull=data;
     const from=data.from&&data.from.emailAddress?data.from.emailAddress:{};
     const tos=(data.toRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
     const ccs=(data.ccRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
-    const date=((data.receivedDateTime||data.sentDateTime||'').slice(0,16).replace('T',' '));
+    const bccs=(data.bccRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
+  const date=((data.receivedDateTime||data.sentDateTime||data.lastModifiedDateTime||'').slice(0,16).replace('T',' '));
     const inlineMap=data.hasAttachments ? await getInlineAttachmentMap(data.id) : {};
     selectedGraphInlineMap=inlineMap||{};
     if(prev)prev.innerHTML=buildOriginalEmailPreview(data, selectedGraphInlineMap);
@@ -10227,7 +10236,7 @@ function ensureEmailFullReader(){
   ov=document.createElement('div');
   ov.id='email-full-reader-overlay';
   ov.className='email-full-reader-overlay';
-  ov.innerHTML='<div class="email-full-reader-modal"><div class="email-full-reader-head"><div id="email-full-reader-title" class="email-full-reader-title">عرض الرسالة كاملة</div><div class="email-full-reader-actions"><button class="btn btn-g btn-sm" onclick="replyToSelectedEmail()">↩️ رد</button><button class="btn btn-b btn-sm" onclick="replyAllToSelectedEmail()">↪️ رد للجميع</button><button class="btn btn-out btn-sm" onclick="copySelectedEmailText()">📋 نسخ</button><button class="btn btn-r btn-sm" onclick="closeEmailFullReader()">✕ إغلاق</button></div></div><div id="email-full-reader-body" class="email-full-reader-body"></div></div>';
+  ov.innerHTML='<div class="email-full-reader-modal"><div class="email-full-reader-head"><div id="email-full-reader-title" class="email-full-reader-title">عرض الرسالة كاملة</div><div class="email-full-reader-actions"><button class="btn btn-g btn-sm" onclick="replyToSelectedEmail()">↩️ رد</button><button class="btn btn-b btn-sm" onclick="replyAllToSelectedEmail()">↪️ رد للجميع</button><button class="btn btn-y btn-sm" onclick="forwardSelectedEmail()">➡️ Forward</button><button class="btn btn-out btn-sm" onclick="copySelectedEmailText()">📋 نسخ</button><button class="btn btn-r btn-sm" onclick="closeEmailFullReader()">✕ إغلاق</button></div></div><div id="email-full-reader-body" class="email-full-reader-body"></div></div>';
   ov.addEventListener('click',function(e){ if(e.target===ov) closeEmailFullReader(); });
   document.body.appendChild(ov);
   document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeEmailFullReader(); });
@@ -10240,21 +10249,33 @@ function openSelectedEmailFull(){
   const body=document.getElementById('email-full-reader-body');
   if(title) title.textContent=selectedGraphMessageFull.subject||'بدون موضوع';
   if(body){
-    body.innerHTML='<div class="email-preview" style="max-height:none;min-height:100%;overflow:auto">'+buildOriginalEmailPreview(selectedGraphMessageFull, selectedGraphInlineMap||{})+'</div>';
+    body.innerHTML='<div class="email-preview" style="max-height:none;min-height:100%;overflow:auto">'+buildOriginalEmailPreview(selectedGraphMessageFull, selectedGraphInlineMap||{})+'</div><div id="email-full-attachments-view" class="email-attachments-view"></div>';
+    if(selectedGraphMessageFull.hasAttachments) setTimeout(function(){renderMessageAttachments(selectedGraphMessageFull.id,'email-full-attachments-view')},50);
   }
   ov.classList.add('on');
   setTimeout(function(){document.querySelectorAll('#email-full-reader-body iframe.email-html-frame').forEach(function(fr){fr.style.height='78vh';fr.onload=function(){try{fr.style.height='78vh'}catch(e){}};});},80);
 }
 function closeEmailFullReader(){const ov=document.getElementById('email-full-reader-overlay');if(ov)ov.classList.remove('on')}
 
-async function renderMessageAttachments(messageId){
-  const av=document.getElementById('email-attachments-view');if(!av)return;
+async function renderMessageAttachments(messageId, targetId){
+  const av=document.getElementById(targetId||'email-attachments-view');if(!av)return;
   av.innerHTML='<div class="email-hint">جاري تحميل المرفقات...</div>';
   try{
-    const data=await graphFetch('/me/messages/'+encodeURIComponent(messageId)+'/attachments?$select=id,name,contentType,size,isInline');
+    const data=await graphFetch('/me/messages/'+encodeURIComponent(messageId)+'/attachments?$top=50');
     const arr=(data.value||[]).filter(a=>!a.isInline);
     if(!arr.length){av.innerHTML='';return}
-    av.innerHTML='<div class="ct" style="margin-top:12px">المرفقات</div>'+arr.map(a=>'<div class="email-attach-chip">📎 '+escapeHtml(a.name||'مرفق')+' <span>'+Math.round((a.size||0)/1024)+' KB</span></div>').join('');
+    av.innerHTML='<div class="ct" style="margin-top:12px">📎 المرفقات</div>'+arr.map(function(a){
+      const name=escapeHtml(a.name||'مرفق');
+      const size=Math.round((a.size||0)/1024)+' KB';
+      let actions='';
+      if(a.contentBytes){
+        const href='data:'+(a.contentType||'application/octet-stream')+';base64,'+a.contentBytes;
+        actions='<span class="email-attach-actions"><a download="'+escapeAttr(a.name||'attachment')+'" href="'+href+'">تحميل</a><a target="_blank" href="'+href+'">فتح</a></span>';
+      } else {
+        actions='<span class="email-attach-actions"><span>لا يمكن التحميل المباشر</span></span>';
+      }
+      return '<div class="email-attach-chip">📎 '+name+' <span>'+size+'</span>'+actions+'</div>';
+    }).join('');
   }catch(e){av.innerHTML='<div class="email-hint">تعذر تحميل المرفقات: '+escapeHtml(e.message||e)+'</div>'}
 }
 function copySelectedEmailText(){const txt=document.getElementById('email-preview')?.textContent||'';if(!txt.trim()){setEmailStatus('لا توجد رسالة لنسخها.','err');return}navigator.clipboard?.writeText(txt).then(()=>setEmailStatus('تم نسخ الرسالة.','ok')).catch(()=>setEmailStatus('تعذر النسخ تلقائيًا.','err'))}
@@ -10273,6 +10294,24 @@ function replyAllToSelectedEmail(){
   document.getElementById('email-bcc').value='';
   document.getElementById('email-subject').value=/^re:/i.test(m.subject||'')?(m.subject||''):'Re: '+(m.subject||'');
   document.getElementById('email-body').value='';
+}
+function stripHtmlToText(html){
+  const div=document.createElement('div');div.innerHTML=String(html||'');return (div.textContent||div.innerText||'').trim();
+}
+function forwardSelectedEmail(){
+  if(!selectedGraphMessageFull){setEmailStatus('افتحي رسالة أولاً لإعادة توجيهها.','err');return}
+  const m=selectedGraphMessageFull;
+  const from=m.from&&m.from.emailAddress?(m.from.emailAddress.name||m.from.emailAddress.address):'';
+  const date=((m.receivedDateTime||m.sentDateTime||m.lastModifiedDateTime||'').slice(0,16).replace('T',' '));
+  const originalText=(m.body&&String(m.body.contentType||'').toLowerCase()==='html')?stripHtmlToText(m.body.content):(m.body&&m.body.content)||m.bodyPreview||'';
+  openEmailComposeModal('forward');
+  document.getElementById('email-to').value='';
+  document.getElementById('email-cc').value='';
+  document.getElementById('email-bcc').value='';
+  document.getElementById('email-subject').value=/^fw:|^fwd:/i.test(m.subject||'')?(m.subject||''):'Fwd: '+(m.subject||'');
+  document.getElementById('email-body').value='\n\n---------- Forwarded message ----------\nمن: '+from+'\nالتاريخ: '+date+'\nالموضوع: '+(m.subject||'')+'\n\n'+originalText;
+  renderSelectedAttachments();
+  setEmailStatus('تم تجهيز إعادة التوجيه. المرفقات الأصلية ظاهرة للتحميل بالمعاينة؛ أضيفيها من زر المرفقات إذا رغبتِ بإرسالها.','ok');
 }
 function openEmailComposeModal(mode){
   const ov=document.getElementById('email-compose-ov');if(ov)ov.classList.add('on');
@@ -10296,6 +10335,21 @@ async function getSelectedFileAttachments(){
 }
 function sendEmailViaOutlook(){const v=getComposeValues();if(!v.to){setEmailStatus('اكتبي بريد المستلم أولاً.','err');return}if(!v.subject&&!v.body){setEmailStatus('اكتبي موضوع الرسالة أو نصها أولاً.','err');return}saveEmailDraftToHistory(v.to,v.cc,v.subject,v.body,v.bcc);window.open(buildOutlookComposeUrl(v.to,v.cc,v.subject,v.body,v.bcc),'_blank');setEmailStatus('تم فتح Outlook برسالة جاهزة. المرفقات لا تنتقل في الخطة البديلة؛ أضيفيها من Outlook عند الحاجة.','ok')}
 async function sendEmailSmart(){if(graphAccount||sessionStorage.getItem('kp_graph_connected'))return await sendEmailViaGraph();return sendEmailViaOutlook()}
+async function saveEmailDraftGraph(){
+  const v=getComposeValues();
+  if(!v.to&&!v.cc&&!v.bcc&&!v.subject&&!v.body){setEmailStatus('لا توجد بيانات لحفظها كمسودة.','err');return}
+  if(!(graphAccount||sessionStorage.getItem('kp_graph_connected'))){saveEmailDraftToHistory(v.to,v.cc,v.subject,v.body,v.bcc);setEmailStatus('تم حفظها محلياً في آخر الرسائل. اربطي Outlook لحفظها داخل Drafts.','ok');return}
+  setEmailStatus('جاري حفظ المسودة في Outlook Drafts...','');
+  try{
+    const attachments=await getSelectedFileAttachments();
+    const payload={subject:v.subject||'(بدون موضوع)',body:{contentType:'Text',content:v.body||''},toRecipients:buildRecipients(v.to),ccRecipients:buildRecipients(v.cc),bccRecipients:buildRecipients(v.bcc)};
+    if(attachments.length)payload.attachments=attachments;
+    await graphFetch('/me/messages',{method:'POST',body:JSON.stringify(payload)});
+    saveEmailDraftToHistory(v.to,v.cc,v.subject,v.body,v.bcc);
+    setEmailStatus('تم حفظ الرسالة في Drafts داخل Outlook.','ok');
+    if(currentEmailFolder==='drafts')setTimeout(loadOutlookFolder,900);
+  }catch(e){setEmailStatus('تعذر حفظ المسودة في Outlook: '+(e.message||e),'err')}
+}
 async function sendEmailViaGraph(){
   const v=getComposeValues();
   if(!v.to){setEmailStatus('اكتبي بريد المستلم أولاً.','err');return}
