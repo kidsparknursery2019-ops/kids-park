@@ -901,6 +901,17 @@ textarea{resize:vertical;min-height:70px}
 .email-ms-grid{display:grid;grid-template-columns:1fr;gap:10px}.email-inbox-item{border:1.5px solid #eef4ee;border-radius:12px;padding:10px;margin-bottom:8px;background:#fbfdfb;cursor:pointer;transition:all .16s}.email-inbox-item:hover{border-color:var(--g2);transform:translateX(-2px);box-shadow:var(--shadow)}.email-inbox-subject{font-weight:900;color:var(--g1);margin-bottom:3px}.email-inbox-meta{font-size:11.5px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}.email-preview{white-space:pre-wrap;max-height:260px;overflow:auto;border:1.5px solid #eef4ee;border-radius:12px;background:#fbfdfb;padding:12px;font-size:13px;line-height:1.7}.graph-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;border:1.5px solid var(--border);font-size:12px;font-weight:800;background:#fff;color:var(--muted)}.graph-pill.connected{background:#dcf5e6;color:#0e6b35;border-color:#bee5cd}.graph-pill.err{background:#ffe5e3;color:#a82323;border-color:#ffc7c2}
 
 
+
+/* ✉️ اقتراحات إيميلات المستلمين */
+.email-autocomplete-wrap{position:relative}
+.email-suggest-box{position:absolute;left:0;right:0;top:100%;margin-top:5px;background:#fff;border:2px solid var(--border);border-radius:14px;box-shadow:0 12px 30px rgba(46,139,84,.18);z-index:1200;max-height:230px;overflow:auto;display:none;direction:ltr;text-align:left}
+.email-suggest-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid #eef4ee;display:flex;flex-direction:column;gap:2px;font-size:12.5px}
+.email-suggest-item:last-child{border-bottom:none}
+.email-suggest-item:hover,.email-suggest-item.on{background:var(--gp)}
+.email-suggest-email{font-weight:900;color:var(--g1);direction:ltr}
+.email-suggest-name{font-size:11px;color:var(--muted);direction:rtl;text-align:right}
+.email-suggest-empty{padding:10px 12px;color:var(--muted);font-size:12px;text-align:right;direction:rtl}
+
 /* Mistral settings: admin only */
 .admin-only-mistral{display:none!important}
 body.kp-admin .admin-only-mistral{display:flex!important}
@@ -1294,9 +1305,9 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
       <div class="mo mo-lg">
         <div class="mot">✉️ <span id="email-compose-title">إنشاء رسالة بريد</span></div>
         <div class="fg">
-          <div class="fl"><label>إلى</label><input id="email-to" type="text" dir="ltr" placeholder="parent@example.com"></div>
-          <div class="fl"><label>نسخة CC</label><input id="email-cc" type="text" dir="ltr" placeholder="اختياري"></div>
-          <div class="fl"><label>نسخة مخفية BCC</label><input id="email-bcc" type="text" dir="ltr" placeholder="اختياري"></div>
+          <div class="fl email-autocomplete-wrap"><label>إلى</label><input id="email-to" type="text" dir="ltr" placeholder="parent@example.com" autocomplete="off"><div id="email-to-suggest" class="email-suggest-box"></div></div>
+          <div class="fl email-autocomplete-wrap"><label>نسخة CC</label><input id="email-cc" type="text" dir="ltr" placeholder="اختياري" autocomplete="off"><div id="email-cc-suggest" class="email-suggest-box"></div></div>
+          <div class="fl email-autocomplete-wrap"><label>نسخة مخفية BCC</label><input id="email-bcc" type="text" dir="ltr" placeholder="اختياري" autocomplete="off"><div id="email-bcc-suggest" class="email-suggest-box"></div></div>
           <div class="fl"><label>المرفقات</label><input id="email-attachments" type="file" multiple onchange="renderSelectedAttachments()"></div>
           <div class="fl fgr"><label>الموضوع</label><input id="email-subject" placeholder="موضوع الرسالة"></div>
           <div class="fl fgr"><label>نص الرسالة</label><textarea id="email-body" rows="10" placeholder="اكتبي نص الرسالة هنا..."></textarea></div>
@@ -10055,7 +10066,7 @@ document.addEventListener('click', function(e) {
 })();
 
 // OUTLOOK EMAIL CENTER + MISTRAL TEXT IMPROVER — safe local add-on
-const EMAIL_SETTINGS_KEY='kp_email_settings_v1', EMAIL_HISTORY_KEY='kp_email_history_v1';
+const EMAIL_SETTINGS_KEY='kp_email_settings_v1', EMAIL_HISTORY_KEY='kp_email_history_v1', EMAIL_CONTACTS_KEY='kp_email_contacts_v1';
 const EMBEDDED_MISTRAL_KEY='wr5qiFDypdr7RwmKBAhRT4TQoleKg4OW';
 let graphMsalApp=null, graphAccount=null, graphInbox=[], graphNextLink='', graphPageSize=100, graphSearchTerm='', graphSmartFilter='all', currentEmailFolder='inbox', selectedGraphMessage=null, selectedGraphMessageFull=null, selectedGraphInlineMap={};
 const GRAPH_SCOPES=['User.Read','Mail.Read','Mail.Send','Mail.ReadWrite'];
@@ -10108,9 +10119,22 @@ function setEmailStatus(msg,type){
   const el2=document.getElementById('email-compose-status');
   [el,el2].forEach(function(x){if(!x)return;x.textContent=msg||'';x.className='email-status '+(type||'')});
 }
+function normEmailAddress(v){return String(v||'').trim().toLowerCase()}
+function isValidEmailLike(v){return /^[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+$/.test(String(v||'').trim())}
+function getEmailContacts(){let local=[];try{local=JSON.parse(localStorage.getItem(EMAIL_CONTACTS_KEY)||'[]')||[]}catch(e){local=[]}const remote=(nurserySettings&&Array.isArray(nurserySettings.emailContacts))?nurserySettings.emailContacts:[];const map={};remote.concat(local).forEach(function(c){if(typeof c==='string')c={email:c};const email=normEmailAddress(c&&c.email);if(!email||!isValidEmailLike(email))return;map[email]=Object.assign({},map[email]||{},c,{email:email,name:(c&&c.name)||((map[email]&&map[email].name)||''),count:Math.max(Number(c&&c.count)||0,Number(map[email]&&map[email].count)||0)})});return Object.values(map).sort(function(a,b){return (Number(b.count)||0)-(Number(a.count)||0)||String(a.email).localeCompare(String(b.email))})}
+async function saveEmailContacts(list,pushRemote){const clean=getEmailContacts().concat(list||[]);const map={};clean.forEach(function(c){if(typeof c==='string')c={email:c};const email=normEmailAddress(c&&c.email);if(!email||!isValidEmailLike(email))return;const old=map[email]||{};map[email]={email:email,name:(c&&c.name)||old.name||'',count:(Number(old.count)||0)+(Number(c&&c.count)||1),lastUsed:(c&&c.lastUsed)||old.lastUsed||new Date().toISOString()}});const arr=Object.values(map).sort(function(a,b){return (new Date(b.lastUsed||0))-(new Date(a.lastUsed||0))}).slice(0,500);localStorage.setItem(EMAIL_CONTACTS_KEY,JSON.stringify(arr));if(nurserySettings)nurserySettings.emailContacts=arr;if(pushRemote){try{await fetch(FB_URL+'/nurserySettings/emailContacts.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(arr)})}catch(e){console.warn('emailContacts remote save failed',e)}}return arr}
+function collectEmailContactsFromMessage(m){const out=[];function add(addr){if(!addr)return;const email=normEmailAddress(addr.address||addr.email||'');if(!email||!isValidEmailLike(email))return;out.push({email:email,name:addr.name||'',count:1,lastUsed:new Date().toISOString()})}if(m&&m.from&&m.from.emailAddress)add(m.from.emailAddress);['toRecipients','ccRecipients','bccRecipients'].forEach(function(k){(m&&m[k]||[]).forEach(function(r){if(r&&r.emailAddress)add(r.emailAddress)})});return out}
+function learnEmailContactsFromMessages(messages){let arr=[];(messages||[]).forEach(function(m){arr=arr.concat(collectEmailContactsFromMessage(m))});if(arr.length)saveEmailContacts(arr,false)}
+function learnEmailContactsFromCompose(v){const arr=[];['to','cc','bcc'].forEach(function(k){splitEmails(v&&v[k]).forEach(function(email){arr.push({email:normEmailAddress(email),count:3,lastUsed:new Date().toISOString()})})});if(arr.length)saveEmailContacts(arr,true)}
+function getCurrentEmailToken(value){const str=String(value||'');const parts=str.split(/[;,]/);return (parts[parts.length-1]||'').trim()}
+function applyEmailSuggestion(inputId,email){const el=document.getElementById(inputId);if(!el)return;const raw=String(el.value||'');const lastSep=Math.max(raw.lastIndexOf(';'),raw.lastIndexOf(','));if(lastSep>=0){el.value=raw.slice(0,lastSep+1).replace(/\s*$/,'')+' '+email+'; '}else{el.value=email+'; '}hideEmailSuggestions(inputId);el.focus()}
+function hideEmailSuggestions(inputId){const box=document.getElementById(inputId+'-suggest');if(box)box.style.display='none'}
+function renderEmailSuggestions(inputId){const el=document.getElementById(inputId);const box=document.getElementById(inputId+'-suggest');if(!el||!box)return;const token=getCurrentEmailToken(el.value).toLowerCase();if(token.length<2){box.style.display='none';return}const used=new Set(splitEmails(el.value).map(normEmailAddress));const matches=getEmailContacts().filter(function(c){return !used.has(normEmailAddress(c.email))&&(String(c.email||'').toLowerCase().includes(token)||String(c.name||'').toLowerCase().includes(token))}).slice(0,8);if(!matches.length){box.innerHTML='<div class="email-suggest-empty">لا توجد اقتراحات محفوظة بعد</div>';box.style.display='block';return}box.innerHTML=matches.map(function(c){return '<div class="email-suggest-item" onmousedown="event.preventDefault();applyEmailSuggestion(\''+inputId+'\',\''+escapeAttr(c.email)+'\')"><div class="email-suggest-email">'+escapeHtml(c.email)+'</div>'+(c.name?'<div class="email-suggest-name">'+escapeHtml(c.name)+'</div>':'')+'</div>'}).join('');box.style.display='block'}
+function setupEmailAutocomplete(){['email-to','email-cc','email-bcc'].forEach(function(id){const el=document.getElementById(id);if(!el||el.dataset.suggestReady)return;el.dataset.suggestReady='1';el.addEventListener('input',function(){renderEmailSuggestions(id)});el.addEventListener('focus',function(){renderEmailSuggestions(id)});el.addEventListener('blur',function(){setTimeout(function(){hideEmailSuggestions(id)},180)});el.addEventListener('keydown',function(e){const box=document.getElementById(id+'-suggest');if(!box||box.style.display==='none')return;const items=Array.from(box.querySelectorAll('.email-suggest-item'));if(!items.length)return;let idx=items.findIndex(x=>x.classList.contains('on'));if(e.key==='ArrowDown'){e.preventDefault();if(idx>=0)items[idx].classList.remove('on');idx=(idx+1)%items.length;items[idx].classList.add('on');items[idx].scrollIntoView({block:'nearest'})}if(e.key==='ArrowUp'){e.preventDefault();if(idx>=0)items[idx].classList.remove('on');idx=(idx<=0?items.length:idx)-1;items[idx].classList.add('on');items[idx].scrollIntoView({block:'nearest'})}if(e.key==='Enter'&&idx>=0){e.preventDefault();items[idx].dispatchEvent(new MouseEvent('mousedown',{bubbles:true}))}})})}
+document.addEventListener('click',function(e){['email-to','email-cc','email-bcc'].forEach(function(id){const el=document.getElementById(id),box=document.getElementById(id+'-suggest');if(box&&el&&!el.contains(e.target)&&!box.contains(e.target))box.style.display='none'})});
 function updateGraphStatus(){const pill=document.getElementById('graph-status-pill');if(!pill)return;const st=getEmailSettings();const ok=!!(graphAccount||sessionStorage.getItem('kp_graph_connected'));if(!st.msClientId){pill.className='graph-pill err';pill.textContent='Client ID غير مضبوط'}else if(ok){pill.className='graph-pill connected';pill.textContent='Outlook مربوط'}else{pill.className='graph-pill';pill.textContent='Outlook غير مربوط'}}
 function initGraphMail(){const st=getEmailSettings();updateGraphStatus();if(!st.msClientId||!window.msal)return null;try{const redirect=(location.origin+location.pathname).replace(/index\.html$/,'');graphMsalApp=new msal.PublicClientApplication({auth:{clientId:st.msClientId,authority:'https://login.microsoftonline.com/'+(st.msTenant||'common'),redirectUri:redirect},cache:{cacheLocation:'sessionStorage',storeAuthStateInCookie:true}});const accounts=graphMsalApp.getAllAccounts();if(accounts&&accounts.length)graphAccount=accounts[0];updateGraphStatus();return graphMsalApp}catch(e){setEmailStatus('تعذر تجهيز ربط Microsoft: '+(e.message||e),'err');return null}}
-function renderEmailCenter(){const st=getEmailSettings();const from=document.getElementById('email-from'),key=document.getElementById('mistral-api-key'),model=document.getElementById('mistral-model'),cid=document.getElementById('ms-client-id'),tenant=document.getElementById('ms-tenant');if(from)from.value=st.from||(nurserySettings&&nurserySettings.email)||'kidsparknursery@outlook.com';if(key)key.value=st.mistralKey||'';if(model)model.value=st.model||'mistral-small-latest';if(cid)cid.value=st.msClientId||'';if(tenant)tenant.value=st.msTenant||'common';initGraphMail();renderEmailHistory();renderGraphInbox();updateEmailFolderTabs()}
+function renderEmailCenter(){setupEmailAutocomplete();const st=getEmailSettings();const from=document.getElementById('email-from'),key=document.getElementById('mistral-api-key'),model=document.getElementById('mistral-model'),cid=document.getElementById('ms-client-id'),tenant=document.getElementById('ms-tenant');if(from)from.value=st.from||(nurserySettings&&nurserySettings.email)||'kidsparknursery@outlook.com';if(key)key.value=st.mistralKey||'';if(model)model.value=st.model||'mistral-small-latest';if(cid)cid.value=st.msClientId||'';if(tenant)tenant.value=st.msTenant||'common';initGraphMail();renderEmailHistory();renderGraphInbox();updateEmailFolderTabs()}
 async function saveEmailSettings(){
   const old=getEmailSettings();
   const isAdmin=!!(currentUser&&currentUser.role==='admin');
@@ -10223,6 +10247,7 @@ async function loadOutlookFolder(){
       }else throw searchErr;
     }
     graphInbox=data.value||[];
+    learnEmailContactsFromMessages(graphInbox);
     graphNextLink=data['@odata.nextLink']||'';
     renderGraphInbox();
     setEmailStatus('تم تحميل '+graphInbox.length+' رسالة من '+cfg.label+(graphNextLink?' — يوجد المزيد.':'') ,'ok');
@@ -10235,6 +10260,7 @@ async function loadMoreOutlookMessages(){
   try{
     const data=await graphFetchAbsolute(graphNextLink,{headers:{'ConsistencyLevel':'eventual'}});
     graphInbox=graphInbox.concat(data.value||[]);
+    learnEmailContactsFromMessages(data.value||[]);
     graphNextLink=data['@odata.nextLink']||'';
     renderGraphInbox();
     setEmailStatus('تم تحميل المزيد. العدد الحالي: '+graphInbox.length+(graphNextLink?' — يوجد المزيد.':''),'ok');
@@ -10338,6 +10364,7 @@ async function readOutlookMessage(i){
   try{
     const data=await graphFetch('/me/messages/'+encodeURIComponent(m.id)+'?$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,sentDateTime,lastModifiedDateTime,body,hasAttachments');
     selectedGraphMessageFull=data;
+    saveEmailContacts(collectEmailContactsFromMessage(data), false);
     const from=data.from&&data.from.emailAddress?data.from.emailAddress:{};
     const tos=(data.toRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
     const ccs=(data.ccRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
@@ -10438,7 +10465,7 @@ function forwardSelectedEmail(){
   renderSelectedAttachments();
   setEmailStatus('تم تجهيز إعادة التوجيه. المرفقات الأصلية ظاهرة للتحميل بالمعاينة؛ أضيفيها من زر المرفقات إذا رغبتِ بإرسالها.','ok');
 }
-function openEmailComposeModal(mode){
+function openEmailComposeModal(mode){setTimeout(setupEmailAutocomplete,0);
   const ov=document.getElementById('email-compose-ov');if(ov)ov.classList.add('on');
   const t=document.getElementById('email-compose-title');if(t)t.textContent=mode==='reply'?'رد على الرسالة':(mode==='replyAll'?'رد للجميع':'إنشاء رسالة بريد');
   const pv=document.getElementById('email-send-preview');if(pv){pv.style.display='none';pv.textContent=''}
@@ -10491,7 +10518,7 @@ async function sendEmailViaGraph(){
     if(currentEmailFolder==='sentitems')setTimeout(loadOutlookFolder,1000);
   }catch(e){setEmailStatus('تعذر الإرسال من داخل النظام: '+(e.message||e)+' — سيتم فتح Outlook كخطة بديلة.','err');setTimeout(()=>sendEmailViaOutlook(),900)}
 }
-function saveEmailDraftToHistory(to,cc,subject,body,bcc){let h=[];try{h=JSON.parse(localStorage.getItem(EMAIL_HISTORY_KEY)||'[]')}catch(e){}h.unshift({to,cc,bcc,subject,body,date:new Date().toISOString()});h=h.slice(0,25);localStorage.setItem(EMAIL_HISTORY_KEY,JSON.stringify(h));renderEmailHistory()}
+function saveEmailDraftToHistory(to,cc,subject,body,bcc){let h=[];try{h=JSON.parse(localStorage.getItem(EMAIL_HISTORY_KEY)||'[]')}catch(e){}h.unshift({to,cc,bcc,subject,body,date:new Date().toISOString()});h=h.slice(0,25);localStorage.setItem(EMAIL_HISTORY_KEY,JSON.stringify(h));learnEmailContactsFromCompose({to:to,cc:cc,bcc:bcc});renderEmailHistory()}
 function renderEmailHistory(){const box=document.getElementById('email-history');if(!box)return;let h=[];try{h=JSON.parse(localStorage.getItem(EMAIL_HISTORY_KEY)||'[]')}catch(e){}if(!h.length){box.innerHTML='<div class="email-hint">لا توجد رسائل محفوظة بعد.</div>';return}box.innerHTML=h.map(function(m,i){return '<div class="email-history-item" onclick="loadEmailHistory('+i+')"><div class="email-history-title">'+escapeHtml(m.subject||'بدون موضوع')+'</div><div class="email-history-meta"><span>إلى: '+escapeHtml(m.to||'')+'</span><span>'+formatDate((m.date||'').slice(0,10))+'</span></div></div>'}).join('')}
 function loadEmailHistory(i){let h=[];try{h=JSON.parse(localStorage.getItem(EMAIL_HISTORY_KEY)||'[]')}catch(e){}const m=h[i];if(!m)return;openEmailComposeModal();document.getElementById('email-to').value=m.to||'';document.getElementById('email-cc').value=m.cc||'';document.getElementById('email-bcc').value=m.bcc||'';document.getElementById('email-subject').value=m.subject||'';document.getElementById('email-body').value=m.body||'';renderSelectedAttachments();setEmailStatus('تم تحميل الرسالة من السجل.','ok')}
 function clearEmailForm(){['email-to','email-cc','email-bcc','email-subject','email-body'].forEach(function(id){const el=document.getElementById(id);if(el)el.value=''});const f=document.getElementById('email-attachments');if(f)f.value='';renderSelectedAttachments();const pv=document.getElementById('email-send-preview');if(pv){pv.style.display='none';pv.textContent=''}setEmailStatus('','')}
