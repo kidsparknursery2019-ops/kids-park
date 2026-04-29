@@ -1858,6 +1858,7 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
             <input type="text" id="forms-search" placeholder="🔍 ابحث..." oninput="renderFormRequests()" style="max-width:180px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
           </div>
           <button class="btn btn-g" id="sync-sheets-btn" onclick="syncFromGoogleSheets()">🔄 مزامنة من المصدرين</button>
+            <button class="btn btn-b" onclick="diagnoseRegistrationSources()">🧪 فحص وصول الطلبات</button>
         </div>
         <div id="forms-list">
           <div style="text-align:center;padding:30px;color:var(--muted)">سيتم المزامنة تلقائياً بعد تسجيل الدخول</div>
@@ -8322,6 +8323,147 @@ async function archiveFirebaseRegistrationRequest(r, status) {
   };
 })();
 
+
+// ============================================================
+// ✅ FIX 2026-04-29B — فحص وقراءة كل مصادر طلبات التسجيل المحتملة
+// ملاحظة مهمة: قاعدة البيانات المرفوعة لا تحتوي على registrationRequests/pending
+// لذلك أضيف هنا تشخيص مباشر يظهر هل الطلب وصل إلى Firebase أو Google Sheets.
+// ============================================================
+(function(){
+  var KP_ROOT_FB_URL = String(FB_URL || '').replace(/\/nursery_data\/?$/, '');
+
+  function kpSafeText2(v){ return String(v == null ? '' : v).trim(); }
+  function kpSourceKey(row){
+    row = row || {};
+    return kpSafeText2(row.firebaseKey || row.requestId || row.timestamp || row.emiratesId || row.name || row.id);
+  }
+  async function kpFetchJsonUrl(url){
+    var joiner = url.indexOf('?') >= 0 ? '&' : '?';
+    var res = await fetch(url + joiner + 'ts=' + Date.now(), { cache:'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  }
+  function kpObjectRowsToArray(obj, sourceName){
+    var out = [];
+    if (!obj) return out;
+    if (Array.isArray(obj)) {
+      obj.forEach(function(v,i){
+        if (v && typeof v === 'object') {
+          var r = normalizeParentRegistrationRow(v, v.firebaseKey || v.requestId || String(i));
+          r.sourcePath = sourceName;
+          out.push(r);
+        }
+      });
+      return out;
+    }
+    if (typeof obj === 'object') {
+      Object.keys(obj).forEach(function(k){
+        var v = obj[k];
+        if (v && typeof v === 'object') {
+          var r = normalizeParentRegistrationRow(v, k);
+          r.sourcePath = sourceName;
+          out.push(r);
+        }
+      });
+    }
+    return out;
+  }
+
+  window.syncRegistrationRequestsFromFirebase = async function(options) {
+    options = options || {};
+    var sources = [
+      {name:'nursery_data/registrationRequests/pending', url: FB_URL + '/registrationRequests/pending.json'},
+      {name:'registrationRequests/pending', url: KP_ROOT_FB_URL + '/registrationRequests/pending.json'},
+      {name:'nursery_data/requests/pending', url: FB_URL + '/requests/pending.json'},
+      {name:'requests/pending', url: KP_ROOT_FB_URL + '/requests/pending.json'}
+    ];
+    var incoming = [];
+    var errors = [];
+    for (var i=0;i<sources.length;i++) {
+      try {
+        var json = await kpFetchJsonUrl(sources[i].url);
+        incoming = incoming.concat(kpObjectRowsToArray(json, sources[i].name));
+      } catch(e) {
+        errors.push(sources[i].name + ': ' + (e && e.message ? e.message : e));
+      }
+    }
+
+    // لا نضيف طلباً سبق اتخاذ قرار عليه
+    var current = Array.isArray(syncedFormRows) ? syncedFormRows : [];
+    var filtered = incoming.filter(function(row){
+      var key = kpSourceKey(row);
+      var decided = current.some(function(x){
+        return x && kpSourceKey(x) === key && x.status && x.status !== 'pending';
+      });
+      var localDecision = (window.__localFormDecisions || {})[row.timestamp] || (window.__localFormDecisions || {})[key];
+      if (localDecision && localDecision.status && localDecision.status !== 'pending') decided = true;
+      return !decided;
+    });
+
+    var before = current.length;
+    syncedFormRows = mergeFormRowsByTimestamp(current, filtered);
+    if (typeof applyLocalDecisionsToFormRows === 'function') {
+      try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e){}
+    }
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
+    if (filtered.length && typeof saveFormRowsBatchRemoteAware === 'function') {
+      try { await saveFormRowsBatchRemoteAware(filtered); } catch(_e){}
+    }
+    updateFormsNavBadge();
+    renderFormRequests();
+    if (!options.silent && typeof showSyncBadge === 'function') {
+      showSyncBadge(filtered.length ? ('✅ تم تحميل ' + filtered.length + ' طلب من Firebase') : '✅ تم فحص Firebase: لا توجد طلبات جديدة');
+    }
+    return {incoming:filtered.length, before:before, after:syncedFormRows.length, errors:errors};
+  };
+
+  window.diagnoseRegistrationSources = async function() {
+    var lines = [];
+    lines.push('نتيجة فحص مصادر طلبات التسجيل:');
+    lines.push('--------------------------------');
+    var allRows = [];
+
+    async function checkJson(label, url) {
+      try {
+        var json = await kpFetchJsonUrl(url);
+        var arr = kpObjectRowsToArray(json, label);
+        allRows = allRows.concat(arr);
+        lines.push('✅ ' + label + ': ' + arr.length + ' طلب');
+        if (arr.length) {
+          arr.slice(-5).forEach(function(r){
+            lines.push('   - ' + (r.name || r.firstName || '(بدون اسم)') + ' | ' + (r.timestamp || r.requestId || ''));
+          });
+        }
+      } catch(e) {
+        lines.push('⚠️ ' + label + ': تعذر القراءة (' + (e && e.message ? e.message : e) + ')');
+      }
+    }
+
+    await checkJson('nursery_data/registrationRequests/pending', FB_URL + '/registrationRequests/pending.json');
+    await checkJson('registrationRequests/pending', KP_ROOT_FB_URL + '/registrationRequests/pending.json');
+    await checkJson('nursery_data/kp_form_rows', FB_URL + '/kp_form_rows.json');
+    await checkJson('kp_form_rows', KP_ROOT_FB_URL + '/kp_form_rows.json');
+
+    try {
+      var res = await fetch(SHEETS_URL + '&headers=1&ts=' + Date.now(), {cache:'no-store'});
+      var text = await res.text();
+      var raw = text.slice(text.indexOf('(') + 1, text.lastIndexOf(')'));
+      var json = JSON.parse(raw);
+      var rows = ((json.table || {}).rows || []);
+      lines.push('✅ Google Sheets: ' + rows.length + ' صف');
+      if (rows.length) lines.push('   آخر صفوف الشيت موجودة، اضغطي "مزامنة من المصدرين" لاستيراد الجديد.');
+    } catch(e) {
+      lines.push('⚠️ Google Sheets: تعذر القراءة (' + (e && e.message ? e.message : e) + ')');
+    }
+
+    var hay = allRows.map(function(r){ return [r.name,r.firstName,r.familyName,r.nameEn,r.dadFull,r.momFull].join(' '); }).join(' | ').toLowerCase();
+    var foundAleen = /الين|إلين|ألين|aleen|elin|eline|ellen/i.test(hay);
+    lines.push('--------------------------------');
+    lines.push(foundAleen ? '✅ تم العثور على اسم قريب من الين داخل المصادر المقروءة.' : '❌ لم يتم العثور على اسم الين داخل Firebase في المصادر المقروءة.');
+    alert(lines.join('\n'));
+  };
+})();
+
 let isSyncing = false;
 let pendingSync = false;
 let syncTimeout = null;
@@ -11129,12 +11271,30 @@ function buildOriginalEmailPreview(data, inlineMap){
   }
   return meta+'<div class="email-text-body">'+escapeHtml(content||data.bodyPreview||'')+'</div>';
 }
+async function markGraphMessageAsRead(messageId, index){
+  if(!messageId) return;
+  const item = (typeof index === 'number') ? graphInbox[index] : null;
+  if(item && item.isRead !== false) return;
+  try{
+    await graphFetch('/me/messages/'+encodeURIComponent(messageId),{
+      method:'PATCH',
+      body:JSON.stringify({isRead:true})
+    });
+    if(item){ item.isRead = true; }
+    if(selectedGraphMessage && selectedGraphMessage.id === messageId){ selectedGraphMessage.isRead = true; }
+    renderGraphInbox();
+  }catch(e){
+    console.warn('mark as read failed', e);
+    setEmailStatus('تم فتح الرسالة، لكن تعذر تعليمها كمقروءة: '+(e.message||e),'err');
+  }
+}
+
 async function readOutlookMessage(i){
   const m=graphInbox[i];if(!m)return;selectedGraphMessage=m;selectedGraphMessageFull=null;selectedGraphInlineMap={};
   const prev=document.getElementById('email-preview');const act=document.getElementById('email-preview-actions');const av=document.getElementById('email-attachments-view');
   if(prev)prev.textContent='جاري فتح الرسالة...';if(act)act.style.display='flex';if(av)av.innerHTML='';
   try{
-    const data=await graphFetch('/me/messages/'+encodeURIComponent(m.id)+'?$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,sentDateTime,lastModifiedDateTime,body,hasAttachments');
+    const data=await graphFetch('/me/messages/'+encodeURIComponent(m.id)+'?$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,receivedDateTime,sentDateTime,lastModifiedDateTime,body,hasAttachments,isRead');
     selectedGraphMessageFull=data;
     saveEmailContacts(collectEmailContactsFromMessage(data), false);
     const from=data.from&&data.from.emailAddress?data.from.emailAddress:{};
@@ -11146,7 +11306,8 @@ async function readOutlookMessage(i){
     selectedGraphInlineMap=inlineMap||{};
     if(prev)prev.innerHTML=buildOriginalEmailPreview(data, selectedGraphInlineMap);
     if(data.hasAttachments) await renderMessageAttachments(data.id);
-    setEmailStatus('تم فتح الرسالة داخل النظام.','ok')
+    if(m.isRead===false || data.isRead===false){ await markGraphMessageAsRead(m.id, i); }
+    setEmailStatus('تم فتح الرسالة وتعليمها كمقروءة داخل Outlook.','ok')
   }catch(e){if(prev)prev.textContent='تعذر فتح الرسالة: '+(e.message||e)}
 }
 
