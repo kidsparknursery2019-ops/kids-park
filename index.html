@@ -1230,6 +1230,7 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
         <button class="btn btn-g" onclick="connectOutlookGraph()">🔗 ربط Outlook</button>
         <button class="btn btn-b" onclick="loadOutlookFolder()">🔄 تحديث المجلد</button>
         <button class="btn btn-y" onclick="openEmailComposeModal()">➕ إنشاء رسالة</button>
+        <button class="btn btn-out" onclick="importOutlookSentContacts()">👥 تحديث اقتراحات الإيميلات</button>
         <button class="btn btn-out" onclick="saveEmailSettings()">💾 حفظ الإعدادات</button>
       </div>
 
@@ -10126,6 +10127,43 @@ async function saveEmailContacts(list,pushRemote){const clean=getEmailContacts()
 function collectEmailContactsFromMessage(m){const out=[];function add(addr){if(!addr)return;const email=normEmailAddress(addr.address||addr.email||'');if(!email||!isValidEmailLike(email))return;out.push({email:email,name:addr.name||'',count:1,lastUsed:new Date().toISOString()})}if(m&&m.from&&m.from.emailAddress)add(m.from.emailAddress);['toRecipients','ccRecipients','bccRecipients'].forEach(function(k){(m&&m[k]||[]).forEach(function(r){if(r&&r.emailAddress)add(r.emailAddress)})});return out}
 function learnEmailContactsFromMessages(messages){let arr=[];(messages||[]).forEach(function(m){arr=arr.concat(collectEmailContactsFromMessage(m))});if(arr.length)saveEmailContacts(arr,false)}
 function learnEmailContactsFromCompose(v){const arr=[];['to','cc','bcc'].forEach(function(k){splitEmails(v&&v[k]).forEach(function(email){arr.push({email:normEmailAddress(email),count:3,lastUsed:new Date().toISOString()})})});if(arr.length)saveEmailContacts(arr,true)}
+function collectRecipientContactsFromSentMessage(m){
+  const out=[];
+  ['toRecipients','ccRecipients','bccRecipients'].forEach(function(k){
+    (m&&m[k]||[]).forEach(function(r){
+      const a=r&&r.emailAddress?r.emailAddress:null;
+      if(!a)return;
+      const email=normEmailAddress(a.address||'');
+      if(!email||!isValidEmailLike(email))return;
+      out.push({email:email,name:a.name||'',count:2,lastUsed:(m.sentDateTime||m.receivedDateTime||new Date().toISOString())});
+    });
+  });
+  return out;
+}
+async function importOutlookSentContacts(){
+  setEmailStatus('جاري استيراد اقتراحات الإيميلات من الرسائل المرسلة في Outlook...','');
+  try{
+    const token=await getGraphToken();
+    let url='https://graph.microsoft.com/v1.0/me/mailFolders/sentitems/messages?$top=100&$select=id,subject,toRecipients,ccRecipients,bccRecipients,sentDateTime&$orderby=sentDateTime%20desc';
+    let all=[];
+    let pages=0;
+    while(url && pages<5){
+      pages++;
+      const headers={'Authorization':'Bearer '+token,'Prefer':'outlook.body-content-type="html"'};
+      const res=await fetch(url,{headers:headers});
+      if(!res.ok){let msg='HTTP '+res.status;try{const d=await res.json();msg=d?.error?.message||msg}catch(e){}throw new Error(msg)}
+      const data=await res.json();
+      (data.value||[]).forEach(function(m){all=all.concat(collectRecipientContactsFromSentMessage(m))});
+      url=data['@odata.nextLink']||'';
+    }
+    if(!all.length){setEmailStatus('لم يتم العثور على مستلمين سابقين في الرسائل المرسلة.','err');return}
+    const saved=await saveEmailContacts(all,true);
+    setupEmailAutocomplete();
+    setEmailStatus('تم تحديث اقتراحات الإيميلات من Outlook. تم حفظ '+saved.length+' عنوان متاح للاقتراحات.','ok');
+  }catch(e){
+    setEmailStatus('تعذر استيراد اقتراحات الإيميلات من Outlook: '+(e.message||e),'err');
+  }
+}
 function getCurrentEmailToken(value){const str=String(value||'');const parts=str.split(/[;,]/);return (parts[parts.length-1]||'').trim()}
 function applyEmailSuggestion(inputId,email){const el=document.getElementById(inputId);if(!el)return;const raw=String(el.value||'');const lastSep=Math.max(raw.lastIndexOf(';'),raw.lastIndexOf(','));if(lastSep>=0){el.value=raw.slice(0,lastSep+1).replace(/\s*$/,'')+' '+email+'; '}else{el.value=email+'; '}hideEmailSuggestions(inputId);el.focus()}
 function hideEmailSuggestions(inputId){const box=document.getElementById(inputId+'-suggest');if(box)box.style.display='none'}
