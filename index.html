@@ -8126,7 +8126,7 @@ async function syncRegistrationRequestsFromFirebase() {
         });
         return !existsDecided;
       });
-      if (trulyNew.length) await saveFormRowsBatchRemoteAware(trulyNew);
+      if (false && trulyNew.length) await saveFormRowsBatchRemoteAware(trulyNew); // disabled: read-sync must not re-save fetched requests
       renderFormRequests();
       showSyncBadge('✅ تم تحميل طلبات التسجيل من رابط الأهالي');
     }
@@ -8305,7 +8305,7 @@ async function archiveFirebaseRegistrationRequest(r, status) {
       localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
 
       // احفظ فقط الطلبات الجديدة القادمة من صفحة الأهالي داخل kp_form_rows كي تظهر لباقي الأجهزة حتى لو مسار pending لم يُقرأ لاحقاً
-      if (incoming.length && typeof saveFormRowsBatchRemoteAware === 'function') {
+      if (false && incoming.length && typeof saveFormRowsBatchRemoteAware === 'function') { // disabled: avoid sync loop
         try { await saveFormRowsBatchRemoteAware(incoming); } catch(_e){}
       }
       updateFormsNavBadge();
@@ -8406,7 +8406,7 @@ async function archiveFirebaseRegistrationRequest(r, status) {
       try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e){}
     }
     try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
-    if (filtered.length && typeof saveFormRowsBatchRemoteAware === 'function') {
+    if (false && filtered.length && typeof saveFormRowsBatchRemoteAware === 'function') { // disabled: avoid sync loop
       try { await saveFormRowsBatchRemoteAware(filtered); } catch(_e){}
     }
     updateFormsNavBadge();
@@ -9751,11 +9751,11 @@ let autoSyncTimer = null;
 function startAutoSync() {
   // اقرأ المصدرين دائماً، ولا تجعل فشل Google Sheets يمنع قراءة طلبات صفحة التسجيل
   Promise.resolve().then(function(){ return syncRegistrationRequestsFromFirebase({ silent: true }); });
-  Promise.resolve().then(function(){ return syncFromGoogleSheets(); }).catch(function(e){ console.log('Sheets auto-sync failed:', e && e.message); });
+  /* auto Google Sheets sync disabled to stop repeated permission/offline loop; use manual button */
   clearInterval(autoSyncTimer);
   autoSyncTimer = setInterval(function(){
     Promise.resolve().then(function(){ return syncRegistrationRequestsFromFirebase({ silent: true }); });
-    Promise.resolve().then(function(){ return syncFromGoogleSheets(); }).catch(function(e){ console.log('Sheets auto-sync failed:', e && e.message); });
+    /* auto Google Sheets sync disabled to stop repeated permission/offline loop; use manual button */
   }, 5 * 60 * 1000);
 }
 
@@ -9935,9 +9935,9 @@ async function syncFromGoogleSheets() {
 
     localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
     // ✅ حفظ فردي للطلبات الجديدة/المعدلة بدفعة واحدة (بدل autoSave كامل)
-    if (changedRows.length) {
+    if (false && changedRows.length) {
       await saveFormRowsBatchRemoteAware(changedRows);
-    }
+    } // disabled: Google Sheets read must not keep rewriting Firebase
     var el = document.getElementById('forms-last-sync');
     if (el) el.textContent = new Date().toLocaleTimeString('ar');
     if (added > 0) showSyncBadge('✅ ' + added + ' طلب تسجيل جديد من Google Sheets');
@@ -11772,7 +11772,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e) {}
     }
     try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e) {}
-    if (filtered.length && typeof saveFormRowsBatchRemoteAware === 'function') {
+    if (false && filtered.length && typeof saveFormRowsBatchRemoteAware === 'function') { // disabled: avoid sync loop
       try { await saveFormRowsBatchRemoteAware(filtered); } catch(_e) {}
     }
     updateFormsNavBadge();
@@ -12302,16 +12302,16 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     try { clearInterval(kpRegTimer); } catch(_e){}
     try { clearInterval(kpSheetsTimer); } catch(_e){}
     setTimeout(function(){ try { window.syncRegistrationRequestsFromFirebase({ silent:true }); } catch(_e){} }, 600);
-    setTimeout(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 2500);
+    /* startup Google Sheets sync disabled */
     kpRegTimer = setInterval(function(){ try { window.syncRegistrationRequestsFromFirebase({ silent:true }); } catch(_e){} }, KP_FAST_REG_MS);
-    kpSheetsTimer = setInterval(function(){ try { syncFromGoogleSheets(); } catch(e){ console.log('Sheets sync failed:', e && e.message); } }, KP_SHEETS_MS);
+    kpSheetsTimer = null; /* periodic Google Sheets sync disabled */
   };
 
   window.addEventListener('online', function(){
     kpConsecutiveCloudFails = 0;
     if (typeof showSyncBadge === 'function') showSyncBadge('✅ عاد الاتصال — جاري المزامنة');
     try { window.syncRegistrationRequestsFromFirebase({ silent:true }); } catch(_e){}
-    try { syncFromGoogleSheets(); } catch(_e){}
+    /* manual Google Sheets sync only */
   });
 
   if (typeof checkForUpdates === 'function' && !window.__kp_fast_check_updates_20260429F) {
@@ -12411,8 +12411,68 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   if(typeof syncFromGoogleSheets==='function'){ var __origSheetsSync=syncFromGoogleSheets; syncFromGoogleSheets=async function(){ var beforeMap=await getDecisionMap(true); var res=await __origSheetsSync.apply(this,arguments); var afterMap=await getDecisionMap(true); syncedFormRows=applyDecisionLocks(syncedFormRows,Object.assign({},beforeMap,afterMap)); try{localStorage.setItem('kp_form_rows',JSON.stringify(syncedFormRows));}catch(_e){} if(typeof updateFormsNavBadge==='function')updateFormsNavBadge(); if(typeof renderFormRequests==='function')renderFormRequests(); return res; }; }
   if(typeof loadFromFirebase==='function'){ var __origLoadFirebaseG=loadFromFirebase; loadFromFirebase=async function(){ var res=await __origLoadFirebaseG.apply(this,arguments); try{ var dm=await getDecisionMap(true); syncedFormRows=applyDecisionLocks(syncedFormRows,dm); localStorage.setItem('kp_form_rows',JSON.stringify(syncedFormRows)); if(typeof updateFormsNavBadge==='function')updateFormsNavBadge(); if(typeof renderFormRequests==='function')renderFormRequests(); }catch(_e){} return res; }; }
   window.kpCleanRegistrationDecisionConflicts=async function(){ var dm=await getDecisionMap(true); syncedFormRows=applyDecisionLocks(syncedFormRows,dm); localStorage.setItem('kp_form_rows',JSON.stringify(syncedFormRows)); for(var i=0;i<syncedFormRows.length;i++){ var r=syncedFormRows[i]; if(r&&r.status&&r.status!=='pending') await window.archiveFirebaseRegistrationRequest(r,r.status); } if(typeof updateFormsNavBadge==='function')updateFormsNavBadge(); if(typeof renderFormRequests==='function')renderFormRequests(); if(typeof showSyncBadge==='function')showSyncBadge('✅ تم تنظيف تضارب طلبات التسجيل'); return syncedFormRows.length; };
-  setTimeout(function(){ try{ window.kpCleanRegistrationDecisionConflicts(); }catch(_e){} },2500);
+  /* automatic conflict-cleaner disabled; it wrote back on startup and caused sync loops */
 })();
+
+/* ============================================================
+   ✅ HOTFIX 2026-04-29G — إيقاف حلقة مزامنة طلبات التسجيل
+   السبب: القراءة من Firebase/Sheets كانت تعيد حفظ نفس الطلبات، فتولد حدث Firebase جديد
+   ثم loadFromFirebase ثم "بدون إنترنت/تحميل محلي" ثم "جاري حفظ 1 طلب" بشكل متكرر.
+   هذا الهوتفكس يجعل المزامنة قراءة فقط، والحفظ يحدث فقط عند قبول/رفض/تراجع فعلي.
+   ============================================================ */
+(function(){
+  if (window.__kpStopRegSyncLoop20260429G) return;
+  window.__kpStopRegSyncLoop20260429G = true;
+
+  if (typeof showSyncBadge === 'function') {
+    var __origShowSyncBadgeG = showSyncBadge;
+    var __lastMsgG = '', __lastAtG = 0;
+    showSyncBadge = function(msg){
+      msg = String(msg || '');
+      var now = Date.now();
+      var noisy = /جاري المزامنة|جاري التحميل|بدون إنترنت|تحميل محلي|محفوظ محلياً فقط|جاري حفظ \d+ طلب/.test(msg);
+      if (noisy && msg === __lastMsgG && (now - __lastAtG) < 8000) return;
+      __lastMsgG = msg; __lastAtG = now;
+      return __origShowSyncBadgeG.apply(this, arguments);
+    };
+  }
+
+  if (typeof saveFormRowsBatchRemoteAware === 'function') {
+    var __origBatchSaveG = saveFormRowsBatchRemoteAware;
+    saveFormRowsBatchRemoteAware = async function(formRows, options){
+      options = options || {};
+      if (!options.forceWrite) return true;
+      return await __origBatchSaveG.call(this, formRows);
+    };
+  }
+
+  if (typeof window.syncRegistrationRequestsFromFirebase === 'function') {
+    var __origRegSyncG = window.syncRegistrationRequestsFromFirebase;
+    var __regSyncRunningG = false;
+    window.syncRegistrationRequestsFromFirebase = async function(options){
+      options = options || {};
+      if (__regSyncRunningG) return { skipped:true, reason:'already-running' };
+      __regSyncRunningG = true;
+      try {
+        return await __origRegSyncG.call(this, Object.assign({}, options, { silent: options.silent !== false }));
+      } finally {
+        __regSyncRunningG = false;
+      }
+    };
+  }
+
+  if (typeof loadFromFirebase === 'function') {
+    var __origLoadFirebaseH = loadFromFirebase;
+    var __loadRunningH = false;
+    loadFromFirebase = async function(){
+      if (__loadRunningH) return false;
+      __loadRunningH = true;
+      try { return await __origLoadFirebaseH.apply(this, arguments); }
+      finally { __loadRunningH = false; }
+    };
+  }
+})();
+
 </script>
 </body>
 </html>
