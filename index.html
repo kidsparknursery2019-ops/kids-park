@@ -1027,7 +1027,7 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
 .email-full-reader-actions{display:flex;gap:8px;flex-wrap:wrap}
 .email-full-reader-body{flex:1;overflow:auto;background:#f7fbf9;padding:14px}
 .email-full-reader-body .email-preview{max-height:none;min-height:100%;padding:0;background:#fff}
-.email-full-reader-body .email-html-frame{width:100%;min-height:72vh;height:72vh;border:0;background:#fff}
+.email-full-reader-body .email-html-frame{width:100%;min-height:78vh;height:78vh;border:0;background:#fff}
 @media(max-width:760px){.email-full-reader-modal{width:98vw;height:95vh;border-radius:16px}.email-full-reader-title{max-width:52%;font-size:13px}.email-full-reader-head{padding:10px;align-items:flex-start}.email-full-reader-actions .btn{padding:5px 9px;font-size:11px}}
 
 </style>
@@ -1228,11 +1228,12 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
         <div class="email-panel email-preview-panel">
           <div class="ct">معاينة الرسالة</div>
           <div id="email-preview-actions" class="email-toolbar" style="display:none">
+            <button class="btn btn-y btn-sm" onclick="openSelectedEmailFull()">⛶ فتح كامل</button>
             <button class="btn btn-g btn-sm" onclick="replyToSelectedEmail()">↩️ رد</button>
             <button class="btn btn-b btn-sm" onclick="replyAllToSelectedEmail()">↪️ رد للجميع</button>
             <button class="btn btn-out btn-sm" onclick="copySelectedEmailText()">📋 نسخ النص</button>
           </div>
-          <div id="email-preview" class="email-preview">لا توجد رسالة محددة.</div>
+          <div id="email-preview" class="email-preview" ondblclick="openSelectedEmailFull()">لا توجد رسالة محددة.</div>
           <div id="email-attachments-view" class="email-attachments-view"></div>
         </div>
       </div>
@@ -10030,7 +10031,7 @@ document.addEventListener('click', function(e) {
 // OUTLOOK EMAIL CENTER + MISTRAL TEXT IMPROVER — safe local add-on
 const EMAIL_SETTINGS_KEY='kp_email_settings_v1', EMAIL_HISTORY_KEY='kp_email_history_v1';
 const EMBEDDED_MISTRAL_KEY='wr5qiFDypdr7RwmKBAhRT4TQoleKg4OW';
-let graphMsalApp=null, graphAccount=null, graphInbox=[], currentEmailFolder='inbox', selectedGraphMessage=null, selectedGraphMessageFull=null;
+let graphMsalApp=null, graphAccount=null, graphInbox=[], currentEmailFolder='inbox', selectedGraphMessage=null, selectedGraphMessageFull=null, selectedGraphInlineMap={};
 const GRAPH_SCOPES=['User.Read','Mail.Read','Mail.Send'];
 const EMAIL_FOLDER_CONFIG={
   inbox:{id:'inbox',label:'الوارد',dateField:'receivedDateTime'},
@@ -10198,7 +10199,7 @@ function buildOriginalEmailPreview(data, inlineMap){
   return meta+'<div class="email-text-body">'+escapeHtml(content||data.bodyPreview||'')+'</div>';
 }
 async function readOutlookMessage(i){
-  const m=graphInbox[i];if(!m)return;selectedGraphMessage=m;selectedGraphMessageFull=null;
+  const m=graphInbox[i];if(!m)return;selectedGraphMessage=m;selectedGraphMessageFull=null;selectedGraphInlineMap={};
   const prev=document.getElementById('email-preview');const act=document.getElementById('email-preview-actions');const av=document.getElementById('email-attachments-view');
   if(prev)prev.textContent='جاري فتح الرسالة...';if(act)act.style.display='flex';if(av)av.innerHTML='';
   try{
@@ -10209,7 +10210,8 @@ async function readOutlookMessage(i){
     const ccs=(data.ccRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
     const date=((data.receivedDateTime||data.sentDateTime||'').slice(0,16).replace('T',' '));
     const inlineMap=data.hasAttachments ? await getInlineAttachmentMap(data.id) : {};
-    if(prev)prev.innerHTML=buildOriginalEmailPreview(data, inlineMap);
+    selectedGraphInlineMap=inlineMap||{};
+    if(prev)prev.innerHTML=buildOriginalEmailPreview(data, selectedGraphInlineMap);
     if(data.hasAttachments) await renderMessageAttachments(data.id);
     setEmailStatus('تم فتح الرسالة داخل النظام.','ok')
   }catch(e){if(prev)prev.textContent='تعذر فتح الرسالة: '+(e.message||e)}
@@ -10225,22 +10227,23 @@ function ensureEmailFullReader(){
   ov=document.createElement('div');
   ov.id='email-full-reader-overlay';
   ov.className='email-full-reader-overlay';
-  ov.innerHTML='<div class="email-full-reader-modal"><div class="email-full-reader-head"><div id="email-full-reader-title" class="email-full-reader-title">Ø¹Ø±Ø¶ Ø§ÙØ±Ø³Ø§ÙØ©</div><div class="email-full-reader-actions"><button class="btn btn-g btn-sm" onclick="replyToSelectedEmail()">â©ï¸ Ø±Ø¯</button><button class="btn btn-b btn-sm" onclick="replyAllToSelectedEmail()">âªï¸ Ø±Ø¯ ÙÙØ¬ÙÙØ¹</button><button class="btn btn-out btn-sm" onclick="copySelectedEmailText()">ð ÙØ³Ø®</button><button class="btn btn-r btn-sm" onclick="closeEmailFullReader()">â Ø¥ØºÙØ§Ù</button></div></div><div id="email-full-reader-body" class="email-full-reader-body"></div></div>';
+  ov.innerHTML='<div class="email-full-reader-modal"><div class="email-full-reader-head"><div id="email-full-reader-title" class="email-full-reader-title">عرض الرسالة كاملة</div><div class="email-full-reader-actions"><button class="btn btn-g btn-sm" onclick="replyToSelectedEmail()">↩️ رد</button><button class="btn btn-b btn-sm" onclick="replyAllToSelectedEmail()">↪️ رد للجميع</button><button class="btn btn-out btn-sm" onclick="copySelectedEmailText()">📋 نسخ</button><button class="btn btn-r btn-sm" onclick="closeEmailFullReader()">✕ إغلاق</button></div></div><div id="email-full-reader-body" class="email-full-reader-body"></div></div>';
   ov.addEventListener('click',function(e){ if(e.target===ov) closeEmailFullReader(); });
   document.body.appendChild(ov);
   document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeEmailFullReader(); });
   return ov;
 }
 function openSelectedEmailFull(){
-  if(!selectedGraphMessageFull){setEmailStatus('Ø§ÙØªØ­Ù Ø±Ø³Ø§ÙØ© Ø£ÙÙØ§ÙØ Ø«Ù Ø§Ø¶ØºØ·Ù ÙØªØ­ ÙØ§ÙÙ.','err');return;}
+  if(!selectedGraphMessageFull){setEmailStatus('افتحي رسالة أولاً ثم اضغطي فتح كامل.','err');return;}
   const ov=ensureEmailFullReader();
   const title=document.getElementById('email-full-reader-title');
   const body=document.getElementById('email-full-reader-body');
-  if(title) title.textContent=selectedGraphMessageFull.subject||'Ø¨Ø¯ÙÙ ÙÙØ¶ÙØ¹';
-  const preview=document.getElementById('email-preview');
-  if(body) body.innerHTML='<div class="email-preview">'+(preview?preview.innerHTML:'')+'</div>';
+  if(title) title.textContent=selectedGraphMessageFull.subject||'بدون موضوع';
+  if(body){
+    body.innerHTML='<div class="email-preview" style="max-height:none;min-height:100%;overflow:auto">'+buildOriginalEmailPreview(selectedGraphMessageFull, selectedGraphInlineMap||{})+'</div>';
+  }
   ov.classList.add('on');
-  setTimeout(function(){document.querySelectorAll('#email-full-reader-body iframe.email-html-frame').forEach(function(fr){fr.style.height='72vh';fr.onload=function(){try{fr.style.height='72vh'}catch(e){}};});},80);
+  setTimeout(function(){document.querySelectorAll('#email-full-reader-body iframe.email-html-frame').forEach(function(fr){fr.style.height='78vh';fr.onload=function(){try{fr.style.height='78vh'}catch(e){}};});},80);
 }
 function closeEmailFullReader(){const ov=document.getElementById('email-full-reader-overlay');if(ov)ov.classList.remove('on')}
 
