@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260429-registration-parent-fields-display-fixed -->
+<!-- v20260429-registration-pending-force-merge-fixed -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Marhey:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -8201,7 +8201,6 @@ async function archiveFirebaseRegistrationRequest(r, status) {
     r.addr = kpSafeText(raw.addr || raw.address || raw.detailedAddress || '');
 
     r.momFull = kpSafeText(raw.momFull || raw.motherName || raw.mom || '');
-    r.motherName = r.momFull;
     r.momNat = kpArabicOnly(raw.momNat || raw.motherNationality || '');
     r.momHome = kpSafeText(raw.momHome || '');
     r.momMob = kpSafeText(raw.momMob || raw.motherMobile || raw.mph || '');
@@ -8212,7 +8211,6 @@ async function archiveFirebaseRegistrationRequest(r, status) {
     r.momOtherLanguages = kpSafeText(raw.momOtherLanguages || '');
 
     r.dadFull = kpSafeText(raw.dadFull || raw.fatherName || raw.dad || '');
-    r.fatherName = r.dadFull;
     r.dadNat = kpArabicOnly(raw.dadNat || raw.fatherNationality || '');
     r.dadHome = kpSafeText(raw.dadHome || '');
     r.dadMob = kpSafeText(raw.dadMob || raw.fatherMobile || raw.dph || '');
@@ -10271,7 +10269,6 @@ function renderFormRequests() {
         '</div>' +
         '<div class="form-req-meta">' +
           '<span>👨 ' + escapeHtml(r.dadFull||'—') + '</span>' +
-          '<span>👩 ' + escapeHtml(r.momFull||'—') + '</span>' +
           '<span>📱 ' + escapeHtml(r.dadMob||r.momMob||'—') + '</span>' +
           '<span>📌 ' + escapeHtml((r.source === 'parent_registration_link' || r.source === 'direct_form') ? 'رابط التسجيل' : (r.source === 'google_sheets' ? 'Google Sheets' : (r.source||'المصدر غير محدد'))) + '</span>' +
         '</div>' +
