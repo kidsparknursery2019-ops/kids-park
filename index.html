@@ -21,7 +21,41 @@ document.addEventListener('click', function(e) {
 });
 
 </script>
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script>
+// Microsoft MSAL loader with multiple CDNs for GitHub Pages/mobile browsers
+(function(){
+  window.KP_MSAL_SOURCES = [
+    'https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js',
+    'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js',
+    'https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js'
+  ];
+  window.KP_MSAL_LOADING = null;
+  window.ensureMsalLoaded = function(){
+    if(window.msal) return Promise.resolve(window.msal);
+    if(window.KP_MSAL_LOADING) return window.KP_MSAL_LOADING;
+    window.KP_MSAL_LOADING = new Promise(function(resolve,reject){
+      var i=0;
+      function loadNext(){
+        if(window.msal) return resolve(window.msal);
+        if(i>=window.KP_MSAL_SOURCES.length) return reject(new Error('تعذر تحميل مكتبة Microsoft MSAL من كل المصادر. تأكدي من فتح النظام عبر HTTPS ومن عدم حجب الاتصال.'));
+        var src=window.KP_MSAL_SOURCES[i++];
+        var sc=document.createElement('script');
+        sc.src=src;
+        sc.async=true;
+        sc.crossOrigin='anonymous';
+        sc.onload=function(){ window.msal ? resolve(window.msal) : loadNext(); };
+        sc.onerror=function(){ loadNext(); };
+        document.head.appendChild(sc);
+      }
+      loadNext();
+    });
+    return window.KP_MSAL_LOADING;
+  };
+  // Start loading early, but also allow buttons to retry if the first attempt is slow.
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ window.ensureMsalLoaded().catch(function(){}); });
+  else window.ensureMsalLoaded().catch(function(){});
+})();
+</script>
 <style>
 :root{
   /* 🎨 ألوان طفولية مرحة ومشرقة */
@@ -6506,7 +6540,10 @@ let nurserySettings = {
   addr_en: 'UAE - Sharjah - AlMajaz 3 - Opp. Of AlSafiya Park',
   phone: '0555152728', email: 'kidsparknursery@outlook.com',
   refund_ar: '- لا يحق لولي الأمر المطالبة باسترجاع الرسوم\n- عدم استرداد الرسوم الشهرية بعد مضي أسبوع\n- خصم الأخوة 10% للطفل الثاني\n- يتم تسديد الأقساط مقدماً في بداية كل شهر أو فصل أو سنة',
-  refund_en: '- Registration fees are not refundable.\n- In case the child didn\'t complete one week, full month fees will be refunded.\n- If child completed one week and didn\'t continue, fees calculated based on days attended.'
+  refund_en: '- Registration fees are not refundable.\n- In case the child didn\'t complete one week, full month fees will be refunded.\n- If child completed one week and didn\'t continue, fees calculated based on days attended.',
+  // إعدادات البريد العامة تُحفظ على Firebase ليستفيد منها كل المستخدمين.
+  // لا نخزن مفاتيح سرية مثل Mistral API Key هنا.
+  emailSettings: { from: 'kidsparknursery@outlook.com', msClientId: '', msTenant: 'common', model: 'mistral-small-latest' }
 };
 
 // Worksheet images per class: {classKey: base64DataUrl}
@@ -9791,17 +9828,74 @@ document.addEventListener('click', function(e) {
 const EMAIL_SETTINGS_KEY='kp_email_settings_v1', EMAIL_HISTORY_KEY='kp_email_history_v1';
 let graphMsalApp=null, graphAccount=null, graphInbox=[];
 const GRAPH_SCOPES=['User.Read','Mail.Read','Mail.Send'];
-function getEmailSettings(){try{return JSON.parse(localStorage.getItem(EMAIL_SETTINGS_KEY)||'{}')}catch(e){return{}}}
-function setEmailStatus(msg,type){const el=document.getElementById('email-status');if(!el)return;el.className='email-status '+(type||'');el.textContent=msg||''}
+function getEmailSettings(){
+  let local={};
+  try{local=JSON.parse(localStorage.getItem(EMAIL_SETTINGS_KEY)||'{}')||{}}catch(e){local={}}
+  const remote=(nurserySettings&&nurserySettings.emailSettings&&typeof nurserySettings.emailSettings==='object')?nurserySettings.emailSettings:{};
+  // إعدادات Microsoft العامة تأتي أولاً من Firebase، أما المفاتيح السرية تبقى محلية على جهاز الأدمن فقط.
+  return Object.assign({}, remote, local, {
+    from: local.from || remote.from || (nurserySettings&&nurserySettings.email) || 'kidsparknursery@outlook.com',
+    msClientId: local.msClientId || remote.msClientId || '',
+    msTenant: local.msTenant || remote.msTenant || 'common',
+    model: local.model || remote.model || 'mistral-small-latest',
+    mistralKey: local.mistralKey || ''
+  });
+}
+function getPublicEmailSettings(){
+  const st=getEmailSettings();
+  return {
+    from: st.from || (nurserySettings&&nurserySettings.email) || 'kidsparknursery@outlook.com',
+    msClientId: st.msClientId || '',
+    msTenant: st.msTenant || 'common',
+    model: st.model || 'mistral-small-latest',
+    updatedAt: new Date().toISOString()
+  };
+}
+async function saveEmailSettingsRemoteAware(publicSettings){
+  try{
+    if(!publicSettings) publicSettings=getPublicEmailSettings();
+    nurserySettings.emailSettings=Object.assign({}, nurserySettings.emailSettings||{}, publicSettings);
+    localStorage.setItem('kp_settings', JSON.stringify(nurserySettings));
+    const res=await fetch(FB_URL + '/nurserySettings/emailSettings.json',{
+      method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(publicSettings)
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    await fetch(FB_URL + '.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({savedAt:new Date().toISOString()})}).catch(function(){});
+    return true;
+  }catch(e){
+    console.error('saveEmailSettingsRemoteAware failed:',e);
+    return false;
+  }
+}
+function setEmailStatus(msg,type){const el=document.getElementById('email-status');if(!el)return;el.textContent=msg||'';el.className='email-status '+(type||'')}
 function updateGraphStatus(){const pill=document.getElementById('graph-status-pill');if(!pill)return;const st=getEmailSettings();const ok=!!(graphAccount||sessionStorage.getItem('kp_graph_connected'));if(!st.msClientId){pill.className='graph-pill err';pill.textContent='Client ID غير مضبوط'}else if(ok){pill.className='graph-pill connected';pill.textContent='Outlook مربوط'}else{pill.className='graph-pill';pill.textContent='Outlook غير مربوط'}}
-function initGraphMail(){const st=getEmailSettings();updateGraphStatus();if(!st.msClientId||!window.msal)return null;try{graphMsalApp=new msal.PublicClientApplication({auth:{clientId:st.msClientId,authority:'https://login.microsoftonline.com/'+(st.msTenant||'common'),redirectUri:location.href.split('#')[0]},cache:{cacheLocation:'sessionStorage',storeAuthStateInCookie:false}});const accounts=graphMsalApp.getAllAccounts();if(accounts&&accounts.length)graphAccount=accounts[0];updateGraphStatus();return graphMsalApp}catch(e){setEmailStatus('تعذر تجهيز ربط Microsoft: '+(e.message||e),'err');return null}}
+function initGraphMail(){const st=getEmailSettings();updateGraphStatus();if(!st.msClientId||!window.msal)return null;try{const redirect=(location.origin+location.pathname).replace(/index\.html$/,'');graphMsalApp=new msal.PublicClientApplication({auth:{clientId:st.msClientId,authority:'https://login.microsoftonline.com/'+(st.msTenant||'common'),redirectUri:redirect},cache:{cacheLocation:'sessionStorage',storeAuthStateInCookie:true}});const accounts=graphMsalApp.getAllAccounts();if(accounts&&accounts.length)graphAccount=accounts[0];updateGraphStatus();return graphMsalApp}catch(e){setEmailStatus('تعذر تجهيز ربط Microsoft: '+(e.message||e),'err');return null}}
 function renderEmailCenter(){const st=getEmailSettings();const from=document.getElementById('email-from'),key=document.getElementById('mistral-api-key'),model=document.getElementById('mistral-model'),cid=document.getElementById('ms-client-id'),tenant=document.getElementById('ms-tenant');if(from)from.value=st.from||(nurserySettings&&nurserySettings.email)||'kidsparknursery@outlook.com';if(key)key.value=st.mistralKey||'';if(model)model.value=st.model||'mistral-small-latest';if(cid)cid.value=st.msClientId||'';if(tenant)tenant.value=st.msTenant||'common';initGraphMail();renderEmailHistory();renderGraphInbox()}
-function saveEmailSettings(){const old=getEmailSettings();const settings={from:(document.getElementById('email-from')?.value||old.from||'').trim(),mistralKey:(document.getElementById('mistral-api-key')?.value||old.mistralKey||'').trim(),model:(document.getElementById('mistral-model')?.value||old.model||'mistral-small-latest').trim(),msClientId:(document.getElementById('ms-client-id')?.value||old.msClientId||'').trim(),msTenant:(document.getElementById('ms-tenant')?.value||old.msTenant||'common').trim()};localStorage.setItem(EMAIL_SETTINGS_KEY,JSON.stringify(settings));graphMsalApp=null;graphAccount=null;initGraphMail();setEmailStatus('تم حفظ إعدادات البريد والذكاء الاصطناعي على هذا الجهاز فقط.','ok')}
+async function saveEmailSettings(){
+  const old=getEmailSettings();
+  const isAdmin=!!(currentUser&&currentUser.role==='admin');
+  const settings={
+    from:(document.getElementById('email-from')?.value||old.from||'').trim(),
+    // المفتاح السري يبقى محلياً فقط ولا يُرفع إلى Firebase
+    mistralKey:(document.getElementById('mistral-api-key')?.value||old.mistralKey||'').trim(),
+    model:(document.getElementById('mistral-model')?.value||old.model||'mistral-small-latest').trim(),
+    msClientId:(document.getElementById('ms-client-id')?.value||old.msClientId||'').trim(),
+    msTenant:(document.getElementById('ms-tenant')?.value||old.msTenant||'common').trim()
+  };
+  localStorage.setItem(EMAIL_SETTINGS_KEY,JSON.stringify(settings));
+  let remoteSaved=false;
+  if(isAdmin){
+    const publicSettings={from:settings.from,msClientId:settings.msClientId,msTenant:settings.msTenant,model:settings.model,updatedAt:new Date().toISOString()};
+    remoteSaved=await saveEmailSettingsRemoteAware(publicSettings);
+  }
+  graphMsalApp=null;graphAccount=null;initGraphMail();
+  setEmailStatus(isAdmin?(remoteSaved?'تم حفظ إعدادات البريد على Firebase، وستصل تلقائياً لباقي المستخدمين.':'تم حفظها محلياً، لكن تعذر رفعها إلى Firebase.'):'تم حفظ إعداداتك على هذا الجهاز فقط. إعدادات Microsoft تُقرأ تلقائياً من الأدمن.',remoteSaved||!isAdmin?'ok':'err');
+}
 function openOutlookInbox(){window.open('https://outlook.office.com/mail/inbox','_blank')}
 function openMistralConsole(){window.open('https://console.mistral.ai/','_blank')}
-async function connectOutlookGraph(){saveEmailSettings();const st=getEmailSettings();if(!st.msClientId){setEmailStatus('يجب على الأدمن وضع Microsoft Client ID أولاً.','err');return}if(!window.msal){setEmailStatus('تعذر تحميل مكتبة Microsoft MSAL. تأكدي من الاتصال بالإنترنت.','err');return}const app=initGraphMail();if(!app)return;try{const res=await app.loginPopup({scopes:GRAPH_SCOPES,prompt:'select_account'});graphAccount=res.account;sessionStorage.setItem('kp_graph_connected','1');updateGraphStatus();setEmailStatus('تم ربط Outlook بنجاح. يمكنك الآن تحديث الوارد والإرسال من داخل النظام.','ok');await loadOutlookInbox()}catch(e){setEmailStatus('لم يتم ربط Outlook: '+(e.message||e),'err');updateGraphStatus()}}
+async function connectOutlookGraph(){await saveEmailSettings();const st=getEmailSettings();if(!st.msClientId){setEmailStatus('يجب على الأدمن وضع Microsoft Client ID أولاً.','err');return}try{setEmailStatus('جاري تحميل مكتبة Microsoft وتسجيل الدخول...','');if(window.ensureMsalLoaded)await window.ensureMsalLoaded();}catch(loadErr){setEmailStatus((loadErr.message||loadErr)+' إذا استمرت المشكلة افتحي الرابط عبر HTTPS وتأكدي أن Redirect URI مطابق لرابط GitHub Pages.','err');return}const app=initGraphMail();if(!app)return;try{const res=await app.loginPopup({scopes:GRAPH_SCOPES,prompt:'select_account'});graphAccount=res.account;sessionStorage.setItem('kp_graph_connected','1');updateGraphStatus();setEmailStatus('تم ربط Outlook بنجاح. يمكنك الآن تحديث الوارد والإرسال من داخل النظام.','ok');await loadOutlookInbox()}catch(e){setEmailStatus('لم يتم ربط Outlook: '+(e.message||e),'err');updateGraphStatus()}}
 function disconnectOutlookGraph(){try{sessionStorage.removeItem('kp_graph_connected');if(graphMsalApp&&graphAccount)graphMsalApp.logoutPopup({account:graphAccount})}catch(e){}graphAccount=null;graphInbox=[];renderGraphInbox();const prev=document.getElementById('email-preview');if(prev)prev.textContent='لا توجد رسالة محددة.';updateGraphStatus();setEmailStatus('تم فصل ربط Outlook من هذه الجلسة.','ok')}
-async function getGraphToken(){const app=graphMsalApp||initGraphMail();if(!app)throw new Error('إعدادات Microsoft غير مكتملة.');if(!graphAccount){const accounts=app.getAllAccounts();if(accounts&&accounts.length)graphAccount=accounts[0]}if(!graphAccount)throw new Error('Outlook غير مربوط. اضغطي ربط Outlook أولاً.');try{return (await app.acquireTokenSilent({scopes:GRAPH_SCOPES,account:graphAccount})).accessToken}catch(e){return (await app.acquireTokenPopup({scopes:GRAPH_SCOPES,account:graphAccount})).accessToken}}
+async function getGraphToken(){if(window.ensureMsalLoaded)await window.ensureMsalLoaded();const app=graphMsalApp||initGraphMail();if(!app)throw new Error('إعدادات Microsoft غير مكتملة.');if(!graphAccount){const accounts=app.getAllAccounts();if(accounts&&accounts.length)graphAccount=accounts[0]}if(!graphAccount)throw new Error('Outlook غير مربوط. اضغطي ربط Outlook أولاً.');try{return (await app.acquireTokenSilent({scopes:GRAPH_SCOPES,account:graphAccount})).accessToken}catch(e){return (await app.acquireTokenPopup({scopes:GRAPH_SCOPES,account:graphAccount})).accessToken}}
 async function graphFetch(path,opts){const token=await getGraphToken();const res=await fetch('https://graph.microsoft.com/v1.0'+path,Object.assign({headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json','Prefer':'outlook.body-content-type="text"'}},opts||{}));if(!res.ok){let msg='HTTP '+res.status;try{const d=await res.json();msg=d?.error?.message||msg}catch(e){}throw new Error(msg)}if(res.status===202||res.status===204)return null;return await res.json()}
 async function loadOutlookInbox(){setEmailStatus('جاري تحميل الوارد من Outlook...','');try{const data=await graphFetch('/me/mailFolders/inbox/messages?$top=15&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments&$orderby=receivedDateTime desc');graphInbox=data.value||[];renderGraphInbox();setEmailStatus('تم تحديث الوارد داخل النظام.','ok')}catch(e){renderGraphInbox(e.message||e);setEmailStatus('تعذر تحميل الوارد: '+(e.message||e),'err')}}
 function renderGraphInbox(err){const box=document.getElementById('email-inbox');if(!box)return;if(err){box.innerHTML='<div class="email-hint">'+escapeHtml(err)+'</div>';return}if(!graphInbox.length){box.innerHTML='<div class="email-hint">لا توجد رسائل محملة بعد.</div>';return}box.innerHTML=graphInbox.map(function(m,i){const from=m.from&&m.from.emailAddress?m.from.emailAddress:{};const date=(m.receivedDateTime||'').slice(0,16).replace('T',' ');return '<div class="email-inbox-item" onclick="readOutlookMessage('+i+')"><div class="email-inbox-subject">'+escapeHtml(m.subject||'بدون موضوع')+'</div><div class="email-inbox-meta"><span>'+escapeHtml(from.name||from.address||'')+'</span><span>'+escapeHtml(date)+'</span>'+(m.hasAttachments?'<span>📎 مرفقات</span>':'')+'</div><div style="font-size:12px;color:var(--muted);margin-top:5px">'+escapeHtml(m.bodyPreview||'')+'</div></div>'}).join('')}
@@ -9816,7 +9910,7 @@ function loadEmailHistory(i){let h=[];try{h=JSON.parse(localStorage.getItem(EMAI
 function clearEmailForm(){['email-to','email-cc','email-subject','email-body'].forEach(function(id){const el=document.getElementById(id);if(el)el.value=''});setEmailStatus('','')}
 function copyEmailBody(){const body=document.getElementById('email-body')?.value||'';if(!body){setEmailStatus('لا يوجد نص لنسخه.','err');return}navigator.clipboard?.writeText(body).then(function(){setEmailStatus('تم نسخ نص الرسالة.','ok')}).catch(function(){setEmailStatus('تعذر النسخ تلقائيًا.','err')})}
 async function testMistralSettings(){const el=document.getElementById('email-body');if(el&&!el.value.trim())el.value='نرجو منكم تسديد الرسوم الشهرية في أقرب وقت. شكراً لتعاونكم.';await improveEmailWithMistral(true)}
-async function improveEmailWithMistral(isTest){const st=getEmailSettings();const key=(document.getElementById('mistral-api-key')?.value||st.mistralKey||'').trim();const model=(document.getElementById('mistral-model')?.value||st.model||'mistral-small-latest').trim();const bodyEl=document.getElementById('email-body');const original=(bodyEl?.value||'').trim();if(!key){setEmailStatus((currentUser&&currentUser.role==='admin')?'ضعي Mistral API Key أولاً ثم احفظي الإعدادات.':'لم يتم إعداد مفتاح الذكاء الاصطناعي بعد. يرجى مراجعة الأدمن.','err');return}if(!original){setEmailStatus('اكتبي نص الرسالة أولاً ليتم تحسينه.','err');return}saveEmailSettings();setEmailStatus('جاري تحسين النص عبر Mistral...','');try{const res=await fetch('https://api.mistral.ai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:model,temperature:.25,messages:[{role:'system',content:'أنت مساعد مراسلات رسمي لحضانة أطفال في الإمارات. حسّن نص البريد ليكون مهذبًا وواضحًا ومختصرًا ومناسبًا لأولياء الأمور. أعد النص فقط بدون شرح. إذا كان النص عربيًا أعده بالعربية، وإذا كان إنجليزيًا أعده بالإنجليزية، وإذا كان ثنائي اللغة رتبه عربي/إنجليزي.'},{role:'user',content:original}]})});const data=await res.json();if(!res.ok)throw new Error((data&&(data.message||(data.error&&data.error.message)))||('HTTP '+res.status));const improved=data?.choices?.[0]?.message?.content?.trim();if(!improved)throw new Error('لم يصل نص محسّن من Mistral.');bodyEl.value=improved;setEmailStatus(isTest?'تم اختبار Mistral وتحسين النص بنجاح.':'تم تحسين نص الرسالة بنجاح.','ok')}catch(err){setEmailStatus('تعذر استخدام Mistral: '+(err.message||err),'err')}}
+async function improveEmailWithMistral(isTest){const st=getEmailSettings();const key=(document.getElementById('mistral-api-key')?.value||st.mistralKey||'').trim();const model=(document.getElementById('mistral-model')?.value||st.model||'mistral-small-latest').trim();const bodyEl=document.getElementById('email-body');const original=(bodyEl?.value||'').trim();if(!key){setEmailStatus((currentUser&&currentUser.role==='admin')?'ضعي Mistral API Key أولاً ثم احفظي الإعدادات.':'لم يتم إعداد مفتاح الذكاء الاصطناعي بعد. يرجى مراجعة الأدمن.','err');return}if(!original){setEmailStatus('اكتبي نص الرسالة أولاً ليتم تحسينه.','err');return}await saveEmailSettings();setEmailStatus('جاري تحسين النص عبر Mistral...','');try{const res=await fetch('https://api.mistral.ai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:model,temperature:.25,messages:[{role:'system',content:'أنت مساعد مراسلات رسمي لحضانة أطفال في الإمارات. حسّن نص البريد ليكون مهذبًا وواضحًا ومختصرًا ومناسبًا لأولياء الأمور. أعد النص فقط بدون شرح. إذا كان النص عربيًا أعده بالعربية، وإذا كان إنجليزيًا أعده بالإنجليزية، وإذا كان ثنائي اللغة رتبه عربي/إنجليزي.'},{role:'user',content:original}]})});const data=await res.json();if(!res.ok)throw new Error((data&&(data.message||(data.error&&data.error.message)))||('HTTP '+res.status));const improved=data?.choices?.[0]?.message?.content?.trim();if(!improved)throw new Error('لم يصل نص محسّن من Mistral.');bodyEl.value=improved;setEmailStatus(isTest?'تم اختبار Mistral وتحسين النص بنجاح.':'تم تحسين نص الرسالة بنجاح.','ok')}catch(err){setEmailStatus('تعذر استخدام Mistral: '+(err.message||err),'err')}}
 function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]})}
 
 </script>
