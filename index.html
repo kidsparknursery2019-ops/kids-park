@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260429-registration-pending-force-merge-fixed -->
+<!-- v20260429E-per-record-firebase-source-of-truth -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Marhey:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -11781,6 +11781,460 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       showSyncBadge(filtered.length ? ('✅ تم تحميل ' + filtered.length + ' طلب جديد من Firebase') : '✅ تم فحص Firebase: لا توجد طلبات جديدة');
     }
     return {incoming:filtered.length, before:before, after:syncedFormRows.length, errors:errors};
+  };
+})();
+
+/* ============================================================
+   ✅ FIX 2026-04-29E — قرارات فردية على Firebase
+   المنطق الجديد:
+   - مسارات Firebase التالتة هي مصدر الحقيقة الوحيد للحالة:
+     /registrationRequests/pending     → جديد
+     /registrationRequests/accepted    → مقبول
+     /registrationRequests/rejected    → مرفوض
+   - كل قبول/رفض/تراجع = عملية فردية (PUT + DELETE) مش PATCH للـ array
+   - المزامنة بتقرا التلاتة وبتحدد الحالة من المسار اللي الصف فيه
+   - أي صف موجود في array قديم بدون مكان بمسار، بنرحّله تلقائياً
+   ============================================================ */
+(function(){
+  if (window.__kpPerRecordInstalled) return;
+  window.__kpPerRecordInstalled = true;
+
+  var STORAGE_KEY = 'kp_form_decisions_v2';
+  var TTL_MS = 90 * 24 * 60 * 60 * 1000; // ٩٠ يوم
+
+  function _txt(v){ return String(v == null ? '' : v).trim(); }
+  function _rootUrl(){ return String(FB_URL || '').replace(/\/nursery_data\/?$/, ''); }
+
+  // مفتاح Firebase آمن: من غير نقاط أو # أو $ أو [ أو ] أو /
+  function _sanitizeFbKey(s){
+    s = _txt(s);
+    if (!s) return '';
+    return s.replace(/[.#$\[\]\/\s]/g, '_').replace(/_+/g, '_').substring(0, 200);
+  }
+
+  // توليد مفتاح ثابت لأي صف (إذا ما عنده firebaseKey)
+  function _stableKey(r){
+    if (!r) return '';
+    var existing = _txt(r.firebaseKey || r.requestId);
+    if (existing) return _sanitizeFbKey(existing);
+    var seed = _txt(r.timestamp || r.submittedAt || r.createdAt || '') + '|' +
+               _txt(r.emiratesId) + '|' + _txt(r.name);
+    if (!seed.replace(/\|/g, '').trim()) return '';
+    // hash بسيط لتوليد مفتاح قصير وثابت
+    var h = 0;
+    for (var i=0;i<seed.length;i++) {
+      h = ((h << 5) - h) + seed.charCodeAt(i);
+      h |= 0;
+    }
+    return 'sheet_' + Math.abs(h).toString(36) + '_' + _sanitizeFbKey(seed.substring(0, 30));
+  }
+
+  // كل المفاتيح الممكنة لمطابقة صف
+  function _allRowKeys(r){
+    if (!r) return [];
+    var ks = [
+      _txt(r.firebaseKey),
+      _txt(r.requestId),
+      _txt(r.timestamp),
+      _txt(r.submittedAt),
+      _txt(r.createdAt),
+      _txt(r.emiratesId)
+    ].filter(Boolean);
+    var stable = _stableKey(r);
+    if (stable) ks.push(stable);
+    return ks.filter(function(k, i){ return ks.indexOf(k) === i; });
+  }
+
+  // ============================================================
+  // 1) حفظ القرارات بـ localStorage (شبكة أمان للـ offline)
+  // ============================================================
+  function _loadPersisted(){
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return {};
+      var obj = JSON.parse(raw) || {};
+      var now = Date.now();
+      Object.keys(obj).forEach(function(k){
+        var d = obj[k];
+        if (!d || !d.savedAt || (now - (Date.parse(d.savedAt)||0)) > TTL_MS) delete obj[k];
+      });
+      return obj;
+    } catch(_e){ return {}; }
+  }
+  function _savePersisted(obj){
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(obj || {})); } catch(_e){}
+  }
+  window.__localFormDecisions = window.__localFormDecisions || {};
+  (function(){
+    var p = _loadPersisted();
+    Object.keys(p).forEach(function(k){
+      if (!window.__localFormDecisions[k]) window.__localFormDecisions[k] = p[k];
+    });
+  })();
+  function _rememberDecision(r, status){
+    if (!r || !status || status === 'pending') return;
+    var savedAt = r.decisionAt || new Date().toISOString();
+    var entry = { status: status, decisionAt: r.decisionAt || savedAt, savedAt: savedAt };
+    var p = _loadPersisted();
+    _allRowKeys(r).forEach(function(k){
+      window.__localFormDecisions[k] = entry;
+      p[k] = entry;
+    });
+    _savePersisted(p);
+  }
+  function _forgetDecision(r){
+    var p = _loadPersisted();
+    _allRowKeys(r).forEach(function(k){
+      delete window.__localFormDecisions[k];
+      delete p[k];
+    });
+    _savePersisted(p);
+  }
+  function _findPersistedDecision(r){
+    var local = window.__localFormDecisions || {};
+    var keys = _allRowKeys(r);
+    for (var i=0;i<keys.length;i++){
+      var d = local[keys[i]];
+      if (d && d.status && d.status !== 'pending') return d;
+    }
+    return null;
+  }
+
+  // ============================================================
+  // 2) عمليات فردية على Firebase
+  // ============================================================
+  async function _putRecord(folder, key, payload){
+    if (!key) return false;
+    var basePaths = [FB_URL + '/registrationRequests', _rootUrl() + '/registrationRequests'];
+    var ok = false;
+    for (var i=0;i<basePaths.length;i++){
+      try {
+        var res = await fetch(basePaths[i] + '/' + folder + '/' + encodeURIComponent(key) + '.json', {
+          method: 'PUT',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) ok = true;
+      } catch(_e){}
+    }
+    return ok;
+  }
+  async function _deleteRecord(folder, keys){
+    if (!keys || !keys.length) return;
+    var basePaths = [FB_URL + '/registrationRequests', _rootUrl() + '/registrationRequests'];
+    for (var i=0;i<basePaths.length;i++){
+      for (var j=0;j<keys.length;j++){
+        try { await fetch(basePaths[i] + '/' + folder + '/' + encodeURIComponent(keys[j]) + '.json', { method: 'DELETE' }); } catch(_e){}
+      }
+    }
+  }
+
+  // أرشفة فردية: PUT للمسار المناسب + DELETE من المسارات التانية
+  window.archiveFirebaseRegistrationRequest = async function(r, status){
+    if (!r) return false;
+    status = status || r.status || 'rejected';
+    var folder = status === 'approved' ? 'accepted' : (status === 'rejected' ? 'rejected' : 'pending');
+    var primaryKey = _stableKey(r) || _sanitizeFbKey(_txt(r.firebaseKey || r.requestId || r.timestamp));
+    if (!primaryKey) return false;
+    // تأكد إنه الصف عنده firebaseKey (لازم يبقى هو نفس مفتاح Firebase)
+    if (!r.firebaseKey) r.firebaseKey = primaryKey;
+    if (!r.requestId) r.requestId = primaryKey;
+
+    var payload = Object.assign({}, r, {
+      status: status,
+      firebaseKey: r.firebaseKey,
+      requestId: r.requestId,
+      decisionAt: r.decisionAt || new Date().toISOString(),
+      rowUpdatedAt: r.rowUpdatedAt || r.decisionAt || new Date().toISOString()
+    });
+
+    var ok = await _putRecord(folder, primaryKey, payload);
+
+    // كل المفاتيح المحتملة لحذف من المسارات التانية
+    var allKeys = _allRowKeys(r).map(_sanitizeFbKey).filter(Boolean);
+    allKeys = allKeys.filter(function(k,i){ return allKeys.indexOf(k) === i; });
+
+    if (folder !== 'pending') await _deleteRecord('pending', allKeys);
+    if (folder !== 'accepted') await _deleteRecord('accepted', allKeys);
+    if (folder !== 'rejected') await _deleteRecord('rejected', allKeys);
+
+    return ok;
+  };
+
+  // ============================================================
+  // 3) قراءة شاملة من المسارات التلاتة
+  // ============================================================
+  async function _fetchFolder(folder){
+    var rows = [];
+    var urls = [
+      FB_URL + '/registrationRequests/' + folder + '.json',
+      _rootUrl() + '/registrationRequests/' + folder + '.json'
+    ];
+    for (var i=0;i<urls.length;i++){
+      try {
+        var sep = urls[i].indexOf('?')>=0 ? '&' : '?';
+        var res = await fetch(urls[i] + sep + 'ts=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) continue;
+        var obj = await res.json();
+        if (!obj || typeof obj !== 'object') continue;
+        Object.keys(obj).forEach(function(k){
+          var v = obj[k];
+          if (v && typeof v === 'object'){
+            var nr = (typeof normalizeParentRegistrationRow === 'function')
+              ? normalizeParentRegistrationRow(v, k) : Object.assign({firebaseKey:k}, v);
+            nr._fbKey = k; // المفتاح الفعلي بـ Firebase
+            rows.push(nr);
+          }
+        });
+      } catch(_e){}
+    }
+    return rows;
+  }
+
+  // ============================================================
+  // 4) المزامنة الجديدة: بناء syncedFormRows من المسارات التلاتة
+  // ============================================================
+  window.syncRegistrationRequestsFromFirebase = async function(options){
+    options = options || {};
+    try {
+      var pendingRows = await _fetchFolder('pending');
+      var acceptedRows = await _fetchFolder('accepted');
+      var rejectedRows = await _fetchFolder('rejected');
+
+      // وسم كل صف بحالته من مكانه
+      pendingRows.forEach(function(r){ r.status = 'pending'; });
+      acceptedRows.forEach(function(r){ r.status = 'approved'; });
+      rejectedRows.forEach(function(r){ r.status = 'rejected'; });
+
+      // بناء خريطة بالمفتاح: القرارات بتربح على pending
+      var byKey = {};
+      function _key(r){ return _sanitizeFbKey(_txt(r.firebaseKey || r._fbKey || r.requestId || r.timestamp)); }
+      pendingRows.forEach(function(r){ var k = _key(r); if (k) byKey[k] = r; });
+      acceptedRows.forEach(function(r){ var k = _key(r); if (k) byKey[k] = r; }); // override pending
+      rejectedRows.forEach(function(r){ var k = _key(r); if (k) byKey[k] = r; }); // override accepted
+
+      // دمج مع syncedFormRows الحالية (للحفاظ على بيانات Google Sheets اللي ممكن ما تكون بمسار)
+      var current = Array.isArray(syncedFormRows) ? syncedFormRows : [];
+      var currentByKey = {};
+      current.forEach(function(r){
+        if (!r) return;
+        var k = _stableKey(r) || _sanitizeFbKey(_txt(r.firebaseKey || r.requestId || r.timestamp));
+        if (k) currentByKey[k] = r;
+      });
+
+      var resultMap = {};
+      // أول شي: كل صف موجود بمسار، نأخذ بياناته مع دمج البيانات الإضافية من syncedFormRows
+      Object.keys(byKey).forEach(function(k){
+        var folderRow = byKey[k];
+        var existing = currentByKey[k];
+        if (existing) {
+          // دمج: بيانات من existing، الحالة والقرار من folder
+          resultMap[k] = Object.assign({}, existing, folderRow, {
+            status: folderRow.status,
+            decisionAt: folderRow.decisionAt || existing.decisionAt,
+            rowUpdatedAt: folderRow.rowUpdatedAt || folderRow.decisionAt || existing.rowUpdatedAt
+          });
+        } else {
+          resultMap[k] = folderRow;
+        }
+      });
+
+      // ثاني شي: الصفوف الموجودة محلياً ومش بأي مسار (بيانات Google Sheets جديدة)
+      var orphans = [];
+      Object.keys(currentByKey).forEach(function(k){
+        if (resultMap[k]) return;
+        var r = currentByKey[k];
+        // طبّق قرار محلي محفوظ إذا في
+        var d = _findPersistedDecision(r);
+        if (d) {
+          resultMap[k] = Object.assign({}, r, {
+            status: d.status,
+            decisionAt: d.decisionAt || r.decisionAt,
+            rowUpdatedAt: d.decisionAt || d.savedAt || r.rowUpdatedAt
+          });
+          orphans.push(resultMap[k]); // محتاج ترحيل لـ Firebase
+        } else {
+          // صف pending موجود محلياً بس مش بـ /pending → محتاج رفع
+          resultMap[k] = r;
+          if ((r.status || 'pending') === 'pending') orphans.push(r);
+        }
+      });
+
+      syncedFormRows = Object.values(resultMap);
+      try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
+
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+
+      // ترحيل في الخلفية: ارفع الصفوف اليتيمة لمسارها الصحيح
+      if (orphans.length) {
+        setTimeout(async function(){
+          for (var i=0;i<orphans.length;i++){
+            try { await window.archiveFirebaseRegistrationRequest(orphans[i], orphans[i].status || 'pending'); } catch(_e){}
+          }
+        }, 100);
+      }
+
+      if (!options.silent && typeof showSyncBadge === 'function') {
+        showSyncBadge('✅ المزامنة: ' + pendingRows.length + ' جديد، ' + acceptedRows.length + ' مقبول، ' + rejectedRows.length + ' مرفوض');
+      }
+      return {
+        pending: pendingRows.length,
+        accepted: acceptedRows.length,
+        rejected: rejectedRows.length,
+        total: syncedFormRows.length,
+        migrated: orphans.length
+      };
+    } catch(e){
+      console.warn('per-record sync failed:', e);
+      if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('⚠️ تعذرت المزامنة');
+      return { error: e && e.message };
+    }
+  };
+
+  // ============================================================
+  // 5) القرار الفردي: ما في PATCH للـ array، فقط عملية مستقلة
+  // ============================================================
+  window.setFormRowDecision = async function(r, status, meta){
+    if (!r) return false;
+    meta = meta || {};
+    r.status = status;
+    r.decisionAt = new Date().toISOString();
+    r.rowUpdatedAt = r.decisionAt;
+    Object.keys(meta).forEach(function(k){ r[k] = meta[k]; });
+
+    // ضمان مفتاح ثابت
+    var k = _stableKey(r);
+    if (k && !r.firebaseKey) r.firebaseKey = k;
+    if (k && !r.requestId) r.requestId = k;
+
+    // حفظ القرار محلياً (للحماية من الـ offline)
+    if (status === 'approved' || status === 'rejected') {
+      _rememberDecision(r, status);
+    } else if (status === 'pending') {
+      _forgetDecision(r);
+    }
+
+    // تحديث syncedFormRows محلياً
+    var idx = (Array.isArray(syncedFormRows) ? syncedFormRows : []).findIndex(function(x){
+      return x && (
+        (x.firebaseKey && x.firebaseKey === r.firebaseKey) ||
+        (x.timestamp && x.timestamp === r.timestamp) ||
+        (x.requestId && x.requestId === r.requestId)
+      );
+    });
+    if (idx >= 0) {
+      syncedFormRows[idx] = r;
+    } else {
+      if (!Array.isArray(syncedFormRows)) syncedFormRows = [];
+      syncedFormRows.push(r);
+    }
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
+
+    if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+    if (typeof renderFormRequests === 'function') renderFormRequests();
+
+    if (typeof showSyncBadge === 'function') {
+      showSyncBadge(status === 'approved' ? '⏳ جاري حفظ القبول...' :
+                    status === 'rejected' ? '⏳ جاري حفظ الرفض...' : '⏳ جاري حفظ التغيير...');
+    }
+
+    // العملية الفردية على Firebase: PUT للمسار الصحيح + DELETE من التانيين
+    var ok = await window.archiveFirebaseRegistrationRequest(r, status);
+
+    if (typeof showSyncBadge === 'function') {
+      if (ok) {
+        showSyncBadge(status === 'approved' ? '✅ تم حفظ القبول' :
+                      status === 'rejected' ? '✅ تم حفظ الرفض' : '✅ تم الحفظ');
+      } else {
+        showSyncBadge('⚠️ محفوظ محلياً — رح يرفع لما الإنترنت يرجع');
+      }
+    }
+
+    return ok;
+  };
+
+  // ============================================================
+  // 6) إلغاء PATCH للـ array: persistFormRowsAndSync ما يكتب على kp_form_rows
+  //    إلا للصفوف pending (للتوافق مع Google Sheets sync)
+  // ============================================================
+  window.persistFormRowsAndSync = async function(formRow){
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
+    // إذا الصف عنده قرار، استعمل العملية الفردية فقط
+    if (formRow && formRow.status && formRow.status !== 'pending') {
+      return await window.archiveFirebaseRegistrationRequest(formRow, formRow.status);
+    }
+    // الصفوف pending: ابعتها لـ /pending الفردي (مش لـ kp_form_rows array)
+    if (formRow && formRow.status === 'pending') {
+      return await window.archiveFirebaseRegistrationRequest(formRow, 'pending');
+    }
+    return false;
+  };
+
+  // ============================================================
+  // 7) لف loadFromFirebase: نخلي المزامنة الفردية تشتغل بعدها مباشرة
+  // ============================================================
+  if (typeof loadFromFirebase === 'function') {
+    var __originalLoad = loadFromFirebase;
+    loadFromFirebase = async function(){
+      var result = await __originalLoad.apply(this, arguments);
+      // المزامنة الفردية بعد التحميل = الحقيقة من المسارات التلاتة
+      try { await window.syncRegistrationRequestsFromFirebase({ silent: true }); } catch(_e){}
+      return result;
+    };
+  }
+
+  // ============================================================
+  // 8) ترحيل أوّلي: عند فتح الصفحة، ارفع كل صف موجود محلياً لمسارها الصحيح
+  // ============================================================
+  setTimeout(async function(){
+    if (!Array.isArray(syncedFormRows) || !syncedFormRows.length) return;
+    try {
+      // طبّق القرارات المحفوظة أولاً
+      syncedFormRows = syncedFormRows.map(function(r){
+        if (!r) return r;
+        var d = _findPersistedDecision(r);
+        if (d && (!r.status || r.status === 'pending')) {
+          return Object.assign({}, r, {
+            status: d.status,
+            decisionAt: d.decisionAt || r.decisionAt,
+            rowUpdatedAt: d.decisionAt || d.savedAt || r.rowUpdatedAt
+          });
+        }
+        return r;
+      });
+      try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
+      // ارفع كل صف لمسارها
+      for (var i=0;i<syncedFormRows.length;i++){
+        var r = syncedFormRows[i];
+        if (!r || !r.status) continue;
+        try { await window.archiveFirebaseRegistrationRequest(r, r.status); } catch(_e){}
+      }
+      // مزامنة نهائية لتأكيد الحالة
+      try { await window.syncRegistrationRequestsFromFirebase({ silent: true }); } catch(_e){}
+    } catch(e){ console.warn('initial migration failed:', e); }
+  }, 3000);
+
+  // أدوات تشخيص
+  window.kpShowSavedDecisions = function(){
+    var d = _loadPersisted();
+    console.table(d);
+    return d;
+  };
+  window.kpForceFullSync = async function(){
+    return await window.syncRegistrationRequestsFromFirebase({ silent: false });
+  };
+  window.kpMigrateAllRows = async function(){
+    if (!Array.isArray(syncedFormRows)) return 0;
+    var count = 0;
+    for (var i=0;i<syncedFormRows.length;i++){
+      var r = syncedFormRows[i];
+      if (r && r.status) {
+        try { await window.archiveFirebaseRegistrationRequest(r, r.status); count++; } catch(_e){}
+      }
+    }
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم ترحيل ' + count + ' طلب');
+    return count;
   };
 })();
 
