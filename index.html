@@ -11559,6 +11559,231 @@ async function improveEmailWithMistral(isTest) {
 function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]})}
 
 
+
+/* ============================================================
+   ✅ FIX 2026-04-29C — منع ظهور طلبات التسجيل بعد الرفض/القبول
+   ============================================================ */
+(function(){
+  function kpTxt(v){ return String(v == null ? '' : v).trim(); }
+  function kpRootUrl(){ return String(FB_URL || '').replace(/\/nursery_data\/?$/, ''); }
+  function kpKey(r){
+    r = r || {};
+    return kpTxt(r.firebaseKey || r.requestId || r.timestamp || r.emiratesId || r.name || r.id);
+  }
+  function kpTimestampKey(r){ return kpTxt((r||{}).timestamp || (r||{}).submittedAt || (r||{}).createdAt || ''); }
+  function kpDecisionKeysFromRows(rows){
+    var set = Object.create(null);
+    (Array.isArray(rows) ? rows : []).forEach(function(r){
+      if (!r || !r.status || r.status === 'pending') return;
+      [kpKey(r), kpTimestampKey(r), kpTxt(r.firebaseKey), kpTxt(r.requestId)].forEach(function(k){ if(k) set[k] = true; });
+    });
+    return set;
+  }
+  async function kpFetchJson(url){
+    var sep = url.indexOf('?') >= 0 ? '&' : '?';
+    var res = await fetch(url + sep + 'ts=' + Date.now(), { cache:'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  }
+  function kpObjectRows(obj, sourceName){
+    var out = [];
+    if (!obj) return out;
+    if (Array.isArray(obj)) {
+      obj.forEach(function(v,i){
+        if (v && typeof v === 'object') {
+          var r = normalizeParentRegistrationRow(v, v.firebaseKey || v.requestId || String(i));
+          r.sourcePath = sourceName;
+          out.push(r);
+        }
+      });
+    } else if (typeof obj === 'object') {
+      Object.keys(obj).forEach(function(k){
+        var v = obj[k];
+        if (v && typeof v === 'object') {
+          var r = normalizeParentRegistrationRow(v, k);
+          r.sourcePath = sourceName;
+          out.push(r);
+        }
+      });
+    }
+    return out;
+  }
+  function kpDecisionUrls(status){
+    var root = kpRootUrl();
+    var folder = status === 'approved' ? 'accepted' : 'rejected';
+    return [
+      FB_URL + '/registrationRequests/' + folder,
+      root + '/registrationRequests/' + folder,
+      FB_URL + '/requests/' + folder,
+      root + '/requests/' + folder
+    ];
+  }
+  function kpPendingUrls(){
+    var root = kpRootUrl();
+    return [
+      FB_URL + '/registrationRequests/pending',
+      root + '/registrationRequests/pending',
+      FB_URL + '/requests/pending',
+      root + '/requests/pending'
+    ];
+  }
+
+  window.archiveFirebaseRegistrationRequest = async function(r, status) {
+    if (!r) return false;
+    status = status || r.status || 'rejected';
+    var keys = [kpTxt(r.firebaseKey), kpTxt(r.requestId), kpKey(r)].filter(Boolean);
+    keys = keys.filter(function(k, i){ return keys.indexOf(k) === i; });
+    if (!keys.length) return false;
+    var payload = Object.assign({}, r, {
+      status: status,
+      decisionAt: r.decisionAt || new Date().toISOString(),
+      rowUpdatedAt: r.rowUpdatedAt || r.decisionAt || new Date().toISOString()
+    });
+    var ok = false;
+    var decisionBaseUrls = kpDecisionUrls(status);
+    for (var i=0;i<decisionBaseUrls.length;i++) {
+      for (var j=0;j<keys.length;j++) {
+        try {
+          var resPut = await fetch(decisionBaseUrls[i] + '/' + encodeURIComponent(keys[j]) + '.json', {
+            method:'PUT',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(payload)
+          });
+          if (resPut.ok) ok = true;
+        } catch(_e) {}
+      }
+    }
+    var pendingBaseUrls = kpPendingUrls();
+    for (var a=0;a<pendingBaseUrls.length;a++) {
+      for (var b=0;b<keys.length;b++) {
+        try { await fetch(pendingBaseUrls[a] + '/' + encodeURIComponent(keys[b]) + '.json', { method:'DELETE' }); } catch(_e) {}
+      }
+    }
+    return ok;
+  };
+
+  window.persistFormRowsAndSync = async function(formRow) {
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e) {}
+    if (formRow && typeof saveFormRowRemoteAware === 'function') {
+      return await saveFormRowRemoteAware(formRow);
+    }
+    try { autoSave(); } catch(_e) {}
+    return false;
+  };
+
+  window.setFormRowDecision = async function(r, status, meta) {
+    if (!r) return false;
+    meta = meta || {};
+    r.status = status;
+    r.decisionAt = new Date().toISOString();
+    r.rowUpdatedAt = r.decisionAt;
+    Object.keys(meta).forEach(function(k){ r[k] = meta[k]; });
+    if (!r.requestId && r.firebaseKey) r.requestId = r.firebaseKey;
+    if (!r.firebaseKey && r.requestId) r.firebaseKey = r.requestId;
+
+    if (typeof rememberLocalFormDecision === 'function') {
+      try { rememberLocalFormDecision(r, r.decisionAt); } catch(_e) {}
+      try {
+        var k = kpKey(r);
+        if (k) window.__localFormDecisions[k] = { status: status, decisionAt: r.decisionAt, savedAt: r.decisionAt };
+      } catch(_e) {}
+    }
+
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e) {}
+    updateFormsNavBadge();
+    renderFormRequests();
+
+    var saved = await persistFormRowsAndSync(r);
+    if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+      await archiveFirebaseRegistrationRequest(r, status);
+    }
+    try { await persistFormRowsAndSync(r); } catch(_e) {}
+    updateFormsNavBadge();
+    renderFormRequests();
+    return saved;
+  };
+
+  window.rejectFormRow = async function(ts) {
+    var r = (Array.isArray(syncedFormRows) ? syncedFormRows : []).find(function(x){ return x.timestamp === ts || kpKey(x) === ts; });
+    if (!r) return;
+    if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري رفض الطلب...');
+    await setFormRowDecision(r, 'rejected', {
+      approvedStudentId: null,
+      approvedAction: 'reject',
+      undoData: { revertTo: 'pending' }
+    });
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم رفض الطلب وإخفاؤه من الجديدة');
+  };
+
+  window.syncRegistrationRequestsFromFirebase = async function(options) {
+    options = options || {};
+    var root = kpRootUrl();
+    var pendingSources = [
+      {name:'nursery_data/registrationRequests/pending', url: FB_URL + '/registrationRequests/pending.json'},
+      {name:'registrationRequests/pending', url: root + '/registrationRequests/pending.json'},
+      {name:'nursery_data/requests/pending', url: FB_URL + '/requests/pending.json'},
+      {name:'requests/pending', url: root + '/requests/pending.json'}
+    ];
+    var decisionSources = [
+      FB_URL + '/registrationRequests/accepted.json',
+      FB_URL + '/registrationRequests/rejected.json',
+      root + '/registrationRequests/accepted.json',
+      root + '/registrationRequests/rejected.json',
+      FB_URL + '/requests/accepted.json',
+      FB_URL + '/requests/rejected.json',
+      root + '/requests/accepted.json',
+      root + '/requests/rejected.json'
+    ];
+    var current = Array.isArray(syncedFormRows) ? syncedFormRows : [];
+    var decidedKeys = kpDecisionKeysFromRows(current);
+
+    for (var d=0; d<decisionSources.length; d++) {
+      try {
+        var decObj = await kpFetchJson(decisionSources[d]);
+        kpObjectRows(decObj, 'decision').forEach(function(r){
+          [kpKey(r), kpTimestampKey(r), kpTxt(r.firebaseKey), kpTxt(r.requestId)].forEach(function(k){ if(k) decidedKeys[k] = true; });
+        });
+      } catch(_e) {}
+    }
+
+    var incoming = [];
+    var errors = [];
+    for (var i=0;i<pendingSources.length;i++) {
+      try {
+        var json = await kpFetchJson(pendingSources[i].url);
+        incoming = incoming.concat(kpObjectRows(json, pendingSources[i].name));
+      } catch(e) {
+        errors.push(pendingSources[i].name + ': ' + (e && e.message ? e.message : e));
+      }
+    }
+
+    var filtered = incoming.filter(function(row){
+      var keys = [kpKey(row), kpTimestampKey(row), kpTxt(row.firebaseKey), kpTxt(row.requestId)].filter(Boolean);
+      var blocked = keys.some(function(k){ return decidedKeys[k]; });
+      var local = window.__localFormDecisions || {};
+      if (!blocked) blocked = keys.some(function(k){ return local[k] && local[k].status && local[k].status !== 'pending'; });
+      return !blocked;
+    });
+
+    var before = current.length;
+    syncedFormRows = mergeFormRowsByTimestamp(current, filtered);
+    if (typeof applyLocalDecisionsToFormRows === 'function') {
+      try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e) {}
+    }
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e) {}
+    if (filtered.length && typeof saveFormRowsBatchRemoteAware === 'function') {
+      try { await saveFormRowsBatchRemoteAware(filtered); } catch(_e) {}
+    }
+    updateFormsNavBadge();
+    renderFormRequests();
+    if (!options.silent && typeof showSyncBadge === 'function') {
+      showSyncBadge(filtered.length ? ('✅ تم تحميل ' + filtered.length + ' طلب جديد من Firebase') : '✅ تم فحص Firebase: لا توجد طلبات جديدة');
+    }
+    return {incoming:filtered.length, before:before, after:syncedFormRows.length, errors:errors};
+  };
+})();
+
 </script>
 </body>
 </html>
