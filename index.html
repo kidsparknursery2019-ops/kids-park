@@ -279,6 +279,7 @@ tr:hover td{background:#f8fdfa}
 .bb{background:var(--bp);color:var(--b1);border-color:#bcd9f5}
 .bo{background:var(--op);color:var(--o1);border-color:#ffd1a8}
 .bgr{background:#f0f0f0;color:#555;border-color:#dcdcdc}
+.nat-with-flag{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;vertical-align:middle}.nat-flag-svg{width:22px;height:15px;border-radius:2px;box-shadow:0 0 0 1px rgba(0,0,0,.12);flex-shrink:0}
 
 /* 🎯 الأزرار بشكل bubbly */
 .btn{
@@ -1692,12 +1693,18 @@ let CLASSES = JSON.parse(localStorage.getItem('kp_classes') || 'null') || {
 };
 let CLASSES_DATA = CLASSES;
 
+const SYRIA_NEW_FLAG_SVG = '<svg class="nat-flag-svg" viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" aria-label="علم سوريا"><rect width="30" height="6.666" y="0" fill="#007A3D"/><rect width="30" height="6.666" y="6.666" fill="#fff"/><rect width="30" height="6.668" y="13.332" fill="#000"/><g fill="#CE1126" transform="translate(0 .15) scale(.75)"><path d="M8 8.2l.58 1.78h1.87l-1.51 1.1.58 1.78L8 11.76l-1.52 1.1.58-1.78-1.51-1.1h1.87z"/><path d="M20 8.2l.58 1.78h1.87l-1.51 1.1.58 1.78L20 11.76l-1.52 1.1.58-1.78-1.51-1.1h1.87z"/><path d="M32 8.2l.58 1.78h1.87l-1.51 1.1.58 1.78L32 11.76l-1.52 1.1.58-1.78-1.51-1.1h1.87z"/></g></svg>';
 const NATIONALITIES_SHORT = {
-  'الإمارات':'🇦🇪','السعودية':'🇸🇦','سوريا':'🇸🇾','مصر':'🇪🇬','الأردن':'🇯🇴',
+  'الإمارات':'🇦🇪','السعودية':'🇸🇦','سوريا':SYRIA_NEW_FLAG_SVG,'مصر':'🇪🇬','الأردن':'🇯🇴',
   'لبنان':'🇱🇧','فلسطين':'🇵🇸','العراق':'🇮🇶','تونس':'🇹🇳','الجزائر':'🇩🇿',
   'السودان':'🇸🇩','المغرب':'🇲🇦','فرنسا':'🇫🇷','النمسا':'🇦🇹','أوكرانيا':'🇺🇦',
   'أثيوبيا':'🇪🇹','الأردن':'🇯🇴',
 };
+function formatNationalityWithFlag(nat){
+  nat = String(nat || '').trim();
+  if(!nat) return '—';
+  return '<span class="nat-with-flag">' + (NATIONALITIES_SHORT[nat] || '') + '<span>' + escapeHtml(nat) + '</span></span>';
+}
 
 var attLog = {};
 var editingStuId = null;
@@ -3662,7 +3669,7 @@ function renderStudents(){
       <td style="font-size:12px">${healthSummary !== '—' ? `<span class="b br">⚕️ ${healthSummary}</span>` : '—'}</td>
       <td>${formatDate(s.dob)}</td>
       <td><span class="b ${s.gen==='ذكر'?'bb':'bo'}">${s.gen}</span></td>
-      <td>${(NATIONALITIES_SHORT[s.nat]||'')+'  '+s.nat}</td>
+      <td>${formatNationalityWithFlag(s.nat)}</td>
       <td><span class="b bg">${CLASSES[s.cls]?.emoji||''} ${s.cls}</span></td>
       <td>${s.dad}</td><td dir="ltr">${s.dph}</td><td dir="ltr">${s.mph}</td>
       <td style="font-size:12px">${s.addr}</td>
@@ -4378,7 +4385,7 @@ function printStudentFullFile(studentId) {
       '<div class="item"><b>الفصل</b>'+(s.cls||'—')+'</div>'+
       '<div class="item"><b>تاريخ الميلاد</b>'+(s.dob||'—')+'</div>'+
       '<div class="item"><b>الجنس</b>'+(s.gen||'—')+'</div>'+
-      '<div class="item"><b>الجنسية</b>'+(s.nat||'—')+'</div>'+
+      '<div class="item"><b>الجنسية</b>'+formatNationalityWithFlag(s.nat)+'</div>'+
       '<div class="item"><b>مكان الميلاد</b>'+(s.bpl||'—')+'</div>'+
       '<div class="item"><b>رقم الهوية</b><span class="ltr">'+(getStudentIdentity(s)||s.emiratesId||s.idNo||'—')+'</span></div>'+
       '<div class="item"><b>رقم الجواز</b><span class="ltr">'+(s.passport||'—')+'</span></div>'+
@@ -4482,7 +4489,7 @@ function viewStudentProfile(id) {
       '<div class="fl"><label>الفصل</label><div>' + (CLASSES[s.cls]?CLASSES[s.cls].emoji+' ':'') + (s.cls||'—') + '</div></div>' +
       '<div class="fl"><label>تاريخ الميلاد</label><div>' + (s.dob||'—') + '</div></div>' +
       '<div class="fl"><label>الجنس</label><div>' + (s.gen||'—') + '</div></div>' +
-      '<div class="fl"><label>الجنسية</label><div>' + (s.nat||'—') + '</div></div>' +
+      '<div class="fl"><label>الجنسية</label><div>' + formatNationalityWithFlag(s.nat) + '</div></div>' +
       '<div class="fl"><label>مكان الميلاد</label><div>' + (s.bpl||'—') + '</div></div>' +
       '<div class="fl"><label>رقم الهوية</label><div dir="ltr">' + (getStudentIdentity(s)||'—') + '</div></div>' +
       '<div class="fl"><label>رقم الجواز</label><div dir="ltr">' + (s.passport||'—') + '</div></div>' +
@@ -9071,7 +9078,7 @@ function renderFormRequests() {
       '<div class="form-req-info">' +
         '<div class="form-req-name">' + escapeHtml(r.name) + '</div>' +
         '<div class="form-req-meta">' +
-          '<span>🌍 ' + escapeHtml(r.nat||'—') + '</span>' +
+          '<span>🌍 ' + formatNationalityWithFlag(cleanArabicOnlyValue(r.nat)||r.nat) + '</span>' +
           '<span>📅 ' + escapeHtml(r.dob||'—') + '</span>' +
           '<span>' + escapeHtml(r.gen||'—') + '</span>' +
         '</div>' +
