@@ -897,8 +897,11 @@ textarea{resize:vertical;min-height:70px}
   body.print-finreport .card { page-break-inside: avoid; }
 }
 
-.email-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px}.email-panel{background:#fff;border:2px solid var(--border);border-radius:18px;padding:16px;box-shadow:var(--shadow)}.email-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.email-hint{font-size:12px;color:var(--muted);line-height:1.7;background:#fbfdfb;border:1.5px dashed var(--border);border-radius:12px;padding:10px;margin-top:10px}.email-status{font-size:12.5px;font-weight:800;margin-top:8px;min-height:20px;color:var(--muted)}.email-status.ok{color:var(--g1)}.email-status.err{color:var(--r1)}.email-history-item{border:1.5px solid #eef4ee;border-radius:12px;padding:10px;margin-bottom:8px;background:#fbfdfb;font-size:12.5px;cursor:pointer;transition:all .16s}.email-history-item:hover{border-color:var(--g2);transform:translateX(-2px);box-shadow:var(--shadow)}.email-history-title{font-weight:900;color:var(--g1);margin-bottom:3px}.email-history-meta{color:var(--muted);font-size:11.5px;display:flex;gap:8px;flex-wrap:wrap}@media(max-width:900px){.email-grid{grid-template-columns:1fr}}
-.email-ms-grid{display:grid;grid-template-columns:1fr;gap:10px}.email-inbox-item{border:1.5px solid #eef4ee;border-radius:12px;padding:10px;margin-bottom:8px;background:#fbfdfb;cursor:pointer;transition:all .16s}.email-inbox-item:hover{border-color:var(--g2);transform:translateX(-2px);box-shadow:var(--shadow)}.email-inbox-subject{font-weight:900;color:var(--g1);margin-bottom:3px}.email-inbox-meta{font-size:11.5px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}.email-preview{white-space:pre-wrap;max-height:260px;overflow:auto;border:1.5px solid #eef4ee;border-radius:12px;background:#fbfdfb;padding:12px;font-size:13px;line-height:1.7}.graph-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;border:1.5px solid var(--border);font-size:12px;font-weight:800;background:#fff;color:var(--muted)}.graph-pill.connected{background:#dcf5e6;color:#0e6b35;border-color:#bee5cd}.graph-pill.err{background:#ffe5e3;color:#a82323;border-color:#ffc7c2}
+/* ✉️ بقية أنماط البريد العامة (الحالة) */
+.email-status{font-size:12.5px;font-weight:800;margin-top:8px;min-height:20px;color:var(--muted)}
+.email-status.ok{color:var(--g1)}
+.email-status.err{color:var(--r1)}
+.email-attach-chip span,.email-attach-chip small{font-weight:700;color:var(--muted)}
 
 
 
@@ -918,114 +921,350 @@ body.kp-admin .admin-only-mistral{display:flex!important}
 body.kp-admin .email-hint.admin-only-mistral{display:block!important}
 
 
-/* ✉️ تخطيط البريد المحسن: المعاينة يسار، قائمة الإيميلات يمين */
+/* ✉️ تخطيط البريد المحسن — Inbox-style: قائمة الرسائل يمين والمعاينة يسار */
 .email-main-layout{
   display:grid;
-  grid-template-columns:minmax(360px,.95fr) minmax(430px,1.25fr);
-  gap:18px;
-  align-items:stretch;
-  direction:ltr;
-}
-.email-main-layout > *{direction:rtl}
-.email-preview-panel{
-  grid-column:1;
-  min-height:580px;
-  display:flex;
-  flex-direction:column;
-  position:sticky;
-  top:86px;
-  border-color:#bfe6cf;
-  background:linear-gradient(180deg,#ffffff 0%,#fbfdfb 100%);
+  grid-template-columns:minmax(320px,1fr) minmax(440px,1.4fr);
+  gap:14px;
+  align-items:start;
+  direction:rtl;
 }
 .email-list-panel{
-  grid-column:2;
-  min-height:580px;
+  grid-column:1;
   display:flex;
   flex-direction:column;
-  background:linear-gradient(180deg,#ffffff 0%,#f8fcfa 100%);
+  background:#fff;
+  border:1.5px solid #dceadf;
+  border-radius:18px;
+  padding:0;
+  overflow:hidden;
+  box-shadow:var(--shadow);
+  min-height:600px;
+  max-height:calc(100vh - 130px);
 }
+.email-preview-panel{
+  grid-column:2;
+  display:flex;
+  flex-direction:column;
+  background:#fff;
+  border:1.5px solid #dceadf;
+  border-radius:18px;
+  padding:0;
+  overflow:hidden;
+  box-shadow:var(--shadow);
+  min-height:600px;
+  max-height:calc(100vh - 130px);
+  position:sticky;
+  top:86px;
+}
+
+/* عناوين البانلز - شريط ملوّن أنيق */
 .email-list-panel .ct,.email-preview-panel .ct{
-  padding-bottom:10px;
-  border-bottom:2px dashed var(--border);
-  margin-bottom:12px;
+  margin:0;
+  padding:13px 16px;
+  background:linear-gradient(135deg,#f4fbf7 0%,var(--gp) 100%);
+  border-bottom:2px solid #dceadf;
+  font-family:var(--display);
+  font-size:15px;
+  font-weight:700;
+  color:var(--g1);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  flex-shrink:0;
 }
+
+/* شريط التابات — كأنه Outlook */
+.email-toolbar{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+  align-items:center;
+  padding:10px 14px;
+  background:#fafdfb;
+  border-bottom:1.5px solid #eef4ee;
+  flex-shrink:0;
+}
+.email-list-panel .email-toolbar:first-of-type .ftab{
+  padding:6px 12px;
+  font-size:12.5px;
+  border-radius:11px;
+  border:1.5px solid var(--border);
+  background:#fff;
+}
+.email-list-panel .email-toolbar:first-of-type .ftab.on{
+  background:linear-gradient(135deg,var(--g2),var(--g1));
+  color:#fff;
+  border-color:var(--g1);
+  box-shadow:0 3px 10px rgba(46,139,84,.25);
+}
+
+/* صف الفلتر والبحث */
+.email-filter-row{
+  display:flex;
+  gap:7px;
+  align-items:center;
+  flex-wrap:wrap;
+  padding:10px 14px;
+  background:#fff;
+  border-bottom:1.5px solid #eef4ee;
+  flex-shrink:0;
+}
+.email-filter-row input,.email-filter-row select{
+  height:34px;
+  padding:6px 11px;
+  font-size:12.5px;
+  border-radius:10px;
+  border:1.5px solid var(--border);
+  flex:1;
+  min-width:120px;
+  max-width:none;
+}
+.email-filter-row input{flex:2;min-width:140px}
+.email-filter-row .btn{padding:5px 10px;font-size:12px;border-radius:10px}
+
+/* قائمة الرسائل — ترتيب عمودي ضيق ومرتب */
 .email-ms-grid{
-  max-height:610px;
-  overflow:auto;
-  padding-left:4px;
-  padding-right:2px;
+  display:flex;
+  flex-direction:column;
+  gap:0;
+  flex:1;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding:8px;
+  max-height:none;
+  background:#fff;
 }
 .email-inbox-item{
-  border:1.5px solid #e8f3ed;
-  border-right:5px solid transparent;
-  border-radius:16px;
-  padding:12px 13px;
-  margin-bottom:9px;
+  border:none;
+  border-right:4px solid transparent;
+  border-radius:12px;
+  padding:11px 13px;
+  margin-bottom:4px;
   background:#fff;
-  box-shadow:0 2px 10px rgba(46,139,84,.05);
+  box-shadow:none;
+  border-bottom:1px solid #f2f7f4;
+  cursor:pointer;
+  transition:all .15s;
 }
 .email-inbox-item:hover{
-  border-color:var(--g3);
-  border-right-color:var(--g2);
   background:linear-gradient(135deg,#fff 0%,#f3fbf6 100%);
+  border-right-color:var(--g3);
+  transform:none;
 }
-.email-inbox-subject{font-size:14px;line-height:1.35}
-.email-inbox-meta{margin-top:5px}
+.email-inbox-item.selected,.email-inbox-item.active{
+  background:linear-gradient(135deg,#e8f9ee 0%,#d4f1e0 100%);
+  border-right-color:var(--g1);
+}
+.email-inbox-subject{font-size:13.5px;font-weight:700;line-height:1.35;color:var(--text);margin-bottom:4px}
+.email-inbox-meta{margin-top:3px;font-size:11.5px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}
+
+/* الرسائل غير المقروءة */
+.email-inbox-item.unread{
+  background:linear-gradient(135deg,#fff 0%,#effaf4 100%);
+  border-right-color:var(--g2);
+}
+.email-inbox-item.unread .email-inbox-subject{
+  font-weight:900;
+  color:#075e32;
+}
+
+/* صندوق المعاينة */
+.email-preview-panel #email-preview-actions{
+  background:#fafdfb;
+  border:none;
+  border-bottom:1.5px solid #eef4ee;
+  border-radius:0;
+  padding:9px 14px;
+  margin:0;
+  flex-shrink:0;
+  display:none;
+  flex-wrap:wrap;
+  gap:6px;
+}
 .email-preview{
-  white-space:normal;
   flex:1;
-  min-height:360px;
-  max-height:620px;
+  min-height:0;
+  max-height:none;
   overflow:auto;
-  border:1.5px solid #e8f3ed;
-  border-radius:16px;
+  border:none;
+  border-radius:0;
   background:#fff;
   padding:0;
   font-size:13.5px;
   line-height:1.85;
   direction:rtl;
-  box-shadow:inset 0 1px 8px rgba(46,139,84,.04);
+  box-shadow:none;
 }
 .email-original-meta{
-  padding:12px 14px;
+  padding:14px 18px;
   background:linear-gradient(135deg,#f8fdfa 0%,#eefaf3 100%);
-  border-bottom:1.5px dashed var(--border);
-  font-size:12.5px;
-  line-height:1.8;
+  border-bottom:2px solid #dceadf;
+  font-size:13px;
+  line-height:1.85;
   color:var(--text);
 }
-.email-original-meta b{color:var(--g1)}
+.email-original-meta b{color:var(--g1);font-weight:800}
 .email-html-frame{
   width:100%;
   min-height:430px;
-  height:720px;
+  height:calc(100vh - 320px);
   border:0;
   display:block;
   background:#fff;
-  border-radius:0 0 16px 16px;
+  border-radius:0;
 }
 .email-text-body{
   white-space:pre-wrap;
   direction:auto;
-  padding:16px;
+  padding:18px;
   font-family:'Tajawal',Arial,sans-serif;
   color:#222;
-  line-height:1.8;
+  line-height:1.85;
 }
-.email-preview-panel #email-preview-actions{
-  background:#f8fdfa;
-  border:1.5px solid #eef4ee;
+.email-attachments-view{
+  padding:10px 14px;
+  border-top:1.5px solid #eef4ee;
+  background:#fafdfb;
+  flex-shrink:0;
+}
+
+/* رقاقات المرفقات */
+.email-attachment-list,.email-attachments-view{display:flex;flex-wrap:wrap;gap:7px;margin:0}
+.email-attachments-view{margin-top:0;padding:10px 14px}
+.email-attach-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  border:1.5px solid var(--border);
+  background:#fff;
+  border-radius:999px;
+  padding:6px 11px;
+  font-size:12px;
+  font-weight:800;
+  color:var(--muted);
+}
+
+/* عداد الرسائل */
+.email-count-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 11px;
+  border-radius:999px;
+  background:var(--gp);
+  border:1.5px solid #c8e2cf;
+  font-size:11.5px;
+  font-weight:800;
+  color:var(--g1);
+  margin-right:auto;
+}
+
+/* تحميل المزيد */
+.email-loadmore-wrap{
+  text-align:center;
+  padding:10px 14px;
+  border-top:1.5px solid #eef4ee;
+  background:#fafdfb;
+  flex-shrink:0;
+}
+
+/* Connection pill بجوار العنوان */
+.graph-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 11px;
+  border-radius:999px;
+  border:1.5px solid var(--border);
+  font-size:12px;
+  font-weight:800;
+  background:#fff;
+  color:var(--muted);
+}
+.graph-pill.connected{background:#dcf5e6;color:#0e6b35;border-color:#bee5cd}
+.graph-pill.err{background:#ffe5e3;color:#a82323;border-color:#ffc7c2}
+
+/* رسالة تعليمية في الـ inbox الفارغ */
+.email-ms-grid > .email-hint:only-child{
+  margin:auto;
+  text-align:center;
+  background:linear-gradient(135deg,#fafdfb 0%,#f3fbf6 100%);
+  border:2px dashed var(--g3);
   border-radius:14px;
-  padding:8px;
+  padding:24px 18px;
+  font-size:13px;
+  color:var(--muted);
 }
-.email-attachment-list,.email-attachments-view{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
-.email-attach-chip{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--border);background:#fbfdfb;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800;color:var(--muted)}
-.email-attach-chip span,.email-attach-chip small{font-weight:700;color:var(--muted)}
+
+/* لوحة الإعدادات السفلية */
+.email-grid{
+  display:grid;
+  grid-template-columns:1.15fr .85fr;
+  gap:14px;
+}
+.email-panel{
+  background:#fff;
+  border:1.5px solid #dceadf;
+  border-radius:18px;
+  padding:16px;
+  box-shadow:var(--shadow);
+}
+.email-grid .email-panel .ct{
+  font-family:var(--display);
+  font-size:15px;
+  font-weight:700;
+  color:var(--g1);
+  padding-bottom:10px;
+  margin-bottom:12px;
+  border-bottom:2px dashed var(--border);
+  background:none;
+}
+.email-hint{
+  font-size:12px;
+  color:var(--muted);
+  line-height:1.7;
+  background:#fbfdfb;
+  border:1.5px dashed var(--border);
+  border-radius:12px;
+  padding:10px 12px;
+  margin-top:10px;
+}
+.email-history-item{
+  border:1.5px solid #eef4ee;
+  border-right:4px solid var(--g3);
+  border-radius:12px;
+  padding:10px 12px;
+  margin-bottom:8px;
+  background:#fbfdfb;
+  font-size:12.5px;
+  cursor:pointer;
+  transition:all .16s;
+}
+.email-history-item:hover{
+  border-color:var(--g2);
+  border-right-color:var(--g1);
+  transform:translateX(-2px);
+  box-shadow:var(--shadow);
+  background:#fff;
+}
+.email-history-title{font-weight:900;color:var(--g1);margin-bottom:3px}
+.email-history-meta{color:var(--muted);font-size:11.5px;display:flex;gap:8px;flex-wrap:wrap}
+
+/* responsive */
 @media(max-width:980px){
   .email-main-layout{grid-template-columns:1fr;direction:rtl}
-  .email-preview-panel,.email-list-panel{grid-column:auto;position:static;min-height:auto}
-  .email-preview{max-height:340px;min-height:220px}
-  .email-ms-grid{max-height:420px}
+  .email-preview-panel,.email-list-panel{
+    grid-column:auto;
+    position:static;
+    min-height:auto;
+    max-height:none;
+  }
+  .email-list-panel{max-height:560px}
+  .email-preview-panel{max-height:600px}
+  .email-html-frame{height:480px}
+  .email-grid{grid-template-columns:1fr}
 }
 
 
@@ -1041,15 +1280,6 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
 .email-full-reader-body .email-html-frame{width:100%;min-height:78vh;height:78vh;border:0;background:#fff}
 @media(max-width:760px){.email-full-reader-modal{width:98vw;height:95vh;border-radius:16px}.email-full-reader-title{max-width:52%;font-size:13px}.email-full-reader-head{padding:10px;align-items:flex-start}.email-full-reader-actions .btn{padding:5px 9px;font-size:11px}}
 .email-attach-chip a{color:var(--g1);text-decoration:none;font-weight:900}.email-attach-actions{display:inline-flex;gap:6px;margin-inline-start:6px}.email-draft-badge{display:inline-block;background:#fff3c4;color:#8a5c00;border:1px solid #ffe49b;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:900;margin-inline-start:6px}
-
-
-
-
-/* Email pagination, search and smart filters */
-.email-filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 12px}
-.email-filter-row input,.email-filter-row select{max-width:220px;height:38px;padding:8px 12px;border-radius:12px}
-.email-loadmore-wrap{text-align:center;margin:12px 0 4px}.email-count-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:var(--gp);border:1.5px solid var(--border);font-size:12px;font-weight:800;color:var(--g1)}
-.email-inbox-item.unread .email-inbox-subject{font-weight:900;color:#075e32}.email-inbox-item.unread{background:linear-gradient(135deg,#fff 0%,#effaf4 100%);border-right-color:var(--g2)}
 </style>
 </head>
 <body>
@@ -1226,23 +1456,28 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
 
     <!-- EMAIL CENTER -->
     <div class="pg" id="pg-email">
-      <div class="pt">✉️ مركز البريد <span id="graph-status-pill" class="graph-pill">غير مربوط</span>
-        <button class="btn btn-g" onclick="connectOutlookGraph()">🔗 ربط Outlook</button>
-        <button class="btn btn-b" onclick="loadOutlookFolder()">🔄 تحديث المجلد</button>
-        <button class="btn btn-y" onclick="openEmailComposeModal()">➕ إنشاء رسالة</button>
-        <button class="btn btn-out" onclick="importOutlookSentContacts()">👥 تحديث اقتراحات الإيميلات</button>
-        <button class="btn btn-out" onclick="saveEmailSettings()">💾 حفظ الإعدادات</button>
+      <div class="pt" style="flex-wrap:wrap;justify-content:flex-start;gap:8px">
+        <span style="display:flex;align-items:center;gap:8px">✉️ مركز البريد <span id="graph-status-pill" class="graph-pill">غير مربوط</span></span>
+        <div class="btn-group" style="margin-right:auto;flex-wrap:wrap">
+          <button class="btn btn-g btn-sm" onclick="connectOutlookGraph()">🔗 ربط Outlook</button>
+          <button class="btn btn-b btn-sm" onclick="loadOutlookFolder()">🔄 تحديث المجلد</button>
+          <button class="btn btn-y btn-sm" onclick="openEmailComposeModal()">➕ إنشاء رسالة</button>
+          <button class="btn btn-out btn-sm" onclick="importOutlookSentContacts()">👥 تحديث اقتراحات الإيميلات</button>
+          <button class="btn btn-out btn-sm" onclick="saveEmailSettings()">💾 حفظ الإعدادات</button>
+        </div>
       </div>
 
       <div class="email-main-layout">
         <div class="email-panel email-list-panel">
-          <div class="ct">صندوق البريد</div>
+          <div class="ct">
+            <span>📬 صندوق البريد</span>
+            <button class="btn btn-out btn-sm" onclick="disconnectOutlookGraph()" style="font-size:11px;padding:4px 10px">فصل الربط</button>
+          </div>
           <div class="email-toolbar">
             <button id="email-tab-inbox" class="ftab on" onclick="switchEmailFolder('inbox')">📥 الوارد</button>
             <button id="email-tab-sentitems" class="ftab" onclick="switchEmailFolder('sentitems')">📤 المرسلة</button>
-            <button id="email-tab-drafts" class="ftab" onclick="switchEmailFolder('drafts')">📝 Drafts / المسودات</button>
-            <button id="email-tab-junkemail" class="ftab" onclick="switchEmailFolder('junkemail')">🚫 Spam / Junk</button>
-            <button class="btn btn-out btn-sm" onclick="disconnectOutlookGraph()">فصل الربط</button>
+            <button id="email-tab-drafts" class="ftab" onclick="switchEmailFolder('drafts')">📝 المسودات</button>
+            <button id="email-tab-junkemail" class="ftab" onclick="switchEmailFolder('junkemail')">🚫 Spam</button>
           </div>
           <div class="email-filter-row">
             <input id="email-search" type="text" placeholder="بحث بالموضوع أو المرسل" onkeydown="if(event.key==='Enter')applyEmailSearch()">
@@ -1262,22 +1497,22 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
         </div>
 
         <div class="email-panel email-preview-panel">
-          <div class="ct">معاينة الرسالة</div>
+          <div class="ct">📨 معاينة الرسالة</div>
           <div id="email-preview-actions" class="email-toolbar" style="display:none">
             <button class="btn btn-y btn-sm" onclick="openSelectedEmailFull()">⛶ فتح كامل</button>
             <button class="btn btn-g btn-sm" onclick="replyToSelectedEmail()">↩️ رد</button>
             <button class="btn btn-b btn-sm" onclick="replyAllToSelectedEmail()">↪️ رد للجميع</button>
-            <button class="btn btn-y btn-sm" onclick="forwardSelectedEmail()">➡️ Forward</button>
+            <button class="btn btn-y btn-sm" onclick="forwardSelectedEmail()">➡️ تمرير</button>
             <button class="btn btn-out btn-sm" onclick="copySelectedEmailText()">📋 نسخ النص</button>
           </div>
-          <div id="email-preview" class="email-preview" ondblclick="openSelectedEmailFull()">لا توجد رسالة محددة.</div>
+          <div id="email-preview" class="email-preview" ondblclick="openSelectedEmailFull()"><div style="padding:40px 20px;text-align:center;color:var(--muted);font-size:13px;line-height:1.8">📭<br>لا توجد رسالة محددة<br><span style="font-size:11.5px">اختاري رسالة من القائمة لعرضها هنا</span></div></div>
           <div id="email-attachments-view" class="email-attachments-view"></div>
         </div>
       </div>
 
-      <div class="email-grid" style="margin-top:16px">
+      <div class="email-grid" style="margin-top:14px">
         <div class="email-panel">
-          <div class="ct">إعدادات البريد والذكاء الاصطناعي</div>
+          <div class="ct">⚙️ إعدادات البريد والذكاء الاصطناعي</div>
           <div class="fg" style="grid-template-columns:1fr">
             <div class="fl"><label>بريد الحضانة Outlook</label><input id="email-from" type="email" placeholder="kidsparknursery@outlook.com"></div>
             <div class="fl admin-only-mistral"><label>Microsoft Client ID للأدمن فقط</label><input id="ms-client-id" dir="ltr" placeholder="Application (client) ID من Azure"></div>
@@ -1285,14 +1520,14 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
             <div class="fl admin-only-mistral"><label>Mistral API Key</label><input id="mistral-api-key" type="password" placeholder="ضعي المفتاح هنا — يبقى على نفس الجهاز فقط"></div>
             <div class="fl admin-only-mistral"><label>نموذج Mistral</label><input id="mistral-model" value="mistral-small-latest"></div>
           </div>
-          <div class="email-toolbar admin-only-mistral" style="margin-top:12px">
+          <div class="email-toolbar admin-only-mistral" style="margin-top:12px;padding:0;background:none;border:none">
             <button class="btn btn-out btn-sm" onclick="testMistralSettings()">🧪 اختبار الذكاء</button>
             <button class="btn btn-out btn-sm" onclick="openMistralConsole()">🔑 فتح Mistral</button>
           </div>
           <div class="email-hint admin-only-mistral">للوارد الحقيقي: أنشئي App في Azure، ضعي Client ID، واجعلي Redirect URI هو نفس رابط فتح النظام. الصلاحيات المطلوبة: User.Read وMail.Read وMail.Send وMail.ReadWrite.</div>
         </div>
         <div class="email-panel">
-          <div class="ct">آخر الرسائل المحفوظة</div>
+          <div class="ct">📚 آخر الرسائل المحفوظة</div>
           <div id="email-history"></div>
         </div>
       </div>
@@ -1990,24 +2225,254 @@ let CLASSES = JSON.parse(localStorage.getItem('kp_classes') || 'null') || {
 };
 let CLASSES_DATA = CLASSES;
 
-// Nationality display: keep the original emoji-based display for all countries,
-// and override Syria only with the new Syrian flag drawn as inline SVG.
-const SYRIA_NEW_FLAG_SVG = '<svg class="nat-flag-svg" viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" aria-label="علم سوريا الجديد"><rect width="30" height="6.666" y="0" fill="#007A3D"/><rect width="30" height="6.666" y="6.666" fill="#fff"/><rect width="30" height="6.668" y="13.332" fill="#000"/><g fill="#CE1126"><path d="M7.5 8.1l.47 1.44h1.52l-1.23.89.47 1.44-1.23-.89-1.23.89.47-1.44-1.23-.89h1.52z"/><path d="M15 8.1l.47 1.44h1.52l-1.23.89.47 1.44-1.23-.89-1.23.89.47-1.44-1.23-.89h1.52z"/><path d="M22.5 8.1l.47 1.44h1.52l-1.23.89.47 1.44-1.23-.89-1.23.89.47-1.44-1.23-.89h1.52z"/></g></svg>';
+// ============================================================
+// 🏳️ Nationality → Flag (worldwide, Arabic + adjective variants)
+// ============================================================
+// SVG for Syria's NEW flag (officially adopted Mar 2025): green-white-black with 3 red stars.
+// We never rely on the 🇸🇾 emoji because many devices still render the old (red-white-black-2 green stars) flag.
+// width/height set as SVG attributes + inline styles so it stays small even in print windows
+// that don't include the main page CSS.
+const SYRIA_NEW_FLAG_SVG = '<svg class="nat-flag-svg" width="22" height="15" viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" aria-label="علم سوريا الجديد" style="width:22px;height:15px;flex-shrink:0;vertical-align:middle;border-radius:2px;box-shadow:0 0 0 1px rgba(0,0,0,.12)"><rect width="30" height="6.666" y="0" fill="#007A3D"/><rect width="30" height="6.666" y="6.666" fill="#fff"/><rect width="30" height="6.668" y="13.332" fill="#000"/><g fill="#CE1126"><path d="M7.5 8.1l.47 1.44h1.52l-1.23.89.47 1.44-1.23-.89-1.23.89.47-1.44-1.23-.89h1.52z"/><path d="M15 8.1l.47 1.44h1.52l-1.23.89.47 1.44-1.23-.89-1.23.89.47-1.44-1.23-.89h1.52z"/><path d="M22.5 8.1l.47 1.44h1.52l-1.23.89.47 1.44-1.23-.89-1.23.89.47-1.44-1.23-.89h1.52z"/></g></svg>';
+
+// Maps normalized country name (Arabic, lowercased, no spaces/punctuation) → emoji flag.
+// Covers all UN member states + common variants (adjective forms like "مصري" → مصر).
 const NATIONALITIES_SHORT = {
-  'الإمارات':'🇦🇪','السعودية':'🇸🇦','مصر':'🇪🇬','الأردن':'🇯🇴',
-  'لبنان':'🇱🇧','فلسطين':'🇵🇸','العراق':'🇮🇶','تونس':'🇹🇳','الجزائر':'🇩🇿',
-  'السودان':'🇸🇩','المغرب':'🇲🇦','فرنسا':'🇫🇷','النمسا':'🇦🇹','أوكرانيا':'🇺🇦',
-  'أثيوبيا':'🇪🇹','اثيوبيا':'🇪🇹','إثيوبيا':'🇪🇹'
+  // الدول العربية (Arab League + variants)
+  'الإمارات':'🇦🇪','الامارات':'🇦🇪','اماراتي':'🇦🇪','إماراتي':'🇦🇪','اماراتية':'🇦🇪','إماراتية':'🇦🇪',
+  'الإماراتالعربيةالمتحدة':'🇦🇪','الاماراتالعربيةالمتحدة':'🇦🇪',
+  'السعودية':'🇸🇦','سعودي':'🇸🇦','سعودية':'🇸🇦','المملكةالعربيةالسعودية':'🇸🇦',
+  'مصر':'🇪🇬','مصري':'🇪🇬','مصرية':'🇪🇬','جمهوريةمصرالعربية':'🇪🇬',
+  'الأردن':'🇯🇴','الاردن':'🇯🇴','اردني':'🇯🇴','أردني':'🇯🇴','أردنية':'🇯🇴','اردنية':'🇯🇴',
+  'لبنان':'🇱🇧','لبناني':'🇱🇧','لبنانية':'🇱🇧',
+  'فلسطين':'🇵🇸','فلسطيني':'🇵🇸','فلسطينية':'🇵🇸',
+  'العراق':'🇮🇶','عراقي':'🇮🇶','عراقية':'🇮🇶',
+  'الكويت':'🇰🇼','كويتي':'🇰🇼','كويتية':'🇰🇼',
+  'البحرين':'🇧🇭','بحريني':'🇧🇭','بحرينية':'🇧🇭',
+  'قطر':'🇶🇦','قطري':'🇶🇦','قطرية':'🇶🇦',
+  'عمان':'🇴🇲','سلطنةعمان':'🇴🇲','عماني':'🇴🇲','عمانية':'🇴🇲',
+  'اليمن':'🇾🇪','يمني':'🇾🇪','يمنية':'🇾🇪',
+  'تونس':'🇹🇳','تونسي':'🇹🇳','تونسية':'🇹🇳',
+  'الجزائر':'🇩🇿','جزائري':'🇩🇿','جزائرية':'🇩🇿',
+  'السودان':'🇸🇩','سوداني':'🇸🇩','سودانية':'🇸🇩',
+  'المغرب':'🇲🇦','مغربي':'🇲🇦','مغربية':'🇲🇦',
+  'ليبيا':'🇱🇾','ليبي':'🇱🇾','ليبية':'🇱🇾',
+  'موريتانيا':'🇲🇷','موريتاني':'🇲🇷','موريتانية':'🇲🇷',
+  'الصومال':'🇸🇴','صومالي':'🇸🇴','صومالية':'🇸🇴',
+  'جيبوتي':'🇩🇯','جيبوتي':'🇩🇯',
+  'جزرالقمر':'🇰🇲','القمر':'🇰🇲',
+
+  // أوروبا
+  'فرنسا':'🇫🇷','فرنسي':'🇫🇷','فرنسية':'🇫🇷',
+  'ألمانيا':'🇩🇪','المانيا':'🇩🇪','ألماني':'🇩🇪','الماني':'🇩🇪','المانية':'🇩🇪','ألمانية':'🇩🇪',
+  'إيطاليا':'🇮🇹','ايطاليا':'🇮🇹','ايطالي':'🇮🇹','إيطالي':'🇮🇹','ايطالية':'🇮🇹','إيطالية':'🇮🇹',
+  'إسبانيا':'🇪🇸','اسبانيا':'🇪🇸','اسباني':'🇪🇸','إسباني':'🇪🇸','اسبانية':'🇪🇸','إسبانية':'🇪🇸',
+  'البرتغال':'🇵🇹','برتغالي':'🇵🇹','برتغالية':'🇵🇹',
+  'بريطانيا':'🇬🇧','المملكةالمتحدة':'🇬🇧','بريطاني':'🇬🇧','بريطانية':'🇬🇧','إنجلترا':'🇬🇧','انجلترا':'🇬🇧',
+  'أيرلندا':'🇮🇪','ايرلندا':'🇮🇪','ايرلندي':'🇮🇪',
+  'هولندا':'🇳🇱','هولندي':'🇳🇱','هولندية':'🇳🇱',
+  'بلجيكا':'🇧🇪','بلجيكي':'🇧🇪','بلجيكية':'🇧🇪',
+  'لوكسمبورغ':'🇱🇺','لوكسمبورج':'🇱🇺',
+  'سويسرا':'🇨🇭','سويسري':'🇨🇭','سويسرية':'🇨🇭',
+  'النمسا':'🇦🇹','نمساوي':'🇦🇹','نمساوية':'🇦🇹',
+  'الدنمارك':'🇩🇰','دنماركي':'🇩🇰','دنماركية':'🇩🇰',
+  'السويد':'🇸🇪','سويدي':'🇸🇪','سويدية':'🇸🇪',
+  'النرويج':'🇳🇴','نرويجي':'🇳🇴','نرويجية':'🇳🇴',
+  'فنلندا':'🇫🇮','فنلندي':'🇫🇮','فنلندية':'🇫🇮',
+  'أيسلندا':'🇮🇸','ايسلندا':'🇮🇸',
+  'بولندا':'🇵🇱','بولندي':'🇵🇱','بولندية':'🇵🇱','بولوني':'🇵🇱',
+  'التشيك':'🇨🇿','جمهوريةالتشيك':'🇨🇿','تشيكي':'🇨🇿',
+  'سلوفاكيا':'🇸🇰','سلوفاكي':'🇸🇰',
+  'المجر':'🇭🇺','هنغاريا':'🇭🇺','هنغاري':'🇭🇺','مجري':'🇭🇺',
+  'رومانيا':'🇷🇴','روماني':'🇷🇴','رومانية':'🇷🇴',
+  'بلغاريا':'🇧🇬','بلغاري':'🇧🇬','بلغارية':'🇧🇬',
+  'اليونان':'🇬🇷','يوناني':'🇬🇷','يونانية':'🇬🇷',
+  'صربيا':'🇷🇸','صربي':'🇷🇸',
+  'كرواتيا':'🇭🇷','كرواتي':'🇭🇷',
+  'البوسنةوالهرسك':'🇧🇦','البوسنة':'🇧🇦','بوسني':'🇧🇦',
+  'الجبلالأسود':'🇲🇪','مونتنغرو':'🇲🇪',
+  'ألبانيا':'🇦🇱','البانيا':'🇦🇱','ألباني':'🇦🇱',
+  'مقدونياالشمالية':'🇲🇰','مقدونيا':'🇲🇰',
+  'سلوفينيا':'🇸🇮','سلوفيني':'🇸🇮',
+  'كوسوفو':'🇽🇰',
+  'روسيا':'🇷🇺','الاتحادالروسي':'🇷🇺','روسي':'🇷🇺','روسية':'🇷🇺',
+  'أوكرانيا':'🇺🇦','اوكرانيا':'🇺🇦','أوكراني':'🇺🇦','اوكراني':'🇺🇦','أوكرانية':'🇺🇦',
+  'بيلاروسيا':'🇧🇾','بيلاروسي':'🇧🇾','روسياالبيضاء':'🇧🇾',
+  'مولدوفا':'🇲🇩','مولدوفي':'🇲🇩','مولدوفية':'🇲🇩',
+  'ليتوانيا':'🇱🇹','ليتواني':'🇱🇹',
+  'لاتفيا':'🇱🇻','لاتفي':'🇱🇻',
+  'إستونيا':'🇪🇪','استونيا':'🇪🇪','استوني':'🇪🇪',
+  'تركيا':'🇹🇷','تركي':'🇹🇷','تركية':'🇹🇷',
+  'قبرص':'🇨🇾','قبرصي':'🇨🇾','قبرصية':'🇨🇾',
+  'مالطا':'🇲🇹','مالطي':'🇲🇹',
+
+  // آسيا
+  'إيران':'🇮🇷','ايران':'🇮🇷','إيراني':'🇮🇷','ايراني':'🇮🇷','ايرانية':'🇮🇷','إيرانية':'🇮🇷',
+  'أفغانستان':'🇦🇫','افغانستان':'🇦🇫','افغاني':'🇦🇫','أفغاني':'🇦🇫','افغانية':'🇦🇫',
+  'باكستان':'🇵🇰','باكستاني':'🇵🇰','باكستانية':'🇵🇰',
+  'الهند':'🇮🇳','هندي':'🇮🇳','هندية':'🇮🇳',
+  'بنغلاديش':'🇧🇩','بنجلاديش':'🇧🇩','بنغلاديشي':'🇧🇩','بنجلاديشي':'🇧🇩',
+  'سريلانكا':'🇱🇰','سيريلانكا':'🇱🇰','سريلانكي':'🇱🇰',
+  'نيبال':'🇳🇵','نيبالي':'🇳🇵',
+  'بوتان':'🇧🇹','بوتاني':'🇧🇹',
+  'ميانمار':'🇲🇲','بورما':'🇲🇲',
+  'تايلاند':'🇹🇭','تايلندي':'🇹🇭','تايلاندي':'🇹🇭',
+  'ماليزيا':'🇲🇾','ماليزي':'🇲🇾','ماليزية':'🇲🇾',
+  'سنغافورة':'🇸🇬','سنغافوري':'🇸🇬','سنغافورية':'🇸🇬',
+  'إندونيسيا':'🇮🇩','اندونيسيا':'🇮🇩','اندونيسي':'🇮🇩','إندونيسي':'🇮🇩','اندونيسية':'🇮🇩',
+  'الفلبين':'🇵🇭','فلبيني':'🇵🇭','فلبينية':'🇵🇭',
+  'فيتنام':'🇻🇳','فيتنامي':'🇻🇳','فيتنامية':'🇻🇳',
+  'كمبوديا':'🇰🇭','كمبودي':'🇰🇭',
+  'لاوس':'🇱🇦',
+  'الصين':'🇨🇳','صيني':'🇨🇳','صينية':'🇨🇳','جمهوريةالصينالشعبية':'🇨🇳',
+  'تايوان':'🇹🇼','تايواني':'🇹🇼',
+  'هونغكونغ':'🇭🇰','هونجكونج':'🇭🇰',
+  'اليابان':'🇯🇵','ياباني':'🇯🇵','يابانية':'🇯🇵',
+  'كورياالجنوبية':'🇰🇷','كوريا':'🇰🇷','كوري':'🇰🇷','كورية':'🇰🇷','كوريالجنوبي':'🇰🇷',
+  'كورياالشمالية':'🇰🇵','كوريالشمالي':'🇰🇵',
+  'منغوليا':'🇲🇳','منغولي':'🇲🇳',
+  'كازاخستان':'🇰🇿','كازاخستاني':'🇰🇿','كازاخي':'🇰🇿',
+  'أوزبكستان':'🇺🇿','اوزبكستان':'🇺🇿','اوزبكي':'🇺🇿',
+  'تركمانستان':'🇹🇲','تركماني':'🇹🇲',
+  'طاجيكستان':'🇹🇯','طاجيكي':'🇹🇯',
+  'قيرغيزستان':'🇰🇬','قرغيزستان':'🇰🇬','قيرغيزي':'🇰🇬',
+  'أذربيجان':'🇦🇿','اذربيجان':'🇦🇿','اذربيجاني':'🇦🇿','أذربيجاني':'🇦🇿',
+  'أرمينيا':'🇦🇲','ارمينيا':'🇦🇲','ارميني':'🇦🇲','أرميني':'🇦🇲',
+  'جورجيا':'🇬🇪','جورجي':'🇬🇪',
+  'إسرائيل':'🇮🇱','اسرائيل':'🇮🇱','اسرائيلي':'🇮🇱','إسرائيلي':'🇮🇱',
+  'المالديف':'🇲🇻','مالديفي':'🇲🇻',
+  'بروناي':'🇧🇳','برونايي':'🇧🇳',
+  'تيمورالشرقية':'🇹🇱',
+
+  // أفريقيا (UN members)
+  'إثيوبيا':'🇪🇹','اثيوبيا':'🇪🇹','أثيوبيا':'🇪🇹','اثيوبي':'🇪🇹','إثيوبي':'🇪🇹','اثيوبية':'🇪🇹','إثيوبية':'🇪🇹',
+  'إريتريا':'🇪🇷','اريتريا':'🇪🇷','اريتري':'🇪🇷','إريتري':'🇪🇷',
+  'كينيا':'🇰🇪','كيني':'🇰🇪',
+  'تنزانيا':'🇹🇿','تنزاني':'🇹🇿',
+  'أوغندا':'🇺🇬','اوغندا':'🇺🇬','اوغندي':'🇺🇬','أوغندي':'🇺🇬',
+  'رواندا':'🇷🇼','رواندي':'🇷🇼',
+  'بوروندي':'🇧🇮',
+  'جنوبالسودان':'🇸🇸','جنوبسودان':'🇸🇸',
+  'نيجيريا':'🇳🇬','نيجيري':'🇳🇬','نيجيرية':'🇳🇬',
+  'النيجر':'🇳🇪','نيجري':'🇳🇪',
+  'غانا':'🇬🇭','غاني':'🇬🇭',
+  'السنغال':'🇸🇳','سنغالي':'🇸🇳',
+  'كوتديفوار':'🇨🇮','ساحلالعاج':'🇨🇮',
+  'مالي':'🇲🇱',
+  'بوركينافاسو':'🇧🇫','بوركينا':'🇧🇫',
+  'بنين':'🇧🇯',
+  'توغو':'🇹🇬','توجو':'🇹🇬',
+  'الكاميرون':'🇨🇲','كاميروني':'🇨🇲',
+  'غينيا':'🇬🇳',
+  'غينياالاستوائية':'🇬🇶',
+  'غينيابيساو':'🇬🇼',
+  'سيراليون':'🇸🇱',
+  'ليبيريا':'🇱🇷',
+  'الغابون':'🇬🇦',
+  'الكونغو':'🇨🇬','جمهوريةالكونغو':'🇨🇬',
+  'الكونغوالديمقراطية':'🇨🇩',
+  'تشاد':'🇹🇩','تشادي':'🇹🇩',
+  'إفريقياالوسطى':'🇨🇫','افريقياالوسطى':'🇨🇫','جمهوريةإفريقياالوسطى':'🇨🇫',
+  'أنغولا':'🇦🇴','انغولا':'🇦🇴','أنجولا':'🇦🇴',
+  'موزمبيق':'🇲🇿',
+  'زامبيا':'🇿🇲','زامبي':'🇿🇲',
+  'زيمبابوي':'🇿🇼',
+  'مدغشقر':'🇲🇬','مدغشقري':'🇲🇬',
+  'موريشيوس':'🇲🇺',
+  'سيشيل':'🇸🇨',
+  'مالاوي':'🇲🇼','ملاوي':'🇲🇼',
+  'بوتسوانا':'🇧🇼','بتسوانا':'🇧🇼',
+  'ناميبيا':'🇳🇦','ناميبي':'🇳🇦',
+  'جنوبأفريقيا':'🇿🇦','جنوبافريقيا':'🇿🇦','جنوبإفريقيا':'🇿🇦','جنوبافريقي':'🇿🇦',
+  'سوازيلاند':'🇸🇿','إسواتيني':'🇸🇿','اسواتيني':'🇸🇿',
+  'ليسوتو':'🇱🇸',
+  'الرأسالأخضر':'🇨🇻','الراسالأخضر':'🇨🇻','كاب فيردي':'🇨🇻','كابوفيردي':'🇨🇻',
+  'ساوتومي':'🇸🇹','ساوتوميوبرنسيب':'🇸🇹',
+  'غامبيا':'🇬🇲',
+
+  // الأمريكتان
+  'الولاياتالمتحدة':'🇺🇸','الولاياتالمتحدةالأمريكية':'🇺🇸','أمريكا':'🇺🇸','امريكا':'🇺🇸','أمريكي':'🇺🇸','امريكي':'🇺🇸','أمريكية':'🇺🇸',
+  'كندا':'🇨🇦','كندي':'🇨🇦','كندية':'🇨🇦',
+  'المكسيك':'🇲🇽','مكسيكي':'🇲🇽','مكسيكية':'🇲🇽',
+  'البرازيل':'🇧🇷','برازيلي':'🇧🇷','برازيلية':'🇧🇷',
+  'الأرجنتين':'🇦🇷','الارجنتين':'🇦🇷','ارجنتيني':'🇦🇷','أرجنتيني':'🇦🇷',
+  'تشيلي':'🇨🇱','شيلي':'🇨🇱','تشيلي':'🇨🇱','تشيلية':'🇨🇱',
+  'كولومبيا':'🇨🇴','كولومبي':'🇨🇴',
+  'فنزويلا':'🇻🇪','فنزويلي':'🇻🇪',
+  'بيرو':'🇵🇪','بيروفي':'🇵🇪',
+  'الإكوادور':'🇪🇨','الاكوادور':'🇪🇨',
+  'بوليفيا':'🇧🇴','بوليفي':'🇧🇴',
+  'الأوروغواي':'🇺🇾','الاوروغواي':'🇺🇾','اوروغواي':'🇺🇾',
+  'الباراغواي':'🇵🇾','الباراجواي':'🇵🇾','باراغواي':'🇵🇾',
+  'غويانا':'🇬🇾','جويانا':'🇬🇾',
+  'سورينام':'🇸🇷',
+  'بنما':'🇵🇦','بناما':'🇵🇦','بنمي':'🇵🇦',
+  'كوستاريكا':'🇨🇷','كوستاريكي':'🇨🇷',
+  'نيكاراغوا':'🇳🇮','نيكاراجوا':'🇳🇮',
+  'هندوراس':'🇭🇳',
+  'السلفادور':'🇸🇻',
+  'غواتيمالا':'🇬🇹','جواتيمالا':'🇬🇹',
+  'بليز':'🇧🇿',
+  'كوبا':'🇨🇺','كوبي':'🇨🇺','كوبية':'🇨🇺',
+  'هايتي':'🇭🇹','هايتي':'🇭🇹',
+  'جامايكا':'🇯🇲','جاميكا':'🇯🇲','جامايكي':'🇯🇲',
+  'جمهوريةالدومينيكان':'🇩🇴','الدومينيكان':'🇩🇴','دومينيكاني':'🇩🇴',
+  'ترينيدادوتوباغو':'🇹🇹','ترينيداد':'🇹🇹',
+  'باهاماس':'🇧🇸','الباهاماس':'🇧🇸','بهاماس':'🇧🇸',
+  'بربادوس':'🇧🇧',
+
+  // أوقيانوسيا
+  'أستراليا':'🇦🇺','استراليا':'🇦🇺','استرالي':'🇦🇺','أسترالي':'🇦🇺','استرالية':'🇦🇺','أسترالية':'🇦🇺',
+  'نيوزيلندا':'🇳🇿','نيوزيلندي':'🇳🇿','نيوزيلندية':'🇳🇿',
+  'فيجي':'🇫🇯',
+  'بابواغينياالجديدة':'🇵🇬',
+  'ساموا':'🇼🇸',
+  'تونغا':'🇹🇴','تونجا':'🇹🇴',
+  'فانواتو':'🇻🇺',
+
+  // الإنجليزية المختصرة (fallback لو كُتبت بحروف لاتينية)
+  'syria':SYRIA_NEW_FLAG_SVG,'syrian':SYRIA_NEW_FLAG_SVG,
+  'philippines':'🇵🇭','filipino':'🇵🇭',
+  'india':'🇮🇳','pakistan':'🇵🇰','bangladesh':'🇧🇩','egypt':'🇪🇬','jordan':'🇯🇴',
+  'lebanon':'🇱🇧','iraq':'🇮🇶','sudan':'🇸🇩','morocco':'🇲🇦','tunisia':'🇹🇳',
+  'algeria':'🇩🇿','libya':'🇱🇾','yemen':'🇾🇪','oman':'🇴🇲','qatar':'🇶🇦',
+  'kuwait':'🇰🇼','bahrain':'🇧🇭','saudiarabia':'🇸🇦','uae':'🇦🇪','palestine':'🇵🇸',
+  'turkey':'🇹🇷','iran':'🇮🇷','afghanistan':'🇦🇫','indonesia':'🇮🇩','malaysia':'🇲🇾',
+  'china':'🇨🇳','japan':'🇯🇵','korea':'🇰🇷','usa':'🇺🇸','unitedstates':'🇺🇸',
+  'uk':'🇬🇧','britain':'🇬🇧','france':'🇫🇷','germany':'🇩🇪','italy':'🇮🇹',
+  'spain':'🇪🇸','russia':'🇷🇺','ukraine':'🇺🇦','ethiopia':'🇪🇹','eritrea':'🇪🇷',
+  'kenya':'🇰🇪','somalia':'🇸🇴','nigeria':'🇳🇬','southafrica':'🇿🇦','canada':'🇨🇦',
+  'mexico':'🇲🇽','brazil':'🇧🇷','argentina':'🇦🇷','australia':'🇦🇺','newzealand':'🇳🇿'
 };
-function isSyrianNationality(nat){
-  const v = String(nat || '').trim().replace(/[ـ\s]/g,'');
-  return ['سوريا','سورية','سوري','السورية','الجمهوريةالعربيةالسورية'].includes(v);
+
+// Normalize a nationality string for dictionary lookup:
+// - trim, lowercase
+// - remove all whitespace, tatweel ـ, dots, commas, hyphens
+// - remove "ال" prefix variants stay (matching keys include both "إيران" and "ايران")
+function normalizeNationality(nat){
+  return String(nat || '').trim().toLowerCase()
+    .replace(/[ـ\s\.,،\-_/\\()'"]/g, '');
 }
+
+function isSyrianNationality(nat){
+  const v = normalizeNationality(nat);
+  // كل التهجئات العربية + الإنجليزية لسوريا
+  return ['سوريا','سورية','سوري','سورى','السورية','السوري','الجمهوريةالعربيةالسورية',
+          'syria','syrian'].includes(v);
+}
+
+function getCountryFlag(nat){
+  if (!nat) return '';
+  if (isSyrianNationality(nat)) return SYRIA_NEW_FLAG_SVG;
+  const key = normalizeNationality(nat);
+  return NATIONALITIES_SHORT[key] || '';
+}
+
 function formatNationalityWithFlag(nat){
   nat = String(nat || '').trim();
   if(!nat) return '—';
-  const flag = isSyrianNationality(nat) ? SYRIA_NEW_FLAG_SVG : (NATIONALITIES_SHORT[nat] || '');
-  return '<span class="nat-with-flag">' + flag + '<span>' + escapeHtml(nat) + '</span></span>';
+  const flag = getCountryFlag(nat);
+  // inline styles for safety in print windows where the main CSS isn't loaded
+  return '<span class="nat-with-flag" style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;vertical-align:middle">' + (flag || '') + '<span>' + escapeHtml(nat) + '</span></span>';
 }
 
 var attLog = {};
@@ -4678,7 +5143,9 @@ function printStudentFullFile(studentId) {
     'table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1e6b3f;color:#fff;padding:10px;text-align:right}td{padding:8px 10px;border-bottom:1px solid #eee}tr:nth-child(even) td{background:#fafafa}'+
     '.sum{margin-top:12px;background:#eaf6ef;border-radius:10px;padding:12px;font-weight:700;color:#1e6b3f}.actions{margin:22px 0;text-align:center}.btn{padding:10px 18px;border:none;border-radius:8px;background:#1e6b3f;color:#fff;font-family:inherit;font-size:14px;cursor:pointer;margin:0 5px}.btn.gray{background:#777}'+
     '.ltr{direction:ltr;text-align:left;display:inline-block}'+
-    '@media print{.actions{display:none} body{padding:10px}.sec,.doc-card,table,.health-card,.alert-box,.item{page-break-inside:avoid}}'+
+    '.nat-with-flag{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;vertical-align:middle}'+
+    '.nat-flag-svg{width:22px!important;height:15px!important;border-radius:2px;box-shadow:0 0 0 1px rgba(0,0,0,.12);flex-shrink:0;vertical-align:middle}'+
+    '@media print{.actions{display:none} body{padding:10px}.sec,.doc-card,table,.health-card,.alert-box,.item{page-break-inside:avoid} .nat-flag-svg{width:22px!important;height:15px!important}}'+
   '</style></head><body>'+
     '<div class="hdr"><h1>👶 ملف الطالب الكامل</h1><div class="sub">'+((nurserySettings&&nurserySettings.name)||'حضانة حديقة الأطفال')+'</div></div>'+
 
@@ -6791,21 +7258,26 @@ let nurserySettings = {
 // Worksheet images per class: {classKey: base64DataUrl}
 let worksheetImages = JSON.parse(localStorage.getItem('ws_images')||'{}');
 
-function doLogin() {
+async function doLogin() {
   const user = document.getElementById('login-user').value.trim();
   const pass = document.getElementById('login-pass').value;
   const err = document.getElementById('login-err');
   err.textContent = '';
-  // Simple credential check - stored in localStorage for offline mode
-  const users = JSON.parse(localStorage.getItem('kp_users') || '[]');
-  // Default admin if no users set
+  // ✅ حاول تحديث قائمة المستخدمين من Firebase قبل الفحص (مع fallback صامت)
+  // هذا يضمن أن مستخدمين مضافين/محذوفين من أجهزة أخرى يُؤخذون بعين الاعتبار فوراً
+  // إذا فشل الاتصال، الدالة تعيد المخزّن محلياً ولا يتعطل تسجيل الدخول
+  try {
+    err.textContent = 'جاري التحقق...';
+    await loadUsersFromFirebase();
+  } catch(_e) { /* صامت — الدالة نفسها تعمل fallback */ }
+  err.textContent = '';
+  // Default admin if no users set (سيناريو نادر — انقطاع كامل + لا يوجد مخزن محلي)
+  let users = JSON.parse(localStorage.getItem('kp_users') || '[]');
   if (!users.length) {
-    localStorage.setItem('kp_users', JSON.stringify([
-      {username:'admin', password:'admin123', role:'admin', name:'المدير'}
-    ]));
+    users = [{username:'admin', password:'admin123', role:'admin', name:'المدير'}];
+    localStorage.setItem('kp_users', JSON.stringify(users));
   }
-  const allUsers = JSON.parse(localStorage.getItem('kp_users'));
-  const found = allUsers.find(u => u.username === user && u.password === pass);
+  const found = users.find(u => u.username === user && u.password === pass);
   if (!found) { err.textContent = 'اسم المستخدم أو كلمة السر غلط'; return; }
   currentUser = found;
   sessionStorage.setItem('kp_session', JSON.stringify(found));
@@ -6995,11 +7467,68 @@ function changePassword() {
   if(newP.length < 4) return alert('كلمة السر الجديدة قصيرة جداً (4 أحرف على الأقل)');
   if(newP !== conf) return alert('تأكيد كلمة السر ما يطابق');
   me.password = newP;
+  // ✅ حفظ محلي فوراً + مزامنة مع Firebase (مع fallback إذا انقطع)
   localStorage.setItem('kp_users', JSON.stringify(users));
   currentUser.password = newP;
   sessionStorage.setItem('kp_session', JSON.stringify(currentUser));
   ['cp-old','cp-new','cp-confirm'].forEach(id => document.getElementById(id).value = '');
-  alert('✅ تم تغيير كلمة السر بنجاح');
+  // مزامنة Firebase
+  saveUsersToFirebase(users).then(function(ok){
+    alert(ok ? '✅ تم تغيير كلمة السر وحفظها على الخادم' : '✅ تم تغيير كلمة السر محلياً (سيتم رفعها للخادم لاحقاً)');
+  });
+}
+
+// ============================================================
+// USER MANAGEMENT — FIREBASE SYNC
+// ============================================================
+// قراءة قائمة المستخدمين من Firebase مع fallback إلى المحلي
+async function loadUsersFromFirebase() {
+  try {
+    const res = await fetch(FB_URL + '/kp_users.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0) {
+      // تحقق من بنية كل مستخدم — لازم يكون فيه username, password
+      const valid = data.filter(function(u){
+        return u && typeof u === 'object' && u.username && u.password;
+      });
+      if (valid.length > 0) {
+        localStorage.setItem('kp_users', JSON.stringify(valid));
+        return { ok: true, users: valid, source: 'firebase' };
+      }
+    }
+    // إذا Firebase فاضي أو غير صحيح، خذ من المحلي وارفعه
+    const local = JSON.parse(localStorage.getItem('kp_users') || '[]');
+    if (local.length > 0) {
+      saveUsersToFirebase(local).catch(function(){});
+      return { ok: true, users: local, source: 'local-uploaded' };
+    }
+    return { ok: false, users: [], source: 'empty' };
+  } catch (e) {
+    console.warn('loadUsersFromFirebase failed, using local:', e.message);
+    const local = JSON.parse(localStorage.getItem('kp_users') || '[]');
+    return { ok: false, users: local, source: 'local-fallback' };
+  }
+}
+
+// رفع قائمة المستخدمين بالكامل إلى Firebase (PATCH على المسار kp_users)
+async function saveUsersToFirebase(users) {
+  if (!Array.isArray(users)) return false;
+  try {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ المستخدمين...');
+    const res = await fetch(FB_URL + '.json', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kp_users: users, savedAt: new Date().toISOString() })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تمت مزامنة المستخدمين');
+    return true;
+  } catch (e) {
+    console.warn('saveUsersToFirebase failed:', e.message);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ المستخدمون محفوظون محلياً فقط');
+    return false;
+  }
 }
 
 // ============================================================
@@ -7020,25 +7549,45 @@ function renderAdminUsers() {
     </div>`).join('');
 }
 
-function openAddUser() {
+async function openAddUser() {
+  if(currentUser?.role !== 'admin') return alert('للمدير فقط');
   const name = prompt('الاسم الكامل:'); if(!name) return;
   const user = prompt('اسم المستخدم (بالإنجليزي):'); if(!user) return;
   const pass = prompt('كلمة السر:'); if(!pass||pass.length<4) return alert('كلمة السر قصيرة جداً');
   const role = confirm('هل يكون مدير؟ (موافق=مدير، إلغاء=موظف)') ? 'admin' : 'staff';
-  const users = JSON.parse(localStorage.getItem('kp_users') || '[]');
+  // ✅ حدّث القائمة المحلية بناءً على آخر نسخة من Firebase حتى لا ندهس مستخدماً أضافه شخص آخر
+  let users;
+  try {
+    const refreshed = await loadUsersFromFirebase();
+    users = Array.isArray(refreshed.users) ? refreshed.users : JSON.parse(localStorage.getItem('kp_users') || '[]');
+  } catch(_e) {
+    users = JSON.parse(localStorage.getItem('kp_users') || '[]');
+  }
   if(users.find(u=>u.username===user)) return alert('اسم المستخدم موجود مسبقاً');
   users.push({username:user, password:pass, role, name});
   localStorage.setItem('kp_users', JSON.stringify(users));
   renderAdminUsers();
-  alert('✅ تم إضافة المستخدم');
+  const ok = await saveUsersToFirebase(users);
+  alert(ok ? '✅ تم إضافة المستخدم وحفظه على الخادم' : '✅ تم إضافة المستخدم محلياً (سيتم رفعه للخادم لاحقاً)');
 }
 
-function deleteUser(username) {
+async function deleteUser(username) {
+  if(currentUser?.role !== 'admin') return alert('للمدير فقط');
+  if(username === 'admin') return alert('لا يمكن حذف الحساب الرئيسي');
   if(!confirm(`حذف المستخدم ${username}؟`)) return;
-  let users = JSON.parse(localStorage.getItem('kp_users') || '[]');
+  // ✅ خذ آخر نسخة من Firebase قبل الحذف لتجنب التعارضات
+  let users;
+  try {
+    const refreshed = await loadUsersFromFirebase();
+    users = Array.isArray(refreshed.users) ? refreshed.users : JSON.parse(localStorage.getItem('kp_users') || '[]');
+  } catch(_e) {
+    users = JSON.parse(localStorage.getItem('kp_users') || '[]');
+  }
   users = users.filter(u => u.username !== username);
   localStorage.setItem('kp_users', JSON.stringify(users));
   renderAdminUsers();
+  const ok = await saveUsersToFirebase(users);
+  if (!ok) alert('⚠️ تم الحذف محلياً، لكن لم تتم المزامنة مع الخادم. سيتم المحاولة لاحقاً.');
 }
 
 // ============================================================
@@ -7465,22 +8014,18 @@ function buildReceiptHTML(p) {
 // ============================================================
 // Override init - require login first
 window.addEventListener('DOMContentLoaded', () => {
-  // Set default admin if no local users
+  // Set default admin if no local users (يبقى كـ fallback آمن إذا انقطع Firebase أو لم يحتوِ على مستخدمين)
   if (!localStorage.getItem('kp_users')) {
     localStorage.setItem('kp_users', JSON.stringify([
       {username:'admin', password:'admin123', role:'admin', name:'المدير'}
     ]));
   }
-  // Load users from Firebase BEFORE showing login screen
+  // ✅ Load users from Firebase BEFORE showing login screen
+  // هذا يضمن أن أي إضافة/تعديل/حذف عمله الأدمن من أي جهاز يصل إلى كل الأجهزة الأخرى
+  // وفي حال انقطاع Firebase أو فشل الجلب، نستخدم المخزّن محلياً (fallback)
   refreshNextIds();
-  fetch('https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data/kp_users.json')
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      if (data && Array.isArray(data) && data.length > 0) {
-        localStorage.setItem('kp_users', JSON.stringify(data));
-      }
-    })
-    .catch(function() { /* offline — use local */ })
+  loadUsersFromFirebase()
+    .catch(function(){ /* fallback already handled in helper */ })
     .finally(function() {
       checkSession();
     });
@@ -8727,7 +9272,13 @@ async function loadFromFirebase() {
     applyTombstones();
     cleanupDeletedBuckets();
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
-    if (data.kp_users && data.kp_users.length) localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
+    if (data.kp_users && data.kp_users.length) {
+      localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
+      // ✅ إذا صفحة الإعدادات مفتوحة، أعد رسم قائمة المستخدمين لتعكس التغييرات من الأجهزة الأخرى
+      if (typeof renderAdminUsers === 'function') {
+        try { renderAdminUsers(); } catch(_e){}
+      }
+    }
     if (Array.isArray(data.kp_form_rows)) {
       // ✅ تطبيق القرارات المحلية الحديثة (قبول/رفض) قبل التطبيق على الواجهة
       // — حماية ضد الـ stream events التي تعيد كتابة الحالة كـ pending
@@ -10562,7 +11113,105 @@ function loadEmailHistory(i){let h=[];try{h=JSON.parse(localStorage.getItem(EMAI
 function clearEmailForm(){['email-to','email-cc','email-bcc','email-subject','email-body'].forEach(function(id){const el=document.getElementById(id);if(el)el.value=''});const f=document.getElementById('email-attachments');if(f)f.value='';renderSelectedAttachments();const pv=document.getElementById('email-send-preview');if(pv){pv.style.display='none';pv.textContent=''}setEmailStatus('','')}
 function copyEmailBody(){const body=document.getElementById('email-body')?.value||'';if(!body){setEmailStatus('لا يوجد نص لنسخه.','err');return}navigator.clipboard?.writeText(body).then(function(){setEmailStatus('تم نسخ نص الرسالة.','ok')}).catch(function(){setEmailStatus('تعذر النسخ تلقائيًا.','err')})}
 async function testMistralSettings(){openEmailComposeModal();const el=document.getElementById('email-body');if(el&&!el.value.trim())el.value='نرجو منكم تسديد الرسوم الشهرية في أقرب وقت. شكراً لتعاونكم.';await improveEmailWithMistral(true)}
-async function improveEmailWithMistral(isTest){const st=getEmailSettings();const key=(document.getElementById('mistral-api-key')?.value||st.mistralKey||EMBEDDED_MISTRAL_KEY||'').trim();const model=(document.getElementById('mistral-model')?.value||st.model||'mistral-small-latest').trim();const bodyEl=document.getElementById('email-body');const original=(bodyEl?.value||'').trim();if(!key){setEmailStatus((currentUser&&currentUser.role==='admin')?'ضعي Mistral API Key أولاً ثم احفظي الإعدادات.':'لم يتم إعداد مفتاح الذكاء الاصطناعي بعد. يرجى مراجعة الأدمن.','err');return}if(!original){setEmailStatus('اكتبي نص الرسالة أولاً ليتم تحسينه.','err');return}await saveEmailSettings();setEmailStatus('جاري تحسين النص عبر Mistral...','');try{const res=await fetch('https://api.mistral.ai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:model,temperature:.25,messages:[{role:'system',content:'أنت مساعد مراسلات رسمي لحضانة أطفال في الإمارات. حسّن نص البريد ليكون مهذبًا وواضحًا ومختصرًا ومناسبًا لأولياء الأمور. أعد النص فقط بدون شرح. إذا كان النص عربيًا أعده بالعربية، وإذا كان إنجليزيًا أعده بالإنجليزية، وإذا كان ثنائي اللغة رتبه عربي/إنجليزي.'},{role:'user',content:original}]})});const data=await res.json();if(!res.ok)throw new Error((data&&(data.message||(data.error&&data.error.message)))||('HTTP '+res.status));const improved=data?.choices?.[0]?.message?.content?.trim();if(!improved)throw new Error('لم يصل نص محسّن من Mistral.');bodyEl.value=improved;setEmailStatus(isTest?'تم اختبار Mistral وتحسين النص بنجاح.':'تم تحسين نص الرسالة بنجاح.','ok');previewOutgoingEmail()}catch(err){setEmailStatus('تعذر استخدام Mistral: '+(err.message||err),'err')}}
+async function improveEmailWithMistral(isTest) {
+  const st = getEmailSettings();
+  const key = (document.getElementById('mistral-api-key')?.value || st.mistralKey || EMBEDDED_MISTRAL_KEY || '').trim();
+  const model = (document.getElementById('mistral-model')?.value || st.model || 'mistral-small-latest').trim();
+  const bodyEl = document.getElementById('email-body');
+  const subjEl = document.getElementById('email-subject');
+  const original = (bodyEl?.value || '').trim();
+  const currentSubject = (subjEl?.value || '').trim();
+  if (!key) {
+    setEmailStatus((currentUser && currentUser.role === 'admin') ? 'ضعي Mistral API Key أولاً ثم احفظي الإعدادات.' : 'لم يتم إعداد مفتاح الذكاء الاصطناعي بعد. يرجى مراجعة الأدمن.', 'err');
+    return;
+  }
+  if (!original) { setEmailStatus('اكتبي نص الرسالة أولاً ليتم تحسينه.', 'err'); return; }
+  await saveEmailSettings();
+  setEmailStatus('جاري تحسين النص واقتراح عنوان عبر Mistral...', '');
+  try {
+    const sysPrompt = 'أنت مساعد مراسلات رسمي لحضانة أطفال في الإمارات. مهمتك:\n' +
+      '1) تحسين نص البريد ليكون مهذبًا وواضحًا ومختصرًا ومناسبًا لأولياء الأمور.\n' +
+      '2) اقتراح عنوان (subject) قصير ومناسب وواضح للرسالة (لا يتجاوز 8 كلمات).\n' +
+      'إذا كان النص عربيًا أعد النتيجة بالعربية، وإذا كان إنجليزيًا أعدها بالإنجليزية، وإذا كان ثنائي اللغة رتب عربي/إنجليزي في كليهما.\n' +
+      'أعد النتيجة بصيغة JSON صالحة فقط، بدون أي شرح أو نص قبلها أو بعدها، بهذا الشكل بالضبط:\n' +
+      '{"subject":"العنوان المقترح هنا","body":"نص الرسالة المحسّن هنا"}';
+    const userPrompt = 'النص الأصلي:\n' + original +
+      (currentSubject ? ('\n\nالعنوان الحالي (يمكن تحسينه أو استبداله):\n' + currentSubject) : '\n\n(لا يوجد عنوان حالي — اقترح واحدًا)');
+
+    const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+      body: JSON.stringify({
+        model: model,
+        temperature: 0.25,
+        // إجبار النموذج على إرجاع JSON صالح
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: sysPrompt },
+          { role: 'user', content: userPrompt }
+        ]
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error((data && (data.message || (data.error && data.error.message))) || ('HTTP ' + res.status));
+    const raw = data?.choices?.[0]?.message?.content?.trim();
+    if (!raw) throw new Error('لم يصل نص محسّن من Mistral.');
+
+    // محاولة قراءة الإخراج كـ JSON. لو فشل (نادراً)، نستخدم fallback ذكي
+    let improvedBody = '';
+    let suggestedSubject = '';
+    try {
+      const parsed = JSON.parse(raw);
+      improvedBody = String(parsed.body || '').trim();
+      suggestedSubject = String(parsed.subject || '').trim();
+    } catch (_e) {
+      // Fallback: حاول استخراج JSON من داخل النص
+      const jsonMatch = raw.match(/\{[\s\S]*"body"[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const p2 = JSON.parse(jsonMatch[0]);
+          improvedBody = String(p2.body || '').trim();
+          suggestedSubject = String(p2.subject || '').trim();
+        } catch (_e2) { improvedBody = raw; }
+      } else {
+        // إذا النموذج أعاد نصاً عاديًا، استخدمه كنص محسّن وحاول استنتاج عنوان من السطر الأول
+        improvedBody = raw;
+        const firstLine = (raw.split('\n').find(function(l){ return l.trim().length > 0; }) || '').trim();
+        if (firstLine && firstLine.length <= 80) suggestedSubject = firstLine.replace(/^[-*•:#\s]+/, '').slice(0, 80);
+      }
+    }
+    if (!improvedBody) throw new Error('لم يصل نص محسّن صالح من Mistral.');
+
+    // طبّق النص المحسّن
+    bodyEl.value = improvedBody;
+    // طبّق العنوان المقترح: إذا كان حقل العنوان فاضي → ضعه مباشرة
+    // أما إذا فيه عنوان مكتوب من المستخدم، اسأل قبل الاستبدال احتراماً لاختياره
+    let subjectMsg = '';
+    if (subjEl && suggestedSubject) {
+      if (!currentSubject) {
+        subjEl.value = suggestedSubject;
+        subjectMsg = ' وتمت إضافة عنوان مقترح: "' + suggestedSubject + '"';
+      } else if (currentSubject !== suggestedSubject) {
+        // إذا الذكاء اقترح عنواناً مختلفاً والمستخدم وضع عنواناً قبله، نسأل
+        const replace = confirm('اقترحَ الذكاء الاصطناعي عنواناً جديداً:\n\n"' + suggestedSubject + '"\n\nهل تريدين استبدال العنوان الحالي به؟\n\nالحالي: "' + currentSubject + '"');
+        if (replace) {
+          subjEl.value = suggestedSubject;
+          subjectMsg = ' وتم استبدال العنوان بالعنوان المقترح.';
+        } else {
+          subjectMsg = ' (تم الاحتفاظ بعنوانك الحالي).';
+        }
+      }
+    }
+
+    setEmailStatus(
+      (isTest ? 'تم اختبار Mistral وتحسين النص بنجاح.' : 'تم تحسين نص الرسالة بنجاح.') + subjectMsg,
+      'ok'
+    );
+    previewOutgoingEmail();
+  } catch (err) {
+    setEmailStatus('تعذر استخدام Mistral: ' + (err.message || err), 'err');
+  }
+}
 function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]})}
 
 
