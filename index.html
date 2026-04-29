@@ -12332,6 +12332,87 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     return { online:navigator.onLine, cloudFails:kpConsecutiveCloudFails, lastGoodCloudSecondsAgo:Math.round((Date.now()-kpLastGoodCloudAt)/1000), registrationSyncRunning:kpRegSyncRunning, registrationIntervalSeconds:KP_FAST_REG_MS/1000, sheetsIntervalSeconds:KP_SHEETS_MS/1000, localRows:rowsCount };
   };
 })();
+
+/* ============================================================
+   HOTFIX 20260429G — منع رجوع طلبات التسجيل المرفوضة/المقبولة
+   التشخيص: كان عندنا 3 مصادر لنفس الطلب:
+   1) Google Sheets يعطي الصف دائماً كـ pending لأنه لا يعرف قرار الرفض/القبول.
+   2) kp_form_rows array داخل Firebase ممكن يحتفظ بنسخة pending قديمة.
+   3) registrationRequests/pending/accepted/rejected هي المسارات الفردية.
+   عند أي refresh أو مزامنة، كانت نسخة pending القديمة تربح لحظياً فتظهر ثم تختفي.
+   الحل هنا: القرارات accepted/rejected صارت قفل نهائي حسب مفتاح ثابت، وأي مصدر pending
+   مطابق لقرار سابق يتحول لحالته الصحيحة ولا يظهر في "الجديدة".
+   ============================================================ */
+(function(){
+  'use strict';
+  if (window.__kp_registration_decision_lock_20260429G) return;
+  window.__kp_registration_decision_lock_20260429G = true;
+  var DECISION_CACHE = {}, DECISION_CACHE_AT = 0, DECISION_CACHE_TTL = 15000;
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function rootUrl(){ return String(FB_URL || '').replace(/\/nursery_data\/?$/, ''); }
+  function safeKey(s){ s = txt(s); return s ? s.replace(/[.#$\[\]\/\s]/g, '_').replace(/_+/g, '_').substring(0, 220) : ''; }
+  function hashSeed(seed){ var h=0; seed=txt(seed); for(var i=0;i<seed.length;i++){ h=((h<<5)-h)+seed.charCodeAt(i); h|=0; } return Math.abs(h).toString(36); }
+  function stableKey(r){
+    r=r||{}; var existing=txt(r.firebaseKey||r.requestId||r._fbKey); if(existing) return safeKey(existing);
+    var seed = txt(r.timestamp||r.formTimestamp||r.submittedAt||r.createdAt||'') + '|' + txt(r.emiratesId||r.idNo||r.passport||'') + '|' + txt(r.name||((txt(r.firstName)+' '+txt(r.familyName)).trim())||r.childName||r.studentName||'');
+    if(!seed.replace(/\|/g,'').trim()) return '';
+    return 'sheet_' + hashSeed(seed) + '_' + safeKey(seed.substring(0,45));
+  }
+  function rowKeys(r){
+    r=r||{}; var raw=[r.firebaseKey,r.requestId,r._fbKey,r.timestamp,r.formTimestamp,r.submittedAt,r.createdAt,r.emiratesId,r.idNo,stableKey(r)].map(txt).filter(Boolean);
+    var out=[]; raw.forEach(function(k){ var a=safeKey(k); if(a&&out.indexOf(a)<0)out.push(a); if(k&&out.indexOf(k)<0)out.push(k); }); return out;
+  }
+  function localDecisionFor(r){
+    var local=window.__localFormDecisions||{}, keys=rowKeys(r);
+    for(var i=0;i<keys.length;i++){ var d=local[keys[i]]; if(d&&d.status&&d.status!=='pending') return d; }
+    try{ var saved=JSON.parse(localStorage.getItem('kp_form_decisions_v2')||'{}'); for(var j=0;j<keys.length;j++){ var sd=saved[keys[j]]; if(sd&&sd.status&&sd.status!=='pending') return sd; } }catch(_e){}
+    return null;
+  }
+  function rememberDecision(r,status){
+    if(!r||!status||status==='pending') return; var at=r.decisionAt||new Date().toISOString(); var entry={status:status,decisionAt:at,savedAt:at};
+    window.__localFormDecisions=window.__localFormDecisions||{}; var saved={}; try{saved=JSON.parse(localStorage.getItem('kp_form_decisions_v2')||'{}')||{};}catch(_e){}
+    rowKeys(r).forEach(function(k){ window.__localFormDecisions[k]=entry; saved[k]=entry; }); try{localStorage.setItem('kp_form_decisions_v2',JSON.stringify(saved));}catch(_e){}
+  }
+  async function fetchJson(url){ var sep=url.indexOf('?')>=0?'&':'?'; var res=await fetch(url+sep+'ts='+Date.now(),{cache:'no-store'}); if(!res.ok) throw new Error('HTTP '+res.status); return await res.json(); }
+  function normalizeObjRows(obj,folder){ var out=[]; if(!obj) return out; Object.keys(obj).forEach(function(k){ var v=obj[k]; if(!v||typeof v!=='object')return; var r=(typeof normalizeParentRegistrationRow==='function')?normalizeParentRegistrationRow(v,k):Object.assign({firebaseKey:k},v); r._fbKey=k; r.status=folder==='accepted'?'approved':(folder==='rejected'?'rejected':'pending'); if(!r.firebaseKey) r.firebaseKey=safeKey(k); if(!r.requestId) r.requestId=r.firebaseKey; out.push(r); }); return out; }
+  async function readFolder(folder){ var urls=[FB_URL+'/registrationRequests/'+folder+'.json',rootUrl()+'/registrationRequests/'+folder+'.json']; var rows=[]; for(var i=0;i<urls.length;i++){ try{ rows=rows.concat(normalizeObjRows(await fetchJson(urls[i]),folder)); }catch(_e){} } return rows; }
+  async function getDecisionMap(force){
+    if(!force && Date.now()-DECISION_CACHE_AT<DECISION_CACHE_TTL) return DECISION_CACHE; var map={};
+    function add(r){ if(!r||!r.status||r.status==='pending')return; rowKeys(r).forEach(function(k){ map[k]={status:r.status,decisionAt:r.decisionAt||r.rowUpdatedAt||new Date().toISOString(),row:r}; }); }
+    try{ (await readFolder('accepted')).forEach(add); }catch(_e){} try{ (await readFolder('rejected')).forEach(add); }catch(_e){}
+    try{ (Array.isArray(syncedFormRows)?syncedFormRows:[]).forEach(function(r){ var d=localDecisionFor(r); if(d) rowKeys(r).forEach(function(k){ map[k]={status:d.status,decisionAt:d.decisionAt||d.savedAt,row:r}; }); else if(r&&r.status&&r.status!=='pending') add(r); }); }catch(_e){}
+    DECISION_CACHE=map; DECISION_CACHE_AT=Date.now(); return map;
+  }
+  function decisionForRow(r,decisionMap){ decisionMap=decisionMap||DECISION_CACHE||{}; var d=localDecisionFor(r); if(d)return d; var keys=rowKeys(r); for(var i=0;i<keys.length;i++) if(decisionMap[keys[i]]) return decisionMap[keys[i]]; return null; }
+  function applyDecisionLocks(rows,decisionMap){
+    var map={}; (Array.isArray(rows)?rows:[]).forEach(function(r){ if(!r)return; var k=stableKey(r)||safeKey(txt(r.firebaseKey||r.requestId||r.timestamp||r.name)); if(!k)return; var d=decisionForRow(r,decisionMap); if(d&&d.status&&d.status!=='pending'){ r=Object.assign({},r,{status:d.status,decisionAt:d.decisionAt||r.decisionAt,rowUpdatedAt:d.decisionAt||d.savedAt||r.rowUpdatedAt}); rememberDecision(r,d.status); }
+      var old=map[k]; if(!old){ map[k]=r; return; } var oldRank=old.status==='rejected'?3:(old.status==='approved'?2:1); var newRank=r.status==='rejected'?3:(r.status==='approved'?2:1); map[k]=(newRank>=oldRank)?Object.assign({},old,r):Object.assign({},r,old);
+    }); return Object.values(map);
+  }
+  async function putJson(url,payload){ try{ var res=await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); return !!res.ok; }catch(_e){return false;} }
+  async function delJson(url){ try{ await fetch(url,{method:'DELETE'}); }catch(_e){} }
+  async function cleanupLegacyArray(decisionRow,status){
+    var urls=[FB_URL+'/kp_form_rows.json',rootUrl()+'/kp_form_rows.json'];
+    for(var u=0;u<urls.length;u++){ try{ var arr=await fetchJson(urls[u]); if(!Array.isArray(arr))continue; var changed=false, keys=rowKeys(decisionRow); arr=arr.map(function(r){ if(!r)return r; var match=rowKeys(r).some(function(k){return keys.indexOf(k)>=0;}); if(!match)return r; changed=true; return Object.assign({},r,{status:status,decisionAt:decisionRow.decisionAt||new Date().toISOString(),rowUpdatedAt:decisionRow.rowUpdatedAt||decisionRow.decisionAt||new Date().toISOString()}); }); if(changed) await putJson(urls[u].replace(/(\?|&)ts=\d+/,''),arr); }catch(_e){} }
+  }
+  window.archiveFirebaseRegistrationRequest = async function(r,status){
+    if(!r)return false; status=status||r.status||'rejected'; var folder=status==='approved'?'accepted':(status==='rejected'?'rejected':'pending'); var k=stableKey(r)||safeKey(txt(r.firebaseKey||r.requestId||r.timestamp)); if(!k)return false; r.firebaseKey=k; r.requestId=k;
+    var payload=Object.assign({},r,{status:status,firebaseKey:k,requestId:k,decisionAt:r.decisionAt||new Date().toISOString(),rowUpdatedAt:r.rowUpdatedAt||r.decisionAt||new Date().toISOString()});
+    var bases=[FB_URL+'/registrationRequests',rootUrl()+'/registrationRequests'], ok=false; for(var b=0;b<bases.length;b++){ if(await putJson(bases[b]+'/'+folder+'/'+encodeURIComponent(k)+'.json',payload)) ok=true; }
+    var keys=rowKeys(payload).map(safeKey).filter(Boolean); keys=keys.filter(function(x,i){return keys.indexOf(x)===i;}); var folders=['pending','accepted','rejected'].filter(function(f){return f!==folder;});
+    for(var f=0;f<folders.length;f++) for(var bb=0;bb<bases.length;bb++) for(var i=0;i<keys.length;i++) await delJson(bases[bb]+'/'+folders[f]+'/'+encodeURIComponent(keys[i])+'.json');
+    if(status!=='pending'){ rememberDecision(payload,status); DECISION_CACHE_AT=0; cleanupLegacyArray(payload,status); }
+    return ok;
+  };
+  window.syncRegistrationRequestsFromFirebase = async function(options){
+    options=options||{}; try{ var pending=await readFolder('pending'), accepted=await readFolder('accepted'), rejected=await readFolder('rejected'), decisionMap=await getDecisionMap(true); accepted.forEach(function(r){rememberDecision(r,'approved');}); rejected.forEach(function(r){rememberDecision(r,'rejected');}); var finalRows=[]; finalRows=finalRows.concat(accepted,rejected); pending.forEach(function(r){ if(!decisionForRow(r,decisionMap)) finalRows.push(r); }); finalRows=finalRows.concat(Array.isArray(syncedFormRows)?syncedFormRows:[]); syncedFormRows=applyDecisionLocks(finalRows,decisionMap); try{localStorage.setItem('kp_form_rows',JSON.stringify(syncedFormRows));}catch(_e){} if(typeof updateFormsNavBadge==='function')updateFormsNavBadge(); if(typeof renderFormRequests==='function')renderFormRequests(); if(!options.silent&&typeof showSyncBadge==='function')showSyncBadge('✅ تمت مزامنة طلبات التسجيل بدون تكرار'); return {pending:pending.length,accepted:accepted.length,rejected:rejected.length,total:syncedFormRows.length}; }catch(e){ console.warn('registration decision-lock sync failed:',e); if(!options.silent&&typeof showSyncBadge==='function')showSyncBadge('⚠️ تعذرت مزامنة طلبات التسجيل'); return {error:e&&e.message}; }
+  };
+  if(typeof saveFormRowsBatchRemoteAware==='function'){ var __origBatchSave=saveFormRowsBatchRemoteAware; saveFormRowsBatchRemoteAware=async function(formRows){ var dm=await getDecisionMap(false); var rows=(Array.isArray(formRows)?formRows:[]).filter(function(r){return !decisionForRow(r,dm);}); if(!rows.length)return true; return await __origBatchSave(rows); }; }
+  if(typeof syncFromGoogleSheets==='function'){ var __origSheetsSync=syncFromGoogleSheets; syncFromGoogleSheets=async function(){ var beforeMap=await getDecisionMap(true); var res=await __origSheetsSync.apply(this,arguments); var afterMap=await getDecisionMap(true); syncedFormRows=applyDecisionLocks(syncedFormRows,Object.assign({},beforeMap,afterMap)); try{localStorage.setItem('kp_form_rows',JSON.stringify(syncedFormRows));}catch(_e){} if(typeof updateFormsNavBadge==='function')updateFormsNavBadge(); if(typeof renderFormRequests==='function')renderFormRequests(); return res; }; }
+  if(typeof loadFromFirebase==='function'){ var __origLoadFirebaseG=loadFromFirebase; loadFromFirebase=async function(){ var res=await __origLoadFirebaseG.apply(this,arguments); try{ var dm=await getDecisionMap(true); syncedFormRows=applyDecisionLocks(syncedFormRows,dm); localStorage.setItem('kp_form_rows',JSON.stringify(syncedFormRows)); if(typeof updateFormsNavBadge==='function')updateFormsNavBadge(); if(typeof renderFormRequests==='function')renderFormRequests(); }catch(_e){} return res; }; }
+  window.kpCleanRegistrationDecisionConflicts=async function(){ var dm=await getDecisionMap(true); syncedFormRows=applyDecisionLocks(syncedFormRows,dm); localStorage.setItem('kp_form_rows',JSON.stringify(syncedFormRows)); for(var i=0;i<syncedFormRows.length;i++){ var r=syncedFormRows[i]; if(r&&r.status&&r.status!=='pending') await window.archiveFirebaseRegistrationRequest(r,r.status); } if(typeof updateFormsNavBadge==='function')updateFormsNavBadge(); if(typeof renderFormRequests==='function')renderFormRequests(); if(typeof showSyncBadge==='function')showSyncBadge('✅ تم تنظيف تضارب طلبات التسجيل'); return syncedFormRows.length; };
+  setTimeout(function(){ try{ window.kpCleanRegistrationDecisionConflicts(); }catch(_e){} },2500);
+})();
 </script>
 </body>
 </html>
