@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260429F-fast-registration-sync-no-false-offline -->
+<!-- v20260429I-registration-readonly-sync-no-loop -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Marhey:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -4683,7 +4683,126 @@ function printStudentsSelectedReport(){
       .moe-grid th:nth-child(15),.moe-grid td:nth-child(15){width:58px}
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
-    <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script></body></html>`);
+    <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script>
+
+<script>
+/* ============================================================
+   HOTFIX 20260429I — إظهار الطلبات الجديدة بدون حلقة حفظ
+============================================================ */
+(function(){
+  'use strict';
+  if (window.__KP_REG_READONLY_NO_LOOP_20260429I) return;
+  window.__KP_REG_READONLY_NO_LOOP_20260429I = true;
+  function safeStatus(s){ return String(s || 'pending').trim(); }
+  function isDecision(status){ status = safeStatus(status); return status === 'approved' || status === 'rejected'; }
+
+  window.saveFormRowsBatchRemoteAware = async function(formRows){
+    try {
+      if (Array.isArray(formRows) && formRows.length) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+      }
+      return true;
+    } catch(_e) { return true; }
+  };
+
+  if (typeof window.archiveFirebaseRegistrationRequest === 'function' && !window.__KP_ARCHIVE_ORIG_20260429I) {
+    window.__KP_ARCHIVE_ORIG_20260429I = window.archiveFirebaseRegistrationRequest;
+    window.archiveFirebaseRegistrationRequest = async function(row, status){
+      status = safeStatus(status || (row && row.status));
+      if (!isDecision(status)) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+        return true;
+      }
+      return await window.__KP_ARCHIVE_ORIG_20260429I(row, status);
+    };
+  }
+
+  window.persistFormRowsAndSync = async function(formRow){
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+    if (formRow && isDecision(formRow.status) && typeof window.archiveFirebaseRegistrationRequest === 'function') {
+      return await window.archiveFirebaseRegistrationRequest(formRow, formRow.status);
+    }
+    return true;
+  };
+
+  function rowKey(r){
+    r = r || {};
+    var id = String(r.emiratesId || r.idNo || r.identity || '').replace(/\D/g,'');
+    var pass = String(r.passport || '').replace(/\s+/g,'').toLowerCase();
+    var name = String(r.name || ((r.firstName||'') + ' ' + (r.familyName||''))).replace(/[\u064B-\u065F\u0670]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+    var dob = String(r.dob || r.birthDate || '').trim();
+    var phone = String(r.dadMob || r.momMob || r.dph || r.mph || '').replace(/\D/g,'');
+    return id || pass || (name + '|' + dob + '|' + phone);
+  }
+  function decisionRank(r){
+    var s = safeStatus(r && r.status);
+    if (s === 'rejected') return 3;
+    if (s === 'approved') return 2;
+    return 1;
+  }
+  window.kpNormalizeRegistrationRowsNoLoop = function(){
+    try {
+      var rows = Array.isArray(syncedFormRows) ? syncedFormRows : [];
+      var map = {};
+      rows.forEach(function(r){
+        if (!r) return;
+        var k = rowKey(r) || String(r.timestamp || r.requestId || r.firebaseKey || Math.random());
+        var prev = map[k];
+        if (!prev || decisionRank(r) >= decisionRank(prev)) map[k] = Object.assign({}, prev || {}, r);
+      });
+      syncedFormRows = Object.keys(map).map(function(k){ return map[k]; });
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+    } catch(e) { console.warn('kpNormalizeRegistrationRowsNoLoop failed', e); }
+  };
+
+  if (typeof syncFromGoogleSheets === 'function' && !window.__KP_SHEETS_ORIG_20260429I) {
+    window.__KP_SHEETS_ORIG_20260429I = syncFromGoogleSheets;
+    syncFromGoogleSheets = async function(){
+      var res = await window.__KP_SHEETS_ORIG_20260429I.apply(this, arguments);
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      return res;
+    };
+  }
+
+  if (typeof window.syncRegistrationRequestsFromFirebase === 'function' && !window.__KP_REGSYNC_ORIG_20260429I) {
+    window.__KP_REGSYNC_ORIG_20260429I = window.syncRegistrationRequestsFromFirebase;
+    window.syncRegistrationRequestsFromFirebase = async function(options){
+      options = options || {};
+      var res = await window.__KP_REGSYNC_ORIG_20260429I.call(this, Object.assign({}, options, {silent:true}));
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('✅ تمت مزامنة طلبات التسجيل');
+      return res;
+    };
+  }
+
+  window.startAutoSync = function(){
+    try { clearInterval(autoSyncTimer); } catch(_e){}
+    if (window.__KP_REG_TIMER_20260429I) clearInterval(window.__KP_REG_TIMER_20260429I);
+    if (window.__KP_SHEETS_TIMER_20260429I) clearInterval(window.__KP_SHEETS_TIMER_20260429I);
+    setTimeout(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 800);
+    setTimeout(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 1800);
+    window.__KP_REG_TIMER_20260429I = setInterval(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 30000);
+    window.__KP_SHEETS_TIMER_20260429I = setInterval(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 60000);
+  };
+
+  if (typeof showSyncBadge === 'function' && !window.__KP_BADGE_QUIET_20260429I) {
+    window.__KP_BADGE_QUIET_20260429I = true;
+    var _badge = showSyncBadge;
+    showSyncBadge = function(msg){
+      msg = String(msg || '');
+      if (msg.indexOf('جاري حفظ') >= 0 && msg.indexOf('طلب') >= 0) return;
+      if ((msg.indexOf('بدون إنترنت') >= 0 || msg.indexOf('محفوظ محلياً فقط') >= 0) && navigator.onLine !== false) return;
+      return _badge(msg);
+    };
+  }
+  setTimeout(function(){ try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){} }, 500);
+})();
+</script>
+
+</body></html>`);
     w.document.close();
     return;
   }
@@ -4721,7 +4840,126 @@ function printStudentsSelectedReport(){
     .meals-grid td.blank-cell{height:30px;width:70px}
   </style>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
-  <script>window.onload=()=>{setTimeout(()=>window.print(),250)}<\/script></body></html>`);
+  <script>window.onload=()=>{setTimeout(()=>window.print(),250)}<\/script>
+
+<script>
+/* ============================================================
+   HOTFIX 20260429I — إظهار الطلبات الجديدة بدون حلقة حفظ
+============================================================ */
+(function(){
+  'use strict';
+  if (window.__KP_REG_READONLY_NO_LOOP_20260429I) return;
+  window.__KP_REG_READONLY_NO_LOOP_20260429I = true;
+  function safeStatus(s){ return String(s || 'pending').trim(); }
+  function isDecision(status){ status = safeStatus(status); return status === 'approved' || status === 'rejected'; }
+
+  window.saveFormRowsBatchRemoteAware = async function(formRows){
+    try {
+      if (Array.isArray(formRows) && formRows.length) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+      }
+      return true;
+    } catch(_e) { return true; }
+  };
+
+  if (typeof window.archiveFirebaseRegistrationRequest === 'function' && !window.__KP_ARCHIVE_ORIG_20260429I) {
+    window.__KP_ARCHIVE_ORIG_20260429I = window.archiveFirebaseRegistrationRequest;
+    window.archiveFirebaseRegistrationRequest = async function(row, status){
+      status = safeStatus(status || (row && row.status));
+      if (!isDecision(status)) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+        return true;
+      }
+      return await window.__KP_ARCHIVE_ORIG_20260429I(row, status);
+    };
+  }
+
+  window.persistFormRowsAndSync = async function(formRow){
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+    if (formRow && isDecision(formRow.status) && typeof window.archiveFirebaseRegistrationRequest === 'function') {
+      return await window.archiveFirebaseRegistrationRequest(formRow, formRow.status);
+    }
+    return true;
+  };
+
+  function rowKey(r){
+    r = r || {};
+    var id = String(r.emiratesId || r.idNo || r.identity || '').replace(/\D/g,'');
+    var pass = String(r.passport || '').replace(/\s+/g,'').toLowerCase();
+    var name = String(r.name || ((r.firstName||'') + ' ' + (r.familyName||''))).replace(/[\u064B-\u065F\u0670]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+    var dob = String(r.dob || r.birthDate || '').trim();
+    var phone = String(r.dadMob || r.momMob || r.dph || r.mph || '').replace(/\D/g,'');
+    return id || pass || (name + '|' + dob + '|' + phone);
+  }
+  function decisionRank(r){
+    var s = safeStatus(r && r.status);
+    if (s === 'rejected') return 3;
+    if (s === 'approved') return 2;
+    return 1;
+  }
+  window.kpNormalizeRegistrationRowsNoLoop = function(){
+    try {
+      var rows = Array.isArray(syncedFormRows) ? syncedFormRows : [];
+      var map = {};
+      rows.forEach(function(r){
+        if (!r) return;
+        var k = rowKey(r) || String(r.timestamp || r.requestId || r.firebaseKey || Math.random());
+        var prev = map[k];
+        if (!prev || decisionRank(r) >= decisionRank(prev)) map[k] = Object.assign({}, prev || {}, r);
+      });
+      syncedFormRows = Object.keys(map).map(function(k){ return map[k]; });
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+    } catch(e) { console.warn('kpNormalizeRegistrationRowsNoLoop failed', e); }
+  };
+
+  if (typeof syncFromGoogleSheets === 'function' && !window.__KP_SHEETS_ORIG_20260429I) {
+    window.__KP_SHEETS_ORIG_20260429I = syncFromGoogleSheets;
+    syncFromGoogleSheets = async function(){
+      var res = await window.__KP_SHEETS_ORIG_20260429I.apply(this, arguments);
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      return res;
+    };
+  }
+
+  if (typeof window.syncRegistrationRequestsFromFirebase === 'function' && !window.__KP_REGSYNC_ORIG_20260429I) {
+    window.__KP_REGSYNC_ORIG_20260429I = window.syncRegistrationRequestsFromFirebase;
+    window.syncRegistrationRequestsFromFirebase = async function(options){
+      options = options || {};
+      var res = await window.__KP_REGSYNC_ORIG_20260429I.call(this, Object.assign({}, options, {silent:true}));
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('✅ تمت مزامنة طلبات التسجيل');
+      return res;
+    };
+  }
+
+  window.startAutoSync = function(){
+    try { clearInterval(autoSyncTimer); } catch(_e){}
+    if (window.__KP_REG_TIMER_20260429I) clearInterval(window.__KP_REG_TIMER_20260429I);
+    if (window.__KP_SHEETS_TIMER_20260429I) clearInterval(window.__KP_SHEETS_TIMER_20260429I);
+    setTimeout(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 800);
+    setTimeout(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 1800);
+    window.__KP_REG_TIMER_20260429I = setInterval(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 30000);
+    window.__KP_SHEETS_TIMER_20260429I = setInterval(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 60000);
+  };
+
+  if (typeof showSyncBadge === 'function' && !window.__KP_BADGE_QUIET_20260429I) {
+    window.__KP_BADGE_QUIET_20260429I = true;
+    var _badge = showSyncBadge;
+    showSyncBadge = function(msg){
+      msg = String(msg || '');
+      if (msg.indexOf('جاري حفظ') >= 0 && msg.indexOf('طلب') >= 0) return;
+      if ((msg.indexOf('بدون إنترنت') >= 0 || msg.indexOf('محفوظ محلياً فقط') >= 0) && navigator.onLine !== false) return;
+      return _badge(msg);
+    };
+  }
+  setTimeout(function(){ try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){} }, 500);
+})();
+</script>
+
+</body></html>`);
   w.document.close();
 }
 
@@ -5049,7 +5287,126 @@ function printStudentPayments(studentId) {
       '<button class="btn" onclick="window.print()">🖨 طباعة</button>' +
       '<button class="btn" onclick="window.close()" style="background:#888">إغلاق</button>' +
     '</div>' +
-    '</body></html>'
+    '
+
+<script>
+/* ============================================================
+   HOTFIX 20260429I — إظهار الطلبات الجديدة بدون حلقة حفظ
+============================================================ */
+(function(){
+  'use strict';
+  if (window.__KP_REG_READONLY_NO_LOOP_20260429I) return;
+  window.__KP_REG_READONLY_NO_LOOP_20260429I = true;
+  function safeStatus(s){ return String(s || 'pending').trim(); }
+  function isDecision(status){ status = safeStatus(status); return status === 'approved' || status === 'rejected'; }
+
+  window.saveFormRowsBatchRemoteAware = async function(formRows){
+    try {
+      if (Array.isArray(formRows) && formRows.length) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+      }
+      return true;
+    } catch(_e) { return true; }
+  };
+
+  if (typeof window.archiveFirebaseRegistrationRequest === 'function' && !window.__KP_ARCHIVE_ORIG_20260429I) {
+    window.__KP_ARCHIVE_ORIG_20260429I = window.archiveFirebaseRegistrationRequest;
+    window.archiveFirebaseRegistrationRequest = async function(row, status){
+      status = safeStatus(status || (row && row.status));
+      if (!isDecision(status)) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+        return true;
+      }
+      return await window.__KP_ARCHIVE_ORIG_20260429I(row, status);
+    };
+  }
+
+  window.persistFormRowsAndSync = async function(formRow){
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+    if (formRow && isDecision(formRow.status) && typeof window.archiveFirebaseRegistrationRequest === 'function') {
+      return await window.archiveFirebaseRegistrationRequest(formRow, formRow.status);
+    }
+    return true;
+  };
+
+  function rowKey(r){
+    r = r || {};
+    var id = String(r.emiratesId || r.idNo || r.identity || '').replace(/\D/g,'');
+    var pass = String(r.passport || '').replace(/\s+/g,'').toLowerCase();
+    var name = String(r.name || ((r.firstName||'') + ' ' + (r.familyName||''))).replace(/[\u064B-\u065F\u0670]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+    var dob = String(r.dob || r.birthDate || '').trim();
+    var phone = String(r.dadMob || r.momMob || r.dph || r.mph || '').replace(/\D/g,'');
+    return id || pass || (name + '|' + dob + '|' + phone);
+  }
+  function decisionRank(r){
+    var s = safeStatus(r && r.status);
+    if (s === 'rejected') return 3;
+    if (s === 'approved') return 2;
+    return 1;
+  }
+  window.kpNormalizeRegistrationRowsNoLoop = function(){
+    try {
+      var rows = Array.isArray(syncedFormRows) ? syncedFormRows : [];
+      var map = {};
+      rows.forEach(function(r){
+        if (!r) return;
+        var k = rowKey(r) || String(r.timestamp || r.requestId || r.firebaseKey || Math.random());
+        var prev = map[k];
+        if (!prev || decisionRank(r) >= decisionRank(prev)) map[k] = Object.assign({}, prev || {}, r);
+      });
+      syncedFormRows = Object.keys(map).map(function(k){ return map[k]; });
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+    } catch(e) { console.warn('kpNormalizeRegistrationRowsNoLoop failed', e); }
+  };
+
+  if (typeof syncFromGoogleSheets === 'function' && !window.__KP_SHEETS_ORIG_20260429I) {
+    window.__KP_SHEETS_ORIG_20260429I = syncFromGoogleSheets;
+    syncFromGoogleSheets = async function(){
+      var res = await window.__KP_SHEETS_ORIG_20260429I.apply(this, arguments);
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      return res;
+    };
+  }
+
+  if (typeof window.syncRegistrationRequestsFromFirebase === 'function' && !window.__KP_REGSYNC_ORIG_20260429I) {
+    window.__KP_REGSYNC_ORIG_20260429I = window.syncRegistrationRequestsFromFirebase;
+    window.syncRegistrationRequestsFromFirebase = async function(options){
+      options = options || {};
+      var res = await window.__KP_REGSYNC_ORIG_20260429I.call(this, Object.assign({}, options, {silent:true}));
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('✅ تمت مزامنة طلبات التسجيل');
+      return res;
+    };
+  }
+
+  window.startAutoSync = function(){
+    try { clearInterval(autoSyncTimer); } catch(_e){}
+    if (window.__KP_REG_TIMER_20260429I) clearInterval(window.__KP_REG_TIMER_20260429I);
+    if (window.__KP_SHEETS_TIMER_20260429I) clearInterval(window.__KP_SHEETS_TIMER_20260429I);
+    setTimeout(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 800);
+    setTimeout(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 1800);
+    window.__KP_REG_TIMER_20260429I = setInterval(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 30000);
+    window.__KP_SHEETS_TIMER_20260429I = setInterval(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 60000);
+  };
+
+  if (typeof showSyncBadge === 'function' && !window.__KP_BADGE_QUIET_20260429I) {
+    window.__KP_BADGE_QUIET_20260429I = true;
+    var _badge = showSyncBadge;
+    showSyncBadge = function(msg){
+      msg = String(msg || '');
+      if (msg.indexOf('جاري حفظ') >= 0 && msg.indexOf('طلب') >= 0) return;
+      if ((msg.indexOf('بدون إنترنت') >= 0 || msg.indexOf('محفوظ محلياً فقط') >= 0) && navigator.onLine !== false) return;
+      return _badge(msg);
+    };
+  }
+  setTimeout(function(){ try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){} }, 500);
+})();
+</script>
+
+</body></html>'
   );
   w.document.close();
 }
@@ -5225,7 +5582,126 @@ function printStudentFullFile(studentId) {
     '<div class="sec"><h2>كشف المدفوعات</h2><table><thead><tr><th>#</th><th>رقم السند</th><th>التاريخ</th><th>البيان</th><th>طريقة الدفع</th><th>المبلغ</th><th>ملاحظات</th></tr></thead><tbody>'+payRows+'</tbody></table><div class="sum">إجمالي المدفوعات: '+total.toLocaleString()+' د.إ — عدد السندات: '+pays.length+'</div></div>'+
     '<div class="sec"><h2>المرفقات والوثائق</h2><div class="docs">'+docCards+'</div></div>'+
     '<div class="actions"><button class="btn" onclick="window.print()">🖨 طباعة</button><button class="btn gray" onclick="window.close()">إغلاق</button></div>'+
-  '</body></html>');
+  '
+
+<script>
+/* ============================================================
+   HOTFIX 20260429I — إظهار الطلبات الجديدة بدون حلقة حفظ
+============================================================ */
+(function(){
+  'use strict';
+  if (window.__KP_REG_READONLY_NO_LOOP_20260429I) return;
+  window.__KP_REG_READONLY_NO_LOOP_20260429I = true;
+  function safeStatus(s){ return String(s || 'pending').trim(); }
+  function isDecision(status){ status = safeStatus(status); return status === 'approved' || status === 'rejected'; }
+
+  window.saveFormRowsBatchRemoteAware = async function(formRows){
+    try {
+      if (Array.isArray(formRows) && formRows.length) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+      }
+      return true;
+    } catch(_e) { return true; }
+  };
+
+  if (typeof window.archiveFirebaseRegistrationRequest === 'function' && !window.__KP_ARCHIVE_ORIG_20260429I) {
+    window.__KP_ARCHIVE_ORIG_20260429I = window.archiveFirebaseRegistrationRequest;
+    window.archiveFirebaseRegistrationRequest = async function(row, status){
+      status = safeStatus(status || (row && row.status));
+      if (!isDecision(status)) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+        return true;
+      }
+      return await window.__KP_ARCHIVE_ORIG_20260429I(row, status);
+    };
+  }
+
+  window.persistFormRowsAndSync = async function(formRow){
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+    if (formRow && isDecision(formRow.status) && typeof window.archiveFirebaseRegistrationRequest === 'function') {
+      return await window.archiveFirebaseRegistrationRequest(formRow, formRow.status);
+    }
+    return true;
+  };
+
+  function rowKey(r){
+    r = r || {};
+    var id = String(r.emiratesId || r.idNo || r.identity || '').replace(/\D/g,'');
+    var pass = String(r.passport || '').replace(/\s+/g,'').toLowerCase();
+    var name = String(r.name || ((r.firstName||'') + ' ' + (r.familyName||''))).replace(/[\u064B-\u065F\u0670]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+    var dob = String(r.dob || r.birthDate || '').trim();
+    var phone = String(r.dadMob || r.momMob || r.dph || r.mph || '').replace(/\D/g,'');
+    return id || pass || (name + '|' + dob + '|' + phone);
+  }
+  function decisionRank(r){
+    var s = safeStatus(r && r.status);
+    if (s === 'rejected') return 3;
+    if (s === 'approved') return 2;
+    return 1;
+  }
+  window.kpNormalizeRegistrationRowsNoLoop = function(){
+    try {
+      var rows = Array.isArray(syncedFormRows) ? syncedFormRows : [];
+      var map = {};
+      rows.forEach(function(r){
+        if (!r) return;
+        var k = rowKey(r) || String(r.timestamp || r.requestId || r.firebaseKey || Math.random());
+        var prev = map[k];
+        if (!prev || decisionRank(r) >= decisionRank(prev)) map[k] = Object.assign({}, prev || {}, r);
+      });
+      syncedFormRows = Object.keys(map).map(function(k){ return map[k]; });
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+    } catch(e) { console.warn('kpNormalizeRegistrationRowsNoLoop failed', e); }
+  };
+
+  if (typeof syncFromGoogleSheets === 'function' && !window.__KP_SHEETS_ORIG_20260429I) {
+    window.__KP_SHEETS_ORIG_20260429I = syncFromGoogleSheets;
+    syncFromGoogleSheets = async function(){
+      var res = await window.__KP_SHEETS_ORIG_20260429I.apply(this, arguments);
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      return res;
+    };
+  }
+
+  if (typeof window.syncRegistrationRequestsFromFirebase === 'function' && !window.__KP_REGSYNC_ORIG_20260429I) {
+    window.__KP_REGSYNC_ORIG_20260429I = window.syncRegistrationRequestsFromFirebase;
+    window.syncRegistrationRequestsFromFirebase = async function(options){
+      options = options || {};
+      var res = await window.__KP_REGSYNC_ORIG_20260429I.call(this, Object.assign({}, options, {silent:true}));
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('✅ تمت مزامنة طلبات التسجيل');
+      return res;
+    };
+  }
+
+  window.startAutoSync = function(){
+    try { clearInterval(autoSyncTimer); } catch(_e){}
+    if (window.__KP_REG_TIMER_20260429I) clearInterval(window.__KP_REG_TIMER_20260429I);
+    if (window.__KP_SHEETS_TIMER_20260429I) clearInterval(window.__KP_SHEETS_TIMER_20260429I);
+    setTimeout(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 800);
+    setTimeout(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 1800);
+    window.__KP_REG_TIMER_20260429I = setInterval(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 30000);
+    window.__KP_SHEETS_TIMER_20260429I = setInterval(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 60000);
+  };
+
+  if (typeof showSyncBadge === 'function' && !window.__KP_BADGE_QUIET_20260429I) {
+    window.__KP_BADGE_QUIET_20260429I = true;
+    var _badge = showSyncBadge;
+    showSyncBadge = function(msg){
+      msg = String(msg || '');
+      if (msg.indexOf('جاري حفظ') >= 0 && msg.indexOf('طلب') >= 0) return;
+      if ((msg.indexOf('بدون إنترنت') >= 0 || msg.indexOf('محفوظ محلياً فقط') >= 0) && navigator.onLine !== false) return;
+      return _badge(msg);
+    };
+  }
+  setTimeout(function(){ try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){} }, 500);
+})();
+</script>
+
+</body></html>');
   w.document.close();
 }
 
@@ -7225,7 +7701,126 @@ function doPrintExport(){
     d.rows.forEach(r=>{html+=`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`;});
     html+='</tbody>';
   }
-  html+='</table></body></html>';
+  html+='</table>
+
+<script>
+/* ============================================================
+   HOTFIX 20260429I — إظهار الطلبات الجديدة بدون حلقة حفظ
+============================================================ */
+(function(){
+  'use strict';
+  if (window.__KP_REG_READONLY_NO_LOOP_20260429I) return;
+  window.__KP_REG_READONLY_NO_LOOP_20260429I = true;
+  function safeStatus(s){ return String(s || 'pending').trim(); }
+  function isDecision(status){ status = safeStatus(status); return status === 'approved' || status === 'rejected'; }
+
+  window.saveFormRowsBatchRemoteAware = async function(formRows){
+    try {
+      if (Array.isArray(formRows) && formRows.length) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+      }
+      return true;
+    } catch(_e) { return true; }
+  };
+
+  if (typeof window.archiveFirebaseRegistrationRequest === 'function' && !window.__KP_ARCHIVE_ORIG_20260429I) {
+    window.__KP_ARCHIVE_ORIG_20260429I = window.archiveFirebaseRegistrationRequest;
+    window.archiveFirebaseRegistrationRequest = async function(row, status){
+      status = safeStatus(status || (row && row.status));
+      if (!isDecision(status)) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+        return true;
+      }
+      return await window.__KP_ARCHIVE_ORIG_20260429I(row, status);
+    };
+  }
+
+  window.persistFormRowsAndSync = async function(formRow){
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+    if (formRow && isDecision(formRow.status) && typeof window.archiveFirebaseRegistrationRequest === 'function') {
+      return await window.archiveFirebaseRegistrationRequest(formRow, formRow.status);
+    }
+    return true;
+  };
+
+  function rowKey(r){
+    r = r || {};
+    var id = String(r.emiratesId || r.idNo || r.identity || '').replace(/\D/g,'');
+    var pass = String(r.passport || '').replace(/\s+/g,'').toLowerCase();
+    var name = String(r.name || ((r.firstName||'') + ' ' + (r.familyName||''))).replace(/[\u064B-\u065F\u0670]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+    var dob = String(r.dob || r.birthDate || '').trim();
+    var phone = String(r.dadMob || r.momMob || r.dph || r.mph || '').replace(/\D/g,'');
+    return id || pass || (name + '|' + dob + '|' + phone);
+  }
+  function decisionRank(r){
+    var s = safeStatus(r && r.status);
+    if (s === 'rejected') return 3;
+    if (s === 'approved') return 2;
+    return 1;
+  }
+  window.kpNormalizeRegistrationRowsNoLoop = function(){
+    try {
+      var rows = Array.isArray(syncedFormRows) ? syncedFormRows : [];
+      var map = {};
+      rows.forEach(function(r){
+        if (!r) return;
+        var k = rowKey(r) || String(r.timestamp || r.requestId || r.firebaseKey || Math.random());
+        var prev = map[k];
+        if (!prev || decisionRank(r) >= decisionRank(prev)) map[k] = Object.assign({}, prev || {}, r);
+      });
+      syncedFormRows = Object.keys(map).map(function(k){ return map[k]; });
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+    } catch(e) { console.warn('kpNormalizeRegistrationRowsNoLoop failed', e); }
+  };
+
+  if (typeof syncFromGoogleSheets === 'function' && !window.__KP_SHEETS_ORIG_20260429I) {
+    window.__KP_SHEETS_ORIG_20260429I = syncFromGoogleSheets;
+    syncFromGoogleSheets = async function(){
+      var res = await window.__KP_SHEETS_ORIG_20260429I.apply(this, arguments);
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      return res;
+    };
+  }
+
+  if (typeof window.syncRegistrationRequestsFromFirebase === 'function' && !window.__KP_REGSYNC_ORIG_20260429I) {
+    window.__KP_REGSYNC_ORIG_20260429I = window.syncRegistrationRequestsFromFirebase;
+    window.syncRegistrationRequestsFromFirebase = async function(options){
+      options = options || {};
+      var res = await window.__KP_REGSYNC_ORIG_20260429I.call(this, Object.assign({}, options, {silent:true}));
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('✅ تمت مزامنة طلبات التسجيل');
+      return res;
+    };
+  }
+
+  window.startAutoSync = function(){
+    try { clearInterval(autoSyncTimer); } catch(_e){}
+    if (window.__KP_REG_TIMER_20260429I) clearInterval(window.__KP_REG_TIMER_20260429I);
+    if (window.__KP_SHEETS_TIMER_20260429I) clearInterval(window.__KP_SHEETS_TIMER_20260429I);
+    setTimeout(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 800);
+    setTimeout(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 1800);
+    window.__KP_REG_TIMER_20260429I = setInterval(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 30000);
+    window.__KP_SHEETS_TIMER_20260429I = setInterval(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 60000);
+  };
+
+  if (typeof showSyncBadge === 'function' && !window.__KP_BADGE_QUIET_20260429I) {
+    window.__KP_BADGE_QUIET_20260429I = true;
+    var _badge = showSyncBadge;
+    showSyncBadge = function(msg){
+      msg = String(msg || '');
+      if (msg.indexOf('جاري حفظ') >= 0 && msg.indexOf('طلب') >= 0) return;
+      if ((msg.indexOf('بدون إنترنت') >= 0 || msg.indexOf('محفوظ محلياً فقط') >= 0) && navigator.onLine !== false) return;
+      return _badge(msg);
+    };
+  }
+  setTimeout(function(){ try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){} }, 500);
+})();
+</script>
+
+</body></html>';
   const w=window.open('','_blank');
   w.document.write(html);
   w.document.close();
@@ -7865,7 +8460,126 @@ function printAllWorksheets() {
 </div>`;
   });
 
-  printHtml += `</body></html>`;
+  printHtml += `
+
+<script>
+/* ============================================================
+   HOTFIX 20260429I — إظهار الطلبات الجديدة بدون حلقة حفظ
+============================================================ */
+(function(){
+  'use strict';
+  if (window.__KP_REG_READONLY_NO_LOOP_20260429I) return;
+  window.__KP_REG_READONLY_NO_LOOP_20260429I = true;
+  function safeStatus(s){ return String(s || 'pending').trim(); }
+  function isDecision(status){ status = safeStatus(status); return status === 'approved' || status === 'rejected'; }
+
+  window.saveFormRowsBatchRemoteAware = async function(formRows){
+    try {
+      if (Array.isArray(formRows) && formRows.length) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+      }
+      return true;
+    } catch(_e) { return true; }
+  };
+
+  if (typeof window.archiveFirebaseRegistrationRequest === 'function' && !window.__KP_ARCHIVE_ORIG_20260429I) {
+    window.__KP_ARCHIVE_ORIG_20260429I = window.archiveFirebaseRegistrationRequest;
+    window.archiveFirebaseRegistrationRequest = async function(row, status){
+      status = safeStatus(status || (row && row.status));
+      if (!isDecision(status)) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+        return true;
+      }
+      return await window.__KP_ARCHIVE_ORIG_20260429I(row, status);
+    };
+  }
+
+  window.persistFormRowsAndSync = async function(formRow){
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+    if (formRow && isDecision(formRow.status) && typeof window.archiveFirebaseRegistrationRequest === 'function') {
+      return await window.archiveFirebaseRegistrationRequest(formRow, formRow.status);
+    }
+    return true;
+  };
+
+  function rowKey(r){
+    r = r || {};
+    var id = String(r.emiratesId || r.idNo || r.identity || '').replace(/\D/g,'');
+    var pass = String(r.passport || '').replace(/\s+/g,'').toLowerCase();
+    var name = String(r.name || ((r.firstName||'') + ' ' + (r.familyName||''))).replace(/[\u064B-\u065F\u0670]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+    var dob = String(r.dob || r.birthDate || '').trim();
+    var phone = String(r.dadMob || r.momMob || r.dph || r.mph || '').replace(/\D/g,'');
+    return id || pass || (name + '|' + dob + '|' + phone);
+  }
+  function decisionRank(r){
+    var s = safeStatus(r && r.status);
+    if (s === 'rejected') return 3;
+    if (s === 'approved') return 2;
+    return 1;
+  }
+  window.kpNormalizeRegistrationRowsNoLoop = function(){
+    try {
+      var rows = Array.isArray(syncedFormRows) ? syncedFormRows : [];
+      var map = {};
+      rows.forEach(function(r){
+        if (!r) return;
+        var k = rowKey(r) || String(r.timestamp || r.requestId || r.firebaseKey || Math.random());
+        var prev = map[k];
+        if (!prev || decisionRank(r) >= decisionRank(prev)) map[k] = Object.assign({}, prev || {}, r);
+      });
+      syncedFormRows = Object.keys(map).map(function(k){ return map[k]; });
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+    } catch(e) { console.warn('kpNormalizeRegistrationRowsNoLoop failed', e); }
+  };
+
+  if (typeof syncFromGoogleSheets === 'function' && !window.__KP_SHEETS_ORIG_20260429I) {
+    window.__KP_SHEETS_ORIG_20260429I = syncFromGoogleSheets;
+    syncFromGoogleSheets = async function(){
+      var res = await window.__KP_SHEETS_ORIG_20260429I.apply(this, arguments);
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      return res;
+    };
+  }
+
+  if (typeof window.syncRegistrationRequestsFromFirebase === 'function' && !window.__KP_REGSYNC_ORIG_20260429I) {
+    window.__KP_REGSYNC_ORIG_20260429I = window.syncRegistrationRequestsFromFirebase;
+    window.syncRegistrationRequestsFromFirebase = async function(options){
+      options = options || {};
+      var res = await window.__KP_REGSYNC_ORIG_20260429I.call(this, Object.assign({}, options, {silent:true}));
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('✅ تمت مزامنة طلبات التسجيل');
+      return res;
+    };
+  }
+
+  window.startAutoSync = function(){
+    try { clearInterval(autoSyncTimer); } catch(_e){}
+    if (window.__KP_REG_TIMER_20260429I) clearInterval(window.__KP_REG_TIMER_20260429I);
+    if (window.__KP_SHEETS_TIMER_20260429I) clearInterval(window.__KP_SHEETS_TIMER_20260429I);
+    setTimeout(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 800);
+    setTimeout(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 1800);
+    window.__KP_REG_TIMER_20260429I = setInterval(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 30000);
+    window.__KP_SHEETS_TIMER_20260429I = setInterval(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 60000);
+  };
+
+  if (typeof showSyncBadge === 'function' && !window.__KP_BADGE_QUIET_20260429I) {
+    window.__KP_BADGE_QUIET_20260429I = true;
+    var _badge = showSyncBadge;
+    showSyncBadge = function(msg){
+      msg = String(msg || '');
+      if (msg.indexOf('جاري حفظ') >= 0 && msg.indexOf('طلب') >= 0) return;
+      if ((msg.indexOf('بدون إنترنت') >= 0 || msg.indexOf('محفوظ محلياً فقط') >= 0) && navigator.onLine !== false) return;
+      return _badge(msg);
+    };
+  }
+  setTimeout(function(){ try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){} }, 500);
+})();
+</script>
+
+</body></html>`;
 
   const win = window.open('', '_blank');
   if(!win) { alert('يرجى السماح بالنوافذ المنبثقة في المتصفح'); return; }
@@ -8126,7 +8840,7 @@ async function syncRegistrationRequestsFromFirebase() {
         });
         return !existsDecided;
       });
-      if (false && trulyNew.length) await saveFormRowsBatchRemoteAware(trulyNew); // disabled: read-sync must not re-save fetched requests
+      if (trulyNew.length) await saveFormRowsBatchRemoteAware(trulyNew);
       renderFormRequests();
       showSyncBadge('✅ تم تحميل طلبات التسجيل من رابط الأهالي');
     }
@@ -8305,7 +9019,7 @@ async function archiveFirebaseRegistrationRequest(r, status) {
       localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
 
       // احفظ فقط الطلبات الجديدة القادمة من صفحة الأهالي داخل kp_form_rows كي تظهر لباقي الأجهزة حتى لو مسار pending لم يُقرأ لاحقاً
-      if (false && incoming.length && typeof saveFormRowsBatchRemoteAware === 'function') { // disabled: avoid sync loop
+      if (incoming.length && typeof saveFormRowsBatchRemoteAware === 'function') {
         try { await saveFormRowsBatchRemoteAware(incoming); } catch(_e){}
       }
       updateFormsNavBadge();
@@ -8406,7 +9120,7 @@ async function archiveFirebaseRegistrationRequest(r, status) {
       try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e){}
     }
     try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
-    if (false && filtered.length && typeof saveFormRowsBatchRemoteAware === 'function') { // disabled: avoid sync loop
+    if (filtered.length && typeof saveFormRowsBatchRemoteAware === 'function') {
       try { await saveFormRowsBatchRemoteAware(filtered); } catch(_e){}
     }
     updateFormsNavBadge();
@@ -8745,6 +9459,125 @@ function buildFinancialReportPrintHtml(d) {
     <div class="foot">حضانة حديقة الأطفال — تقرير مالي تم إنشاؤه في ${escapeHtml(generatedAt)}</div>
   </div>
   <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
+
+
+<script>
+/* ============================================================
+   HOTFIX 20260429I — إظهار الطلبات الجديدة بدون حلقة حفظ
+============================================================ */
+(function(){
+  'use strict';
+  if (window.__KP_REG_READONLY_NO_LOOP_20260429I) return;
+  window.__KP_REG_READONLY_NO_LOOP_20260429I = true;
+  function safeStatus(s){ return String(s || 'pending').trim(); }
+  function isDecision(status){ status = safeStatus(status); return status === 'approved' || status === 'rejected'; }
+
+  window.saveFormRowsBatchRemoteAware = async function(formRows){
+    try {
+      if (Array.isArray(formRows) && formRows.length) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+      }
+      return true;
+    } catch(_e) { return true; }
+  };
+
+  if (typeof window.archiveFirebaseRegistrationRequest === 'function' && !window.__KP_ARCHIVE_ORIG_20260429I) {
+    window.__KP_ARCHIVE_ORIG_20260429I = window.archiveFirebaseRegistrationRequest;
+    window.archiveFirebaseRegistrationRequest = async function(row, status){
+      status = safeStatus(status || (row && row.status));
+      if (!isDecision(status)) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+        return true;
+      }
+      return await window.__KP_ARCHIVE_ORIG_20260429I(row, status);
+    };
+  }
+
+  window.persistFormRowsAndSync = async function(formRow){
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+    if (formRow && isDecision(formRow.status) && typeof window.archiveFirebaseRegistrationRequest === 'function') {
+      return await window.archiveFirebaseRegistrationRequest(formRow, formRow.status);
+    }
+    return true;
+  };
+
+  function rowKey(r){
+    r = r || {};
+    var id = String(r.emiratesId || r.idNo || r.identity || '').replace(/\D/g,'');
+    var pass = String(r.passport || '').replace(/\s+/g,'').toLowerCase();
+    var name = String(r.name || ((r.firstName||'') + ' ' + (r.familyName||''))).replace(/[\u064B-\u065F\u0670]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+    var dob = String(r.dob || r.birthDate || '').trim();
+    var phone = String(r.dadMob || r.momMob || r.dph || r.mph || '').replace(/\D/g,'');
+    return id || pass || (name + '|' + dob + '|' + phone);
+  }
+  function decisionRank(r){
+    var s = safeStatus(r && r.status);
+    if (s === 'rejected') return 3;
+    if (s === 'approved') return 2;
+    return 1;
+  }
+  window.kpNormalizeRegistrationRowsNoLoop = function(){
+    try {
+      var rows = Array.isArray(syncedFormRows) ? syncedFormRows : [];
+      var map = {};
+      rows.forEach(function(r){
+        if (!r) return;
+        var k = rowKey(r) || String(r.timestamp || r.requestId || r.firebaseKey || Math.random());
+        var prev = map[k];
+        if (!prev || decisionRank(r) >= decisionRank(prev)) map[k] = Object.assign({}, prev || {}, r);
+      });
+      syncedFormRows = Object.keys(map).map(function(k){ return map[k]; });
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+    } catch(e) { console.warn('kpNormalizeRegistrationRowsNoLoop failed', e); }
+  };
+
+  if (typeof syncFromGoogleSheets === 'function' && !window.__KP_SHEETS_ORIG_20260429I) {
+    window.__KP_SHEETS_ORIG_20260429I = syncFromGoogleSheets;
+    syncFromGoogleSheets = async function(){
+      var res = await window.__KP_SHEETS_ORIG_20260429I.apply(this, arguments);
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      return res;
+    };
+  }
+
+  if (typeof window.syncRegistrationRequestsFromFirebase === 'function' && !window.__KP_REGSYNC_ORIG_20260429I) {
+    window.__KP_REGSYNC_ORIG_20260429I = window.syncRegistrationRequestsFromFirebase;
+    window.syncRegistrationRequestsFromFirebase = async function(options){
+      options = options || {};
+      var res = await window.__KP_REGSYNC_ORIG_20260429I.call(this, Object.assign({}, options, {silent:true}));
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('✅ تمت مزامنة طلبات التسجيل');
+      return res;
+    };
+  }
+
+  window.startAutoSync = function(){
+    try { clearInterval(autoSyncTimer); } catch(_e){}
+    if (window.__KP_REG_TIMER_20260429I) clearInterval(window.__KP_REG_TIMER_20260429I);
+    if (window.__KP_SHEETS_TIMER_20260429I) clearInterval(window.__KP_SHEETS_TIMER_20260429I);
+    setTimeout(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 800);
+    setTimeout(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 1800);
+    window.__KP_REG_TIMER_20260429I = setInterval(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 30000);
+    window.__KP_SHEETS_TIMER_20260429I = setInterval(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 60000);
+  };
+
+  if (typeof showSyncBadge === 'function' && !window.__KP_BADGE_QUIET_20260429I) {
+    window.__KP_BADGE_QUIET_20260429I = true;
+    var _badge = showSyncBadge;
+    showSyncBadge = function(msg){
+      msg = String(msg || '');
+      if (msg.indexOf('جاري حفظ') >= 0 && msg.indexOf('طلب') >= 0) return;
+      if ((msg.indexOf('بدون إنترنت') >= 0 || msg.indexOf('محفوظ محلياً فقط') >= 0) && navigator.onLine !== false) return;
+      return _badge(msg);
+    };
+  }
+  setTimeout(function(){ try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){} }, 500);
+})();
+</script>
+
 </body>
 </html>`;
 }
@@ -9751,11 +10584,11 @@ let autoSyncTimer = null;
 function startAutoSync() {
   // اقرأ المصدرين دائماً، ولا تجعل فشل Google Sheets يمنع قراءة طلبات صفحة التسجيل
   Promise.resolve().then(function(){ return syncRegistrationRequestsFromFirebase({ silent: true }); });
-  /* auto Google Sheets sync disabled to stop repeated permission/offline loop; use manual button */
+  Promise.resolve().then(function(){ return syncFromGoogleSheets(); }).catch(function(e){ console.log('Sheets auto-sync failed:', e && e.message); });
   clearInterval(autoSyncTimer);
   autoSyncTimer = setInterval(function(){
     Promise.resolve().then(function(){ return syncRegistrationRequestsFromFirebase({ silent: true }); });
-    /* auto Google Sheets sync disabled to stop repeated permission/offline loop; use manual button */
+    Promise.resolve().then(function(){ return syncFromGoogleSheets(); }).catch(function(e){ console.log('Sheets auto-sync failed:', e && e.message); });
   }, 5 * 60 * 1000);
 }
 
@@ -9935,9 +10768,9 @@ async function syncFromGoogleSheets() {
 
     localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
     // ✅ حفظ فردي للطلبات الجديدة/المعدلة بدفعة واحدة (بدل autoSave كامل)
-    if (false && changedRows.length) {
+    if (changedRows.length) {
       await saveFormRowsBatchRemoteAware(changedRows);
-    } // disabled: Google Sheets read must not keep rewriting Firebase
+    }
     var el = document.getElementById('forms-last-sync');
     if (el) el.textContent = new Date().toLocaleTimeString('ar');
     if (added > 0) showSyncBadge('✅ ' + added + ' طلب تسجيل جديد من Google Sheets');
@@ -11212,7 +12045,126 @@ function emailHtmlDocument(rawHtml){
     +'table{max-width:100%!important;border-collapse:collapse}'
     +'td,th{word-break:normal;overflow-wrap:anywhere}'
     +'a{color:#0b63ce}'
-    +'</style></head><body>'+html+'</body></html>';
+    +'</style></head><body>'+html+'
+
+<script>
+/* ============================================================
+   HOTFIX 20260429I — إظهار الطلبات الجديدة بدون حلقة حفظ
+============================================================ */
+(function(){
+  'use strict';
+  if (window.__KP_REG_READONLY_NO_LOOP_20260429I) return;
+  window.__KP_REG_READONLY_NO_LOOP_20260429I = true;
+  function safeStatus(s){ return String(s || 'pending').trim(); }
+  function isDecision(status){ status = safeStatus(status); return status === 'approved' || status === 'rejected'; }
+
+  window.saveFormRowsBatchRemoteAware = async function(formRows){
+    try {
+      if (Array.isArray(formRows) && formRows.length) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+      }
+      return true;
+    } catch(_e) { return true; }
+  };
+
+  if (typeof window.archiveFirebaseRegistrationRequest === 'function' && !window.__KP_ARCHIVE_ORIG_20260429I) {
+    window.__KP_ARCHIVE_ORIG_20260429I = window.archiveFirebaseRegistrationRequest;
+    window.archiveFirebaseRegistrationRequest = async function(row, status){
+      status = safeStatus(status || (row && row.status));
+      if (!isDecision(status)) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+        return true;
+      }
+      return await window.__KP_ARCHIVE_ORIG_20260429I(row, status);
+    };
+  }
+
+  window.persistFormRowsAndSync = async function(formRow){
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+    if (formRow && isDecision(formRow.status) && typeof window.archiveFirebaseRegistrationRequest === 'function') {
+      return await window.archiveFirebaseRegistrationRequest(formRow, formRow.status);
+    }
+    return true;
+  };
+
+  function rowKey(r){
+    r = r || {};
+    var id = String(r.emiratesId || r.idNo || r.identity || '').replace(/\D/g,'');
+    var pass = String(r.passport || '').replace(/\s+/g,'').toLowerCase();
+    var name = String(r.name || ((r.firstName||'') + ' ' + (r.familyName||''))).replace(/[\u064B-\u065F\u0670]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+    var dob = String(r.dob || r.birthDate || '').trim();
+    var phone = String(r.dadMob || r.momMob || r.dph || r.mph || '').replace(/\D/g,'');
+    return id || pass || (name + '|' + dob + '|' + phone);
+  }
+  function decisionRank(r){
+    var s = safeStatus(r && r.status);
+    if (s === 'rejected') return 3;
+    if (s === 'approved') return 2;
+    return 1;
+  }
+  window.kpNormalizeRegistrationRowsNoLoop = function(){
+    try {
+      var rows = Array.isArray(syncedFormRows) ? syncedFormRows : [];
+      var map = {};
+      rows.forEach(function(r){
+        if (!r) return;
+        var k = rowKey(r) || String(r.timestamp || r.requestId || r.firebaseKey || Math.random());
+        var prev = map[k];
+        if (!prev || decisionRank(r) >= decisionRank(prev)) map[k] = Object.assign({}, prev || {}, r);
+      });
+      syncedFormRows = Object.keys(map).map(function(k){ return map[k]; });
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+    } catch(e) { console.warn('kpNormalizeRegistrationRowsNoLoop failed', e); }
+  };
+
+  if (typeof syncFromGoogleSheets === 'function' && !window.__KP_SHEETS_ORIG_20260429I) {
+    window.__KP_SHEETS_ORIG_20260429I = syncFromGoogleSheets;
+    syncFromGoogleSheets = async function(){
+      var res = await window.__KP_SHEETS_ORIG_20260429I.apply(this, arguments);
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      return res;
+    };
+  }
+
+  if (typeof window.syncRegistrationRequestsFromFirebase === 'function' && !window.__KP_REGSYNC_ORIG_20260429I) {
+    window.__KP_REGSYNC_ORIG_20260429I = window.syncRegistrationRequestsFromFirebase;
+    window.syncRegistrationRequestsFromFirebase = async function(options){
+      options = options || {};
+      var res = await window.__KP_REGSYNC_ORIG_20260429I.call(this, Object.assign({}, options, {silent:true}));
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('✅ تمت مزامنة طلبات التسجيل');
+      return res;
+    };
+  }
+
+  window.startAutoSync = function(){
+    try { clearInterval(autoSyncTimer); } catch(_e){}
+    if (window.__KP_REG_TIMER_20260429I) clearInterval(window.__KP_REG_TIMER_20260429I);
+    if (window.__KP_SHEETS_TIMER_20260429I) clearInterval(window.__KP_SHEETS_TIMER_20260429I);
+    setTimeout(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 800);
+    setTimeout(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 1800);
+    window.__KP_REG_TIMER_20260429I = setInterval(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 30000);
+    window.__KP_SHEETS_TIMER_20260429I = setInterval(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 60000);
+  };
+
+  if (typeof showSyncBadge === 'function' && !window.__KP_BADGE_QUIET_20260429I) {
+    window.__KP_BADGE_QUIET_20260429I = true;
+    var _badge = showSyncBadge;
+    showSyncBadge = function(msg){
+      msg = String(msg || '');
+      if (msg.indexOf('جاري حفظ') >= 0 && msg.indexOf('طلب') >= 0) return;
+      if ((msg.indexOf('بدون إنترنت') >= 0 || msg.indexOf('محفوظ محلياً فقط') >= 0) && navigator.onLine !== false) return;
+      return _badge(msg);
+    };
+  }
+  setTimeout(function(){ try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){} }, 500);
+})();
+</script>
+
+</body></html>';
 }
 async function getInlineAttachmentMap(messageId){
   const map={};
@@ -11772,7 +12724,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e) {}
     }
     try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e) {}
-    if (false && filtered.length && typeof saveFormRowsBatchRemoteAware === 'function') { // disabled: avoid sync loop
+    if (filtered.length && typeof saveFormRowsBatchRemoteAware === 'function') {
       try { await saveFormRowsBatchRemoteAware(filtered); } catch(_e) {}
     }
     updateFormsNavBadge();
@@ -12302,16 +13254,16 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     try { clearInterval(kpRegTimer); } catch(_e){}
     try { clearInterval(kpSheetsTimer); } catch(_e){}
     setTimeout(function(){ try { window.syncRegistrationRequestsFromFirebase({ silent:true }); } catch(_e){} }, 600);
-    /* startup Google Sheets sync disabled */
+    setTimeout(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 2500);
     kpRegTimer = setInterval(function(){ try { window.syncRegistrationRequestsFromFirebase({ silent:true }); } catch(_e){} }, KP_FAST_REG_MS);
-    kpSheetsTimer = null; /* periodic Google Sheets sync disabled */
+    kpSheetsTimer = setInterval(function(){ try { syncFromGoogleSheets(); } catch(e){ console.log('Sheets sync failed:', e && e.message); } }, KP_SHEETS_MS);
   };
 
   window.addEventListener('online', function(){
     kpConsecutiveCloudFails = 0;
     if (typeof showSyncBadge === 'function') showSyncBadge('✅ عاد الاتصال — جاري المزامنة');
     try { window.syncRegistrationRequestsFromFirebase({ silent:true }); } catch(_e){}
-    /* manual Google Sheets sync only */
+    try { syncFromGoogleSheets(); } catch(_e){}
   });
 
   if (typeof checkForUpdates === 'function' && !window.__kp_fast_check_updates_20260429F) {
@@ -12411,68 +13363,127 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   if(typeof syncFromGoogleSheets==='function'){ var __origSheetsSync=syncFromGoogleSheets; syncFromGoogleSheets=async function(){ var beforeMap=await getDecisionMap(true); var res=await __origSheetsSync.apply(this,arguments); var afterMap=await getDecisionMap(true); syncedFormRows=applyDecisionLocks(syncedFormRows,Object.assign({},beforeMap,afterMap)); try{localStorage.setItem('kp_form_rows',JSON.stringify(syncedFormRows));}catch(_e){} if(typeof updateFormsNavBadge==='function')updateFormsNavBadge(); if(typeof renderFormRequests==='function')renderFormRequests(); return res; }; }
   if(typeof loadFromFirebase==='function'){ var __origLoadFirebaseG=loadFromFirebase; loadFromFirebase=async function(){ var res=await __origLoadFirebaseG.apply(this,arguments); try{ var dm=await getDecisionMap(true); syncedFormRows=applyDecisionLocks(syncedFormRows,dm); localStorage.setItem('kp_form_rows',JSON.stringify(syncedFormRows)); if(typeof updateFormsNavBadge==='function')updateFormsNavBadge(); if(typeof renderFormRequests==='function')renderFormRequests(); }catch(_e){} return res; }; }
   window.kpCleanRegistrationDecisionConflicts=async function(){ var dm=await getDecisionMap(true); syncedFormRows=applyDecisionLocks(syncedFormRows,dm); localStorage.setItem('kp_form_rows',JSON.stringify(syncedFormRows)); for(var i=0;i<syncedFormRows.length;i++){ var r=syncedFormRows[i]; if(r&&r.status&&r.status!=='pending') await window.archiveFirebaseRegistrationRequest(r,r.status); } if(typeof updateFormsNavBadge==='function')updateFormsNavBadge(); if(typeof renderFormRequests==='function')renderFormRequests(); if(typeof showSyncBadge==='function')showSyncBadge('✅ تم تنظيف تضارب طلبات التسجيل'); return syncedFormRows.length; };
-  /* automatic conflict-cleaner disabled; it wrote back on startup and caused sync loops */
+  setTimeout(function(){ try{ window.kpCleanRegistrationDecisionConflicts(); }catch(_e){} },2500);
 })();
+</script>
 
+
+<script>
 /* ============================================================
-   ✅ HOTFIX 2026-04-29G — إيقاف حلقة مزامنة طلبات التسجيل
-   السبب: القراءة من Firebase/Sheets كانت تعيد حفظ نفس الطلبات، فتولد حدث Firebase جديد
-   ثم loadFromFirebase ثم "بدون إنترنت/تحميل محلي" ثم "جاري حفظ 1 طلب" بشكل متكرر.
-   هذا الهوتفكس يجعل المزامنة قراءة فقط، والحفظ يحدث فقط عند قبول/رفض/تراجع فعلي.
-   ============================================================ */
+   HOTFIX 20260429I — إظهار الطلبات الجديدة بدون حلقة حفظ
+============================================================ */
 (function(){
-  if (window.__kpStopRegSyncLoop20260429G) return;
-  window.__kpStopRegSyncLoop20260429G = true;
+  'use strict';
+  if (window.__KP_REG_READONLY_NO_LOOP_20260429I) return;
+  window.__KP_REG_READONLY_NO_LOOP_20260429I = true;
+  function safeStatus(s){ return String(s || 'pending').trim(); }
+  function isDecision(status){ status = safeStatus(status); return status === 'approved' || status === 'rejected'; }
 
-  if (typeof showSyncBadge === 'function') {
-    var __origShowSyncBadgeG = showSyncBadge;
-    var __lastMsgG = '', __lastAtG = 0;
-    showSyncBadge = function(msg){
-      msg = String(msg || '');
-      var now = Date.now();
-      var noisy = /جاري المزامنة|جاري التحميل|بدون إنترنت|تحميل محلي|محفوظ محلياً فقط|جاري حفظ \d+ طلب/.test(msg);
-      if (noisy && msg === __lastMsgG && (now - __lastAtG) < 8000) return;
-      __lastMsgG = msg; __lastAtG = now;
-      return __origShowSyncBadgeG.apply(this, arguments);
+  window.saveFormRowsBatchRemoteAware = async function(formRows){
+    try {
+      if (Array.isArray(formRows) && formRows.length) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+      }
+      return true;
+    } catch(_e) { return true; }
+  };
+
+  if (typeof window.archiveFirebaseRegistrationRequest === 'function' && !window.__KP_ARCHIVE_ORIG_20260429I) {
+    window.__KP_ARCHIVE_ORIG_20260429I = window.archiveFirebaseRegistrationRequest;
+    window.archiveFirebaseRegistrationRequest = async function(row, status){
+      status = safeStatus(status || (row && row.status));
+      if (!isDecision(status)) {
+        try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+        return true;
+      }
+      return await window.__KP_ARCHIVE_ORIG_20260429I(row, status);
     };
   }
 
-  if (typeof saveFormRowsBatchRemoteAware === 'function') {
-    var __origBatchSaveG = saveFormRowsBatchRemoteAware;
-    saveFormRowsBatchRemoteAware = async function(formRows, options){
-      options = options || {};
-      if (!options.forceWrite) return true;
-      return await __origBatchSaveG.call(this, formRows);
+  window.persistFormRowsAndSync = async function(formRow){
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows || [])); } catch(_e){}
+    if (formRow && isDecision(formRow.status) && typeof window.archiveFirebaseRegistrationRequest === 'function') {
+      return await window.archiveFirebaseRegistrationRequest(formRow, formRow.status);
+    }
+    return true;
+  };
+
+  function rowKey(r){
+    r = r || {};
+    var id = String(r.emiratesId || r.idNo || r.identity || '').replace(/\D/g,'');
+    var pass = String(r.passport || '').replace(/\s+/g,'').toLowerCase();
+    var name = String(r.name || ((r.firstName||'') + ' ' + (r.familyName||''))).replace(/[\u064B-\u065F\u0670]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+    var dob = String(r.dob || r.birthDate || '').trim();
+    var phone = String(r.dadMob || r.momMob || r.dph || r.mph || '').replace(/\D/g,'');
+    return id || pass || (name + '|' + dob + '|' + phone);
+  }
+  function decisionRank(r){
+    var s = safeStatus(r && r.status);
+    if (s === 'rejected') return 3;
+    if (s === 'approved') return 2;
+    return 1;
+  }
+  window.kpNormalizeRegistrationRowsNoLoop = function(){
+    try {
+      var rows = Array.isArray(syncedFormRows) ? syncedFormRows : [];
+      var map = {};
+      rows.forEach(function(r){
+        if (!r) return;
+        var k = rowKey(r) || String(r.timestamp || r.requestId || r.firebaseKey || Math.random());
+        var prev = map[k];
+        if (!prev || decisionRank(r) >= decisionRank(prev)) map[k] = Object.assign({}, prev || {}, r);
+      });
+      syncedFormRows = Object.keys(map).map(function(k){ return map[k]; });
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+    } catch(e) { console.warn('kpNormalizeRegistrationRowsNoLoop failed', e); }
+  };
+
+  if (typeof syncFromGoogleSheets === 'function' && !window.__KP_SHEETS_ORIG_20260429I) {
+    window.__KP_SHEETS_ORIG_20260429I = syncFromGoogleSheets;
+    syncFromGoogleSheets = async function(){
+      var res = await window.__KP_SHEETS_ORIG_20260429I.apply(this, arguments);
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      return res;
     };
   }
 
-  if (typeof window.syncRegistrationRequestsFromFirebase === 'function') {
-    var __origRegSyncG = window.syncRegistrationRequestsFromFirebase;
-    var __regSyncRunningG = false;
+  if (typeof window.syncRegistrationRequestsFromFirebase === 'function' && !window.__KP_REGSYNC_ORIG_20260429I) {
+    window.__KP_REGSYNC_ORIG_20260429I = window.syncRegistrationRequestsFromFirebase;
     window.syncRegistrationRequestsFromFirebase = async function(options){
       options = options || {};
-      if (__regSyncRunningG) return { skipped:true, reason:'already-running' };
-      __regSyncRunningG = true;
-      try {
-        return await __origRegSyncG.call(this, Object.assign({}, options, { silent: options.silent !== false }));
-      } finally {
-        __regSyncRunningG = false;
-      }
+      var res = await window.__KP_REGSYNC_ORIG_20260429I.call(this, Object.assign({}, options, {silent:true}));
+      try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+      if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('✅ تمت مزامنة طلبات التسجيل');
+      return res;
     };
   }
 
-  if (typeof loadFromFirebase === 'function') {
-    var __origLoadFirebaseH = loadFromFirebase;
-    var __loadRunningH = false;
-    loadFromFirebase = async function(){
-      if (__loadRunningH) return false;
-      __loadRunningH = true;
-      try { return await __origLoadFirebaseH.apply(this, arguments); }
-      finally { __loadRunningH = false; }
+  window.startAutoSync = function(){
+    try { clearInterval(autoSyncTimer); } catch(_e){}
+    if (window.__KP_REG_TIMER_20260429I) clearInterval(window.__KP_REG_TIMER_20260429I);
+    if (window.__KP_SHEETS_TIMER_20260429I) clearInterval(window.__KP_SHEETS_TIMER_20260429I);
+    setTimeout(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 800);
+    setTimeout(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 1800);
+    window.__KP_REG_TIMER_20260429I = setInterval(function(){ try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){} }, 30000);
+    window.__KP_SHEETS_TIMER_20260429I = setInterval(function(){ try { syncFromGoogleSheets(); } catch(_e){} }, 60000);
+  };
+
+  if (typeof showSyncBadge === 'function' && !window.__KP_BADGE_QUIET_20260429I) {
+    window.__KP_BADGE_QUIET_20260429I = true;
+    var _badge = showSyncBadge;
+    showSyncBadge = function(msg){
+      msg = String(msg || '');
+      if (msg.indexOf('جاري حفظ') >= 0 && msg.indexOf('طلب') >= 0) return;
+      if ((msg.indexOf('بدون إنترنت') >= 0 || msg.indexOf('محفوظ محلياً فقط') >= 0) && navigator.onLine !== false) return;
+      return _badge(msg);
     };
   }
+  setTimeout(function(){ try { window.kpNormalizeRegistrationRowsNoLoop(); } catch(_e){} }, 500);
 })();
-
 </script>
+
 </body>
 </html>
