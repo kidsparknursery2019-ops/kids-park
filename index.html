@@ -987,7 +987,7 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
 .email-html-frame{
   width:100%;
   min-height:430px;
-  height:520px;
+  height:720px;
   border:0;
   display:block;
   background:#fff;
@@ -10096,7 +10096,7 @@ function disconnectOutlookGraph(){try{sessionStorage.removeItem('kp_graph_connec
 async function getGraphToken(){if(window.ensureMsalLoaded)await window.ensureMsalLoaded();const app=graphMsalApp||initGraphMail();if(!app)throw new Error('إعدادات Microsoft غير مكتملة.');if(!graphAccount){const accounts=app.getAllAccounts();if(accounts&&accounts.length)graphAccount=accounts[0]}if(!graphAccount)throw new Error('Outlook غير مربوط. اضغطي ربط Outlook أولاً.');try{return (await app.acquireTokenSilent({scopes:GRAPH_SCOPES,account:graphAccount})).accessToken}catch(e){return (await app.acquireTokenPopup({scopes:GRAPH_SCOPES,account:graphAccount})).accessToken}}
 async function graphFetch(path,opts){
   const token=await getGraphToken();
-  const headers=Object.assign({'Authorization':'Bearer '+token,'Prefer':'outlook.body-content-type="text"'},(opts&&opts.headers)||{});
+  const headers=Object.assign({'Authorization':'Bearer '+token,'Prefer':'outlook.body-content-type="html"'},(opts&&opts.headers)||{});
   if(!(opts&&opts.skipJsonHeader)) headers['Content-Type']='application/json';
   const res=await fetch('https://graph.microsoft.com/v1.0'+path,Object.assign({},opts||{},{headers}));
   if(!res.ok){let msg='HTTP '+res.status;try{const d=await res.json();msg=d?.error?.message||msg}catch(e){}throw new Error(msg)}
@@ -10114,7 +10114,55 @@ async function loadOutlookInbox(){currentEmailFolder='inbox';updateEmailFolderTa
 async function loadOutlookFolder(){const cfg=EMAIL_FOLDER_CONFIG[currentEmailFolder]||EMAIL_FOLDER_CONFIG.inbox;setEmailStatus('جاري تحميل '+cfg.label+' من Outlook...','');try{const df=cfg.dateField;const data=await graphFetch('/me/mailFolders/'+cfg.id+'/messages?$top=25&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,hasAttachments&$orderby='+df+' desc');graphInbox=data.value||[];renderGraphInbox();setEmailStatus('تم تحديث '+cfg.label+' داخل النظام.','ok')}catch(e){renderGraphInbox(e.message||e);setEmailStatus('تعذر تحميل '+cfg.label+': '+(e.message||e),'err')}}
 function renderGraphInbox(err){const box=document.getElementById('email-inbox');if(!box)return;const cfg=EMAIL_FOLDER_CONFIG[currentEmailFolder]||EMAIL_FOLDER_CONFIG.inbox;if(err){box.innerHTML='<div class="email-hint">'+escapeHtml(err)+'</div>';return}if(!graphInbox.length){box.innerHTML='<div class="email-hint">لا توجد رسائل في '+escapeHtml(cfg.label)+' بعد.</div>';return}box.innerHTML=graphInbox.map(function(m,i){const from=m.from&&m.from.emailAddress?m.from.emailAddress:{};const to=(m.toRecipients||[]).map(r=>r.emailAddress&&r.emailAddress.address).filter(Boolean).join(', ');const date=((m.receivedDateTime||m.sentDateTime||'').slice(0,16).replace('T',' '));const who=currentEmailFolder==='sentitems'?(to?'إلى: '+to:'مرسلة'):(from.name||from.address||'');return '<div class="email-inbox-item" onclick="readOutlookMessage('+i+')"><div class="email-inbox-subject">'+escapeHtml(m.subject||'بدون موضوع')+'</div><div class="email-inbox-meta"><span>'+escapeHtml(who)+'</span><span>'+escapeHtml(date)+'</span>'+(m.hasAttachments?'<span>📎 مرفقات</span>':'')+'</div><div style="font-size:12px;color:var(--muted);margin-top:5px">'+escapeHtml(m.bodyPreview||'')+'</div></div>'}).join('')}
 
-function buildOriginalEmailPreview(data){
+function escapeAttr(s){return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function emailHtmlDocument(rawHtml){
+  const html=String(rawHtml||'');
+  return '<!doctype html><html><head><meta charset="utf-8"><base target="_blank">'
+    +'<meta name="viewport" content="width=device-width, initial-scale=1">'
+    +'<style>'
+    +'html,body{margin:0;padding:0;background:#fff;color:#222;font-family:Arial,Tahoma,sans-serif;max-width:100%;overflow-wrap:anywhere;-webkit-text-size-adjust:100%}'
+    +'body{padding:14px;direction:auto;text-align:initial}'
+    +'img{max-width:100%!important;height:auto!important}'
+    +'table{max-width:100%!important;border-collapse:collapse}'
+    +'td,th{word-break:normal;overflow-wrap:anywhere}'
+    +'a{color:#0b63ce}'
+    +'</style></head><body>'+html+'</body></html>';
+}
+async function getInlineAttachmentMap(messageId){
+  const map={};
+  try{
+    const data=await graphFetch('/me/messages/'+encodeURIComponent(messageId)+'/attachments?$top=50');
+    const arr=data.value||[];
+    arr.forEach(function(a){
+      if(!a || !a.isInline || !a.contentBytes) return;
+      const ct=a.contentType||'application/octet-stream';
+      const dataUrl='data:'+ct+';base64,'+a.contentBytes;
+      const keys=[];
+      if(a.contentId) keys.push(a.contentId, '<'+a.contentId+'>');
+      if(a.name) keys.push(a.name);
+      keys.forEach(function(k){ if(k) map[String(k).replace(/[<>]/g,'')]=dataUrl; });
+    });
+  }catch(e){ console.warn('inline attachments unavailable',e); }
+  return map;
+}
+function applyInlineImagesToHtml(html, inlineMap){
+  let out=String(html||'');
+  Object.keys(inlineMap||{}).forEach(function(cid){
+    const safe=cid.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const dataUrl=inlineMap[cid];
+    out=out.replace(new RegExp('cid:'+safe,'gi'), dataUrl);
+    out=out.replace(new RegExp('src=["\\\']cid:<'+safe+'>["\\\']','gi'), 'src="'+dataUrl+'"');
+  });
+  return out;
+}
+function resizeEmailFrame(frame){
+  try{
+    const doc=frame.contentDocument||frame.contentWindow.document;
+    const h=Math.max(420, Math.min(2200, doc.documentElement.scrollHeight, doc.body.scrollHeight) + 24);
+    frame.style.height=h+'px';
+  }catch(e){}
+}
+function buildOriginalEmailPreview(data, inlineMap){
   const from=data.from&&data.from.emailAddress?data.from.emailAddress:{};
   const tos=(data.toRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
   const ccs=(data.ccRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
@@ -10129,12 +10177,12 @@ function buildOriginalEmailPreview(data){
   const body=data.body||{};
   const content=body.content||'';
   if((body.contentType||'').toLowerCase()==='html'){
-    const srcdoc='<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>html,body{margin:0;padding:12px;background:#fff;font-family:Arial,sans-serif;max-width:100%;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{max-width:100%}a{color:#1a73e8}</style></head><body>'+content+'</body></html>';
-    return meta+'<iframe class="email-html-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc="'+escapeHtml(srcdoc)+'"></iframe>';
+    const finalHtml=applyInlineImagesToHtml(content, inlineMap||{});
+    const srcdoc=emailHtmlDocument(finalHtml);
+    return meta+'<iframe class="email-html-frame" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" onload="resizeEmailFrame(this)" srcdoc="'+escapeAttr(srcdoc)+'"></iframe>';
   }
-  return meta+'<div class="email-text-body">'+escapeHtml(content||'')+'</div>';
+  return meta+'<div class="email-text-body">'+escapeHtml(content||data.bodyPreview||'')+'</div>';
 }
-
 async function readOutlookMessage(i){
   const m=graphInbox[i];if(!m)return;selectedGraphMessage=m;selectedGraphMessageFull=null;
   const prev=document.getElementById('email-preview');const act=document.getElementById('email-preview-actions');const av=document.getElementById('email-attachments-view');
@@ -10146,7 +10194,8 @@ async function readOutlookMessage(i){
     const tos=(data.toRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
     const ccs=(data.ccRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean).join(', ');
     const date=((data.receivedDateTime||data.sentDateTime||'').slice(0,16).replace('T',' '));
-    if(prev)prev.innerHTML=buildOriginalEmailPreview(data);
+    const inlineMap=data.hasAttachments ? await getInlineAttachmentMap(data.id) : {};
+    if(prev)prev.innerHTML=buildOriginalEmailPreview(data, inlineMap);
     if(data.hasAttachments) await renderMessageAttachments(data.id);
     setEmailStatus('تم فتح الرسالة داخل النظام.','ok')
   }catch(e){if(prev)prev.textContent='تعذر فتح الرسالة: '+(e.message||e)}
