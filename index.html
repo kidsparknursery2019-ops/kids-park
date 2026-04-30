@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260429G-live-stream-listener -->
+<!-- v20260429H-students-sync-on-approval -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Marhey:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -12167,6 +12167,39 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     // العملية الفردية على Firebase: PUT للمسار الصحيح + DELETE من التانيين
     var ok = await window.archiveFirebaseRegistrationRequest(r, status);
 
+    // ✅ عند القبول: ارفع students array لـ Firebase كمان
+    //    (لأن performApproveNew/performApproveMerge عدّلت students محلياً)
+    if (status === 'approved') {
+      try {
+        var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 12000) : null;
+        var savedAt = new Date().toISOString();
+        var patchPayload = {
+          students: Array.isArray(students) ? students : [],
+          savedAt: savedAt
+        };
+        // إذا في deletedStudents/CLASSES اللي تأثرت، ارفعها كمان
+        if (typeof deletedStudents !== 'undefined' && Array.isArray(deletedStudents)) {
+          patchPayload.deletedStudents = deletedStudents;
+        }
+        var fetchOpts = {
+          method: 'PATCH',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(patchPayload)
+        };
+        if (ctrl) fetchOpts.signal = ctrl.signal;
+        var putRes = await fetch(FB_URL + '.json', fetchOpts);
+        if (timeoutId) clearTimeout(timeoutId);
+        if (putRes && putRes.ok) {
+          if (typeof lastSavedAt !== 'undefined') lastSavedAt = savedAt;
+          try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
+          try { localStorage.setItem('kp_students', JSON.stringify(students)); } catch(_e){}
+        }
+      } catch(e){
+        console.warn('students upload after approval failed:', e);
+      }
+    }
+
     if (typeof showSyncBadge === 'function') {
       if (ok) {
         showSyncBadge(status === 'approved' ? '✅ تم حفظ القبول' :
@@ -12185,13 +12218,45 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   // ============================================================
   window.persistFormRowsAndSync = async function(formRow){
     try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
+    try { localStorage.setItem('kp_students', JSON.stringify(students)); } catch(_e){}
+
     // إذا الصف عنده قرار، استعمل العملية الفردية فقط
     if (formRow && formRow.status && formRow.status !== 'pending') {
       return await window.archiveFirebaseRegistrationRequest(formRow, formRow.status);
     }
-    // الصفوف pending: ابعتها لـ /pending الفردي (مش لـ kp_form_rows array)
+    // الصفوف pending: ابعتها لـ /pending الفردي
     if (formRow && formRow.status === 'pending') {
-      return await window.archiveFirebaseRegistrationRequest(formRow, 'pending');
+      var ok = await window.archiveFirebaseRegistrationRequest(formRow, 'pending');
+
+      // ✅ إذا التراجع كان عن قبول (يعني students اتعدّلت محلياً)، ارفع students كمان
+      if (formRow.approvedStudentId || formRow.approvedAction || (formRow.undoData && (formRow.undoData.createdStudentId || formRow.undoData.mergedStudentId))) {
+        try {
+          var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+          var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 12000) : null;
+          var savedAt = new Date().toISOString();
+          var patchPayload = {
+            students: Array.isArray(students) ? students : [],
+            savedAt: savedAt
+          };
+          if (typeof deletedStudents !== 'undefined' && Array.isArray(deletedStudents)) {
+            patchPayload.deletedStudents = deletedStudents;
+          }
+          var fetchOpts = {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(patchPayload)
+          };
+          if (ctrl) fetchOpts.signal = ctrl.signal;
+          var putRes = await fetch(FB_URL + '.json', fetchOpts);
+          if (timeoutId) clearTimeout(timeoutId);
+          if (putRes && putRes.ok) {
+            if (typeof lastSavedAt !== 'undefined') lastSavedAt = savedAt;
+            try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
+          }
+        } catch(e){ console.warn('students upload after undo failed:', e); }
+      }
+
+      return ok;
     }
     return false;
   };
