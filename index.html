@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260429I-faster-sync-no-flash -->
+<!-- v20260430-mobile-sync-ui-v3-no-duplicate-toasts-recent-pay-desc -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Marhey:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -1280,6 +1280,248 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
 .email-full-reader-body .email-html-frame{width:100%;min-height:78vh;height:78vh;border:0;background:#fff}
 @media(max-width:760px){.email-full-reader-modal{width:98vw;height:95vh;border-radius:16px}.email-full-reader-title{max-width:52%;font-size:13px}.email-full-reader-head{padding:10px;align-items:flex-start}.email-full-reader-actions .btn{padding:5px 9px;font-size:11px}}
 .email-attach-chip a{color:var(--g1);text-decoration:none;font-weight:900}.email-attach-actions{display:inline-flex;gap:6px;margin-inline-start:6px}.email-draft-badge{display:inline-block;background:#fff3c4;color:#8a5c00;border:1px solid #ffe49b;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:900;margin-inline-start:6px}
+
+/* ============================================================
+   KP SYNC UX + MOBILE LAYOUT FIX — added 2026-04-30
+   واضح للمزامنة والاتصال + ترتيب حقيقي للموبايل
+   ============================================================ */
+.kp-sync-panel{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+  padding:10px 16px;
+  background:rgba(255,255,255,.92);
+  border-bottom:2px dashed var(--border);
+  box-shadow:0 6px 18px rgba(46,139,84,.08);
+  position:sticky;
+  top:64px;
+  z-index:190;
+  backdrop-filter:blur(8px);
+}
+.kp-sync-card{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  min-width:0;
+  background:#fff;
+  border:1.5px solid var(--border);
+  border-radius:16px;
+  padding:9px 12px;
+  box-shadow:0 3px 12px rgba(46,139,84,.08);
+}
+.kp-sync-icon{font-size:22px;line-height:1;flex-shrink:0}
+.kp-sync-text{min-width:0;line-height:1.25}
+.kp-sync-label{font-size:11px;font-weight:800;color:var(--muted);white-space:nowrap}
+.kp-sync-value{font-size:13.5px;font-weight:900;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kp-sync-card.ok{border-color:#bee5cd;background:linear-gradient(135deg,#fff,#f0fbf4)}
+.kp-sync-card.ok .kp-sync-value{color:#0e6b35}
+.kp-sync-card.warn{border-color:#ffe49b;background:linear-gradient(135deg,#fff,#fff9df)}
+.kp-sync-card.warn .kp-sync-value{color:#8a5c00}
+.kp-sync-card.err{border-color:#ffc7c2;background:linear-gradient(135deg,#fff,#fff0ef)}
+.kp-sync-card.err .kp-sync-value{color:#a82323}
+.kp-toast-stack{position:fixed;left:14px;bottom:14px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:min(380px,calc(100vw - 28px));pointer-events:none}
+.kp-toast{background:linear-gradient(135deg,rgba(46,139,84,.96),rgba(30,107,63,.96));color:#fff;padding:10px 15px;border-radius:16px;font-family:Tajawal,sans-serif;font-size:13px;font-weight:900;box-shadow:0 8px 26px rgba(46,139,84,.32);border:2px solid rgba(255,255,255,.32);opacity:0;transform:translateY(10px);transition:all .25s ease;line-height:1.45}
+.kp-toast.on{opacity:1;transform:translateY(0)}
+.kp-toast.err{background:linear-gradient(135deg,rgba(214,58,58,.96),rgba(160,35,35,.96))}
+.kp-toast.warn{background:linear-gradient(135deg,rgba(245,180,0,.96),rgba(224,122,31,.96));color:#3d2b00}
+
+@media(max-width:760px){
+  body{overflow-x:hidden}
+  .hdr{position:relative;top:auto;z-index:200;padding:8px 10px;justify-content:center;text-align:center}
+  .hdr-brand{width:100%;justify-content:center;gap:7px}
+  .hdr-brand img{max-width:54px!important;max-height:54px!important}
+  .hdr-brand h1{font-size:15px!important;white-space:normal;text-align:center}
+  .hdr-brand small{font-size:11px!important;white-space:normal;text-align:center}
+  .hdr-time{width:100%;text-align:center;font-size:11.5px;padding:5px 8px;order:5}
+  .kp-sync-panel{position:relative;top:auto;grid-template-columns:1fr;padding:8px 10px;gap:7px}
+  .kp-sync-card{padding:8px 10px;border-radius:14px}
+  .kp-sync-value{font-size:12.5px}
+  .wrap{display:flex!important;flex-direction:column!important;min-height:auto!important;width:100%!important}
+  .side{width:100%!important;min-width:100%!important;max-width:100%!important;display:flex!important;flex-direction:row!important;overflow-x:auto!important;overflow-y:hidden!important;padding:8px!important;gap:6px;border-left:0!important;border-bottom:2px dashed var(--border)!important;box-shadow:0 4px 14px rgba(46,139,84,.08)!important;position:relative!important}
+  .nav{flex:0 0 auto!important;margin:0!important;padding:9px 11px!important;border-right:0!important;border-bottom:3px solid transparent!important;border-radius:14px!important;font-size:12.5px!important;gap:6px!important;min-width:max-content!important}
+  .nav.on{border-bottom-color:var(--g2)!important;border-right-color:transparent!important}
+  .nav .ni{font-size:17px!important}.nav-badge{margin-right:5px!important;min-width:20px;height:20px;line-height:20px;font-size:10px;padding:0 6px}
+  .side-sep{display:none!important}
+  .main{width:100%!important;max-width:100%!important;min-width:0!important;padding:12px 10px!important;overflow:visible!important}
+  .ct2,.admin-grid,.email-grid,.email-main-layout{grid-template-columns:1fr!important}
+  .card{padding:15px!important;border-radius:18px!important;margin-bottom:12px!important}
+  .pt{font-size:18px!important;margin-bottom:14px!important}.ct{font-size:15px!important}
+  .form-req-card,.ren-row{align-items:flex-start;flex-wrap:wrap}.form-req-actions,.ren-actions{width:100%;flex-direction:row;justify-content:flex-start}.btn{padding:8px 12px;font-size:12.5px}.sbar input,.sbar select{max-width:100%;width:100%}
+  .kp-toast-stack{left:10px;right:10px;bottom:10px;max-width:none}.kp-toast{font-size:12.5px;padding:9px 12px}
+}
+
+
+
+/* ============================================================
+   KP MOBILE SYNC/UI HOTFIX v2 — ترتيب الموبايل الحقيقي
+   ============================================================ */
+html,body{max-width:100%;overflow-x:hidden!important}
+.kp-sync-panel{width:100%;box-sizing:border-box}
+
+@media(max-width:760px){
+  html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!important}
+  body{font-size:14px!important}
+
+  /* الهيدر: يمنع أي خروج يمين/يسار على الموبايل */
+  .hdr{
+    width:100%!important;
+    max-width:100%!important;
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:stretch!important;
+    justify-content:flex-start!important;
+    gap:7px!important;
+    padding:8px 10px!important;
+    position:relative!important;
+    overflow:hidden!important;
+  }
+  .hdr-brand{
+    width:100%!important;
+    display:flex!important;
+    flex-direction:row!important;
+    align-items:center!important;
+    justify-content:center!important;
+    gap:8px!important;
+    min-width:0!important;
+    order:1!important;
+  }
+  .hdr-brand img{width:46px!important;height:46px!important;max-width:46px!important;max-height:46px!important;flex:0 0 auto!important}
+  .hdr-brand h1{font-size:15px!important;line-height:1.25!important;white-space:normal!important;text-align:center!important;margin:0!important}
+  .hdr-brand small{font-size:10.5px!important;line-height:1.2!important;white-space:normal!important;text-align:center!important}
+
+  /* صف أزرار الهيدر والوقت */
+  .hdr > div[style*="display:flex"]{
+    width:100%!important;
+    max-width:100%!important;
+    display:flex!important;
+    flex-wrap:wrap!important;
+    justify-content:center!important;
+    align-items:center!important;
+    gap:6px!important;
+    order:2!important;
+    overflow:visible!important;
+  }
+  .hdr-time{
+    order:10!important;
+    width:100%!important;
+    max-width:100%!important;
+    text-align:center!important;
+    font-size:11px!important;
+    padding:5px 8px!important;
+    margin:0!important;
+    opacity:.95!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+  }
+  #btn-save-cloud,#btn-refresh-cloud,.notif-btn{
+    display:inline-flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    min-height:38px!important;
+    padding:6px 10px!important;
+    font-size:12px!important;
+    border-radius:11px!important;
+    margin:0!important;
+  }
+  #user-badge{
+    width:100%!important;
+    justify-content:center!important;
+    display:flex!important;
+    flex-wrap:wrap!important;
+    gap:6px!important;
+    font-size:12px!important;
+  }
+
+  /* شريط حالة المزامنة: كروت أوضح ومضغوطة */
+  .kp-sync-panel{
+    position:relative!important;
+    top:auto!important;
+    width:100%!important;
+    max-width:100%!important;
+    display:grid!important;
+    grid-template-columns:1fr!important;
+    gap:7px!important;
+    padding:9px 10px!important;
+    margin:0!important;
+    box-shadow:0 4px 14px rgba(46,139,84,.08)!important;
+    border-bottom:2px dashed var(--border)!important;
+    overflow:hidden!important;
+  }
+  .kp-sync-card{
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+    justify-content:space-between!important;
+    padding:9px 11px!important;
+    border-radius:15px!important;
+  }
+  .kp-sync-icon{font-size:25px!important;order:2!important}
+  .kp-sync-text{flex:1!important;min-width:0!important;text-align:right!important;order:1!important}
+  .kp-sync-label{font-size:11.5px!important;line-height:1.2!important}
+  .kp-sync-value{font-size:13px!important;line-height:1.25!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
+
+  /* القائمة: شريط أفقي ثابت العرض بدون كسر الشاشة */
+  .wrap{width:100%!important;max-width:100%!important;display:block!important;min-height:auto!important;overflow:hidden!important}
+  .side{
+    width:100%!important;
+    min-width:0!important;
+    max-width:100%!important;
+    display:flex!important;
+    flex-direction:row!important;
+    flex-wrap:nowrap!important;
+    overflow-x:auto!important;
+    overflow-y:hidden!important;
+    gap:6px!important;
+    padding:8px 10px!important;
+    border-left:0!important;
+    border-bottom:2px dashed var(--border)!important;
+    scrollbar-width:thin!important;
+  }
+  .nav{
+    flex:0 0 auto!important;
+    min-width:auto!important;
+    width:auto!important;
+    margin:0!important;
+    padding:8px 10px!important;
+    font-size:12px!important;
+    border-right:0!important;
+    border-bottom:3px solid transparent!important;
+    border-radius:14px!important;
+    white-space:nowrap!important;
+  }
+  .nav .ni{font-size:16px!important}
+  .nav.on{border-bottom-color:var(--g2)!important;background:linear-gradient(135deg,#e8f9ee,#d4f1e0)!important}
+  .nav-badge{margin-right:4px!important;min-width:19px!important;height:19px!important;line-height:19px!important;font-size:10px!important;padding:0 5px!important}
+  .side-sep{display:none!important}
+
+  /* المحتوى */
+  .main{
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+    padding:12px 10px 80px!important;
+    overflow:visible!important;
+  }
+  .pg{width:100%!important;max-width:100%!important;overflow:visible!important}
+  .pt{font-size:18px!important;line-height:1.35!important;margin-bottom:12px!important;justify-content:center!important;text-align:center!important}
+  .ct,.ct2{width:100%!important;max-width:100%!important}
+  .ct2,.admin-grid,.email-grid,.email-main-layout,.fg,.form-detail-grid{grid-template-columns:1fr!important}
+  .sg{grid-template-columns:1fr!important;gap:10px!important}
+  .card{width:100%!important;max-width:100%!important;padding:15px!important;border-radius:18px!important;margin-bottom:12px!important;overflow:hidden!important}
+  table{font-size:12.5px!important}
+  .tw{max-width:100%!important;overflow-x:auto!important}
+  input,select,textarea{font-size:13px!important;min-height:40px!important}
+  .sbar{width:100%!important;display:flex!important;flex-direction:column!important;align-items:stretch!important}
+  .sbar input,.sbar select,.sbar .btn{width:100%!important;max-width:100%!important}
+
+  /* الرسائل العائمة لا تغطي الشاشة بالكامل */
+  .kp-toast-stack{left:10px!important;right:10px!important;bottom:12px!important;max-width:none!important;align-items:stretch!important}
+  .kp-toast{font-size:12.5px!important;padding:9px 12px!important;border-radius:14px!important;text-align:center!important}
+}
+
+@media(min-width:761px){
+  .kp-sync-panel{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+}
 </style>
 </head>
 <body>
@@ -4222,8 +4464,17 @@ function updateDashIncome() {
   const lbl = document.getElementById('dash-year-total');
   if (lbl) lbl.textContent = (dashYear ? 'سنة ' + dashYear : 'جميع السنوات') + ' — ' + recent.length + ' سند، ' + expCount + ' مصروف';
 
-  // آخر المدفوعات
-  recent.sort(function(a,b){ return (b.date||'').localeCompare(a.date||''); });
+  // آخر المدفوعات — حسب رقم الإيصال من الأكبر إلى الأصغر
+  function kpReceiptNo(x){
+    const raw = (x && (x.id ?? x.receiptNo ?? x.receiptNumber ?? x.number ?? 0));
+    const n = parseInt(String(raw).replace(/[^0-9]/g,''), 10);
+    return isNaN(n) ? 0 : n;
+  }
+  recent.sort(function(a,b){
+    const byReceipt = kpReceiptNo(b) - kpReceiptNo(a);
+    if (byReceipt !== 0) return byReceipt;
+    return String(b.date||'').localeCompare(String(a.date||''));
+  });
   const payEl = document.getElementById('recent-pay');
   if (payEl) payEl.innerHTML = recent.slice(0,10).map(function(p){
     return '<tr><td><b>#'+p.id+'</b></td><td>'+p.who+'</td>' +
@@ -9728,19 +9979,111 @@ async function checkForUpdates() {
   } catch(e) { /* offline */ }
 }
 
-function showSyncBadge(msg) {
-  let el = document.getElementById('sync-badge');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'sync-badge';
-    el.style.cssText = 'position:fixed;bottom:22px;left:18px;background:linear-gradient(135deg,rgba(46,139,84,.95),rgba(30,107,63,.95));color:#fff;padding:8px 18px;border-radius:18px;font-family:Tajawal,sans-serif;font-size:13px;font-weight:800;z-index:9999;transition:opacity .4s;pointer-events:none;box-shadow:0 6px 22px rgba(46,139,84,.35);border:2px solid rgba(255,255,255,.3)';
-    document.body.appendChild(el);
+// ============================================================
+// KP SYNC UX CENTER — واضح وثابت بدل رسائل عشوائية
+// ============================================================
+let kpSyncLastToastAt = 0;
+let kpSyncLastToastMsg = '';
+let kpSyncState = { online: navigator.onLine, status: 'idle', message: 'جاهز', lastSync: localStorage.getItem('kp_last_synced_at') || '' };
+
+function kpEnsureSyncUI(){
+  if (!document.body) return null;
+  let panel = document.getElementById('kp-sync-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'kp-sync-panel';
+    panel.className = 'kp-sync-panel';
+    panel.innerHTML =
+      '<div class="kp-sync-card" id="kp-net-card"><div class="kp-sync-icon">🌐</div><div class="kp-sync-text"><div class="kp-sync-label">حالة الإنترنت</div><div class="kp-sync-value" id="kp-net-value">—</div></div></div>'+
+      '<div class="kp-sync-card" id="kp-sync-card"><div class="kp-sync-icon" id="kp-sync-icon">🔄</div><div class="kp-sync-text"><div class="kp-sync-label">المزامنة</div><div class="kp-sync-value" id="kp-sync-value">—</div></div></div>'+
+      '<div class="kp-sync-card" id="kp-last-card"><div class="kp-sync-icon">⏱️</div><div class="kp-sync-text"><div class="kp-sync-label">آخر تحديث</div><div class="kp-sync-value" id="kp-last-value">—</div></div></div>';
+    const hdr = document.querySelector('.hdr');
+    if (hdr && hdr.parentNode) hdr.parentNode.insertBefore(panel, hdr.nextSibling);
+    else document.body.insertBefore(panel, document.body.firstChild);
   }
-  el.textContent = msg;
-  el.style.opacity = '1';
-  clearTimeout(el._t);
-  el._t = setTimeout(() => el.style.opacity = '0', 2500);
+  let stack = document.getElementById('kp-toast-stack');
+  if (!stack) {
+    stack = document.createElement('div');
+    stack.id = 'kp-toast-stack';
+    stack.className = 'kp-toast-stack';
+    document.body.appendChild(stack);
+  }
+  return panel;
 }
+
+function kpFormatTime(ts){
+  if (!ts) return 'لم تتم بعد';
+  try {
+    const d = new Date(ts);
+    if (!isNaN(d.getTime())) return d.toLocaleTimeString('ar-AE', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  } catch(_e) {}
+  return String(ts).slice(11,19) || String(ts);
+}
+
+function kpClassForStatus(status){
+  if (status === 'ok') return 'ok';
+  if (status === 'err' || status === 'offline') return 'err';
+  if (status === 'busy' || status === 'warn') return 'warn';
+  return '';
+}
+
+function kpRenderSyncUI(){
+  kpEnsureSyncUI();
+  const online = navigator.onLine;
+  const netCard = document.getElementById('kp-net-card');
+  const netVal = document.getElementById('kp-net-value');
+  const syncCard = document.getElementById('kp-sync-card');
+  const syncVal = document.getElementById('kp-sync-value');
+  const syncIcon = document.getElementById('kp-sync-icon');
+  const lastCard = document.getElementById('kp-last-card');
+  const lastVal = document.getElementById('kp-last-value');
+  if (netCard && netVal) {
+    netCard.className = 'kp-sync-card ' + (online ? 'ok' : 'err');
+    netVal.textContent = online ? 'متصل' : 'بدون إنترنت';
+  }
+  if (syncCard && syncVal) {
+    syncCard.className = 'kp-sync-card ' + kpClassForStatus(kpSyncState.status);
+    syncVal.textContent = kpSyncState.message || 'جاهز';
+  }
+  if (syncIcon) syncIcon.textContent = kpSyncState.status === 'busy' ? '⏳' : (kpSyncState.status === 'err' ? '⚠️' : '🔄');
+  if (lastCard && lastVal) {
+    lastCard.className = 'kp-sync-card ' + (kpSyncState.lastSync ? 'ok' : 'warn');
+    lastVal.textContent = kpFormatTime(kpSyncState.lastSync);
+  }
+}
+
+function kpSetSyncStatus(status, message){
+  kpSyncState.status = status || 'idle';
+  kpSyncState.message = message || kpSyncState.message || 'جاهز';
+  if (status === 'ok') {
+    kpSyncState.lastSync = new Date().toISOString();
+    try { localStorage.setItem('kp_last_synced_at', kpSyncState.lastSync); } catch(_e) {}
+  }
+  kpRenderSyncUI();
+}
+
+function kpToast(msg, type){
+  // تم إلغاء الإشعارات السفلية حتى لا تظهر الرسائل مرتين.
+  // حالة الإنترنت والمزامنة تظهر الآن فقط في شريط الحالة العلوي الواضح.
+  return;
+}
+function showSyncBadge(msg) {
+  msg = String(msg || '');
+  let clean = msg.replace(/^[✅⏳🔄⚠️❌📴☁️💾↩️]+\s*/g, '').trim();
+  let status = 'idle';
+  let type = '';
+  if (/جاري|بانتظار|تحميل|حفظ|تحديث/.test(msg) && !/تم/.test(msg)) { status = 'busy'; type = 'warn'; }
+  else if (/تعذر|خطأ|فشل|بدون إنترنت|محلياً فقط|offline|❌|⚠️|📴/.test(msg)) { status = navigator.onLine ? 'err' : 'offline'; type = 'err'; }
+  else if (/تم|محفوظ|نجاح|تحميل|تحديث مباشر|مزامنة/.test(msg)) { status = 'ok'; type = ''; }
+  kpSetSyncStatus(status, clean || msg);
+  // لا نعرض toast لكل تحديث تلقائي صامت حتى لا يزعج المستخدم
+  if (!/تحديث البيانات تلقائياً|تم فحص Firebase: لا توجد|تم فحص طلبات الأهالي/.test(msg)) kpToast(msg, type);
+}
+
+window.addEventListener('online', function(){ kpSetSyncStatus('ok', 'عاد الاتصال — سيتم التحديث تلقائياً'); try { checkForUpdates(); } catch(_e){} });
+window.addEventListener('offline', function(){ kpSetSyncStatus('offline', 'بدون إنترنت — العمل محلياً'); });
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', kpRenderSyncUI);
+else setTimeout(kpRenderSyncUI, 0);
 
 // ============================================================
 // GOOGLE SHEETS — مزامنة طلبات التسجيل
