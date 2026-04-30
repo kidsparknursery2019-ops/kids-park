@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260429H-students-sync-on-approval -->
+<!-- v20260429I-faster-sync-no-flash -->
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Marhey:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
@@ -9630,14 +9630,14 @@ async function loadFromFirebase() {
 }
 
 
-// ✅ بعد التحميل الكامل من Firebase: مزامنة المسارات بتأخير وفقط عند الحاجة
+// ✅ بعد التحميل الكامل من Firebase: مزامنة المسارات فوراً (بالموازي)
 const __kp_original_loadFromFirebase_20260429 = loadFromFirebase;
 loadFromFirebase = async function() {
   const result = await __kp_original_loadFromFirebase_20260429.apply(this, arguments);
-  // تأخير ٢ ثانية بعد التحميل الأساسي عشان ما نزحم الشبكة
+  // تأخير قصير (٣٠٠ms) عشان لا نزحم الشبكة بس نظهر النتيجة بسرعة
   setTimeout(async function(){
     try { await syncRegistrationRequestsFromFirebase({ silent: true }); } catch(_e) {}
-  }, 2000);
+  }, 300);
   return result;
 };
 
@@ -11938,7 +11938,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       for (var i=0;i<basePaths.length;i++){
         try {
           var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-          var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 8000) : null;
+          var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 5000) : null;
           var fetchOpts = { method: 'DELETE' };
           if (ctrl) fetchOpts.signal = ctrl.signal;
           var res = await fetch(basePaths[i] + '/' + folder + '/' + encodeURIComponent(keys[j]) + '.json', fetchOpts);
@@ -11995,7 +11995,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
         var sep = urls[i].indexOf('?')>=0 ? '&' : '?';
         // timeout ٨ ثواني لكل طلب
         var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-        var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 8000) : null;
+        var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 5000) : null;
         var fetchOpts = { cache: 'no-store' };
         if (ctrl) fetchOpts.signal = ctrl.signal;
         var res = await fetch(urls[i] + sep + 'ts=' + Date.now(), fetchOpts);
@@ -12025,9 +12025,15 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   window.syncRegistrationRequestsFromFirebase = async function(options){
     options = options || {};
     try {
-      var pendingRows = await _fetchFolder('pending');
-      var acceptedRows = await _fetchFolder('accepted');
-      var rejectedRows = await _fetchFolder('rejected');
+      // ✅ تنفيذ الـ ٣ طلبات بالموازي (Promise.all) بدل المتسلسل
+      var fetchResults = await Promise.all([
+        _fetchFolder('pending'),
+        _fetchFolder('accepted'),
+        _fetchFolder('rejected')
+      ]);
+      var pendingRows = fetchResults[0];
+      var acceptedRows = fetchResults[1];
+      var rejectedRows = fetchResults[2];
 
       // وسم كل صف بحالته من مكانه
       pendingRows.forEach(function(r){ r.status = 'pending'; });
@@ -12171,14 +12177,18 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     //    (لأن performApproveNew/performApproveMerge عدّلت students محلياً)
     if (status === 'approved') {
       try {
+        var savedAt = new Date().toISOString();
+        // ⚡ حدّث lastSavedAt قبل PATCH عشان stream الأصلي يتجاهل الـ event ولا يعيد تحميل كل البيانات
+        if (typeof lastSavedAt !== 'undefined') lastSavedAt = savedAt;
+        try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
+        try { localStorage.setItem('kp_students', JSON.stringify(students)); } catch(_e){}
+
         var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
         var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 12000) : null;
-        var savedAt = new Date().toISOString();
         var patchPayload = {
           students: Array.isArray(students) ? students : [],
           savedAt: savedAt
         };
-        // إذا في deletedStudents/CLASSES اللي تأثرت، ارفعها كمان
         if (typeof deletedStudents !== 'undefined' && Array.isArray(deletedStudents)) {
           patchPayload.deletedStudents = deletedStudents;
         }
@@ -12190,11 +12200,6 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
         if (ctrl) fetchOpts.signal = ctrl.signal;
         var putRes = await fetch(FB_URL + '.json', fetchOpts);
         if (timeoutId) clearTimeout(timeoutId);
-        if (putRes && putRes.ok) {
-          if (typeof lastSavedAt !== 'undefined') lastSavedAt = savedAt;
-          try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
-          try { localStorage.setItem('kp_students', JSON.stringify(students)); } catch(_e){}
-        }
       } catch(e){
         console.warn('students upload after approval failed:', e);
       }
@@ -12231,9 +12236,14 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       // ✅ إذا التراجع كان عن قبول (يعني students اتعدّلت محلياً)، ارفع students كمان
       if (formRow.approvedStudentId || formRow.approvedAction || (formRow.undoData && (formRow.undoData.createdStudentId || formRow.undoData.mergedStudentId))) {
         try {
+          var savedAt = new Date().toISOString();
+          // ⚡ حدّث lastSavedAt قبل PATCH عشان نمنع reload غير ضروري
+          if (typeof lastSavedAt !== 'undefined') lastSavedAt = savedAt;
+          try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
+          try { localStorage.setItem('kp_students', JSON.stringify(students)); } catch(_e){}
+
           var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
           var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 12000) : null;
-          var savedAt = new Date().toISOString();
           var patchPayload = {
             students: Array.isArray(students) ? students : [],
             savedAt: savedAt
@@ -12249,10 +12259,6 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
           if (ctrl) fetchOpts.signal = ctrl.signal;
           var putRes = await fetch(FB_URL + '.json', fetchOpts);
           if (timeoutId) clearTimeout(timeoutId);
-          if (putRes && putRes.ok) {
-            if (typeof lastSavedAt !== 'undefined') lastSavedAt = savedAt;
-            try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
-          }
         } catch(e){ console.warn('students upload after undo failed:', e); }
       }
 
@@ -12304,19 +12310,18 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   }
 
   function _onRegStreamEvent(evt){
-    // أي put/patch على المسار = حدّث الواجهة بدون استدعاء loadFromFirebase الكامل
-    // debounce ١.٢ ثانية عشان نلم عدة تغييرات متتالية
+    // أي put/patch على المسار = حدّث الواجهة بسرعة
+    // debounce ٣٠٠ms (سريع لكن يلم عدة تغييرات متتالية)
     if (__regStreamReloadTimer) clearTimeout(__regStreamReloadTimer);
     __regStreamReloadTimer = setTimeout(async function(){
       __regStreamReloadTimer = null;
       try {
-        // ما نشغّل المزامنة لو في عملية حفظ محلية مش متخلصة
         if (typeof isSyncing !== 'undefined' && isSyncing) return;
         if (typeof hasUnsavedChanges !== 'undefined' && hasUnsavedChanges) return;
         await window.syncRegistrationRequestsFromFirebase({ silent: true });
         if (typeof showSyncBadge === 'function') showSyncBadge('🔔 تحديث مباشر للطلبات');
       } catch(_e){}
-    }, 1200);
+    }, 300);
   }
 
   function _startRegStream(){
