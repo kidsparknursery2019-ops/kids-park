@@ -1522,6 +1522,24 @@ html,body{max-width:100%;overflow-x:hidden!important}
 @media(min-width:761px){
   .kp-sync-panel{grid-template-columns:repeat(3,minmax(0,1fr))!important}
 }
+
+/* KP NOTIFICATION PANEL ALIGNMENT FIX — 2026-04-30 */
+#btn-save-cloud,#btn-refresh-cloud{display:none!important}
+.hdr .notif-btn{display:inline-flex!important;align-items:center;justify-content:center;gap:7px;min-width:58px;min-height:46px;padding:8px 16px;border-radius:18px;font-size:21px;font-weight:900;background:rgba(255,255,255,.18);border:2.5px solid rgba(255,255,255,.55);box-shadow:0 4px 0 rgba(255,255,255,.20),0 8px 22px rgba(0,0,0,.08)}
+.hdr .notif-btn:hover{background:rgba(255,255,255,.26);transform:translateY(-1px)}
+.notif-panel{position:fixed!important;top:76px;left:auto;right:auto;width:360px;max-width:calc(100vw - 24px);max-height:min(72vh,620px);background:#fff;border-radius:20px;box-shadow:0 16px 45px rgba(20,70,42,.24);z-index:1200;display:none;flex-direction:column;overflow:visible;border:3px solid rgba(255,255,255,.95)}
+.notif-panel.open{display:flex!important;animation:mo-pop .22s cubic-bezier(.34,1.56,.64,1)}
+.notif-panel::before{content:'';position:absolute;top:-12px;left:50%;transform:translateX(-50%) rotate(45deg);width:24px;height:24px;background:linear-gradient(135deg,var(--g1) 0%,var(--g2) 100%);border-right:3px solid rgba(255,255,255,.95);border-bottom:3px solid rgba(255,255,255,.95);border-radius:4px;z-index:-1}
+.notif-panel-hdr{padding:15px 18px;min-height:58px;background:linear-gradient(135deg,var(--g1) 0%,var(--g2) 100%);color:#fff;font-weight:900;font-size:16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;font-family:var(--display);border-radius:17px 17px 0 0}
+.notif-panel-body{overflow-y:auto;flex:1;padding:12px;background:linear-gradient(180deg,#fff 0%,#f6fbf8 100%);border-radius:0 0 17px 17px;min-height:72px;max-height:calc(min(72vh,620px) - 58px)}
+.notif-item{display:flex;align-items:center;gap:12px;padding:12px 13px;border-radius:16px;margin-bottom:9px;cursor:pointer;transition:all .15s;background:#fff;border:1.5px solid #e8f2ec;box-shadow:0 3px 12px rgba(46,139,84,.08)}
+.notif-item:hover{background:var(--gp);transform:translateX(-2px);border-color:var(--g3)}
+.notif-item-icon{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--gp);border:1.5px solid #cbead6;font-size:18px;flex-shrink:0}
+.notif-item-title{font-size:14px;font-weight:900;line-height:1.35;color:var(--text)}
+.notif-item-sub{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.35}
+.notif-empty{text-align:center;padding:24px 12px;color:var(--muted);font-size:13px;font-weight:800}
+@media(max-width:760px){.hdr .notif-btn{flex:1 1 150px!important;min-height:46px!important;font-size:20px!important;padding:8px 10px!important;border-radius:18px!important}.notif-panel{width:calc(100vw - 26px)!important;max-width:calc(100vw - 26px)!important;max-height:58vh!important;border-radius:20px!important}.notif-panel-hdr{font-size:16px!important;min-height:58px!important;padding:14px 16px!important}.notif-panel-body{max-height:calc(58vh - 58px)!important;padding:10px!important}.notif-item{padding:11px 12px!important;border-radius:15px!important}.notif-item-title{font-size:14px!important}}
+
 </style>
 </head>
 <body>
@@ -1570,8 +1588,6 @@ html,body{max-width:100%;overflow-x:hidden!important}
   <div class="hdr-time" id="clock"></div>
   <button id="notif-btn" class="notif-btn" onclick="toggleNotifPanel()" title="تنبيهات التجديدات">🔔<span class="notif-badge" id="notif-badge-count" style="display:none">0</span></button>
   <button id="reg-notif-btn" class="notif-btn" onclick="toggleRegNotifPanel()" title="تنبيهات انتهاء التسجيل">⏰<span class="notif-badge" id="reg-notif-badge-count" style="display:none">0</span></button>
-  <button id="btn-save-cloud" onclick="pushToFirebase()" style="display:none;padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.5);background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:12px;font-weight:700">☁️ حفظ</button>
-  <button id="btn-refresh-cloud" onclick="manualRefreshFromFirebase()" style="display:none;padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.5);background:rgba(255,255,255,.15);color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:12px;font-weight:700;margin-right:6px">🔄 تحديث</button>
   <div id="user-badge" style="display:none;align-items:center;gap:10px;font-size:13px">
     <div><div style="font-weight:700" id="ub-name"></div><div style="font-size:11px;opacity:.7" id="ub-role"></div></div>
     <button onclick="doLogout()" style="padding:5px 12px;border-radius:7px;border:1.5px solid rgba(255,255,255,.4);background:transparent;color:white;cursor:pointer;font-family:Tajawal,sans-serif;font-size:13px;font-weight:600">خروج</button>
@@ -1586,7 +1602,7 @@ html,body{max-width:100%;overflow-x:hidden!important}
   </div>
   <div class="notif-panel-body" id="notif-panel-body"></div>
 </div>
-<div class="notif-panel" id="reg-notif-panel" style="left:370px">
+<div class="notif-panel" id="reg-notif-panel">
   <div class="notif-panel-hdr">
     <span>⏰ تنبيهات انتهاء التسجيل</span>
     <button onclick="toggleRegNotifPanel()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;line-height:1">×</button>
@@ -11080,7 +11096,7 @@ function updateNotifications() {
   const btn = document.getElementById('notif-btn');
   const badge = document.getElementById('notif-badge-count');
   if (btn) {
-    btn.style.display = 'inline-block';
+    btn.style.display = 'inline-flex';
     if (alerts.length > 0) {
       btn.classList.add('has-alerts');
       if (badge) { badge.style.display = 'flex'; badge.textContent = alerts.length > 99 ? '99+' : alerts.length; }
@@ -11097,7 +11113,7 @@ function updateNotifications() {
   const body = document.getElementById('notif-panel-body');
   if (!body) return;
   if (!alerts.length) {
-    body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">✅ لا توجد تنبيهات تجديد</div>';
+    body.innerHTML = '<div class="notif-empty">✅ لا توجد تنبيهات تجديد</div>';
     return;
   }
 
@@ -11130,11 +11146,29 @@ function goToAlert(type, id) {
   }
 }
 
+function kpPositionNotifPanel(panel, btn) {
+  if (!panel || !btn) return;
+  const gap = 12, margin = 12;
+  const rect = btn.getBoundingClientRect();
+  const panelWidth = Math.min(panel.offsetWidth || 360, window.innerWidth - (margin * 2));
+  let left = rect.left + (rect.width / 2) - (panelWidth / 2);
+  left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin));
+  panel.style.width = panelWidth + 'px';
+  panel.style.left = left + 'px';
+  panel.style.right = 'auto';
+  panel.style.top = Math.round(rect.bottom + gap) + 'px';
+}
+
 function toggleNotifPanel() {
   const panel = document.getElementById('notif-panel');
-  if (panel) panel.classList.toggle('open');
+  const btn = document.getElementById('notif-btn');
   const regPanel = document.getElementById('reg-notif-panel');
   if (regPanel) regPanel.classList.remove('open');
+  if (!panel) return;
+  const willOpen = !panel.classList.contains('open');
+  if (typeof updateNotifications === 'function') updateNotifications();
+  panel.classList.toggle('open', willOpen);
+  if (willOpen) setTimeout(function(){ kpPositionNotifPanel(panel, btn); }, 0);
 }
 
 function updateRegExpiryNotifications() {
@@ -11187,7 +11221,7 @@ function updateRegExpiryNotifications() {
   const btn = document.getElementById('reg-notif-btn');
   const badge = document.getElementById('reg-notif-badge-count');
   if (btn) {
-    btn.style.display = 'inline-block';
+    btn.style.display = 'inline-flex';
     if (alerts.length > 0) {
       btn.classList.add('has-alerts');
       if (badge) { badge.style.display = 'flex'; badge.textContent = alerts.length > 99 ? '99+' : alerts.length; }
@@ -11200,7 +11234,7 @@ function updateRegExpiryNotifications() {
   const body = document.getElementById('reg-notif-panel-body');
   if (!body) return;
   if (!alerts.length) {
-    body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">✅ لا توجد تنبيهات انتهاء تسجيل</div>';
+    body.innerHTML = '<div class="notif-empty">✅ لا توجد تنبيهات انتهاء تسجيل</div>';
     return;
   }
 
@@ -11208,7 +11242,7 @@ function updateRegExpiryNotifications() {
     const color = a.days < 0 ? '#e74c3c' : '#e67e22';
     const daysText = a.days < 0 ? 'منتهية' : a.days + ' يوم';
     const dismissBtn = a.dismissible
-      ? '<button class="btn btn-out btn-sm" style="padding:2px 8px;font-size:11px" onclick="dismissStudentAlert(' + a.id + ',\'' + String(a.alertKey || '').replace(/'/g, "&#39;") + '\');event.stopPropagation();">Dismiss</button>'
+      ? '<button class="btn btn-out btn-sm" style="padding:2px 8px;font-size:11px" onclick="dismissStudentAlert(' + a.id + ',\'' + String(a.alertKey || '').replace(/'/g, "&#39;") + '\');event.stopPropagation();">إخفاء</button>'
       : '';
     return '<div class="notif-item" onclick="goToRegAlert(\'' + a.type + '\',' + a.id + ')">' +
       '<div class="notif-item-icon">' + a.icon + '</div>' +
@@ -11235,10 +11269,22 @@ function goToRegAlert(type, id) {
 
 function toggleRegNotifPanel() {
   const panel = document.getElementById('reg-notif-panel');
-  if (panel) panel.classList.toggle('open');
+  const btn = document.getElementById('reg-notif-btn');
   const renPanel = document.getElementById('notif-panel');
   if (renPanel) renPanel.classList.remove('open');
+  if (!panel) return;
+  const willOpen = !panel.classList.contains('open');
+  if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
+  panel.classList.toggle('open', willOpen);
+  if (willOpen) setTimeout(function(){ kpPositionNotifPanel(panel, btn); }, 0);
 }
+
+window.addEventListener('resize', function(){
+  const p1 = document.getElementById('notif-panel'), b1 = document.getElementById('notif-btn');
+  if (p1 && p1.classList.contains('open')) kpPositionNotifPanel(p1, b1);
+  const p2 = document.getElementById('reg-notif-panel'), b2 = document.getElementById('reg-notif-btn');
+  if (p2 && p2.classList.contains('open')) kpPositionNotifPanel(p2, b2);
+});
 
 // Close panel when clicking outside
 document.addEventListener('click', function(e) {
