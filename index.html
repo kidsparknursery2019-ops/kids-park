@@ -2840,6 +2840,73 @@ function formatNationalityWithFlag(nat){
 }
 
 var attLog = {};
+
+// ════════════════════════════════════════════════════════════
+// 🔒 ATTENDANCE LOCKS — once a teacher submits attendance for a
+//   (class, date) pair, that pair becomes read-only for her.
+//   Admin and other (non-teacher) roles bypass the lock.
+//   Shape: { [className]: { [YYYY-MM-DD]: { by, at } } }
+//   Synced to Firebase under /attendanceLocks (last-write-wins).
+// ════════════════════════════════════════════════════════════
+var attendanceLocks = JSON.parse(localStorage.getItem('kp_attendance_locks') || '{}');
+if (!attendanceLocks || typeof attendanceLocks !== 'object' || Array.isArray(attendanceLocks)) attendanceLocks = {};
+
+function isTeacher(){
+  return !!(typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'teacher');
+}
+function teacherAllowedClasses(){
+  if (!isTeacher()) return null; // null means "no restriction"
+  return Array.isArray(currentUser.classes) ? currentUser.classes.slice() : [];
+}
+function teacherCanAccessClass(className){
+  if (!isTeacher()) return true; // admin/staff: always
+  var allowed = teacherAllowedClasses();
+  return Array.isArray(allowed) && allowed.indexOf(className) !== -1;
+}
+function isAttendanceLocked(className, date){
+  if (!className || !date) return false;
+  var byClass = attendanceLocks[className];
+  return !!(byClass && byClass[date]);
+}
+// True iff the current user is forbidden from editing this (class,date).
+// Teacher: locked == forbidden. Admin/staff: never forbidden (silent override).
+function isAttendanceEditBlocked(className, date){
+  return isTeacher() && isAttendanceLocked(className, date);
+}
+function getAttendanceLock(className, date){
+  var byClass = attendanceLocks[className];
+  return byClass ? byClass[date] : null;
+}
+async function saveAttendanceLockRemoteAware(className, date, lockData){
+  // Persist locally
+  if (!attendanceLocks[className]) attendanceLocks[className] = {};
+  attendanceLocks[className][date] = lockData;
+  try { localStorage.setItem('kp_attendance_locks', JSON.stringify(attendanceLocks)); } catch(_e){}
+  // Push to Firebase — PATCH on the (class,date) leaf so concurrent writers don't clobber each other
+  try {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري إرسال الحضور...');
+    var url = FB_URL + '/attendanceLocks/' + encodeURIComponent(className) + '.json';
+    var body = {}; body[date] = lockData;
+    var res = await fetch(url, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    await fetch(FB_URL + '.json', {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ savedAt: new Date().toISOString() })
+    }).catch(function(){});
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم إرسال الحضور — مقفل للتعديل');
+    return true;
+  } catch(e){
+    console.warn('saveAttendanceLockRemoteAware failed:', e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ تم الإرسال محلياً — سيُرفع لاحقاً');
+    return false;
+  }
+}
+
 var editingStuId = null;
 var editingPayId = null;
 var editingExpId = null;
@@ -6226,23 +6293,48 @@ function renderAtt(){
   const tabs = document.getElementById('cls-tabs');
   if (!tabs) return;
   tabs.innerHTML = '';
-  const classNames = Object.keys(CLASSES);
+  var allClassNames = Object.keys(CLASSES);
+  // 🔒 Teacher: restrict class tabs to her assigned classes only
+  var classNames = allClassNames;
+  if (isTeacher()) {
+    var allowed = teacherAllowedClasses() || [];
+    classNames = allClassNames.filter(function(c){ return allowed.indexOf(c) !== -1; });
+    if (!classNames.length) {
+      // No classes assigned — show clear message and bail out
+      tabs.innerHTML = '<div style="color:var(--muted);font-weight:700;padding:8px 12px">لم يتم تعيين فصل لك. يرجى التواصل مع الإدارة.</div>';
+      var grid = document.getElementById('att-grid');
+      if (grid) grid.innerHTML = '';
+      var sumEl = document.getElementById('att-summary');
+      if (sumEl) sumEl.textContent = '';
+      var logEl = document.getElementById('att-log');
+      if (logEl) logEl.innerHTML = '';
+      var submitHolder = document.getElementById('att-submit-holder');
+      if (submitHolder) submitHolder.innerHTML = '';
+      return;
+    }
+  }
   // تأكد أن currentClsTab صالح، وإلا اختر أول فصل
   if (!currentClsTab || !classNames.includes(currentClsTab)) {
     currentClsTab = classNames[0] || '';
   }
-  classNames.forEach(function(c){
-    const t = document.createElement('button');
-    t.className = 'ftab' + (c === currentClsTab ? ' on' : '');
-    t.textContent = (CLASSES[c].emoji || '') + ' ' + c;
-    t.onclick = function(){
-      currentClsTab = c;
-      renderAttGrid();
-      document.querySelectorAll('.ftab').forEach(function(x){ x.classList.remove('on'); });
-      t.classList.add('on');
-    };
-    tabs.appendChild(t);
-  });
+  // If teacher has only one class, hide tab buttons (they're redundant)
+  if (isTeacher() && classNames.length === 1) {
+    tabs.style.display = 'none';
+  } else {
+    tabs.style.display = '';
+    classNames.forEach(function(c){
+      const t = document.createElement('button');
+      t.className = 'ftab' + (c === currentClsTab ? ' on' : '');
+      t.textContent = (CLASSES[c].emoji || '') + ' ' + c;
+      t.onclick = function(){
+        currentClsTab = c;
+        renderAttGrid();
+        document.querySelectorAll('.ftab').forEach(function(x){ x.classList.remove('on'); });
+        t.classList.add('on');
+      };
+      tabs.appendChild(t);
+    });
+  }
   renderAttGrid();
   if (typeof renderAttLog === 'function') renderAttLog();
 }
@@ -6251,26 +6343,77 @@ function renderAttGrid(){
   sanitizeCoreData();
   const date=document.getElementById('att-date').value;
   const cls=currentClsTab;
+  if (!cls) { document.getElementById('att-grid').innerHTML=''; return; }
   const list=students.filter(function(s){ return s && s.cls===cls; });
   let p=0,a=0,l=0;
+  var blocked = isAttendanceEditBlocked(cls, date);
+  var lockInfo = getAttendanceLock(cls, date);
   document.getElementById('att-grid').innerHTML=list.map(s=>{
     const st=attLog[date+'_'+s.id]||'';
     if(st==='present')p++;if(st==='absent')a++;if(st==='late')l++;
+    var disabledAttr = blocked ? ' disabled style="opacity:.5;cursor:not-allowed"' : '';
     return`<div class="ac ${st}" id="ac-${s.id}">
       <div class="av">${s.gen==='ذكر'?'👦':'👧'}</div>
       <div class="an">${s.name}<div style="font-size:11px;color:#607060;font-weight:600;direction:ltr;margin-top:2px">${getStudentEnglishDisplayName(s)}</div></div>
       <div class="ac-cls">${cls}</div>
       <div class="abtns">
-        <button class="abtn p" onclick="setAtt('${date}',${s.id},'present')">✅</button>
-        <button class="abtn a" onclick="setAtt('${date}',${s.id},'absent')">❌</button>
-        <button class="abtn l" onclick="setAtt('${date}',${s.id},'late')">⏰</button>
+        <button class="abtn p"${disabledAttr} onclick="setAtt('${date}',${s.id},'present')">✅</button>
+        <button class="abtn a"${disabledAttr} onclick="setAtt('${date}',${s.id},'absent')">❌</button>
+        <button class="abtn l"${disabledAttr} onclick="setAtt('${date}',${s.id},'late')">⏰</button>
       </div>
     </div>`;
   }).join('');
   document.getElementById('att-summary').textContent=`${cls} — حاضر: ${p} | غائب: ${a} | متأخر: ${l} | إجمالي: ${list.length}`;
+
+  // 🔒 Teacher submit / locked banner
+  var holder = document.getElementById('att-submit-holder');
+  if (!holder) {
+    holder = document.createElement('div');
+    holder.id = 'att-submit-holder';
+    holder.style.marginTop = '14px';
+    var grid = document.getElementById('att-grid');
+    if (grid && grid.parentNode) grid.parentNode.appendChild(holder);
+  }
+  if (isTeacher()) {
+    if (lockInfo) {
+      var when = lockInfo.at ? new Date(lockInfo.at).toLocaleString('ar-EG') : '';
+      holder.innerHTML =
+        '<div style="background:#fffbe7;border:2px solid #ffd54f;border-radius:14px;padding:12px 14px;text-align:center;color:#7a5500;font-weight:800">' +
+        '🔒 تم إرسال حضور هذا الفصل لهذا التاريخ' +
+        (when ? '<div style="font-size:12px;font-weight:600;margin-top:4px;opacity:.85">'+when+'</div>' : '') +
+        '<div style="font-size:12px;font-weight:600;margin-top:6px">للتعديل، يرجى التواصل مع الإدارة.</div>' +
+        '</div>';
+    } else {
+      var hasMarks = (p+a+l) > 0;
+      holder.innerHTML =
+        '<button class="btn btn-g" id="att-submit-btn" ' + (hasMarks ? '' : 'disabled style="opacity:.55;cursor:not-allowed"') +
+        ' onclick="submitAttendance()">✅ تم — إرسال الحضور وقفل التعديل</button>' +
+        '<div style="font-size:12px;color:var(--muted);margin-top:6px">بعد الإرسال لا يمكنك التعديل لهذا اليوم.</div>';
+    }
+  } else {
+    // Admin/staff: show a small status (locked/unlocked) but no submit button
+    if (lockInfo) {
+      var when2 = lockInfo.at ? new Date(lockInfo.at).toLocaleString('ar-EG') : '';
+      holder.innerHTML =
+        '<div style="background:var(--bp);border:1.5px solid #bcd9f5;border-radius:12px;padding:8px 12px;font-size:12.5px;color:var(--b1);font-weight:700">' +
+        '🔒 المعلمة ' + (lockInfo.by ? '<b>' + lockInfo.by + '</b> ' : '') + 'أرسلت حضور هذا الفصل لهذا التاريخ' +
+        (when2 ? ' • ' + when2 : '') +
+        ' <span style="opacity:.85;font-weight:600">— يمكن للإدارة تعديله عند الحاجة.</span>' +
+        '</div>';
+    } else {
+      holder.innerHTML = '';
+    }
+  }
 }
 
 async function setAtt(date,id,status){
+  // 🔒 find the class for this student to evaluate the lock
+  var stu = students.find(function(x){ return x.id === +id; });
+  var cls = stu ? stu.cls : '';
+  if (isAttendanceEditBlocked(cls, date)) {
+    alert('🔒 تم إرسال الحضور لهذا الفصل لهذا التاريخ. تواصل مع الإدارة للتعديل.');
+    return;
+  }
   const key = date+'_'+id;
   attLog[key]=status;
   localStorage.setItem('kp_attlog_data', JSON.stringify(attLog));
@@ -6282,6 +6425,10 @@ async function setAtt(date,id,status){
 
 async function markAll(status){
   const date=document.getElementById('att-date').value;
+  if (isAttendanceEditBlocked(currentClsTab, date)) {
+    alert('🔒 تم إرسال الحضور لهذا الفصل لهذا التاريخ. تواصل مع الإدارة للتعديل.');
+    return;
+  }
   const entries = {};
   students.filter(function(s){ return s && s.cls===currentClsTab; }).forEach(function(s){
     const key = date+'_'+s.id;
@@ -6294,16 +6441,43 @@ async function markAll(status){
   await saveAttendanceEntriesRemoteAware(entries);
 }
 
+// 🔒 Teacher submits the day for the currently-selected class — locks (class,date)
+async function submitAttendance(){
+  if (!isTeacher()) return; // safety
+  var date = document.getElementById('att-date').value;
+  var cls = currentClsTab;
+  if (!cls || !date) return alert('اختر الفصل والتاريخ أولاً.');
+  if (isAttendanceLocked(cls, date)) return alert('🔒 تم إرسال الحضور مسبقاً لهذا الفصل لهذا التاريخ.');
+  // require at least one mark to avoid empty submissions
+  var hasAny = students.some(function(s){ return s && s.cls===cls && attLog[date+'_'+s.id]; });
+  if (!hasAny) return alert('يرجى تسجيل حضور طالب واحد على الأقل قبل الإرسال.');
+  if (!confirm('بعد الإرسال لن تتمكني من تعديل حضور هذا الفصل لهذا التاريخ. متابعة؟')) return;
+  var lockData = {
+    by: (currentUser && (currentUser.username || currentUser.name)) || 'teacher',
+    at: new Date().toISOString()
+  };
+  await saveAttendanceLockRemoteAware(cls, date, lockData);
+  renderAttGrid();
+}
+
 function renderAttLog(){
-  const entries=Object.entries(attLog).filter(([,v])=>v);
+  var entries=Object.entries(attLog).filter(([,v])=>v);
+  // 🔒 Teacher: scope log to her assigned classes only
+  var allowed = isTeacher() ? (teacherAllowedClasses() || []) : null;
   if(!entries.length){document.getElementById('att-log').innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:16px">لا يوجد تسجيل بعد</td></tr>';return;}
-  document.getElementById('att-log').innerHTML=[...entries].slice(-40).reverse().map(([k,v])=>{
+  var rows = [...entries].slice(-200).reverse().map(([k,v])=>{
     const[date,idStr]=k.split('_');
     const s=students.find(x=>x.id===+idStr); if(!s)return'';
+    if (allowed && allowed.indexOf(s.cls) === -1) return '';
     const badge=v==='present'?'bg':v==='absent'?'br':'by';
     const txt=v==='present'?'حاضر':v==='absent'?'غائب':'متأخر';
     return`<tr><td>${date}</td><td>${s.cls}</td><td>${s.name}<div style="font-size:11px;color:#607060;direction:ltr;margin-top:2px">${getStudentEnglishDisplayName(s)}</div></td><td><span class="b ${badge}">${txt}</span></td></tr>`;
-  }).join('');
+  }).filter(Boolean).slice(0, 40);
+  if (!rows.length) {
+    document.getElementById('att-log').innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:16px">لا يوجد تسجيل بعد</td></tr>';
+    return;
+  }
+  document.getElementById('att-log').innerHTML = rows.join('');
 }
 
 // ============================================================
@@ -7670,11 +7844,41 @@ function applyLogin() {
   const rb = document.getElementById('btn-refresh-cloud');
   if (rb) rb.style.display = 'inline-block';
   document.getElementById('ub-name').textContent = currentUser.name || currentUser.username;
-  document.getElementById('ub-role').textContent = currentUser.role === 'admin' ? '👑 مدير' : '👤 موظف';
+  document.getElementById('ub-role').textContent =
+    currentUser.role === 'admin'   ? '👑 مدير' :
+    currentUser.role === 'teacher' ? '👩‍🏫 معلمة' :
+                                     '👤 موظف';
   document.body.classList.toggle('kp-admin', currentUser.role === 'admin');
+  document.body.classList.toggle('kp-teacher', currentUser.role === 'teacher');
   // Show admin nav only for admin
   const navAdmin = document.getElementById('nav-admin');
   if (navAdmin) navAdmin.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
+
+  // 🔒 TEACHER RESTRICTIONS — hide everything except the attendance page
+  if (currentUser.role === 'teacher') {
+    // Hide entire sidebar
+    var side = document.querySelector('.side');
+    if (side) side.style.display = 'none';
+    // Expand main area
+    var main = document.querySelector('.main');
+    if (main) { main.style.maxWidth = '100vw'; main.style.minWidth = '0'; }
+    // Hide header buttons that expose admin/staff features
+    if (sb) sb.style.display = 'none';
+    if (nb) nb.style.display = 'none';
+    if (rnb) rnb.style.display = 'none';
+    if (rb) rb.style.display = 'none';
+    // Hide export/import on attendance page (teachers don't need them)
+    var attBar = document.querySelector('#pg-att .sbar');
+    if (attBar) {
+      attBar.querySelectorAll('button').forEach(function(b){
+        var t = (b.textContent || '').trim();
+        if (t.indexOf('تصدير') !== -1 || t.indexOf('استيراد') !== -1) b.style.display = 'none';
+      });
+    }
+    // Hide the "all present" / "all absent" mass-mark buttons for teachers (they should mark per child)
+    // — keep them: teachers often need them. We just block them when locked (handled in markAll).
+  }
+
   // Load saved settings
   loadSettings();
   // تهيئة فلتر السنة على السنة الحالية
@@ -7689,22 +7893,31 @@ function applyLogin() {
   if (typeof loadCoreDataFromLocalStorage === 'function') loadCoreDataFromLocalStorage();
   if (typeof applyTombstones === 'function') applyTombstones();
   // اعتماد جماعي لمطابقات السندات المقترحة الحالية (مرة واحدة فقط)
-  let bulkApprovedNow = runOneTimeBulkMatchApproval();
+  let bulkApprovedNow = (currentUser.role === 'teacher') ? 0 : runOneTimeBulkMatchApproval();
   // عرض البيانات المحلية فوراً
-  renderDash();
+  if (currentUser.role === 'teacher') {
+    go('att');
+  } else {
+    renderDash();
+  }
   if (bulkApprovedNow > 0) {
     setTimeout(function(){ alert('✅ تم اعتماد ' + bulkApprovedNow + ' عملية ربط بين السندات وملفات الطلاب'); }, 300);
   }
   setTimeout(function(){ updateNotifications(); updateRegExpiryNotifications(); }, 500);
   // تحميل من Firebase وتحديث عند الانتهاء
   loadFromFirebase().then(() => {
-    const approvedAfterSync = runOneTimeBulkMatchApproval();
+    const approvedAfterSync = (currentUser.role === 'teacher') ? 0 : runOneTimeBulkMatchApproval();
     // إعادة تهيئة الفلتر بعد التحميل
     const yf2 = document.getElementById('dash-year-filter');
     if (yf2 && !yf2.value) yf2.value = String(new Date().getFullYear());
-    renderDash();
-    updateNotifications();
-    updateRegExpiryNotifications();
+    if (currentUser.role === 'teacher') {
+      // Re-render attendance with the latest cloud data (locks, marks)
+      if (typeof renderAtt === 'function') renderAtt();
+    } else {
+      renderDash();
+      updateNotifications();
+      updateRegExpiryNotifications();
+    }
     startFirebaseRealtimeListener();
     if (approvedAfterSync > 0) {
       setTimeout(function(){ alert('✅ تم اعتماد ' + approvedAfterSync + ' عملية ربط إضافية بعد مزامنة البيانات'); }, 500);
@@ -7718,6 +7931,15 @@ function doLogout() {
   stopFirebaseRealtimeListener();
   currentUser = null;
   document.body.classList.remove('kp-admin');
+  document.body.classList.remove('kp-teacher');
+  // 🔒 Restore sidebar / main area in case the previous user was a teacher
+  var side = document.querySelector('.side');
+  if (side) side.style.display = '';
+  var main = document.querySelector('.main');
+  if (main) { main.style.maxWidth = ''; main.style.minWidth = ''; }
+  // Restore export/import buttons on attendance page
+  var attBar = document.querySelector('#pg-att .sbar');
+  if (attBar) attBar.querySelectorAll('button').forEach(function(b){ b.style.display = ''; });
   sessionStorage.removeItem('kp_session');
   document.getElementById('login-screen').style.display = 'flex';
   const sb2 = document.getElementById('btn-save-cloud');
@@ -7915,24 +8137,111 @@ function renderAdminUsers() {
   const users = JSON.parse(localStorage.getItem('kp_users') || '[]');
   const el = document.getElementById('admin-users-list');
   if(!el) return;
-  el.innerHTML = users.map(u => `
+  el.innerHTML = users.map(u => {
+    var isAdmin = u.role === 'admin';
+    var isTeacher = u.role === 'teacher';
+    var roleLabel = isAdmin ? 'مدير' : (isTeacher ? 'معلمة' : 'موظف');
+    var roleBg = isAdmin ? '#d0f0e0' : (isTeacher ? '#fff3c4' : 'var(--bp)');
+    var roleFg = isAdmin ? '#0e5e30' : (isTeacher ? '#8a5c00' : 'var(--b1)');
+    var classesHtml = '';
+    if (isTeacher && Array.isArray(u.classes) && u.classes.length) {
+      classesHtml = '<div style="font-size:11.5px;color:var(--muted);margin-top:4px;font-weight:700">📚 ' +
+        u.classes.map(function(c){ return (CLASSES[c] && CLASSES[c].emoji ? CLASSES[c].emoji+' ' : '') + c; }).join(' • ') +
+        '</div>';
+    } else if (isTeacher) {
+      classesHtml = '<div style="font-size:11.5px;color:var(--r1);margin-top:4px;font-weight:700">⚠️ بدون فصل معيّن</div>';
+    }
+    return `
     <div class="admin-user-row">
       <div>
         <b>${u.name || u.username}</b>
         <span style="color:var(--muted);font-size:12px;margin-right:6px">(@${u.username})</span>
-        <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:${u.role==='admin'?'#d0f0e0':'var(--bp)'};color:${u.role==='admin'?'#0e5e30':'var(--b1)'}">${u.role==='admin'?'مدير':'موظف'}</span>
+        <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:${roleBg};color:${roleFg}">${roleLabel}</span>
+        ${classesHtml}
       </div>
-      ${u.username !== 'admin' ? `<button class="btn btn-r btn-sm" onclick="deleteUser('${u.username}')">🗑</button>` : '<span style="font-size:11px;color:var(--muted)">رئيسي</span>'}
-    </div>`).join('');
+      <div class="btn-group">
+        ${isTeacher ? `<button class="btn btn-out btn-sm" onclick="openEditUserClasses('${u.username.replace(/'/g,"\\'")}')">📚 الفصول</button>` : ''}
+        ${u.username !== 'admin' ? `<button class="btn btn-r btn-sm" onclick="deleteUser('${u.username.replace(/'/g,"\\'")}')">🗑</button>` : '<span style="font-size:11px;color:var(--muted)">رئيسي</span>'}
+      </div>
+    </div>`;
+  }).join('');
 }
 
-async function openAddUser() {
+// 🔒 Modal-based add-user UI supporting role=teacher with multi-class selection
+function openAddUser() {
   if(currentUser?.role !== 'admin') return alert('للمدير فقط');
-  const name = prompt('الاسم الكامل:'); if(!name) return;
-  const user = prompt('اسم المستخدم (بالإنجليزي):'); if(!user) return;
-  const pass = prompt('كلمة السر:'); if(!pass||pass.length<4) return alert('كلمة السر قصيرة جداً');
-  const role = confirm('هل يكون مدير؟ (موافق=مدير، إلغاء=موظف)') ? 'admin' : 'staff';
-  // ✅ حدّث القائمة المحلية بناءً على آخر نسخة من Firebase حتى لا ندهس مستخدماً أضافه شخص آخر
+  var ov = document.getElementById('add-user-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'add-user-overlay';
+    ov.className = 'ov';
+    ov.innerHTML = ''
+      + '<div class="mo">'
+      + '  <div class="mot">👥 إضافة مستخدم جديد</div>'
+      + '  <div class="fg">'
+      + '    <div class="fl fgr"><label>الاسم الكامل</label><input id="au-name" type="text" placeholder="مثال: سارة أحمد"></div>'
+      + '    <div class="fl"><label>اسم المستخدم (إنجليزي)</label><input id="au-user" type="text" placeholder="sara"></div>'
+      + '    <div class="fl"><label>كلمة السر</label><input id="au-pass" type="text" placeholder="٤ خانات على الأقل"></div>'
+      + '    <div class="fl fgr">'
+      + '      <label>الدور</label>'
+      + '      <select id="au-role" onchange="(function(){var v=document.getElementById(\'au-role\').value; document.getElementById(\'au-classes-block\').style.display = v===\'teacher\' ? \'\' : \'none\';})()">'
+      + '        <option value="staff">👤 موظف</option>'
+      + '        <option value="teacher">👩‍🏫 معلمة (وصول لصفحة الحضور فقط)</option>'
+      + '        <option value="admin">👑 مدير</option>'
+      + '      </select>'
+      + '    </div>'
+      + '    <div class="fl fgr" id="au-classes-block" style="display:none">'
+      + '      <label>الفصول المعيّنة لها (يمكن اختيار أكثر من فصل) — اضغطي لتحديد/إلغاء</label>'
+      + '      <div id="au-classes-grid" style="display:flex;flex-wrap:wrap;gap:8px;padding:10px;background:#fafdfb;border:2px solid var(--border);border-radius:12px;min-height:50px"></div>'
+      + '    </div>'
+      + '  </div>'
+      + '  <div class="mof">'
+      + '    <button class="btn btn-out" onclick="document.getElementById(\'add-user-overlay\').classList.remove(\'on\')">إلغاء</button>'
+      + '    <button class="btn btn-g" onclick="submitAddUser()">💾 حفظ</button>'
+      + '  </div>'
+      + '</div>';
+    document.body.appendChild(ov);
+  }
+  var grid = ov.querySelector('#au-classes-grid');
+  grid.innerHTML = '';
+  var classNames = Object.keys(CLASSES || {});
+  if (!classNames.length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:13px;font-weight:700">لا توجد فصول. أضيفي فصولاً أولاً من قسم إدارة الفصول.</div>';
+  } else {
+    classNames.forEach(function(c){
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'ftab';
+      chip.dataset.cls = c;
+      chip.textContent = (CLASSES[c].emoji || '') + ' ' + c;
+      chip.onclick = function(){ chip.classList.toggle('on'); };
+      grid.appendChild(chip);
+    });
+  }
+  ov.querySelector('#au-name').value = '';
+  ov.querySelector('#au-user').value = '';
+  ov.querySelector('#au-pass').value = '';
+  ov.querySelector('#au-role').value = 'staff';
+  ov.querySelector('#au-classes-block').style.display = 'none';
+  ov.classList.add('on');
+}
+
+async function submitAddUser(){
+  var ov = document.getElementById('add-user-overlay'); if (!ov) return;
+  var name = (ov.querySelector('#au-name').value || '').trim();
+  var user = (ov.querySelector('#au-user').value || '').trim();
+  var pass = (ov.querySelector('#au-pass').value || '').trim();
+  var role = ov.querySelector('#au-role').value;
+  if (!name) return alert('الاسم الكامل مطلوب');
+  if (!user) return alert('اسم المستخدم مطلوب');
+  if (!pass || pass.length < 4) return alert('كلمة السر قصيرة جداً (٤ خانات على الأقل)');
+  var classes = [];
+  if (role === 'teacher') {
+    ov.querySelectorAll('#au-classes-grid .ftab.on').forEach(function(b){ classes.push(b.dataset.cls); });
+    if (!classes.length) {
+      if (!confirm('لم تختاري أي فصل لهذه المعلمة. ستحتاجين لتعيين الفصول لاحقاً قبل أن تتمكن من العمل. متابعة؟')) return;
+    }
+  }
   let users;
   try {
     const refreshed = await loadUsersFromFirebase();
@@ -7940,12 +8249,74 @@ async function openAddUser() {
   } catch(_e) {
     users = JSON.parse(localStorage.getItem('kp_users') || '[]');
   }
-  if(users.find(u=>u.username===user)) return alert('اسم المستخدم موجود مسبقاً');
-  users.push({username:user, password:pass, role, name});
+  if (users.find(function(u){ return u.username === user; })) return alert('اسم المستخدم موجود مسبقاً');
+  var record = { username: user, password: pass, role: role, name: name };
+  if (role === 'teacher') record.classes = classes;
+  users.push(record);
   localStorage.setItem('kp_users', JSON.stringify(users));
+  ov.classList.remove('on');
   renderAdminUsers();
   const ok = await saveUsersToFirebase(users);
   alert(ok ? '✅ تم إضافة المستخدم وحفظه على الخادم' : '✅ تم إضافة المستخدم محلياً (سيتم رفعه للخادم لاحقاً)');
+}
+
+// 🔒 Edit class assignment for an existing teacher
+function openEditUserClasses(username){
+  if (currentUser?.role !== 'admin') return alert('للمدير فقط');
+  var users = JSON.parse(localStorage.getItem('kp_users') || '[]');
+  var u = users.find(function(x){ return x.username === username; });
+  if (!u) return alert('المستخدم غير موجود');
+  if (u.role !== 'teacher') return alert('هذا الخيار للمعلمات فقط');
+  var ov = document.getElementById('edit-user-classes-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'edit-user-classes-overlay';
+    ov.className = 'ov';
+    ov.innerHTML = ''
+      + '<div class="mo">'
+      + '  <div class="mot">📚 الفصول المعيّنة</div>'
+      + '  <div id="euc-name" style="font-weight:800;margin-bottom:10px"></div>'
+      + '  <div id="euc-grid" style="display:flex;flex-wrap:wrap;gap:8px;padding:10px;background:#fafdfb;border:2px solid var(--border);border-radius:12px;min-height:50px"></div>'
+      + '  <div class="mof">'
+      + '    <button class="btn btn-out" onclick="document.getElementById(\'edit-user-classes-overlay\').classList.remove(\'on\')">إلغاء</button>'
+      + '    <button class="btn btn-g" id="euc-save">💾 حفظ</button>'
+      + '  </div>'
+      + '</div>';
+    document.body.appendChild(ov);
+  }
+  ov.querySelector('#euc-name').textContent = (u.name || u.username) + ' (@' + u.username + ')';
+  var grid = ov.querySelector('#euc-grid');
+  grid.innerHTML = '';
+  var current = Array.isArray(u.classes) ? u.classes.slice() : [];
+  Object.keys(CLASSES || {}).forEach(function(c){
+    var chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'ftab' + (current.indexOf(c) !== -1 ? ' on' : '');
+    chip.dataset.cls = c;
+    chip.textContent = (CLASSES[c].emoji || '') + ' ' + c;
+    chip.onclick = function(){ chip.classList.toggle('on'); };
+    grid.appendChild(chip);
+  });
+  ov.querySelector('#euc-save').onclick = async function(){
+    var picked = [];
+    ov.querySelectorAll('#euc-grid .ftab.on').forEach(function(b){ picked.push(b.dataset.cls); });
+    let usersNow;
+    try {
+      const refreshed = await loadUsersFromFirebase();
+      usersNow = Array.isArray(refreshed.users) ? refreshed.users : JSON.parse(localStorage.getItem('kp_users') || '[]');
+    } catch(_e) {
+      usersNow = JSON.parse(localStorage.getItem('kp_users') || '[]');
+    }
+    var idx = usersNow.findIndex(function(x){ return x.username === username; });
+    if (idx === -1) return alert('المستخدم غير موجود');
+    usersNow[idx].classes = picked;
+    localStorage.setItem('kp_users', JSON.stringify(usersNow));
+    ov.classList.remove('on');
+    renderAdminUsers();
+    var ok = await saveUsersToFirebase(usersNow);
+    alert(ok ? '✅ تم تحديث الفصول' : '✅ تم محلياً (سيُرفع لاحقاً)');
+  };
+  ov.classList.add('on');
 }
 
 async function deleteUser(username) {
@@ -8262,6 +8633,10 @@ function go(page) {
   if(!currentUser && page !== 'login') {
     document.getElementById('login-screen').style.display = 'flex';
     return;
+  }
+  // 🔒 Teachers can only ever land on the attendance page
+  if (currentUser && currentUser.role === 'teacher' && page !== 'att') {
+    page = 'att';
   }
   if(page === 'admin' && currentUser?.role !== 'admin') {
     alert('هذا القسم للمدير فقط');
@@ -8873,6 +9248,7 @@ function persistCoreDataToLocalStorage() {
     localStorage.setItem('kp_expenses_data', JSON.stringify(sanitizeEntityArray(expenses)));
     localStorage.setItem('kp_renewals_data', JSON.stringify(sanitizeEntityArray(renewals)));
     localStorage.setItem('kp_attlog_data', JSON.stringify(attLog || {}));
+    localStorage.setItem('kp_attendance_locks', JSON.stringify(attendanceLocks || {}));
     localStorage.setItem('kp_classes', JSON.stringify(CLASSES || {}));
   } catch (e) {
     console.warn('persistCoreDataToLocalStorage failed:', e);
@@ -8886,6 +9262,7 @@ function loadCoreDataFromLocalStorage() {
     const localExpenses = JSON.parse(localStorage.getItem('kp_expenses_data') || 'null');
     const localRenewals = JSON.parse(localStorage.getItem('kp_renewals_data') || 'null');
     const localAttLog = JSON.parse(localStorage.getItem('kp_attlog_data') || 'null');
+    const localAttLocks = JSON.parse(localStorage.getItem('kp_attendance_locks') || 'null');
     const localClasses = JSON.parse(localStorage.getItem('kp_classes') || 'null');
 
     if (Array.isArray(localStudents)) students = sanitizeEntityArray(localStudents);
@@ -8893,6 +9270,7 @@ function loadCoreDataFromLocalStorage() {
     if (Array.isArray(localExpenses)) expenses = sanitizeEntityArray(localExpenses);
     if (Array.isArray(localRenewals)) renewals = sanitizeEntityArray(localRenewals);
     if (localAttLog && typeof localAttLog === 'object' && !Array.isArray(localAttLog)) attLog = localAttLog;
+    if (localAttLocks && typeof localAttLocks === 'object' && !Array.isArray(localAttLocks)) attendanceLocks = localAttLocks;
     if (localClasses && typeof localClasses === 'object' && !Array.isArray(localClasses)) {
       CLASSES = localClasses;
       if (typeof CLASSES_DATA !== 'undefined') CLASSES_DATA = CLASSES;
@@ -9859,6 +10237,18 @@ async function loadFromFirebase() {
     }
     sanitizeCoreData();
     if (data.attLog) { Object.keys(data.attLog).forEach(function(k){ attLog[k] = data.attLog[k]; }); }
+    if (data.attendanceLocks && typeof data.attendanceLocks === 'object' && !Array.isArray(data.attendanceLocks)) {
+      // Merge per-class — Firebase is authoritative for locks (last-write-wins per leaf)
+      Object.keys(data.attendanceLocks).forEach(function(cls){
+        var byClass = data.attendanceLocks[cls];
+        if (!byClass || typeof byClass !== 'object') return;
+        if (!attendanceLocks[cls]) attendanceLocks[cls] = {};
+        Object.keys(byClass).forEach(function(date){
+          attendanceLocks[cls][date] = byClass[date];
+        });
+      });
+      try { localStorage.setItem('kp_attendance_locks', JSON.stringify(attendanceLocks)); } catch(_e){}
+    }
 
     // دمج سلة المحذوفات مع احترام tombstones
     const allTs = tombstones;
