@@ -3943,7 +3943,10 @@ async function saveSettingsRemoteAware() {
 // ============================================================
 // ADMIN — DAILY RENEWALS EMAIL SERVICE TOGGLE
 // ============================================================
-const DAILY_RENEWALS_EMAIL_CONFIG_URL = FB_URL + '/adminServices/dailyRenewalsEmail';
+function getDailyRenewalsEmailConfigUrl() {
+  var base = (typeof FB_URL !== 'undefined' && FB_URL) ? FB_URL : 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data';
+  return String(base).replace(/\/$/, '') + '/adminServices/dailyRenewalsEmail';
+}
 let dailyRenewalsEmailSettings = { enabled: true, updatedAt: '', updatedBy: '' };
 
 function normalizeDailyRenewalsEmailSettings(value) {
@@ -3978,7 +3981,7 @@ async function loadDailyRenewalsEmailSettings() {
   renderDailyRenewalsEmailSettings();
   if (!currentUser || currentUser.role !== 'admin') return dailyRenewalsEmailSettings;
   try {
-    const res = await fetch(DAILY_RENEWALS_EMAIL_CONFIG_URL + '.json', { cache: 'no-store' });
+    const res = await fetch(getDailyRenewalsEmailConfigUrl() + '.json', { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data) dailyRenewalsEmailSettings = normalizeDailyRenewalsEmailSettings(data);
@@ -3991,7 +3994,7 @@ async function loadDailyRenewalsEmailSettings() {
 }
 
 async function saveDailyRenewalsEmailSettingsRemoteAware(nextSettings) {
-  if (currentUser?.role !== 'admin') { alert('للمدير فقط'); return false; }
+  if (!currentUser || currentUser.role !== 'admin') { alert('للمدير فقط'); return false; }
   dailyRenewalsEmailSettings = normalizeDailyRenewalsEmailSettings(nextSettings);
   dailyRenewalsEmailSettings.updatedAt = new Date().toISOString();
   dailyRenewalsEmailSettings.updatedBy = currentUser.name || currentUser.username || 'admin';
@@ -3999,7 +4002,7 @@ async function saveDailyRenewalsEmailSettingsRemoteAware(nextSettings) {
   renderDailyRenewalsEmailSettings();
   try {
     if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ حالة خدمة التنبيهات...');
-    const res = await fetch(DAILY_RENEWALS_EMAIL_CONFIG_URL + '.json', {
+    const res = await fetch(getDailyRenewalsEmailConfigUrl() + '.json', {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(dailyRenewalsEmailSettings)
@@ -4021,7 +4024,7 @@ async function saveDailyRenewalsEmailSettingsRemoteAware(nextSettings) {
 }
 
 async function toggleDailyRenewalsEmail(enabled) {
-  if (currentUser?.role !== 'admin') return alert('للمدير فقط');
+  if (!currentUser || currentUser.role !== 'admin') return alert('للمدير فقط');
   const ok = await saveDailyRenewalsEmailSettingsRemoteAware({ enabled: !!enabled });
   if (!ok) {
     dailyRenewalsEmailSettings.enabled = !enabled;
