@@ -1651,6 +1651,46 @@ html,body{max-width:100%;overflow-x:hidden!important}
 .login-btn:active{transform:translateY(1px);box-shadow:0 2px 0 #1e6b3f}
 .login-err{color:var(--r2);font-size:13px;margin-top:12px;min-height:18px;font-weight:700}
 
+
+/* ============================================================
+   KP TEACHER MOBILE/UI LOCK — 2026-05-01
+   Keeps teacher restrictions active even when mobile CSS forces
+   sidebar/header notification buttons back to display:flex.
+   ============================================================ */
+body.kp-teacher .side{
+  display:none!important;
+}
+body.kp-teacher .main{
+  width:100%!important;
+  max-width:100%!important;
+  min-width:0!important;
+}
+body.kp-teacher .wrap{
+  display:block!important;
+}
+body.kp-teacher .notif-btn,
+body.kp-teacher .hdr .notif-btn,
+body.kp-teacher #notif-btn,
+body.kp-teacher #reg-notif-btn{
+  display:none!important;
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
+body.kp-teacher .notif-panel,
+body.kp-teacher #notif-panel,
+body.kp-teacher #reg-notif-panel{
+  display:none!important;
+  visibility:hidden!important;
+}
+@media(max-width:760px){
+  body.kp-teacher .side{display:none!important}
+  body.kp-teacher .main{width:100%!important;max-width:100%!important;padding:12px 10px 80px!important}
+  body.kp-teacher .wrap{display:block!important;width:100%!important;max-width:100%!important}
+  body.kp-teacher .hdr .notif-btn,
+  body.kp-teacher #notif-btn,
+  body.kp-teacher #reg-notif-btn{display:none!important;visibility:hidden!important}
+}
+
 </style>
 </head>
 <body>
@@ -7831,6 +7871,27 @@ async function doLogin() {
   applyLogin();
 }
 
+function applyTeacherUiRestrictions(){
+  var isTeacher = !!(currentUser && currentUser.role === 'teacher');
+  document.body.classList.toggle('kp-teacher', isTeacher);
+  var side = document.querySelector('.side');
+  if (side) side.style.display = isTeacher ? 'none' : '';
+  var main = document.querySelector('.main');
+  if (main) {
+    main.style.maxWidth = isTeacher ? '100%' : '';
+    main.style.width = isTeacher ? '100%' : '';
+    main.style.minWidth = isTeacher ? '0' : '';
+  }
+  ['notif-btn','reg-notif-btn'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.style.display = isTeacher ? 'none' : '';
+  });
+  ['notif-panel','reg-notif-panel'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) { el.classList.remove('open'); if (isTeacher) el.style.display = 'none'; else el.style.display = ''; }
+  });
+}
+
 function applyLogin() {
   document.getElementById('login-screen').style.display = 'none';
   const ub = document.getElementById('user-badge');
@@ -7850,6 +7911,7 @@ function applyLogin() {
                                      '👤 موظف';
   document.body.classList.toggle('kp-admin', currentUser.role === 'admin');
   document.body.classList.toggle('kp-teacher', currentUser.role === 'teacher');
+  applyTeacherUiRestrictions();
   // Show admin nav only for admin
   const navAdmin = document.getElementById('nav-admin');
   if (navAdmin) navAdmin.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
@@ -11673,6 +11735,7 @@ function kpPositionNotifPanel(panel, btn) {
 }
 
 function toggleNotifPanel() {
+  if (currentUser && currentUser.role === 'teacher') return;
   const panel = document.getElementById('notif-panel');
   const btn = document.getElementById('notif-btn');
   const regPanel = document.getElementById('reg-notif-panel');
@@ -11781,6 +11844,7 @@ function goToRegAlert(type, id) {
 }
 
 function toggleRegNotifPanel() {
+  if (currentUser && currentUser.role === 'teacher') return;
   const panel = document.getElementById('reg-notif-panel');
   const btn = document.getElementById('reg-notif-btn');
   const renPanel = document.getElementById('notif-panel');
