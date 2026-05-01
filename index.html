@@ -2012,6 +2012,13 @@ body.kp-teacher .kp-sync-panel{
         <div class="ftabs" id="cls-tabs"></div>
         <button class="btn btn-b btn-sm" onclick="kp_openStudentReport()">📊 تقرير طالب</button><button class="btn btn-out btn-sm" onclick="openExport('attendance')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('attendance')" title="استيراد من Excel">⬆ استيراد</button>
       </div>
+      <div id="att-admin-lock-box" class="card" style="display:none;margin-bottom:14px;padding:14px;border:2px solid var(--border);background:#fff;">
+        <div class="ct" style="margin-bottom:8px;">🔐 قفل/فتح تعديل تاريخ الحضور</div>
+        <div id="att-admin-lock-status" class="email-hint" style="margin-bottom:10px;">اختاري الصف والتاريخ</div>
+        <button id="att-admin-lock-btn" class="btn btn-r" onclick="toggleAttendanceDateLock()" style="width:100%;justify-content:center;font-size:15px;">
+          🔒 قفل تعديل هذا التاريخ
+        </button>
+      </div>
       <div class="card">
         <div class="ct">
           <span id="att-summary">اختر فصلاً لتسجيل الحضور</span>
@@ -2937,6 +2944,115 @@ if (!attendanceLocks || typeof attendanceLocks !== 'object' || Array.isArray(att
 
 function isTeacher(){
   return !!(typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'teacher');
+}
+
+function canManageAttendanceDateLocks(){
+  if (typeof currentUser === 'undefined' || !currentUser) return false;
+  var role = String(currentUser.role || '').toLowerCase();
+  var uname = String(currentUser.username || '').toLowerCase();
+  var name = String(currentUser.name || '').toLowerCase();
+  // مخفي عن المعلمة. ظاهر فقط للمدير/الأدمن/المديرين.
+  return role === 'admin' || role === 'manager' || role === 'director' || uname === 'admin' || name.indexOf('مدير') !== -1;
+}
+
+async function deleteAttendanceLockRemoteAware(className, date){
+  if (!className || !date) return false;
+
+  if (attendanceLocks[className]) {
+    delete attendanceLocks[className][date];
+    if (!Object.keys(attendanceLocks[className]).length) delete attendanceLocks[className];
+  }
+  try { localStorage.setItem('kp_attendance_locks', JSON.stringify(attendanceLocks)); } catch(_e){}
+
+  try {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري فتح تعديل الحضور...');
+    var url = FB_URL + '/attendanceLocks/' + encodeURIComponent(className) + '.json';
+    var body = {}; body[date] = null;
+    var res = await fetch(url, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    await fetch(FB_URL + '.json', {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ savedAt: new Date().toISOString() })
+    }).catch(function(){});
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم فتح تعديل الحضور لهذا التاريخ');
+    return true;
+  } catch(e) {
+    console.warn('deleteAttendanceLockRemoteAware failed:', e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ تم الفتح محلياً — سيُرفع لاحقاً');
+    return false;
+  }
+}
+
+async function toggleAttendanceDateLock(){
+  if (!canManageAttendanceDateLocks()) return alert('هذه الصلاحية للإدارة فقط.');
+  var dateEl = document.getElementById('att-date');
+  var date = dateEl ? dateEl.value : '';
+  var cls = currentClsTab;
+  if (!cls || !date) return alert('اختاري الصف والتاريخ أولاً.');
+
+  var lockInfo = getAttendanceLock(cls, date);
+  if (lockInfo) {
+    if (!confirm('فتح تعديل الحضور لصف "' + cls + '" بتاريخ ' + date + '؟\nستتمكن المعلمة من تعديل هذا التاريخ.')) return;
+    await deleteAttendanceLockRemoteAware(cls, date);
+  } else {
+    if (!confirm('قفل تعديل الحضور لصف "' + cls + '" بتاريخ ' + date + '؟\nلن تتمكن المعلمة من تعديل هذا التاريخ حتى يتم فتحه من الإدارة.')) return;
+    await saveAttendanceLockRemoteAware(cls, date, {
+      by: (currentUser && (currentUser.username || currentUser.name)) || 'admin',
+      role: (currentUser && currentUser.role) || 'admin',
+      at: new Date().toISOString(),
+      manual: true,
+      reason: 'admin_date_lock'
+    });
+  }
+  renderAttGrid();
+  if (typeof renderAttLog === 'function') renderAttLog();
+}
+
+function renderAttendanceAdminLockControls(){
+  var box = document.getElementById('att-admin-lock-box');
+  var statusEl = document.getElementById('att-admin-lock-status');
+  var btn = document.getElementById('att-admin-lock-btn');
+  if (!box || !statusEl || !btn) return;
+
+  if (!canManageAttendanceDateLocks()) {
+    box.style.display = 'none';
+    return;
+  }
+
+  box.style.display = 'block';
+
+  var dateEl = document.getElementById('att-date');
+  var date = dateEl ? dateEl.value : '';
+  var cls = currentClsTab;
+
+  if (!cls || !date) {
+    statusEl.innerHTML = 'اختاري الصف والتاريخ أولاً.';
+    btn.disabled = true;
+    btn.className = 'btn btn-out';
+    btn.textContent = 'اختاري الصف والتاريخ';
+    return;
+  }
+
+  btn.disabled = false;
+  var locked = isAttendanceLocked(cls, date);
+  var lockInfo = getAttendanceLock(cls, date);
+
+  if (locked) {
+    var by = lockInfo && lockInfo.by ? lockInfo.by : 'الإدارة';
+    var when = lockInfo && lockInfo.at ? new Date(lockInfo.at).toLocaleString('ar-EG') : '';
+    statusEl.innerHTML = '🔒 التاريخ مقفول للصف: <b>' + escapeHtml(cls) + '</b> — التاريخ: <b>' + escapeHtml(date) + '</b><br>بواسطة: ' + escapeHtml(by) + (when ? ' — ' + escapeHtml(when) : '');
+    btn.className = 'btn btn-y';
+    btn.textContent = '🔓 فتح تعديل هذا التاريخ';
+  } else {
+    statusEl.innerHTML = '✅ التعديل مفتوح للمعلمة للصف: <b>' + escapeHtml(cls) + '</b> — التاريخ: <b>' + escapeHtml(date) + '</b>';
+    btn.className = 'btn btn-r';
+    btn.textContent = '🔒 قفل تعديل هذا التاريخ';
+  }
 }
 function teacherAllowedClasses(){
   if (!isTeacher()) return null; // null means "no restriction"
@@ -6490,6 +6606,7 @@ function renderAttGrid(){
   sanitizeCoreData();
   const date=document.getElementById('att-date').value;
   const cls=currentClsTab;
+  if (typeof renderAttendanceAdminLockControls === 'function') renderAttendanceAdminLockControls();
   if (!cls) { document.getElementById('att-grid').innerHTML=''; return; }
   const list=students.filter(function(s){ return s && s.cls===cls; });
   let p=0,a=0,l=0;
@@ -6545,7 +6662,7 @@ function renderAttGrid(){
         '<div style="background:var(--bp);border:1.5px solid #bcd9f5;border-radius:12px;padding:8px 12px;font-size:12.5px;color:var(--b1);font-weight:700">' +
         '🔒 المعلمة ' + (lockInfo.by ? '<b>' + lockInfo.by + '</b> ' : '') + 'أرسلت حضور هذا الفصل لهذا التاريخ' +
         (when2 ? ' • ' + when2 : '') +
-        ' <span style="opacity:.85;font-weight:600">— يمكن للإدارة تعديله عند الحاجة.</span>' +
+        ' <span style="opacity:.85;font-weight:600">— يمكن للإدارة فتحه أو تعديله عند الحاجة.</span>' +
         '</div>';
     } else {
       holder.innerHTML = '';
@@ -8196,6 +8313,10 @@ async function doLogin() {
   }
   const found = users.find(u => u.username === user && u.password === pass);
   if (!found) { err.textContent = 'اسم المستخدم أو كلمة السر غلط'; return; }
+  if (found.disabled === true) {
+    err.textContent = '🚫 هذا الحساب معطّل. يرجى مراجعة الإدارة.';
+    return;
+  }
   currentUser = found;
   sessionStorage.setItem('kp_session', JSON.stringify(found));
   applyLogin();
@@ -8350,7 +8471,18 @@ function doLogout() {
 
 function checkSession() {
   const saved = sessionStorage.getItem('kp_session');
-  if (saved) { currentUser = JSON.parse(saved); applyLogin(); }
+  if (saved) {
+    currentUser = JSON.parse(saved);
+    if (currentUser && currentUser.disabled === true) {
+      sessionStorage.removeItem('kp_session');
+      currentUser = null;
+      document.getElementById('login-screen').style.display = 'flex';
+      const err = document.getElementById('login-err');
+      if (err) err.textContent = '🚫 هذا الحساب معطّل. يرجى مراجعة الإدارة.';
+      return;
+    }
+    applyLogin();
+  }
   else document.getElementById('login-screen').style.display = 'flex';
 }
 
@@ -8557,6 +8689,11 @@ function renderAdminUsers() {
     var roleBg = isAdmin ? '#d0f0e0' : (isTeacher ? '#fff3c4' : 'var(--bp)');
     var roleFg = isAdmin ? '#0e5e30' : (isTeacher ? '#8a5c00' : 'var(--b1)');
     var shownPassword = canSeePasswords ? escapeAdminHtml(u.password || '') : maskPasswordValue(u.password);
+    var disabled = u.disabled === true;
+    var userRowStyle = disabled ? 'opacity:.62;background:#fff7f7;border-radius:12px;padding:9px' : '';
+    var disabledBadge = disabled
+      ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:800;background:#ffe5e3;color:#a82323;margin-right:6px">🚫 معطّل</span>'
+      : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:800;background:#dcf5e6;color:#0e6b35;margin-right:6px">✅ فعّال</span>';
     var classesHtml = '';
     if (isTeacher && Array.isArray(u.classes) && u.classes.length) {
       classesHtml = '<div style="font-size:11.5px;color:var(--muted);margin-top:4px;font-weight:700">📚 ' +
@@ -8566,17 +8703,19 @@ function renderAdminUsers() {
       classesHtml = '<div style="font-size:11.5px;color:var(--r1);margin-top:4px;font-weight:700">⚠️ بدون فصل معيّن</div>';
     }
     return `
-    <div class="admin-user-row">
+    <div class="admin-user-row" style="${userRowStyle}">
       <div>
         <b>${u.name || u.username}</b>
         <span style="color:var(--muted);font-size:12px;margin-right:6px">(@${u.username})</span>
         <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:${roleBg};color:${roleFg}">${roleLabel}</span>
+        ${disabledBadge}
         <div style="font-size:11.5px;color:var(--muted);margin-top:4px;font-weight:700">🔐 كلمة المرور: <span style="direction:ltr;unicode-bidi:embed">${shownPassword}</span></div>
         ${classesHtml}
       </div>
       <div class="btn-group">
         ${canEditThisUser ? `<button class="btn btn-b btn-sm" onclick="openEditUser('${u.username.replace(/'/g,"\'")}')">✏️ تعديل</button>` : '<span style="font-size:11px;color:var(--muted);font-weight:800">🔒 محمي</span>'}
         ${isTeacher ? `<button class="btn btn-out btn-sm" onclick="openEditUserClasses('${u.username.replace(/'/g,"\'")}')">📚 الفصول</button>` : ''}
+        ${(!isPrimaryAdmin && (!currentUser || currentUser.username !== u.username)) ? `<button class="btn ${disabled ? 'btn-g' : 'btn-y'} btn-sm" onclick="toggleUserStatus('${u.username.replace(/'/g,"\'")}')">${disabled ? '🟢 تفعيل' : '🔴 تعطيل'}</button>` : ''}
         ${!isPrimaryAdmin ? `<button class="btn btn-r btn-sm" onclick="deleteUser('${u.username.replace(/'/g,"\'")}')">🗑</button>` : '<span style="font-size:11px;color:var(--muted)">رئيسي</span>'}
       </div>
     </div>`;
@@ -8862,6 +9001,37 @@ function openEditUserClasses(username){
     alert(ok ? '✅ تم تحديث الفصول' : '✅ تم محلياً (سيُرفع لاحقاً)');
   };
   ov.classList.add('on');
+}
+
+
+async function toggleUserStatus(username) {
+  if (currentUser?.role !== 'admin') return alert('للمدير فقط');
+  if (isPrimaryAdminUser(username)) return alert('❌ لا يمكن تعطيل الحساب الرئيسي');
+  if (currentUser && currentUser.username === username) return alert('❌ لا يمكنك تعطيل حسابك الحالي');
+
+  let usersNow;
+  try {
+    const refreshed = await loadUsersFromFirebase();
+    usersNow = Array.isArray(refreshed.users) ? refreshed.users : JSON.parse(localStorage.getItem('kp_users') || '[]');
+  } catch(_e) {
+    usersNow = JSON.parse(localStorage.getItem('kp_users') || '[]');
+  }
+
+  var idx = usersNow.findIndex(function(x){ return x.username === username; });
+  if (idx === -1) return alert('المستخدم غير موجود');
+
+  usersNow[idx].disabled = !(usersNow[idx].disabled === true);
+  usersNow[idx].updatedAt = new Date().toISOString();
+  usersNow[idx].updatedBy = (currentUser && (currentUser.username || currentUser.name)) || 'admin';
+
+  localStorage.setItem('kp_users', JSON.stringify(usersNow));
+  renderAdminUsers();
+
+  const ok = await saveUsersToFirebase(usersNow);
+  alert(
+    (usersNow[idx].disabled ? '🚫 تم تعطيل المستخدم' : '✅ تم تفعيل المستخدم') +
+    (ok ? ' وحفظه على Firebase' : ' محلياً، لكن تعذرت مزامنته حالياً')
+  );
 }
 
 async function deleteUser(username) {
@@ -9795,7 +9965,7 @@ function getAllData() {
   return {
     version: 2,
     savedAt: new Date().toISOString(),
-    students, payments, expenses, attLog, CLASSES,
+    students, payments, expenses, attLog, attendanceLocks, CLASSES,
     nurserySettings: cleanSettings,
     renewals,
     kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
