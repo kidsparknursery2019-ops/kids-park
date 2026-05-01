@@ -2495,6 +2495,13 @@ body.kp-teacher .kp-sync-panel{
         </select>
       </div>
       <div class="fl"><label>ملاحظات</label><textarea id="ren-notes-txt" rows="2" placeholder="أي ملاحظات..."></textarea></div>
+      <div class="fl">
+        <label>📎 إرفاق نسخة من الورقة الرسمية</label>
+        <input type="file" id="ren-file" accept="image/*,application/pdf" onchange="previewRenewalFile()">
+        <div id="ren-file-preview" style="margin-top:7px;font-size:12px;color:var(--muted);line-height:1.7"></div>
+        <div id="ren-file-current" style="margin-top:4px;font-size:12px;color:var(--muted);line-height:1.7"></div>
+        <small style="color:var(--muted)">يمكن رفع صورة أو PDF. يفضّل أن لا يتجاوز الملف 2MB.</small>
+      </div>
     </div>
     <div class="mof">
       <button class="btn btn-r btn-sm" id="ren-del-btn" onclick="deleteRenewal()" style="margin-left:auto">🗑 حذف</button>
@@ -12199,6 +12206,107 @@ function getRenStatusLabel(days) {
   return days + ' يوم';
 }
 
+
+function getRenAttachment(r) {
+  if (!r) return null;
+  if (r.attachment && r.attachment.data) return r.attachment;
+  if (r.file) return { name: r.fileName || 'مرفق التجديد', type: r.fileType || '', size: r.fileSize || 0, data: r.file };
+  return null;
+}
+
+function formatFileSize(bytes) {
+  bytes = Number(bytes || 0);
+  if (!bytes) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function resetRenewalFileUI(existingAttachment) {
+  const input = document.getElementById('ren-file');
+  const preview = document.getElementById('ren-file-preview');
+  const current = document.getElementById('ren-file-current');
+  if (input) input.value = '';
+  if (preview) preview.innerHTML = '';
+  if (current) {
+    if (existingAttachment && existingAttachment.data) {
+      current.innerHTML = '📎 المرفق الحالي: <b>' + (existingAttachment.name || 'ملف') + '</b> ' + (existingAttachment.size ? '(' + formatFileSize(existingAttachment.size) + ')' : '') +
+        ' <button type="button" class="btn btn-out btn-sm" onclick="openRenAttachmentFromModal()">عرض</button>' +
+        ' <button type="button" class="btn btn-r btn-sm" onclick="removeRenewalAttachment()">حذف المرفق</button>';
+      current.dataset.remove = '0';
+    } else {
+      current.innerHTML = 'لا يوجد مرفق حالي';
+      current.dataset.remove = '0';
+    }
+  }
+}
+
+function previewRenewalFile() {
+  const input = document.getElementById('ren-file');
+  const preview = document.getElementById('ren-file-preview');
+  const file = input && input.files && input.files[0];
+  if (!preview) return;
+  if (!file) { preview.innerHTML = ''; return; }
+  const maxBytes = 2 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    alert('حجم الملف كبير. الرجاء رفع ملف لا يتجاوز 2MB حتى لا يثقل قاعدة البيانات.');
+    input.value = '';
+    preview.innerHTML = '';
+    return;
+  }
+  preview.innerHTML = 'سيتم رفع: <b>' + file.name + '</b> (' + formatFileSize(file.size) + ')';
+  const current = document.getElementById('ren-file-current');
+  if (current) current.dataset.remove = '0';
+}
+
+function removeRenewalAttachment() {
+  const current = document.getElementById('ren-file-current');
+  const input = document.getElementById('ren-file');
+  if (input) input.value = '';
+  if (current) {
+    current.dataset.remove = '1';
+    current.innerHTML = 'سيتم حذف المرفق عند الضغط على حفظ.';
+  }
+  const preview = document.getElementById('ren-file-preview');
+  if (preview) preview.innerHTML = '';
+}
+
+function readRenewalFileInput() {
+  return new Promise(function(resolve, reject) {
+    const input = document.getElementById('ren-file');
+    const file = input && input.files && input.files[0];
+    if (!file) return resolve(null);
+    const maxBytes = 2 * 1024 * 1024;
+    if (file.size > maxBytes) return reject(new Error('حجم الملف كبير. الرجاء رفع ملف لا يتجاوز 2MB.'));
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      resolve({ name: file.name, type: file.type || '', size: file.size || 0, data: e.target.result });
+    };
+    reader.onerror = function() { reject(new Error('تعذر قراءة الملف.')); };
+    reader.readAsDataURL(file);
+  });
+}
+
+function openRenAttachmentFromModal() {
+  if (!editingRenId) return;
+  openRenAttachmentById(editingRenId);
+}
+
+function openRenAttachmentById(id) {
+  const r = renewals.find(function(x){ return normKey(x && x.id) === normKey(id); });
+  const att = getRenAttachment(r);
+  if (!att || !att.data) { alert('لا يوجد مرفق لهذا التجديد'); return; }
+  const w = window.open('', '_blank');
+  if (!w) { alert('المتصفح منع فتح الملف. اسمحي بالنوافذ المنبثقة ثم جربي مرة ثانية.'); return; }
+  const safeTitle = (att.name || 'مرفق التجديد').replace(/[<>&"]/g, '');
+  if ((att.type || '').indexOf('pdf') !== -1 || String(att.data).indexOf('application/pdf') === 5) {
+    w.document.write('<!doctype html><html><head><title>'+safeTitle+'</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0"><iframe src="'+att.data+'" style="border:0;width:100vw;height:100vh"></iframe></body></html>');
+  } else {
+    w.document.write('<!doctype html><html><head><title>'+safeTitle+'</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;text-align:center;background:#f7fbf9"><img src="'+att.data+'" style="max-width:100%;height:auto"></body></html>');
+  }
+  w.document.close();
+}
+
 function renderRenewals() {
   const filterCat    = (document.getElementById('ren-filter-cat')    || {}).value || '';
   const filterStatus = (document.getElementById('ren-filter-status') || {}).value || '';
@@ -12249,6 +12357,7 @@ function renderRenewals() {
           '<span style="background:var(--gp);padding:1px 7px;border-radius:8px">' + r.cat + '</span>' +
           (r.cost ? '<span>💰 ' + r.cost + ' د.إ</span>' : '') +
           (r.notes ? '<span>📝 ' + r.notes + '</span>' : '') +
+          (getRenAttachment(r) ? '<span>📎 مرفق رسمي</span>' : '') +
         '</div>' +
       '</div>' +
       '<div class="ren-days">' +
@@ -12256,6 +12365,7 @@ function renderRenewals() {
         '<div class="ren-days-lbl">' + (r.days !== null && r.days >= 0 ? 'متبقي' : '') + '</div>' +
       '</div>' +
       '<div class="ren-actions" onclick="event.stopPropagation()">' +
+        (getRenAttachment(r) ? '<button class="btn btn-b btn-sm" onclick="openRenAttachmentById(' + r.id + ')">📎 عرض</button>' : '') +
         '<button class="btn btn-out btn-sm" onclick="openEditRenewal(' + r.id + ')">✏️</button>' +
       '</div>' +
     '</div>';
@@ -12272,6 +12382,8 @@ function openAddRenewal() {
   document.getElementById('ren-dt').value = '';
   document.getElementById('ren-cost').value = '';
   document.getElementById('ren-notes-txt').value = '';
+  document.getElementById('ren-cat-sel').value = 'تراخيص';
+  resetRenewalFileUI(null);
   document.getElementById('ren-del-btn').style.display = 'none';
   document.getElementById('mo-renewal').classList.add('on');
 }
@@ -12286,6 +12398,7 @@ function openEditRenewal(id) {
   document.getElementById('ren-cost').value = r.cost || '';
   document.getElementById('ren-cat-sel').value = r.cat || 'أخرى';
   document.getElementById('ren-notes-txt').value = r.notes || '';
+  resetRenewalFileUI(getRenAttachment(r));
   document.getElementById('ren-del-btn').style.display = 'inline-flex';
   document.getElementById('mo-renewal').classList.add('on');
 }
@@ -12298,11 +12411,27 @@ async function saveRenewal() {
   const notes = document.getElementById('ren-notes-txt').value.trim();
   if (!name) { alert('يرجى إدخال الاسم'); return; }
 
+  let newAttachment = null;
+  try {
+    newAttachment = await readRenewalFileInput();
+  } catch (err) {
+    alert((err && err.message) || 'تعذر رفع المرفق');
+    return;
+  }
+  const fileCurrent = document.getElementById('ren-file-current');
+  const removeAtt = fileCurrent && fileCurrent.dataset && fileCurrent.dataset.remove === '1';
+
   let savedRenewal = null;
   if (editingRenId) {
     const r = renewals.find(x => x.id === editingRenId);
     if (r) {
       r.name = name; r.date = date; r.cost = cost; r.cat = cat; r.notes = notes;
+      if (newAttachment) {
+        r.attachment = newAttachment;
+        delete r.file; delete r.fileName; delete r.fileType; delete r.fileSize;
+      } else if (removeAtt) {
+        delete r.attachment; delete r.file; delete r.fileName; delete r.fileType; delete r.fileSize;
+      }
       savedRenewal = r;
     }
   } else {
@@ -12310,6 +12439,7 @@ async function saveRenewal() {
     const newId = await getSafeNextRenewalIdRemoteAware();
     nextRenId = newId + 1;
     savedRenewal = { id: newId, name, date, cost, cat, notes };
+    if (newAttachment) savedRenewal.attachment = newAttachment;
     renewals.push(savedRenewal);
   }
   persistCoreDataToLocalStorage();
