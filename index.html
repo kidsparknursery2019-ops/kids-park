@@ -23,6 +23,7 @@
 
 <!-- Heavy libs deferred — they don't block first paint -->
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <!-- 🐛 BUGFIX: this handler used to be nested inside the xlsx <script src="..."> tag,
@@ -1703,6 +1704,24 @@ body.kp-teacher .kp-sync-panel{
 @media(max-width:760px){
   body.kp-teacher .kp-sync-panel{grid-template-columns:1fr!important}
 }
+
+
+/* 📄 Professional PDF export sandbox — separate from browser print */
+.kp-pdf-export-sandbox{position:absolute!important;left:-100000px!important;top:0!important;width:1120px!important;background:#fff!important;color:#222!important;direction:rtl!important;font-family:'Tajawal',Arial,sans-serif!important;padding:24px!important;box-sizing:border-box!important}
+.kp-pdf-export-doc{background:#fff;color:#222;border:1px solid #dceadf;border-radius:18px;overflow:hidden}
+.kp-pdf-export-head{display:flex;align-items:center;justify-content:space-between;gap:16px;background:linear-gradient(135deg,#e8f9ee,#f8fdfa);border-bottom:2px solid #dceadf;padding:18px 20px}
+.kp-pdf-export-logo{width:82px;height:82px;object-fit:contain;border-radius:14px;background:#fff;border:1px solid #dceadf;padding:4px}
+.kp-pdf-export-title{font-size:24px;font-weight:900;color:#1e6b3f;margin-bottom:4px}
+.kp-pdf-export-sub{font-size:17px;font-weight:800;color:#2a8b54}
+.kp-pdf-export-meta{font-size:12px;color:#6b8470;line-height:1.8;text-align:left;direction:rtl}
+.kp-pdf-export-body{padding:18px}
+.kp-pdf-export-summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.kp-pdf-export-chip{display:inline-flex;padding:6px 12px;border-radius:999px;background:#f0fbf4;border:1px solid #bee5cd;color:#0e6b35;font-size:12px;font-weight:800}
+.kp-pdf-export-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:auto}
+.kp-pdf-export-table th{background:#e8f9ee;color:#1e6b3f;font-weight:900;border:1px solid #cfe7d6;padding:8px 7px;text-align:center;white-space:normal}
+.kp-pdf-export-table td{border:1px solid #edf3ef;padding:7px 6px;text-align:center;vertical-align:top;word-break:break-word;white-space:normal}
+.kp-pdf-export-table tr:nth-child(even) td{background:#fbfdfb}
+.kp-pdf-export-foot{padding:10px 18px;border-top:1px solid #edf3ef;color:#6b8470;font-size:11px;text-align:center}
 </style>
 </head>
 <body>
@@ -2613,6 +2632,11 @@ body.kp-teacher .kp-sync-panel{
         <div class="eo-icon">📋</div>
         <div class="eo-label">CSV</div>
         <div class="eo-sub">ملف نصي</div>
+      </div>
+      <div class="export-opt" id="exp-opt-pdf" onclick="selectExportFmt('pdf')">
+        <div class="eo-icon">📄</div>
+        <div class="eo-label">PDF</div>
+        <div class="eo-sub">احترافي مستقل</div>
       </div>
       <div class="export-opt" id="exp-opt-print" onclick="selectExportFmt('print')">
         <div class="eo-icon">🖨</div>
@@ -7803,12 +7827,53 @@ function doExport(){
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,names[exportTarget]||'data');
     XLSX.writeFile(wb,fname+'.xlsx');
+  } else if(exportFmt==='pdf'){
+    exportDatasetToProfessionalPDF(d, names[exportTarget]||exportTarget, fname);
   } else {
     const csv='\uFEFF'+[d.cols,...d.rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
     const a=document.createElement('a');
     a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
     a.download=fname+'.csv';a.click();
   }
+}
+
+function kpPdfEscape(v){
+  return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+
+async function exportDatasetToProfessionalPDF(dataset, title, filename){
+  if(!dataset || !Array.isArray(dataset.cols) || !Array.isArray(dataset.rows)){ alert('لا توجد بيانات صالحة للتصدير إلى PDF'); return; }
+  if(typeof html2canvas === 'undefined'){ alert('تعذر تحميل مكتبة تصوير PDF. يرجى تحديث الصفحة والمحاولة مرة أخرى.'); return; }
+  if(!window.jspdf || !window.jspdf.jsPDF){ alert('تعذر تحميل مكتبة PDF. يرجى تحديث الصفحة والمحاولة مرة أخرى.'); return; }
+  const orientation = dataset.cols.length > 7 ? 'landscape' : 'portrait';
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF(orientation, 'mm', 'a4');
+  const pageW = pdf.internal.pageSize.getWidth(), pageH = pdf.internal.pageSize.getHeight();
+  const margin = 8, rows = dataset.rows || [];
+  const logoSrc = (typeof logoDataUrl !== 'undefined' && logoDataUrl) ? logoDataUrl : '';
+  const now = new Date();
+  const sandbox = document.createElement('div');
+  sandbox.className = 'kp-pdf-export-sandbox';
+  const headerLogo = logoSrc ? `<img class="kp-pdf-export-logo" src="${logoSrc}">` : `<div class="kp-pdf-export-logo" style="display:flex;align-items:center;justify-content:center;font-size:36px">🌿</div>`;
+  sandbox.innerHTML = `
+    <div class="kp-pdf-export-doc">
+      <div class="kp-pdf-export-head">${headerLogo}<div style="flex:1;text-align:center"><div class="kp-pdf-export-title">حضانة حديقة الأطفال</div><div class="kp-pdf-export-sub">${kpPdfEscape(title)}</div></div><div class="kp-pdf-export-meta"><div><b>تاريخ التصدير:</b> ${kpPdfEscape(now.toLocaleDateString('ar-AE'))}</div><div><b>الوقت:</b> ${kpPdfEscape(now.toLocaleTimeString('ar-AE'))}</div><div><b>عدد السجلات:</b> ${rows.length}</div></div></div>
+      <div class="kp-pdf-export-body"><div class="kp-pdf-export-summary"><span class="kp-pdf-export-chip">📄 PDF مستقل عن الطباعة</span><span class="kp-pdf-export-chip">📊 ${rows.length} سجل</span></div><table class="kp-pdf-export-table"><thead><tr>${dataset.cols.map(c=>`<th>${kpPdfEscape(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${dataset.cols.map((_,i)=>`<td>${kpPdfEscape((r||[])[i])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+      <div class="kp-pdf-export-foot">Kids Park Nursery Management System</div>
+    </div>`;
+  document.body.appendChild(sandbox);
+  try{
+    await new Promise(resolve => setTimeout(resolve, 180));
+    const canvas = await html2canvas(sandbox, {scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false,windowWidth:1120});
+    const imgData = canvas.toDataURL('image/jpeg', 0.96);
+    const imgW = pageW - margin * 2, imgH = canvas.height * imgW / canvas.width, pageContentH = pageH - margin * 2;
+    let remaining = imgH, position = margin;
+    pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
+    remaining -= pageContentH;
+    while(remaining > 1){ pdf.addPage(); position = margin - (imgH - remaining); pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH); remaining -= pageContentH; }
+    pdf.save((filename || 'export') + '.pdf');
+  } catch(err){ console.error('PDF export failed:', err); alert('تعذر إنشاء ملف PDF. يرجى المحاولة مرة أخرى أو استخدام خيار الطباعة.'); }
+  finally{ sandbox.remove(); }
 }
 
 function doPrintExport(){
