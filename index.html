@@ -7166,11 +7166,29 @@ function buildReceiptShareMessage(p){
 
 function getReceiptWhatsAppPhone(p){
   let phone = '';
-  if (p && p.stuId) {
-    const s = students.find(function(x){ return x.id === p.stuId; });
-    if (s) phone = normalizePhoneForWA(s.dph || s.mph || '');
+  if (!p) return '';
+
+  // 1) رقم محفوظ مباشرة داخل السند إن وجد
+  phone = p.phone || p.mobile || p.parentPhone || p.whatsapp || p.dph || p.mph || '';
+
+  // 2) رقم ولي الأمر من ملف الطالب المرتبط بالسند
+  if (!phone && p.stuId && Array.isArray(students)) {
+    const s = students.find(function(x){ return String(x.id) === String(p.stuId); });
+    if (s) phone = s.dph || s.mph || s.phone || s.mobile || s.parentPhone || '';
   }
-  return phone;
+
+  // 3) احتياط: مطابقة اسم المستلم مع اسم الطالب/الأب/الأم
+  if (!phone && p.who && Array.isArray(students)) {
+    const who = String(p.who).trim();
+    const s = students.find(function(x){
+      return [x.name, x.fullName, x.childName, x.father, x.mother, x.parentName].some(function(v){
+        return v && String(v).trim() === who;
+      });
+    });
+    if (s) phone = s.dph || s.mph || s.phone || s.mobile || s.parentPhone || '';
+  }
+
+  return normalizePhoneForWA(phone);
 }
 
 
@@ -7335,42 +7353,65 @@ async function shareCurrentReceipt() {
     const blob = await buildReceiptPdfBlob(p);
     const file = new File([blob], fileName, { type: 'application/pdf' });
 
-    // على الموبايل: يفتح شاشة مشاركة النظام، ومنها يمكن اختيار WhatsApp مع ملف PDF مرفق.
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'سند قبض #' + p.id, text: msg });
-        return;
-      } catch(err) {
-        if (err && err.name === 'AbortError') return;
-        console.log('PDF share failed, falling back:', err);
+    // الأفضل على الموبايل: مشاركة ملف PDF حقيقية عبر نافذة مشاركة النظام.
+    // بعض المتصفحات تقبل files فقط ولا تقبل text معها، لذلك نجرب أكثر من صيغة.
+    if (navigator.share) {
+      const sharePayloads = [
+        { files: [file], title: 'سند قبض #' + p.id, text: msg },
+        { files: [file], title: 'سند قبض #' + p.id },
+        { text: msg, title: 'سند قبض #' + p.id }
+      ];
+      for (const payload of sharePayloads) {
+        try {
+          if (payload.files && navigator.canShare && !navigator.canShare({ files: payload.files })) continue;
+          await navigator.share(payload);
+          return;
+        } catch(err) {
+          if (err && err.name === 'AbortError') return;
+          console.log('Share attempt failed, trying fallback:', err);
+        }
       }
     }
 
-    // على الكمبيوتر/WhatsApp Web: المتصفح لا يسمح بإرفاق PDF تلقائياً، لذلك نحمل الملف ونفتح نص واتساب.
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(function(){ URL.revokeObjectURL(url); }, 1200);
-    setTimeout(function(){ fallbackShareText(phone, msg + '\n\n📎 تم تحميل ملف PDF للسند، يرجى إرفاقه في محادثة واتساب.'); }, 500);
+    // fallback للكمبيوتر أو المتصفحات التي لا تدعم مشاركة الملفات:
+    // ننزّل PDF أولاً، ثم نفتح واتساب بالنص فقط لأن WhatsApp Web لا يسمح بإرفاق ملف تلقائياً من صفحة ويب.
+    downloadBlobFile(blob, fileName);
+    setTimeout(function(){
+      fallbackShareText(phone, msg + '\n\n📎 تم تحميل ملف PDF للسند. يرجى إرفاقه في محادثة واتساب.');
+    }, 450);
   } catch(err) {
     console.error('Share PDF error:', err);
     fallbackShareText(phone, msg + '\n\nتعذر إنشاء PDF تلقائياً، يمكن استخدام زر تحميل PDF ثم إرفاقه يدوياً.');
   }
 }
 
+function downloadBlobFile(blob, fileName){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
+}
+
 function fallbackShareText(phone, msg) {
   const encoded = encodeURIComponent(msg);
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
   let url;
-  if (phone) {
-    url = 'https://wa.me/' + phone + '?text=' + encoded;
-  } else {
-    url = 'https://wa.me/?text=' + encoded;
+
+  if (isMobile) {
+    // يفتح تطبيق واتساب مباشرة إن كان مثبتاً، وإلا نفتح wa.me كاحتياط.
+    url = phone ? ('whatsapp://send?phone=' + phone + '&text=' + encoded) : ('whatsapp://send?text=' + encoded);
+    const waUrl = phone ? ('https://wa.me/' + phone + '?text=' + encoded) : ('https://wa.me/?text=' + encoded);
+    const opened = window.open(url, '_blank');
+    setTimeout(function(){ window.open(waUrl, '_blank'); }, 900);
+    return opened;
   }
-  window.open(url, '_blank');
+
+  url = phone ? ('https://wa.me/' + phone + '?text=' + encoded) : ('https://wa.me/?text=' + encoded);
+  return window.open(url, '_blank');
 }
 
 function normalizePhoneForWA(phone) {
