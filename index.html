@@ -2010,7 +2010,7 @@ body.kp-teacher .kp-sync-panel{
       <div class="sbar">
         <input type="date" id="att-date" onchange="renderAttGrid()">
         <div class="ftabs" id="cls-tabs"></div>
-        <button class="btn btn-out btn-sm" onclick="openExport('attendance')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('attendance')" title="استيراد من Excel">⬆ استيراد</button>
+        <button class="btn btn-b btn-sm" onclick="kp_openStudentReport()">📊 تقرير طالب</button><button class="btn btn-out btn-sm" onclick="openExport('attendance')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('attendance')" title="استيراد من Excel">⬆ استيراد</button>
       </div>
       <div class="card">
         <div class="ct">
@@ -2350,23 +2350,6 @@ body.kp-teacher .kp-sync-panel{
           </div>
         </div>
 
-        <div class="admin-section" style="grid-column:1/-1;border:2px solid #90caf9;background:linear-gradient(135deg,#f3f9ff,#ffffff)">
-          <h3 style="color:#1565c0">🔔 خدمة إيميل تنبيهات التجديدات اليومية</h3>
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:#fff;border:1.5px solid #dceadf;border-radius:14px;padding:14px">
-            <div style="line-height:1.8">
-              <div style="font-weight:900;color:var(--text)">تشغيل/إيقاف إرسال إيميل التجديدات اليومي من Google Apps Script</div>
-              <div id="daily-renewals-email-status" style="font-size:12px;color:var(--muted);font-weight:700">جاري قراءة الحالة...</div>
-            </div>
-            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:#f8fdfa;border:1.5px solid var(--border);border-radius:999px;padding:9px 14px;font-size:13px;font-weight:900;color:var(--g1)">
-              <input type="checkbox" id="daily-renewals-email-toggle" onchange="toggleDailyRenewalsEmail(this.checked)" style="width:20px;height:20px;accent-color:#2a8b54">
-              <span id="daily-renewals-email-toggle-label">مفعّلة</span>
-            </label>
-          </div>
-          <div style="margin-top:10px;padding:10px;background:#fff;border-radius:10px;font-size:12px;color:var(--muted);line-height:1.8">
-            ملاحظة: هذا الزر لا ينشئ التريغر داخل Apps Script، لكنه يعطي أمر تشغيل/إيقاف محفوظ على Firebase. يجب أن يكون كود Apps Script محدثاً ليقرأ هذا الإعداد قبل الإرسال.
-          </div>
-        </div>
-
         <div class="admin-section">
           <h3>🌿 شعار الحضانة</h3>
           <div id="logo-preview-wrap" style="margin-bottom:10px">
@@ -2460,6 +2443,7 @@ body.kp-teacher .kp-sync-panel{
     <div class="mof">
       <button class="btn btn-out" onclick="closeAll()">إغلاق</button>
       <button class="btn btn-b" id="mo-stu-profile-print">🖨 طباعة الملف الكامل</button>
+      <button class="btn btn-y" id="mo-stu-profile-attendance">📋 الحضور والانصراف</button>
       <button class="btn btn-g" id="mo-stu-profile-edit">✏️ تعديل البيانات</button>
     </div>
   </div>
@@ -3937,101 +3921,6 @@ async function saveSettingsRemoteAware() {
     try { autoSave(); } catch(_e) {}
     return false;
   }
-}
-
-
-// ============================================================
-// ADMIN — DAILY RENEWALS EMAIL SERVICE TOGGLE
-// ============================================================
-function getDailyRenewalsEmailConfigUrl() {
-  var base = (typeof FB_URL !== 'undefined' && FB_URL) ? FB_URL : 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data';
-  return String(base).replace(/\/$/, '') + '/adminServices/dailyRenewalsEmail';
-}
-let dailyRenewalsEmailSettings = { enabled: true, updatedAt: '', updatedBy: '' };
-
-function normalizeDailyRenewalsEmailSettings(value) {
-  const src = (value && typeof value === 'object' && !Array.isArray(value)) ? value : {};
-  return {
-    enabled: src.enabled !== false,
-    updatedAt: src.updatedAt || '',
-    updatedBy: src.updatedBy || ''
-  };
-}
-
-function renderDailyRenewalsEmailSettings() {
-  const toggle = document.getElementById('daily-renewals-email-toggle');
-  const label = document.getElementById('daily-renewals-email-toggle-label');
-  const status = document.getElementById('daily-renewals-email-status');
-  if (!toggle || !label || !status) return;
-  dailyRenewalsEmailSettings = normalizeDailyRenewalsEmailSettings(dailyRenewalsEmailSettings);
-  toggle.checked = dailyRenewalsEmailSettings.enabled;
-  label.textContent = dailyRenewalsEmailSettings.enabled ? 'مفعّلة' : 'متوقفة';
-  const by = dailyRenewalsEmailSettings.updatedBy ? (' بواسطة ' + dailyRenewalsEmailSettings.updatedBy) : '';
-  const at = dailyRenewalsEmailSettings.updatedAt ? (' — آخر تعديل: ' + dailyRenewalsEmailSettings.updatedAt) : '';
-  status.innerHTML = dailyRenewalsEmailSettings.enabled
-    ? '✅ الخدمة مفعّلة: سيتم إرسال الإيميل عند تشغيل التريغر اليومي في Apps Script.' + by + at
-    : '⛔ الخدمة متوقفة: Apps Script سيتوقف عن الإرسال حتى لو كان التريغر اليومي شغالاً.' + by + at;
-}
-
-async function loadDailyRenewalsEmailSettings() {
-  try {
-    const cached = localStorage.getItem('kp_daily_renewals_email_settings');
-    if (cached) dailyRenewalsEmailSettings = normalizeDailyRenewalsEmailSettings(JSON.parse(cached));
-  } catch(_e) {}
-  renderDailyRenewalsEmailSettings();
-  if (!currentUser || currentUser.role !== 'admin') return dailyRenewalsEmailSettings;
-  try {
-    const res = await fetch(getDailyRenewalsEmailConfigUrl() + '.json', { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    if (data) dailyRenewalsEmailSettings = normalizeDailyRenewalsEmailSettings(data);
-    localStorage.setItem('kp_daily_renewals_email_settings', JSON.stringify(dailyRenewalsEmailSettings));
-  } catch(e) {
-    console.warn('loadDailyRenewalsEmailSettings failed:', e);
-  }
-  renderDailyRenewalsEmailSettings();
-  return dailyRenewalsEmailSettings;
-}
-
-async function saveDailyRenewalsEmailSettingsRemoteAware(nextSettings) {
-  if (!currentUser || currentUser.role !== 'admin') { alert('للمدير فقط'); return false; }
-  dailyRenewalsEmailSettings = normalizeDailyRenewalsEmailSettings(nextSettings);
-  dailyRenewalsEmailSettings.updatedAt = new Date().toISOString();
-  dailyRenewalsEmailSettings.updatedBy = currentUser.name || currentUser.username || 'admin';
-  localStorage.setItem('kp_daily_renewals_email_settings', JSON.stringify(dailyRenewalsEmailSettings));
-  renderDailyRenewalsEmailSettings();
-  try {
-    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ حالة خدمة التنبيهات...');
-    const res = await fetch(getDailyRenewalsEmailConfigUrl() + '.json', {
-      method: 'PATCH',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(dailyRenewalsEmailSettings)
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    await fetch(FB_URL + '.json', {
-      method: 'PATCH',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ savedAt: new Date().toISOString() })
-    }).catch(function(){});
-    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ حالة خدمة التنبيهات');
-    return true;
-  } catch(e) {
-    console.error('saveDailyRenewalsEmailSettingsRemoteAware failed:', e);
-    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ لم يتم حفظ حالة خدمة التنبيهات على Firebase');
-    alert('⚠️ لم يتم حفظ التغيير على Firebase. تأكدي من الاتصال والصلاحيات.');
-    return false;
-  }
-}
-
-async function toggleDailyRenewalsEmail(enabled) {
-  if (!currentUser || currentUser.role !== 'admin') return alert('للمدير فقط');
-  const ok = await saveDailyRenewalsEmailSettingsRemoteAware({ enabled: !!enabled });
-  if (!ok) {
-    dailyRenewalsEmailSettings.enabled = !enabled;
-    renderDailyRenewalsEmailSettings();
-    return;
-  }
-  alert(enabled ? '✅ تم تفعيل خدمة إيميل التجديدات اليومية' : '⛔ تم إيقاف خدمة إيميل التجديدات اليومية');
 }
 
 // ✅ سجل قرارات الموظف المحلية للحماية من إعادة الكتابة عبر stream events
@@ -5863,6 +5752,60 @@ function printStudentFullFile(studentId) {
   w.document.close();
 }
 
+
+// KP: Student profile attendance/checkout report helpers
+function kpProfileStatusArabic(status) {
+  if (status === 'present') return 'حاضر';
+  if (status === 'absent') return 'غائب';
+  if (status === 'late') return 'متأخر';
+  return status || '—';
+}
+function kpProfileStatusBadge(status) {
+  if (status === 'present') return 'bg';
+  if (status === 'absent') return 'br';
+  if (status === 'late') return 'by';
+  return 'bgr';
+}
+function kpGetStudentAttendanceRowsForProfile(studentId) {
+  const rows = [];
+  try {
+    if (!attLog || typeof attLog !== 'object') return rows;
+    Object.keys(attLog).forEach(function(key){
+      const status = attLog[key];
+      if (!status) return;
+      const parts = String(key).split('_');
+      if (parts.length < 2) return;
+      const dateStr = parts[0];
+      const idStr = parts.slice(1).join('_');
+      if (String(idStr) !== String(studentId)) return;
+      rows.push({ date: dateStr, status: status, statusAr: kpProfileStatusArabic(status), checkout: '—' });
+    });
+  } catch(e) {}
+  rows.sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
+  return rows;
+}
+function kpBuildStudentAttendanceProfileHtml(studentId) {
+  const rows = kpGetStudentAttendanceRowsForProfile(studentId);
+  const counts = {present:0, absent:0, late:0};
+  rows.forEach(function(r){ if (counts[r.status] !== undefined) counts[r.status]++; });
+  const total = rows.length;
+  const table = rows.length ?
+    '<div class="tw" style="max-height:260px;overflow:auto"><table class="tbl"><thead><tr><th>التاريخ</th><th>الحضور</th><th>الانصراف</th></tr></thead><tbody>' +
+    rows.map(function(r){ return '<tr><td>' + r.date + '</td><td><span class="b ' + kpProfileStatusBadge(r.status) + '">' + r.statusAr + '</span></td><td>' + r.checkout + '</td></tr>'; }).join('') +
+    '</tbody></table></div>' :
+    '<div style="color:var(--muted);font-size:12px;margin-bottom:10px">لا توجد سجلات حضور لهذا الطالب حالياً.</div>';
+
+  return '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px;border-top:1.5px solid var(--border);padding-top:10px">📋 الحضور والانصراف</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px;font-size:12px">' +
+      '<div style="background:var(--bp);border-radius:10px;padding:8px;text-align:center"><b>إجمالي السجلات</b><br>' + total + '</div>' +
+      '<div style="background:var(--gp);border-radius:10px;padding:8px;text-align:center"><b>حضور</b><br>' + counts.present + '</div>' +
+      '<div style="background:var(--rp);border-radius:10px;padding:8px;text-align:center"><b>غياب</b><br>' + counts.absent + '</div>' +
+      '<div style="background:var(--yp);border-radius:10px;padding:8px;text-align:center"><b>تأخير</b><br>' + counts.late + '</div>' +
+    '</div>' +
+    '<div class="email-hint" style="margin-bottom:10px">ملاحظة: هذا النظام يسجل حالة الحضور اليومية. إذا لم يكن هناك حقل انصراف مستقل فسيظهر الانصراف بعلامة —.</div>' + table +
+    '<div class="btn-group no-print" style="margin:10px 0 12px"><button class="btn btn-b btn-sm" onclick="kp_openStudentReport();setTimeout(function(){var s=document.getElementById(\'kpReportStudent\');if(s){s.value=\'' + String(studentId).replace(/'/g,'\\\'') + '\';}},50)">📊 تقرير مفصل</button></div>';
+}
+
 function viewStudentProfile(id) {
   const s = students.find(x => x.id === id);
   if (!s) return;
@@ -5955,6 +5898,7 @@ function viewStudentProfile(id) {
         }).join('') +
       '</tbody></table></div>';
     })() +
+    kpBuildStudentAttendanceProfileHtml(id) +
     '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px;border-top:1.5px solid var(--border);padding-top:10px">📎 الوثائق المرفقة</div>' +
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">' + docsHtml + '</div>';
 
@@ -5962,6 +5906,14 @@ function viewStudentProfile(id) {
   document.getElementById('mo-stu-profile-edit').onclick = function() {
     document.getElementById('mo-stu-profile').classList.remove('on');
     setTimeout(function(){ editStudent(id); }, 200);
+  };
+  const attendanceBtn = document.getElementById('mo-stu-profile-attendance');
+  if (attendanceBtn) attendanceBtn.onclick = function() {
+    kp_openStudentReport();
+    setTimeout(function(){
+      const sel = document.getElementById('kpReportStudent');
+      if (sel) sel.value = String(id);
+    }, 50);
   };
   const profileBody = document.getElementById('mo-stu-profile-body');
   if (profileBody) {
@@ -8217,9 +8169,7 @@ let nurserySettings = {
   refund_en: '- Registration fees are not refundable.\n- In case the child didn\'t complete one week, full month fees will be refunded.\n- If child completed one week and didn\'t continue, fees calculated based on days attended.',
   // إعدادات البريد العامة تُحفظ على Firebase ليستفيد منها كل المستخدمين.
   // لا نخزن مفاتيح سرية مثل Mistral API Key هنا.
-  emailSettings: { from: 'kidsparknursery@outlook.com', msClientId: '', msTenant: 'common', model: 'mistral-small-latest' },
-  // يتحكم بها المدير من السيستم، ويقرأها Google Apps Script قبل إرسال تنبيهات التجديدات اليومية.
-  dailyRenewalsEmail: { enabled: true, updatedAt: '', updatedBy: '' }
+  emailSettings: { from: 'kidsparknursery@outlook.com', msClientId: '', msTenant: 'common', model: 'mistral-small-latest' }
 };
 
 // Worksheet images per class: {classKey: base64DataUrl}
@@ -8323,7 +8273,6 @@ function applyLogin() {
 
   // Load saved settings
   loadSettings();
-  if (typeof loadDailyRenewalsEmailSettings === 'function') loadDailyRenewalsEmailSettings();
   // تهيئة فلتر السنة على السنة الحالية
   const yf = document.getElementById('dash-year-filter');
   if (yf && !yf.value) yf.value = String(new Date().getFullYear());
@@ -9249,7 +9198,7 @@ function go(page) {
     payments:renderPayments, expenses:renderExpenses,
     receipts:renderReceipts, finance:renderFinance,
     worksheets:renderWorksheets, forms:renderFormRequests, renewals:renderRenewals, email:renderEmailCenter, finreport:renderFinReport, deleted:renderDeletedStudents, otherdeleted:renderOtherDeletedItems,
-    admin:()=>{renderAdminUsers();renderAdminClasses(); if (typeof loadDailyRenewalsEmailSettings === 'function') loadDailyRenewalsEmailSettings();}
+    admin:()=>{renderAdminUsers();renderAdminClasses();}
   };
   if(renders[page]) renders[page]();
 }
@@ -10974,11 +10923,6 @@ async function loadFromFirebase() {
     applyTombstones();
     cleanupDeletedBuckets();
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
-    if (data.adminServices && data.adminServices.dailyRenewalsEmail) {
-      dailyRenewalsEmailSettings = normalizeDailyRenewalsEmailSettings(data.adminServices.dailyRenewalsEmail);
-      localStorage.setItem('kp_daily_renewals_email_settings', JSON.stringify(dailyRenewalsEmailSettings));
-      renderDailyRenewalsEmailSettings();
-    }
     if (data.kp_users && data.kp_users.length) {
       localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
       // ✅ إذا صفحة الإعدادات مفتوحة، أعد رسم قائمة المستخدمين لتعكس التغييرات من الأجهزة الأخرى
@@ -13921,5 +13865,255 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
 })();
 
 </script>
+
+<!-- KP Student Attendance Report Modal -->
+<div id="kpStudentReportModal" class="ov">
+  <div class="mo mo-lg">
+    <div class="mot">📊 تقرير حضور طالب</div>
+    <div class="fg">
+      <div class="fl"><label>الطالب</label><select id="kpReportStudent"></select></div>
+      <div class="fl"><label>من تاريخ</label><input type="date" id="kpReportFrom"></div>
+      <div class="fl"><label>إلى تاريخ</label><input type="date" id="kpReportTo"></div>
+    </div>
+    <div class="mof" style="justify-content:flex-start">
+      <button class="btn btn-g" onclick="kp_generateReport()">عرض التقرير</button>
+      <button class="btn btn-out" onclick="kp_printStudentReport()">🖨️ طباعة</button>
+      <button class="btn btn-y" onclick="kp_exportStudentReportExcel()">⬇ Excel</button>
+      <button class="btn btn-r" onclick="kp_closeReport()">إغلاق</button>
+    </div>
+    <div id="kpReportResult" style="margin-top:15px"></div>
+  </div>
+</div>
+
+
+
+<script>
+(function(){
+  window.kpLastStudentAttendanceReportRows = [];
+  window.kpLastStudentAttendanceReportTitle = '';
+
+  function kp_safeStudentsList() {
+    try { if (typeof students !== 'undefined' && Array.isArray(students)) return students.filter(Boolean); } catch(e) {}
+    return [];
+  }
+
+  function kp_safeAttLog() {
+    try { if (typeof attLog !== 'undefined' && attLog && typeof attLog === 'object') return attLog; } catch(e) {}
+    return {};
+  }
+
+  function kp_pad(n) {
+    return String(n).padStart(2, '0');
+  }
+
+  function kp_dateKey(d) {
+    return d.getFullYear() + '-' + kp_pad(d.getMonth() + 1) + '-' + kp_pad(d.getDate());
+  }
+
+  function kp_parseDateInput(v, endOfDay) {
+    if (!v) return null;
+    var d = new Date(v + (endOfDay ? 'T23:59:59' : 'T00:00:00'));
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function kp_statusArabic(status) {
+    if (status === 'present') return 'حاضر';
+    if (status === 'absent') return 'غائب';
+    if (status === 'late') return 'متأخر';
+    if (status === 'none') return 'غير مسجل';
+    return status || 'غير مسجل';
+  }
+
+  function kp_statusBadge(status) {
+    if (status === 'present') return 'bg';
+    if (status === 'absent') return 'br';
+    if (status === 'late') return 'by';
+    return 'bgr';
+  }
+
+  function kp_getStatusForDate(logs, dateStr, studentId) {
+    var directKey = dateStr + '_' + studentId;
+    if (logs.hasOwnProperty(directKey)) return logs[directKey];
+
+    /* احتياط لو كان مفتاح الحضور فيه id بصيغة رقم/نص أو فيه أجزاء إضافية */
+    var found = null;
+    Object.keys(logs).some(function(k){
+      if (String(k).indexOf(dateStr + '_') !== 0) return false;
+      var idPart = String(k).slice((dateStr + '_').length);
+      if (String(idPart) === String(studentId)) {
+        found = logs[k];
+        return true;
+      }
+      return false;
+    });
+    return found || 'none';
+  }
+
+  window.kp_openStudentReport = function() {
+    var modal = document.getElementById('kpStudentReportModal');
+    var select = document.getElementById('kpReportStudent');
+    if (!modal || !select) { alert('تعذر فتح تقرير الطالب. يرجى تحديث الصفحة والمحاولة مرة أخرى.'); return; }
+
+    var list = kp_safeStudentsList();
+
+    try {
+      if (typeof isTeacher === 'function' && isTeacher() && typeof teacherAllowedClasses === 'function') {
+        var allowed = teacherAllowedClasses() || [];
+        list = list.filter(function(s){ return allowed.indexOf(s.cls) !== -1; });
+      }
+    } catch(e) {}
+
+    list = list.slice().sort(function(a,b){
+      var ca = String(a.cls || '');
+      var cb = String(b.cls || '');
+      var cc = ca.localeCompare(cb, 'ar');
+      if (cc !== 0) return cc;
+      return String(a.name || '').localeCompare(String(b.name || ''), 'ar');
+    });
+
+    select.innerHTML = '<option value="">اختاري الطالب</option>' + list.map(function(s){
+      var sid = String(s.id == null ? '' : s.id).replace(/"/g,'&quot;');
+      var nm = (s.name || 'بدون اسم') + (s.cls ? ' — ' + s.cls : '');
+      return '<option value="' + sid + '">' + nm + '</option>';
+    }).join('');
+
+    var today = new Date();
+    var first = new Date(today.getFullYear(), today.getMonth(), 1);
+    var from = document.getElementById('kpReportFrom');
+    var to = document.getElementById('kpReportTo');
+    if (from && !from.value) from.value = kp_dateKey(first);
+    if (to && !to.value) to.value = kp_dateKey(today);
+
+    document.getElementById('kpReportResult').innerHTML =
+      '<div class="email-hint">اختاري الطالب والفترة ثم اضغطي عرض التقرير. التقرير سيعرض كل يوم ضمن الفترة، حتى الأيام غير المسجلة.</div>';
+    modal.classList.add('on');
+  };
+
+  window.kp_closeReport = function() {
+    var modal = document.getElementById('kpStudentReportModal');
+    if (modal) modal.classList.remove('on');
+  };
+
+  window.kp_generateReport = function() {
+    var studentId = document.getElementById('kpReportStudent').value;
+    var fromVal = document.getElementById('kpReportFrom').value;
+    var toVal = document.getElementById('kpReportTo').value;
+
+    if (!studentId) { alert('اختاري الطالب أولاً.'); return; }
+    if (!fromVal || !toVal) { alert('اختاري تاريخ البداية والنهاية.'); return; }
+
+    var fromDate = kp_parseDateInput(fromVal, false);
+    var toDate = kp_parseDateInput(toVal, true);
+
+    if (!fromDate || !toDate) { alert('التاريخ غير صحيح.'); return; }
+    if (fromDate > toDate) { alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية.'); return; }
+
+    var maxDays = 370;
+    var diff = Math.floor((toDate - fromDate) / (1000 * 60 * 60 * 24)) + 1;
+    if (diff > maxDays) {
+      alert('الفترة طويلة جداً. اختاري فترة سنة أو أقل.');
+      return;
+    }
+
+    var st = kp_safeStudentsList().find(function(x){ return String(x.id) === String(studentId); });
+    if (!st) { alert('لم يتم العثور على الطالب.'); return; }
+
+    var logs = kp_safeAttLog();
+    var rows = [];
+    var counts = {present:0, absent:0, late:0, none:0};
+
+    var d = new Date(fromDate);
+    d.setHours(12,0,0,0);
+
+    while (d <= toDate) {
+      var dateStr = kp_dateKey(d);
+      var status = kp_getStatusForDate(logs, dateStr, studentId) || 'none';
+      if (counts[status] === undefined) counts[status] = 0;
+      counts[status]++;
+
+      rows.push({
+        date: dateStr,
+        day: d.toLocaleDateString('ar-AE', { weekday: 'long' }),
+        cls: st.cls || '',
+        name: st.name || '',
+        status: status,
+        statusAr: kp_statusArabic(status),
+        notes: status === 'none' ? 'لا يوجد إدخال حضور لهذا اليوم' : ''
+      });
+
+      d.setDate(d.getDate() + 1);
+    }
+
+    window.kpLastStudentAttendanceReportRows = rows;
+    window.kpLastStudentAttendanceReportTitle = 'تقرير حضور الطالب - ' + (st.name || '');
+
+    var total = rows.length;
+    var html = ''
+      + '<div class="sg" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-bottom:14px">'
+      + '<div class="sc"><div class="sl">الطالب</div><div class="sv" style="font-size:18px">' + (st.name || '') + '</div><div class="ss">' + (st.cls || '') + '</div></div>'
+      + '<div class="sc b"><div class="sl">إجمالي الأيام</div><div class="sv">' + total + '</div><div class="ss">من ' + fromVal + ' إلى ' + toVal + '</div></div>'
+      + '<div class="sc"><div class="sl">حضور</div><div class="sv">' + (counts.present || 0) + '</div><div class="ss">✅ حاضر</div></div>'
+      + '<div class="sc r"><div class="sl">غياب</div><div class="sv">' + (counts.absent || 0) + '</div><div class="ss">❌ غائب</div></div>'
+      + '<div class="sc y"><div class="sl">تأخير</div><div class="sv">' + (counts.late || 0) + '</div><div class="ss">⏰ متأخر</div></div>'
+      + '<div class="sc o"><div class="sl">غير مسجل</div><div class="sv">' + (counts.none || 0) + '</div><div class="ss">— لا يوجد إدخال</div></div>'
+      + '</div>';
+
+    html += '<div class="email-hint">هذا التقرير يعرض كل يوم ضمن الفترة. الأيام التي لا يوجد لها إدخال حضور تظهر بحالة "غير مسجل".</div>';
+
+    html += '<div class="tw"><table><thead><tr><th>التاريخ</th><th>اليوم</th><th>الفصل</th><th>الطالب</th><th>الحالة</th><th>ملاحظات</th></tr></thead><tbody>'
+      + rows.map(function(r){
+        return '<tr>'
+          + '<td>' + r.date + '</td>'
+          + '<td>' + r.day + '</td>'
+          + '<td>' + r.cls + '</td>'
+          + '<td>' + r.name + '</td>'
+          + '<td><span class="b ' + kp_statusBadge(r.status) + '">' + r.statusAr + '</span></td>'
+          + '<td>' + (r.notes || '') + '</td>'
+          + '</tr>';
+      }).join('')
+      + '</tbody></table></div>';
+
+    document.getElementById('kpReportResult').innerHTML = html;
+  };
+
+  window.kp_printStudentReport = function() {
+    var area = document.getElementById('kpReportResult');
+    if (!area || !area.innerHTML.trim()) { alert('اعرضي التقرير أولاً.'); return; }
+
+    var title = window.kpLastStudentAttendanceReportTitle || 'تقرير حضور طالب';
+    var w = window.open('', '_blank');
+    w.document.write('<html dir="rtl"><head><meta charset="UTF-8"><title>'+title+'</title>'
+      + '<style>body{font-family:Arial,Tahoma,sans-serif;padding:20px;direction:rtl;color:#222}h2{text-align:center;color:#2a8b54}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ccc;padding:7px;text-align:right}th{background:#e8f9ee;color:#2a8b54}.b{padding:3px 8px;border-radius:10px;font-weight:bold}.bg{background:#dcf5e6;color:#0e6b35}.br{background:#ffe5e3;color:#a82323}.by{background:#fff3c4;color:#8a5c00}.bgr{background:#f0f0f0;color:#555}.sg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}.sc{border:1px solid #ddd;padding:10px;border-radius:10px}.sl{color:#666}.sv{font-size:20px;font-weight:bold;color:#2a8b54}.ss{font-size:11px;color:#666}.email-hint{border:1px dashed #ccc;padding:8px;border-radius:8px;margin:8px 0;color:#666}@media print{button{display:none}}</style>'
+      + '</head><body><h2>'+title+'</h2>' + area.innerHTML + '</body></html>');
+    w.document.close();
+    w.focus();
+    setTimeout(function(){ w.print(); }, 300);
+  };
+
+  window.kp_exportStudentReportExcel = function() {
+    var reportRows = window.kpLastStudentAttendanceReportRows || [];
+    if (!reportRows.length) { alert('اعرضي التقرير أولاً ولازم يكون فيه سجلات للتصدير.'); return; }
+    if (typeof XLSX === 'undefined') { alert('مكتبة Excel لم تجهز بعد. انتظري قليلاً ثم جربي مرة أخرى.'); return; }
+
+    var rows = reportRows.map(function(r){
+      return {
+        'التاريخ': r.date,
+        'اليوم': r.day,
+        'الفصل': r.cls,
+        'الطالب': r.name,
+        'الحالة': r.statusAr,
+        'ملاحظات': r.notes || ''
+      };
+    });
+
+    var ws = XLSX.utils.json_to_sheet(rows);
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'تقرير حضور طالب');
+    XLSX.writeFile(wb, (window.kpLastStudentAttendanceReportTitle || 'تقرير حضور طالب') + '.xlsx');
+  };
+})();
+</script>
+
+
 </body>
 </html>
