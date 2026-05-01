@@ -2350,6 +2350,23 @@ body.kp-teacher .kp-sync-panel{
           </div>
         </div>
 
+        <div class="admin-section" style="grid-column:1/-1;border:2px solid #90caf9;background:linear-gradient(135deg,#f3f9ff,#ffffff)">
+          <h3 style="color:#1565c0">🔔 خدمة إيميل تنبيهات التجديدات اليومية</h3>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:#fff;border:1.5px solid #dceadf;border-radius:14px;padding:14px">
+            <div style="line-height:1.8">
+              <div style="font-weight:900;color:var(--text)">تشغيل/إيقاف إرسال إيميل التجديدات اليومي من Google Apps Script</div>
+              <div id="daily-renewals-email-status" style="font-size:12px;color:var(--muted);font-weight:700">جاري قراءة الحالة...</div>
+            </div>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:#f8fdfa;border:1.5px solid var(--border);border-radius:999px;padding:9px 14px;font-size:13px;font-weight:900;color:var(--g1)">
+              <input type="checkbox" id="daily-renewals-email-toggle" onchange="toggleDailyRenewalsEmail(this.checked)" style="width:20px;height:20px;accent-color:#2a8b54">
+              <span id="daily-renewals-email-toggle-label">مفعّلة</span>
+            </label>
+          </div>
+          <div style="margin-top:10px;padding:10px;background:#fff;border-radius:10px;font-size:12px;color:var(--muted);line-height:1.8">
+            ملاحظة: هذا الزر لا ينشئ التريغر داخل Apps Script، لكنه يعطي أمر تشغيل/إيقاف محفوظ على Firebase. يجب أن يكون كود Apps Script محدثاً ليقرأ هذا الإعداد قبل الإرسال.
+          </div>
+        </div>
+
         <div class="admin-section">
           <h3>🌿 شعار الحضانة</h3>
           <div id="logo-preview-wrap" style="margin-bottom:10px">
@@ -3920,6 +3937,98 @@ async function saveSettingsRemoteAware() {
     try { autoSave(); } catch(_e) {}
     return false;
   }
+}
+
+
+// ============================================================
+// ADMIN — DAILY RENEWALS EMAIL SERVICE TOGGLE
+// ============================================================
+const DAILY_RENEWALS_EMAIL_CONFIG_URL = FB_URL + '/adminServices/dailyRenewalsEmail';
+let dailyRenewalsEmailSettings = { enabled: true, updatedAt: '', updatedBy: '' };
+
+function normalizeDailyRenewalsEmailSettings(value) {
+  const src = (value && typeof value === 'object' && !Array.isArray(value)) ? value : {};
+  return {
+    enabled: src.enabled !== false,
+    updatedAt: src.updatedAt || '',
+    updatedBy: src.updatedBy || ''
+  };
+}
+
+function renderDailyRenewalsEmailSettings() {
+  const toggle = document.getElementById('daily-renewals-email-toggle');
+  const label = document.getElementById('daily-renewals-email-toggle-label');
+  const status = document.getElementById('daily-renewals-email-status');
+  if (!toggle || !label || !status) return;
+  dailyRenewalsEmailSettings = normalizeDailyRenewalsEmailSettings(dailyRenewalsEmailSettings);
+  toggle.checked = dailyRenewalsEmailSettings.enabled;
+  label.textContent = dailyRenewalsEmailSettings.enabled ? 'مفعّلة' : 'متوقفة';
+  const by = dailyRenewalsEmailSettings.updatedBy ? (' بواسطة ' + dailyRenewalsEmailSettings.updatedBy) : '';
+  const at = dailyRenewalsEmailSettings.updatedAt ? (' — آخر تعديل: ' + dailyRenewalsEmailSettings.updatedAt) : '';
+  status.innerHTML = dailyRenewalsEmailSettings.enabled
+    ? '✅ الخدمة مفعّلة: سيتم إرسال الإيميل عند تشغيل التريغر اليومي في Apps Script.' + by + at
+    : '⛔ الخدمة متوقفة: Apps Script سيتوقف عن الإرسال حتى لو كان التريغر اليومي شغالاً.' + by + at;
+}
+
+async function loadDailyRenewalsEmailSettings() {
+  try {
+    const cached = localStorage.getItem('kp_daily_renewals_email_settings');
+    if (cached) dailyRenewalsEmailSettings = normalizeDailyRenewalsEmailSettings(JSON.parse(cached));
+  } catch(_e) {}
+  renderDailyRenewalsEmailSettings();
+  if (!currentUser || currentUser.role !== 'admin') return dailyRenewalsEmailSettings;
+  try {
+    const res = await fetch(DAILY_RENEWALS_EMAIL_CONFIG_URL + '.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data) dailyRenewalsEmailSettings = normalizeDailyRenewalsEmailSettings(data);
+    localStorage.setItem('kp_daily_renewals_email_settings', JSON.stringify(dailyRenewalsEmailSettings));
+  } catch(e) {
+    console.warn('loadDailyRenewalsEmailSettings failed:', e);
+  }
+  renderDailyRenewalsEmailSettings();
+  return dailyRenewalsEmailSettings;
+}
+
+async function saveDailyRenewalsEmailSettingsRemoteAware(nextSettings) {
+  if (currentUser?.role !== 'admin') { alert('للمدير فقط'); return false; }
+  dailyRenewalsEmailSettings = normalizeDailyRenewalsEmailSettings(nextSettings);
+  dailyRenewalsEmailSettings.updatedAt = new Date().toISOString();
+  dailyRenewalsEmailSettings.updatedBy = currentUser.name || currentUser.username || 'admin';
+  localStorage.setItem('kp_daily_renewals_email_settings', JSON.stringify(dailyRenewalsEmailSettings));
+  renderDailyRenewalsEmailSettings();
+  try {
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ حالة خدمة التنبيهات...');
+    const res = await fetch(DAILY_RENEWALS_EMAIL_CONFIG_URL + '.json', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(dailyRenewalsEmailSettings)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    await fetch(FB_URL + '.json', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ savedAt: new Date().toISOString() })
+    }).catch(function(){});
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ حالة خدمة التنبيهات');
+    return true;
+  } catch(e) {
+    console.error('saveDailyRenewalsEmailSettingsRemoteAware failed:', e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ لم يتم حفظ حالة خدمة التنبيهات على Firebase');
+    alert('⚠️ لم يتم حفظ التغيير على Firebase. تأكدي من الاتصال والصلاحيات.');
+    return false;
+  }
+}
+
+async function toggleDailyRenewalsEmail(enabled) {
+  if (currentUser?.role !== 'admin') return alert('للمدير فقط');
+  const ok = await saveDailyRenewalsEmailSettingsRemoteAware({ enabled: !!enabled });
+  if (!ok) {
+    dailyRenewalsEmailSettings.enabled = !enabled;
+    renderDailyRenewalsEmailSettings();
+    return;
+  }
+  alert(enabled ? '✅ تم تفعيل خدمة إيميل التجديدات اليومية' : '⛔ تم إيقاف خدمة إيميل التجديدات اليومية');
 }
 
 // ✅ سجل قرارات الموظف المحلية للحماية من إعادة الكتابة عبر stream events
@@ -8105,7 +8214,9 @@ let nurserySettings = {
   refund_en: '- Registration fees are not refundable.\n- In case the child didn\'t complete one week, full month fees will be refunded.\n- If child completed one week and didn\'t continue, fees calculated based on days attended.',
   // إعدادات البريد العامة تُحفظ على Firebase ليستفيد منها كل المستخدمين.
   // لا نخزن مفاتيح سرية مثل Mistral API Key هنا.
-  emailSettings: { from: 'kidsparknursery@outlook.com', msClientId: '', msTenant: 'common', model: 'mistral-small-latest' }
+  emailSettings: { from: 'kidsparknursery@outlook.com', msClientId: '', msTenant: 'common', model: 'mistral-small-latest' },
+  // يتحكم بها المدير من السيستم، ويقرأها Google Apps Script قبل إرسال تنبيهات التجديدات اليومية.
+  dailyRenewalsEmail: { enabled: true, updatedAt: '', updatedBy: '' }
 };
 
 // Worksheet images per class: {classKey: base64DataUrl}
@@ -8209,6 +8320,7 @@ function applyLogin() {
 
   // Load saved settings
   loadSettings();
+  if (typeof loadDailyRenewalsEmailSettings === 'function') loadDailyRenewalsEmailSettings();
   // تهيئة فلتر السنة على السنة الحالية
   const yf = document.getElementById('dash-year-filter');
   if (yf && !yf.value) yf.value = String(new Date().getFullYear());
@@ -9134,7 +9246,7 @@ function go(page) {
     payments:renderPayments, expenses:renderExpenses,
     receipts:renderReceipts, finance:renderFinance,
     worksheets:renderWorksheets, forms:renderFormRequests, renewals:renderRenewals, email:renderEmailCenter, finreport:renderFinReport, deleted:renderDeletedStudents, otherdeleted:renderOtherDeletedItems,
-    admin:()=>{renderAdminUsers();renderAdminClasses();}
+    admin:()=>{renderAdminUsers();renderAdminClasses(); if (typeof loadDailyRenewalsEmailSettings === 'function') loadDailyRenewalsEmailSettings();}
   };
   if(renders[page]) renders[page]();
 }
@@ -10859,6 +10971,11 @@ async function loadFromFirebase() {
     applyTombstones();
     cleanupDeletedBuckets();
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
+    if (data.adminServices && data.adminServices.dailyRenewalsEmail) {
+      dailyRenewalsEmailSettings = normalizeDailyRenewalsEmailSettings(data.adminServices.dailyRenewalsEmail);
+      localStorage.setItem('kp_daily_renewals_email_settings', JSON.stringify(dailyRenewalsEmailSettings));
+      renderDailyRenewalsEmailSettings();
+    }
     if (data.kp_users && data.kp_users.length) {
       localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
       // ✅ إذا صفحة الإعدادات مفتوحة، أعد رسم قائمة المستخدمين لتعكس التغييرات من الأجهزة الأخرى
