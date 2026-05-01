@@ -8488,6 +8488,7 @@ function renderAdminUsers() {
         ${classesHtml}
       </div>
       <div class="btn-group">
+        <button class="btn btn-b btn-sm" onclick="openEditUser('${u.username.replace(/'/g,"\\'")}')">✏️ تعديل</button>
         ${isTeacher ? `<button class="btn btn-out btn-sm" onclick="openEditUserClasses('${u.username.replace(/'/g,"\\'")}')">📚 الفصول</button>` : ''}
         ${u.username !== 'admin' ? `<button class="btn btn-r btn-sm" onclick="deleteUser('${u.username.replace(/'/g,"\\'")}')">🗑</button>` : '<span style="font-size:11px;color:var(--muted)">رئيسي</span>'}
       </div>
@@ -8586,6 +8587,133 @@ async function submitAddUser(){
   renderAdminUsers();
   const ok = await saveUsersToFirebase(users);
   alert(ok ? '✅ تم إضافة المستخدم وحفظه على الخادم' : '✅ تم إضافة المستخدم محلياً (سيتم رفعه للخادم لاحقاً)');
+}
+
+
+// ✏️ Edit an existing user/staff/teacher/admin account — saved directly to Firebase
+function openEditUser(username){
+  if (currentUser?.role !== 'admin') return alert('للمدير فقط');
+  var users = JSON.parse(localStorage.getItem('kp_users') || '[]');
+  var u = users.find(function(x){ return x.username === username; });
+  if (!u) return alert('المستخدم غير موجود');
+
+  var ov = document.getElementById('edit-user-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'edit-user-overlay';
+    ov.className = 'ov';
+    ov.innerHTML = ''
+      + '<div class="mo">'
+      + '  <div class="mot">✏️ تعديل بيانات المستخدم</div>'
+      + '  <div class="fg">'
+      + '    <div class="fl fgr"><label>الاسم الكامل</label><input id="eu-name" type="text"></div>'
+      + '    <div class="fl"><label>اسم المستخدم</label><input id="eu-user" type="text" disabled style="background:#f3f6f4;color:var(--muted)"></div>'
+      + '    <div class="fl"><label>كلمة السر</label><input id="eu-pass" type="text" placeholder="اتركيها كما هي أو عدليها"></div>'
+      + '    <div class="fl fgr">'
+      + '      <label>الدور</label>'
+      + '      <select id="eu-role" onchange="toggleEditUserClasses()">'
+      + '        <option value="staff">👤 موظف</option>'
+      + '        <option value="teacher">👩‍🏫 معلمة (وصول لصفحة الحضور فقط)</option>'
+      + '        <option value="admin">👑 مدير</option>'
+      + '      </select>'
+      + '    </div>'
+      + '    <div class="fl fgr" id="eu-classes-block" style="display:none">'
+      + '      <label>الفصول المعيّنة للمعلمة</label>'
+      + '      <div id="eu-classes-grid" style="display:flex;flex-wrap:wrap;gap:8px;padding:10px;background:#fafdfb;border:2px solid var(--border);border-radius:12px;min-height:50px"></div>'
+      + '    </div>'
+      + '  </div>'
+      + '  <div class="mof">'
+      + '    <button class="btn btn-out" onclick="document.getElementById(\'edit-user-overlay\').classList.remove(\'on\')">إلغاء</button>'
+      + '    <button class="btn btn-g" id="eu-save">💾 حفظ التعديل</button>'
+      + '  </div>'
+      + '</div>';
+    document.body.appendChild(ov);
+  }
+
+  ov.dataset.username = username;
+  ov.querySelector('#eu-name').value = u.name || '';
+  ov.querySelector('#eu-user').value = u.username || '';
+  ov.querySelector('#eu-pass').value = u.password || '';
+  ov.querySelector('#eu-role').value = u.role || 'staff';
+
+  var grid = ov.querySelector('#eu-classes-grid');
+  grid.innerHTML = '';
+  var current = Array.isArray(u.classes) ? u.classes.slice() : [];
+  var classNames = Object.keys(CLASSES || {});
+  if (!classNames.length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:13px;font-weight:700">لا توجد فصول. أضيفي فصولاً أولاً من قسم إدارة الفصول.</div>';
+  } else {
+    classNames.forEach(function(c){
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'ftab' + (current.indexOf(c) !== -1 ? ' on' : '');
+      chip.dataset.cls = c;
+      chip.textContent = (CLASSES[c].emoji || '') + ' ' + c;
+      chip.onclick = function(){ chip.classList.toggle('on'); };
+      grid.appendChild(chip);
+    });
+  }
+  toggleEditUserClasses();
+
+  ov.querySelector('#eu-save').onclick = async function(){
+    var originalUsername = ov.dataset.username;
+    var name = (ov.querySelector('#eu-name').value || '').trim();
+    var pass = (ov.querySelector('#eu-pass').value || '').trim();
+    var role = ov.querySelector('#eu-role').value || 'staff';
+    if (!name) return alert('الاسم الكامل مطلوب');
+    if (!pass || pass.length < 4) return alert('كلمة السر قصيرة جداً (٤ خانات على الأقل)');
+
+    var picked = [];
+    if (role === 'teacher') {
+      ov.querySelectorAll('#eu-classes-grid .ftab.on').forEach(function(b){ picked.push(b.dataset.cls); });
+      if (!picked.length) {
+        if (!confirm('لم تختاري أي فصل لهذه المعلمة. متابعة الحفظ؟')) return;
+      }
+    }
+
+    let usersNow;
+    try {
+      const refreshed = await loadUsersFromFirebase();
+      usersNow = Array.isArray(refreshed.users) ? refreshed.users : JSON.parse(localStorage.getItem('kp_users') || '[]');
+    } catch(_e) {
+      usersNow = JSON.parse(localStorage.getItem('kp_users') || '[]');
+    }
+
+    var idx = usersNow.findIndex(function(x){ return x.username === originalUsername; });
+    if (idx === -1) return alert('المستخدم غير موجود على الخادم. اعملي تحديث وجربي مرة ثانية.');
+
+    var updated = Object.assign({}, usersNow[idx], {
+      name: name,
+      password: pass,
+      role: role,
+      updatedAt: new Date().toISOString(),
+      updatedBy: (currentUser && (currentUser.username || currentUser.name)) || 'admin'
+    });
+    if (role === 'teacher') updated.classes = picked;
+    else delete updated.classes;
+
+    usersNow[idx] = updated;
+    localStorage.setItem('kp_users', JSON.stringify(usersNow));
+
+    if (currentUser && currentUser.username === originalUsername) {
+      currentUser = Object.assign({}, currentUser, updated);
+      sessionStorage.setItem('kp_session', JSON.stringify(currentUser));
+      applyLogin();
+    }
+
+    ov.classList.remove('on');
+    renderAdminUsers();
+    var ok = await saveUsersToFirebase(usersNow);
+    alert(ok ? '✅ تم تعديل المستخدم وحفظه مباشرة على Firebase' : '⚠️ تم التعديل محلياً، لكن تعذر الحفظ على Firebase حالياً');
+  };
+
+  ov.classList.add('on');
+}
+
+function toggleEditUserClasses(){
+  var roleEl = document.getElementById('eu-role');
+  var block = document.getElementById('eu-classes-block');
+  if (roleEl && block) block.style.display = roleEl.value === 'teacher' ? '' : 'none';
 }
 
 // 🔒 Edit class assignment for an existing teacher
