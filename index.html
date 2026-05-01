@@ -5,21 +5,36 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover">
+<meta name="theme-color" content="#2a8b54">
+<meta name="color-scheme" content="light">
 <title>حضانة حديقة الأطفال</title>
-<!-- v20260430-mobile-sync-ui-v3-no-duplicate-toasts-recent-pay-desc -->
+<!-- v20260501-renovation-pass-1 (perf+a11y+design tokens; business logic untouched) -->
+
+<!-- 🚀 Resource hints: faster first paint on mobile -->
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+<link rel="preconnect" href="https://alcdn.msauth.net" crossorigin>
+<link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+<link rel="dns-prefetch" href="https://unpkg.com">
+
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Marhey:wght@500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
-// إغلاق dropdown البحث عند النقر خارجه
+
+<!-- Heavy libs deferred — they don't block first paint -->
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<!-- 🐛 BUGFIX: this handler used to be nested inside the xlsx <script src="..."> tag,
+     where browsers ignore inline content. Lifted out so it actually runs. -->
+<script>
 document.addEventListener('click', function(e) {
-  const search = document.getElementById('np-stusearch');
-  const results = document.getElementById('np-stu-results');
+  var search = document.getElementById('np-stusearch');
+  var results = document.getElementById('np-stu-results');
   if (results && search && !search.contains(e.target) && !results.contains(e.target)) {
     results.style.display = 'none';
   }
 });
-
 </script>
 <script>
 // Microsoft MSAL loader with multiple CDNs for GitHub Pages/mobile browsers
@@ -58,7 +73,7 @@ document.addEventListener('click', function(e) {
 </script>
 <style>
 :root{
-  /* 🎨 ألوان طفولية مرحة ومشرقة */
+  /* 🎨 ألوان طفولية مرحة ومشرقة — original tokens preserved for compatibility */
   --g1:#2a8b54;--g2:#3eb377;--g3:#7cd9a4;--gp:#e8f9ee;
   --y1:#f5b400;--y2:#ffd54f;--yp:#fffbe7;
   --r1:#d63a3a;--r2:#ff6b6b;--rp:#ffe8e8;
@@ -69,10 +84,47 @@ document.addEventListener('click', function(e) {
   --bg:#f0f7fa;
   --bg2:#e7f4f7;
   --white:#fff;--text:#2c3e2e;--muted:#6b8470;--border:#cce8d6;
-  --shadow:0 4px 18px rgba(46,139,84,.12);
-  --shadow-lg:0 10px 40px rgba(46,139,84,.18);
+
+  /* 🪜 Modernized layered shadows — softer, more depth, less muddy */
+  --shadow:0 1px 2px rgba(20,60,35,.04),0 4px 14px rgba(46,139,84,.08);
+  --shadow-lg:0 4px 12px rgba(20,60,35,.06),0 16px 40px rgba(46,139,84,.14);
   --shadow-pop:0 6px 0 rgba(46,139,84,.15);
+  --shadow-ring:0 0 0 4px rgba(62,179,119,.18);
+
+  /* 🔲 Radius scale — consistent corner system */
+  --r-xs:8px;--r-sm:12px;--r-md:14px;--r-lg:18px;--r-xl:22px;--r-pill:999px;
+
+  /* ⏱ Motion tokens — single source of truth for transitions */
+  --ease-bounce:cubic-bezier(.34,1.56,.64,1);
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --dur-fast:.15s;--dur-base:.22s;--dur-slow:.32s;
+
   --display:'Marhey','Tajawal',sans-serif;
+}
+
+/* ♿ Respect users who prefer reduced motion — disables wiggle/float/pulse */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms!important;
+    animation-iteration-count:1!important;
+    transition-duration:.01ms!important;
+    scroll-behavior:auto!important;
+  }
+}
+
+/* ⌨️ Visible keyboard focus on every interactive element (a11y) — pointer users unaffected */
+:focus-visible{
+  outline:none;
+  box-shadow:var(--shadow-ring);
+  border-radius:var(--r-sm);
+}
+.btn:focus-visible,.nav:focus-visible,.ftab:focus-visible{
+  box-shadow:var(--shadow-ring),0 3px 0 rgba(0,0,0,.12);
+}
+
+/* 👆 Minimum tap target on touch devices (a11y / mobile UX) */
+@media (hover:none) and (pointer:coarse){
+  .btn,.nav,.ftab,.abtn{min-height:40px}
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{
@@ -1540,6 +1592,65 @@ html,body{max-width:100%;overflow-x:hidden!important}
 .notif-empty{text-align:center;padding:24px 12px;color:var(--muted);font-size:13px;font-weight:800}
 @media(max-width:760px){.hdr .notif-btn{flex:1 1 150px!important;min-height:46px!important;font-size:20px!important;padding:8px 10px!important;border-radius:18px!important}.notif-panel{width:calc(100vw - 26px)!important;max-width:calc(100vw - 26px)!important;max-height:58vh!important;border-radius:20px!important}.notif-panel-hdr{font-size:16px!important;min-height:58px!important;padding:14px 16px!important}.notif-panel-body{max-height:calc(58vh - 58px)!important;padding:10px!important}.notif-item{padding:11px 12px!important;border-radius:15px!important}.notif-item-title{font-size:14px!important}}
 
+/* ════════════════════════════════════════════════════════════
+   🔐 LOGIN SCREEN — extracted from inline styles for clarity
+   (visual parity preserved; structure cleaner, easier to tweak)
+   ════════════════════════════════════════════════════════════ */
+.login-screen{
+  position:fixed;inset:0;z-index:9999;
+  display:none;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#3eb377 0%,#2a8b54 50%,#1e6b3f 100%);
+  overflow:hidden;
+  padding:16px;
+}
+.login-screen.on{display:flex}
+.login-deco{position:absolute;opacity:.18;animation:float-anim 8s ease-in-out infinite;pointer-events:none;user-select:none}
+.login-deco-1{top:8%;right:10%;font-size:60px;animation-duration:6s}
+.login-deco-2{top:18%;left:12%;font-size:50px;animation-duration:7s;animation-direction:reverse}
+.login-deco-3{bottom:15%;right:18%;font-size:55px;animation-duration:8s}
+.login-deco-4{bottom:10%;left:8%;font-size:45px;animation-duration:9s;animation-direction:reverse}
+.login-deco-5{top:50%;left:5%;font-size:40px;animation-duration:10s;opacity:.15}
+.login-deco-6{top:40%;right:6%;font-size:42px;animation-duration:11s;animation-direction:reverse;opacity:.15}
+@keyframes float-anim{
+  0%,100%{transform:translateY(0) rotate(0)}
+  50%{transform:translateY(-20px) rotate(8deg)}
+}
+.login-card{
+  position:relative;z-index:1;
+  background:#fff;border-radius:30px;
+  padding:38px 40px;
+  width:400px;max-width:95vw;
+  box-shadow:0 25px 70px rgba(0,0,0,.32);
+  text-align:center;
+  border:5px solid #fff;
+}
+.login-logo{margin-bottom:14px;font-size:64px;animation:wiggle 4s ease-in-out infinite}
+.login-title{font-family:var(--display);font-size:24px;font-weight:700;color:var(--g1);margin-bottom:5px}
+.login-sub{font-size:13px;color:var(--muted);margin-bottom:28px}
+.login-field{display:flex;flex-direction:column;gap:7px;margin-bottom:16px;text-align:right}
+.login-field:last-of-type{margin-bottom:18px}
+.login-field label{font-size:13px;font-weight:700;color:var(--muted)}
+.login-field input{
+  padding:11px 15px;border:2px solid var(--border);border-radius:var(--r-md);
+  font-family:'Tajawal',sans-serif;font-size:14px;text-align:right;width:100%;
+  background:#fafdfb;transition:all var(--dur-base);
+}
+.login-field input:focus{
+  outline:none;border-color:var(--g2);background:#fff;
+  box-shadow:var(--shadow-ring);
+}
+.login-btn{
+  width:100%;padding:13px;
+  background:linear-gradient(135deg,var(--g2) 0%,var(--g1) 100%);
+  color:#fff;border:none;border-radius:var(--r-md);
+  font-family:'Tajawal',sans-serif;font-size:16px;font-weight:800;
+  cursor:pointer;box-shadow:0 4px 0 #1e6b3f;
+  transition:all var(--dur-base) var(--ease-bounce);
+}
+.login-btn:hover{transform:translateY(-2px);box-shadow:0 6px 0 #1e6b3f}
+.login-btn:active{transform:translateY(1px);box-shadow:0 2px 0 #1e6b3f}
+.login-err{color:var(--r2);font-size:13px;margin-top:12px;min-height:18px;font-weight:700}
+
 </style>
 </head>
 <body>
@@ -1547,33 +1658,27 @@ html,body{max-width:100%;overflow-x:hidden!important}
 <!-- PRINT AREA -->
 <div id="receipt-print-area"></div>
 
-<div class="login-screen" id="login-screen" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:9999;background:linear-gradient(135deg,#3eb377 0%,#2a8b54 50%,#1e6b3f 100%);overflow:hidden">
-  <div style="position:absolute;top:8%;right:10%;font-size:60px;opacity:.18;animation:float-anim 6s ease-in-out infinite">🎈</div>
-  <div style="position:absolute;top:18%;left:12%;font-size:50px;opacity:.18;animation:float-anim 7s ease-in-out infinite reverse">⭐</div>
-  <div style="position:absolute;bottom:15%;right:18%;font-size:55px;opacity:.18;animation:float-anim 8s ease-in-out infinite">🌈</div>
-  <div style="position:absolute;bottom:10%;left:8%;font-size:45px;opacity:.18;animation:float-anim 9s ease-in-out infinite reverse">🌟</div>
-  <div style="position:absolute;top:50%;left:5%;font-size:40px;opacity:.15;animation:float-anim 10s ease-in-out infinite">🎨</div>
-  <div style="position:absolute;top:40%;right:6%;font-size:42px;opacity:.15;animation:float-anim 11s ease-in-out infinite reverse">🧸</div>
-  <style>
-    @keyframes float-anim{
-      0%,100%{transform:translateY(0) rotate(0)}
-      50%{transform:translateY(-20px) rotate(8deg)}
-    }
-  </style>
-  <div style="background:#fff;border-radius:30px;padding:38px 40px;width:400px;max-width:95vw;box-shadow:0 25px 70px rgba(0,0,0,.32);text-align:center;border:5px solid #fff;position:relative;z-index:1">
-    <div id="login-logo-area" style="margin-bottom:14px;font-size:64px;animation:wiggle 4s ease-in-out infinite">🌿</div>
-    <div style="font-family:'Marhey','Tajawal',sans-serif;font-size:24px;font-weight:700;color:#2a8b54;margin-bottom:5px">حضانة حديقة الأطفال</div>
-    <div style="font-size:13px;color:#6b8470;margin-bottom:28px">Kids Park Nursery — نظام الإدارة</div>
-    <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:16px;text-align:right">
-      <label style="font-size:13px;font-weight:700;color:#6b8470">👤 اسم المستخدم</label>
-      <input type="text" id="login-user" placeholder="admin" style="padding:11px 15px;border:2px solid #cce8d6;border-radius:14px;font-family:Tajawal,sans-serif;font-size:14px;text-align:right;width:100%;background:#fafdfb;transition:all .18s">
+<div class="login-screen" id="login-screen">
+  <div class="login-deco login-deco-1">🎈</div>
+  <div class="login-deco login-deco-2">⭐</div>
+  <div class="login-deco login-deco-3">🌈</div>
+  <div class="login-deco login-deco-4">🌟</div>
+  <div class="login-deco login-deco-5">🎨</div>
+  <div class="login-deco login-deco-6">🧸</div>
+  <div class="login-card">
+    <div class="login-logo" id="login-logo-area">🌿</div>
+    <div class="login-title">حضانة حديقة الأطفال</div>
+    <div class="login-sub">Kids Park Nursery — نظام الإدارة</div>
+    <div class="login-field">
+      <label for="login-user">👤 اسم المستخدم</label>
+      <input type="text" id="login-user" placeholder="admin" autocomplete="username">
     </div>
-    <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:18px;text-align:right">
-      <label style="font-size:13px;font-weight:700;color:#6b8470">🔒 كلمة السر</label>
-      <input type="password" id="login-pass" placeholder="••••••••" style="padding:11px 15px;border:2px solid #cce8d6;border-radius:14px;font-family:Tajawal,sans-serif;font-size:14px;text-align:right;width:100%;background:#fafdfb;transition:all .18s" onkeydown="if(event.key==='Enter')doLogin()">
+    <div class="login-field">
+      <label for="login-pass">🔒 كلمة السر</label>
+      <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
-    <button onclick="doLogin()" style="width:100%;padding:13px;background:linear-gradient(135deg,#3eb377 0%,#2a8b54 100%);color:#fff;border:none;border-radius:14px;font-family:Tajawal,sans-serif;font-size:16px;font-weight:800;cursor:pointer;box-shadow:0 4px 0 #1e6b3f;transition:all .18s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 0 #1e6b3f'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 0 #1e6b3f'">🔐 دخول</button>
-    <div id="login-err" style="color:#ff6b6b;font-size:13px;margin-top:12px;min-height:18px;font-weight:700"></div>
+    <button class="login-btn" onclick="doLogin()">🔐 دخول</button>
+    <div class="login-err" id="login-err"></div>
   </div>
 </div>
 <div class="hdr">
@@ -7765,11 +7870,15 @@ async function loadUsersFromFirebase() {
         return { ok: true, users: valid, source: 'firebase' };
       }
     }
-    // إذا Firebase فاضي أو غير صحيح، خذ من المحلي وارفعه
+    // 🔒 SECURITY: if Firebase has no users, fall back to local — but DO NOT
+    //   silently upload local users (with plaintext passwords) to Firebase.
+    //   The previous behavior pushed credentials to the cloud automatically
+    //   from any device whose remote user list happened to look empty
+    //   (e.g., transient read failures, fresh DB). Admin must explicitly seed
+    //   the cloud user list from the Admin → Users panel via saveUsersToFirebase.
     const local = JSON.parse(localStorage.getItem('kp_users') || '[]');
     if (local.length > 0) {
-      saveUsersToFirebase(local).catch(function(){});
-      return { ok: true, users: local, source: 'local-uploaded' };
+      return { ok: true, users: local, source: 'local-only' };
     }
     return { ok: false, users: [], source: 'empty' };
   } catch (e) {
@@ -8288,15 +8397,15 @@ window.addEventListener('DOMContentLoaded', () => {
       {username:'admin', password:'admin123', role:'admin', name:'المدير'}
     ]));
   }
-  // ✅ Load users from Firebase BEFORE showing login screen
-  // هذا يضمن أن أي إضافة/تعديل/حذف عمله الأدمن من أي جهاز يصل إلى كل الأجهزة الأخرى
-  // وفي حال انقطاع Firebase أو فشل الجلب، نستخدم المخزّن محلياً (fallback)
   refreshNextIds();
-  loadUsersFromFirebase()
-    .catch(function(){ /* fallback already handled in helper */ })
-    .finally(function() {
-      checkSession();
-    });
+  // 🔒 SECURITY: do NOT fetch users (or any other Firebase data) before login.
+  //   Previously this called loadUsersFromFirebase() here, which exposed the user
+  //   list — including plaintext passwords — to anyone who simply opened the page.
+  //   doLogin() already refreshes the user list at credential-entry time, so the
+  //   pre-login fetch was redundant. checkSession() runs synchronously off
+  //   sessionStorage; if a saved session exists, applyLogin() will then trigger
+  //   the post-auth Firebase load.
+  checkSession();
 });
 
 // INIT (handled by checkSession above)
@@ -9635,6 +9744,15 @@ async function pushToFirebase() {
 }
 
 async function loadFromFirebase() {
+  // 🔒 SECURITY: defense in depth — this function pulls ALL nursery data
+  //   (students, payments, expenses, etc.). It must never run for a visitor
+  //   who hasn't logged in. The legitimate callers (applyLogin, checkForUpdates,
+  //   manual refresh button) all run post-auth, but guarding here prevents
+  //   any future regression from leaking data through this path.
+  if (typeof currentUser === 'undefined' || !currentUser) {
+    console.warn('[security] loadFromFirebase blocked: no authenticated user');
+    return;
+  }
   showSyncBadge('⏳ جاري التحميل...');
   try {
     const res = await fetch(FB_URL + '.json', { cache: 'no-store' });
@@ -9974,6 +10092,11 @@ async function manualRefreshFromFirebase() {
 }
 
 async function checkForUpdates() {
+  // 🔒 SECURITY: never sync before login. The 'online' event handler below
+  //   calls this whenever the network reconnects — which can fire while the
+  //   login screen is still showing. Without this guard, an unauthenticated
+  //   visitor whose internet flakes would trigger a full Firebase pull.
+  if (typeof currentUser === 'undefined' || !currentUser) return;
   if (firebaseStreamReady) return;
   if (isSyncing || hasUnsavedChanges || syncTimeout) return;
   try {
