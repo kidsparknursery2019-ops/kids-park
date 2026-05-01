@@ -8461,6 +8461,24 @@ async function saveUsersToFirebase(users) {
 // ============================================================
 // ADMIN — USERS
 // ============================================================
+function isPrimaryAdminUser(userOrUsername){
+  var username = (typeof userOrUsername === 'string') ? userOrUsername : (userOrUsername && userOrUsername.username);
+  return String(username || '').trim().toLowerCase() === 'admin';
+}
+function canCurrentUserManagePrimaryAdmin(){
+  return currentUser && isPrimaryAdminUser(currentUser.username);
+}
+function canCurrentUserSeePasswords(){
+  return canCurrentUserManagePrimaryAdmin();
+}
+function maskPasswordValue(p){
+  return p ? '••••••••' : '—';
+}
+function escapeAdminHtml(v){
+  return String(v == null ? '' : v).replace(/[&<>'"]/g, function(ch){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'})[ch];
+  });
+}
 function renderAdminUsers() {
   const users = JSON.parse(localStorage.getItem('kp_users') || '[]');
   const el = document.getElementById('admin-users-list');
@@ -8468,9 +8486,13 @@ function renderAdminUsers() {
   el.innerHTML = users.map(u => {
     var isAdmin = u.role === 'admin';
     var isTeacher = u.role === 'teacher';
-    var roleLabel = isAdmin ? 'مدير' : (isTeacher ? 'معلمة' : 'موظف');
+    var isPrimaryAdmin = isPrimaryAdminUser(u);
+    var canEditThisUser = !isPrimaryAdmin || canCurrentUserManagePrimaryAdmin();
+    var canSeePasswords = canCurrentUserSeePasswords();
+    var roleLabel = isAdmin ? (isPrimaryAdmin ? 'المدير الأساسي' : 'مدير') : (isTeacher ? 'معلمة' : 'موظف');
     var roleBg = isAdmin ? '#d0f0e0' : (isTeacher ? '#fff3c4' : 'var(--bp)');
     var roleFg = isAdmin ? '#0e5e30' : (isTeacher ? '#8a5c00' : 'var(--b1)');
+    var shownPassword = canSeePasswords ? escapeAdminHtml(u.password || '') : maskPasswordValue(u.password);
     var classesHtml = '';
     if (isTeacher && Array.isArray(u.classes) && u.classes.length) {
       classesHtml = '<div style="font-size:11.5px;color:var(--muted);margin-top:4px;font-weight:700">📚 ' +
@@ -8485,12 +8507,13 @@ function renderAdminUsers() {
         <b>${u.name || u.username}</b>
         <span style="color:var(--muted);font-size:12px;margin-right:6px">(@${u.username})</span>
         <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:${roleBg};color:${roleFg}">${roleLabel}</span>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:4px;font-weight:700">🔐 كلمة المرور: <span style="direction:ltr;unicode-bidi:embed">${shownPassword}</span></div>
         ${classesHtml}
       </div>
       <div class="btn-group">
-        <button class="btn btn-b btn-sm" onclick="openEditUser('${u.username.replace(/'/g,"\\'")}')">✏️ تعديل</button>
-        ${isTeacher ? `<button class="btn btn-out btn-sm" onclick="openEditUserClasses('${u.username.replace(/'/g,"\\'")}')">📚 الفصول</button>` : ''}
-        ${u.username !== 'admin' ? `<button class="btn btn-r btn-sm" onclick="deleteUser('${u.username.replace(/'/g,"\\'")}')">🗑</button>` : '<span style="font-size:11px;color:var(--muted)">رئيسي</span>'}
+        ${canEditThisUser ? `<button class="btn btn-b btn-sm" onclick="openEditUser('${u.username.replace(/'/g,"\'")}')">✏️ تعديل</button>` : '<span style="font-size:11px;color:var(--muted);font-weight:800">🔒 محمي</span>'}
+        ${isTeacher ? `<button class="btn btn-out btn-sm" onclick="openEditUserClasses('${u.username.replace(/'/g,"\'")}')">📚 الفصول</button>` : ''}
+        ${!isPrimaryAdmin ? `<button class="btn btn-r btn-sm" onclick="deleteUser('${u.username.replace(/'/g,"\'")}')">🗑</button>` : '<span style="font-size:11px;color:var(--muted)">رئيسي</span>'}
       </div>
     </div>`;
   }).join('');
@@ -8510,7 +8533,7 @@ function openAddUser() {
       + '  <div class="fg">'
       + '    <div class="fl fgr"><label>الاسم الكامل</label><input id="au-name" type="text" placeholder="مثال: سارة أحمد"></div>'
       + '    <div class="fl"><label>اسم المستخدم (إنجليزي)</label><input id="au-user" type="text" placeholder="sara"></div>'
-      + '    <div class="fl"><label>كلمة السر</label><input id="au-pass" type="text" placeholder="٤ خانات على الأقل"></div>'
+      + '    <div class="fl"><label>كلمة السر</label><input id="au-pass" type="password" placeholder="٤ خانات على الأقل"></div>'
       + '    <div class="fl fgr">'
       + '      <label>الدور</label>'
       + '      <select id="au-role" onchange="(function(){var v=document.getElementById(\'au-role\').value; document.getElementById(\'au-classes-block\').style.display = v===\'teacher\' ? \'\' : \'none\';})()">'
@@ -8596,6 +8619,7 @@ function openEditUser(username){
   var users = JSON.parse(localStorage.getItem('kp_users') || '[]');
   var u = users.find(function(x){ return x.username === username; });
   if (!u) return alert('المستخدم غير موجود');
+  if (isPrimaryAdminUser(u) && !canCurrentUserManagePrimaryAdmin()) return alert('❌ لا يمكن تعديل حساب المستخدم admin');
 
   var ov = document.getElementById('edit-user-overlay');
   if (!ov) {
@@ -8608,7 +8632,7 @@ function openEditUser(username){
       + '  <div class="fg">'
       + '    <div class="fl fgr"><label>الاسم الكامل</label><input id="eu-name" type="text"></div>'
       + '    <div class="fl"><label>اسم المستخدم</label><input id="eu-user" type="text" disabled style="background:#f3f6f4;color:var(--muted)"></div>'
-      + '    <div class="fl"><label>كلمة السر</label><input id="eu-pass" type="text" placeholder="اتركيها كما هي أو عدليها"></div>'
+      + '    <div class="fl"><label>كلمة السر</label><input id="eu-pass" type="password" placeholder="اتركيها فارغة إذا لا تريدين تغييرها"></div>'
       + '    <div class="fl fgr">'
       + '      <label>الدور</label>'
       + '      <select id="eu-role" onchange="toggleEditUserClasses()">'
@@ -8633,7 +8657,7 @@ function openEditUser(username){
   ov.dataset.username = username;
   ov.querySelector('#eu-name').value = u.name || '';
   ov.querySelector('#eu-user').value = u.username || '';
-  ov.querySelector('#eu-pass').value = u.password || '';
+  ov.querySelector('#eu-pass').value = canCurrentUserSeePasswords() ? (u.password || '') : '';
   ov.querySelector('#eu-role').value = u.role || 'staff';
 
   var grid = ov.querySelector('#eu-classes-grid');
@@ -8661,7 +8685,7 @@ function openEditUser(username){
     var pass = (ov.querySelector('#eu-pass').value || '').trim();
     var role = ov.querySelector('#eu-role').value || 'staff';
     if (!name) return alert('الاسم الكامل مطلوب');
-    if (!pass || pass.length < 4) return alert('كلمة السر قصيرة جداً (٤ خانات على الأقل)');
+    if (pass && pass.length < 4) return alert('كلمة السر قصيرة جداً (٤ خانات على الأقل)');
 
     var picked = [];
     if (role === 'teacher') {
@@ -8681,10 +8705,11 @@ function openEditUser(username){
 
     var idx = usersNow.findIndex(function(x){ return x.username === originalUsername; });
     if (idx === -1) return alert('المستخدم غير موجود على الخادم. اعملي تحديث وجربي مرة ثانية.');
+    if (isPrimaryAdminUser(usersNow[idx]) && !canCurrentUserManagePrimaryAdmin()) return alert('❌ لا يمكن تعديل حساب المستخدم admin');
 
     var updated = Object.assign({}, usersNow[idx], {
       name: name,
-      password: pass,
+      password: pass ? pass : usersNow[idx].password,
       role: role,
       updatedAt: new Date().toISOString(),
       updatedBy: (currentUser && (currentUser.username || currentUser.name)) || 'admin'
@@ -8777,7 +8802,7 @@ function openEditUserClasses(username){
 
 async function deleteUser(username) {
   if(currentUser?.role !== 'admin') return alert('للمدير فقط');
-  if(username === 'admin') return alert('لا يمكن حذف الحساب الرئيسي');
+  if(isPrimaryAdminUser(username)) return alert('لا يمكن حذف الحساب الرئيسي');
   if(!confirm(`حذف المستخدم ${username}؟`)) return;
   // ✅ خذ آخر نسخة من Firebase قبل الحذف لتجنب التعارضات
   let users;
