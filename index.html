@@ -73,6 +73,10 @@ document.addEventListener('click', function(e) {
   else window.ensureMsalLoaded().catch(function(){});
 })();
 </script>
+<script>
+// Independent receipt verification URL (Netlify) - QR will not point to the system URL
+window.KP_VERIFY_BASE_URL = 'https://kids-park-nursery-receipt-verificatio.netlify.app/';
+</script>
 <style>
 :root{
   /* 🎨 ألوان طفولية مرحة ومشرقة — original tokens preserved for compatibility */
@@ -7187,8 +7191,9 @@ function getReceiptVerificationUrl(p){
   const code = encodeURIComponent(getReceiptVerificationCode(p));
   const base = (window.KP_VERIFY_BASE_URL || '').trim();
   if (base) {
-    const joiner = base.indexOf('?') === -1 ? '?' : '&';
-    return base + joiner + 'rid=' + receiptId + '&code=' + code;
+    const cleanBase = base.replace(/[?&]+$/, '');
+    const joiner = cleanBase.indexOf('?') === -1 ? '?' : '&';
+    return cleanBase + joiner + 'rid=' + receiptId + '&code=' + code;
   }
   try {
     const u = new URL('verify_receipt.html', window.location.href);
