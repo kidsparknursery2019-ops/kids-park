@@ -2613,7 +2613,9 @@ body.kp-teacher .kp-sync-panel{
     <div id="mo-receipt-body"></div>
     <div class="mof">
       <button class="btn btn-out" onclick="closeAll()">إغلاق</button>
-      <button class="btn btn-g" onclick="printCurrentReceipt()">🖨 طباعة السند</button><button class="btn btn-y" onclick="shareCurrentReceipt()" style="background:#25D366;color:white;border-color:#128C7E">📱 مشاركة واتساب</button>
+      <button class="btn btn-g" onclick="printCurrentReceipt()">🖨 طباعة السند</button>
+      <button class="btn btn-b" onclick="downloadCurrentReceiptPDF()">📄 تحميل PDF</button>
+      <button class="btn btn-y" onclick="shareCurrentReceipt()" style="background:#25D366;color:white;border-color:#128C7E">📱 مشاركة PDF واتساب</button>
     </div>
   </div>
 </div>
@@ -7137,14 +7139,14 @@ function amtToWords(n){
 // buildReceiptHTML() overridden below
 
 
-// مشاركة السند عبر WhatsApp
-async function shareCurrentReceipt() {
-  const p = payments.find(function(x){ return x.id === currentReceiptId; });
-  if (!p) { alert('لم يتم العثور على السند'); return; }
+// PDF + مشاركة السند عبر WhatsApp
+function getCurrentReceiptPayment(){
+  return payments.find(function(x){ return x.id === currentReceiptId; });
+}
 
+function buildReceiptShareMessage(p){
   const nurseryName = (nurserySettings && nurserySettings.name) ? nurserySettings.name : 'حضانة حديقة الأطفال';
-  const msg =
-    '🌿 *' + nurseryName + '*' + '\n' +
+  return '🌿 *' + nurseryName + '*' + '\n' +
     '📋 *سند قبض رقم:* #' + p.id + '\n' +
     '━━━━━━━━━━━━━━\n' +
     '👤 *المستلم من:* ' + (p.who || '—') + '\n' +
@@ -7154,65 +7156,127 @@ async function shareCurrentReceipt() {
     '💳 *طريقة الدفع:* ' + (p.method || '—') + '\n' +
     '✍️ *المستلم:* ' + (p.rcvr || '—') + '\n' +
     '━━━━━━━━━━━━━━\n' +
-    'شكراً لكم 🌸';
+    'مرفق نسخة PDF من السند. شكراً لكم 🌸';
+}
 
+function getReceiptWhatsAppPhone(p){
   let phone = '';
-  if (p.stuId) {
+  if (p && p.stuId) {
     const s = students.find(function(x){ return x.id === p.stuId; });
     if (s) phone = normalizePhoneForWA(s.dph || s.mph || '');
   }
+  return phone;
+}
 
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+async function buildReceiptPdfBlob(p){
+  if (!p) throw new Error('لم يتم العثور على السند');
+  if (typeof html2canvas === 'undefined') throw new Error('تعذر تحميل مكتبة تصوير PDF. يرجى تحديث الصفحة والمحاولة مرة أخرى.');
+  if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('تعذر تحميل مكتبة PDF. يرجى تحديث الصفحة والمحاولة مرة أخرى.');
+
+  const { jsPDF } = window.jspdf;
+  const holder = document.createElement('div');
+  holder.className = 'kp-pdf-export-sandbox';
+  holder.style.width = '820px';
+  holder.style.padding = '22px';
+  holder.style.background = '#fff';
+  holder.innerHTML = buildReceiptHTML(p);
+  document.body.appendChild(holder);
 
   try {
-    const area = document.getElementById('receipt-print-area');
-    area.innerHTML = buildReceiptHTML(p);
-    const oldStyle = area.style.cssText;
-    area.style.cssText = 'position:fixed;left:0;top:0;width:800px;background:white;padding:20px;z-index:-1;opacity:0.01';
-
-    const canvas = await html2canvas(area, {
+    await new Promise(function(resolve){ setTimeout(resolve, 80); });
+    const canvas = await html2canvas(holder, {
       scale: 2,
       backgroundColor: '#ffffff',
       logging: false,
-      useCORS: true
+      useCORS: true,
+      allowTaint: true
     });
 
-    area.style.cssText = oldStyle;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const margin = 8;
+    const imgW = pageW - margin * 2;
+    const imgH = canvas.height * imgW / canvas.width;
+    const imgData = canvas.toDataURL('image/jpeg', 0.96);
 
-    canvas.toBlob(async function(blob) {
-      if (!blob) { fallbackShareText(phone, msg); return; }
-
-      const fileName = 'سند_قبض_' + p.id + '.png';
-      const file = new File([blob], fileName, { type: 'image/png' });
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: 'سند قبض #' + p.id,
-            text: msg
-          });
-          return;
-        } catch(err) {
-          if (err.name === 'AbortError') return;
-          console.log('Share failed, falling back:', err);
-        }
+    if (imgH <= pageH - margin * 2) {
+      pdf.addImage(imgData, 'JPEG', margin, margin, imgW, imgH);
+    } else {
+      let y = margin;
+      let remaining = imgH;
+      pdf.addImage(imgData, 'JPEG', margin, y, imgW, imgH);
+      remaining -= (pageH - margin * 2);
+      while (remaining > 1) {
+        pdf.addPage();
+        y = margin - (imgH - remaining);
+        pdf.addImage(imgData, 'JPEG', margin, y, imgW, imgH);
+        remaining -= (pageH - margin * 2);
       }
+    }
 
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
+    return pdf.output('blob');
+  } finally {
+    holder.remove();
+  }
+}
 
-      setTimeout(function(){
-        fallbackShareText(phone, msg + '\n\n📎 تم تحميل صورة السند - يرجى إرفاقها في المحادثة');
-      }, 500);
-    }, 'image/png');
+async function downloadCurrentReceiptPDF(){
+  const p = getCurrentReceiptPayment();
+  if (!p) { alert('لم يتم العثور على السند'); return; }
+  try {
+    const blob = await buildReceiptPdfBlob(p);
+    const fileName = 'سند_قبض_' + p.id + '.pdf';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1200);
   } catch(err) {
-    console.error('Share error:', err);
-    fallbackShareText(phone, msg);
+    console.error('Receipt PDF error:', err);
+    alert(err.message || 'تعذر إنشاء ملف PDF للسند');
+  }
+}
+
+async function shareCurrentReceipt() {
+  const p = getCurrentReceiptPayment();
+  if (!p) { alert('لم يتم العثور على السند'); return; }
+
+  const msg = buildReceiptShareMessage(p);
+  const phone = getReceiptWhatsAppPhone(p);
+  const fileName = 'سند_قبض_' + p.id + '.pdf';
+
+  try {
+    const blob = await buildReceiptPdfBlob(p);
+    const file = new File([blob], fileName, { type: 'application/pdf' });
+
+    // على الموبايل: يفتح شاشة مشاركة النظام، ومنها يمكن اختيار WhatsApp مع ملف PDF مرفق.
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'سند قبض #' + p.id, text: msg });
+        return;
+      } catch(err) {
+        if (err && err.name === 'AbortError') return;
+        console.log('PDF share failed, falling back:', err);
+      }
+    }
+
+    // على الكمبيوتر/WhatsApp Web: المتصفح لا يسمح بإرفاق PDF تلقائياً، لذلك نحمل الملف ونفتح نص واتساب.
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1200);
+    setTimeout(function(){ fallbackShareText(phone, msg + '\n\n📎 تم تحميل ملف PDF للسند، يرجى إرفاقه في محادثة واتساب.'); }, 500);
+  } catch(err) {
+    console.error('Share PDF error:', err);
+    fallbackShareText(phone, msg + '\n\nتعذر إنشاء PDF تلقائياً، يمكن استخدام زر تحميل PDF ثم إرفاقه يدوياً.');
   }
 }
 
