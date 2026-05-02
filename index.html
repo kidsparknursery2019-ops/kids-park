@@ -9,6 +9,7 @@
 <meta name="theme-color" content="#2a8b54">
 <meta name="color-scheme" content="light">
 <title>حضانة حديقة الأطفال</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='48' font-size='48'%3E%F0%9F%8C%B1%3C/text%3E%3C/svg%3E">
 <!-- v20260501-renovation-pass-1 (perf+a11y+design tokens; business logic untouched) -->
 
 <!-- 🚀 Resource hints: faster first paint on mobile -->
@@ -15630,6 +15631,9 @@ document.addEventListener('change', function(e){
    - كل شيء يكتب على المسار الرسمي فقط: nursery_data/registrationRequests
    ============================================================ */
 (function(){
+  // DISABLED 2026-05-02D: Google Sheets must never auto-change official request states.
+  window.__kpSmartRegistrationMigrationInstalled = true;
+  return;
   if (window.__kpSmartRegistrationMigrationInstalled) return;
   window.__kpSmartRegistrationMigrationInstalled = true;
 
@@ -15978,9 +15982,9 @@ document.addEventListener('change', function(e){
   function safeFetch(url, opts, ms){
     opts = opts || {};
     if (!url || /\/undefined(?:\/|\?|$)|undefined\.json/i.test(url)) return Promise.reject(new Error('invalid_url'));
-    if (typeof window.kpFetchWithSoftTimeout === 'function') return window.kpFetchWithSoftTimeout(url, opts, ms || 9000);
+    if (typeof window.kpFetchWithSoftTimeout === 'function') return window.kpFetchWithSoftTimeout(url, opts, ms || 20000);
     var fetchPromise = fetch(url, opts);
-    var timeoutPromise = new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, ms || 9000); });
+    var timeoutPromise = new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, ms || 20000); });
     return Promise.race([fetchPromise, timeoutPromise]);
   }
   function rowTime(r){
@@ -16041,7 +16045,7 @@ document.addEventListener('change', function(e){
       var folder = OFFICIAL_STATUS_FOLDERS[i];
       try {
         var url = base + '/' + folder + '.json?ts=' + Date.now();
-        var res = await safeFetch(url, {cache:'no-store'}, 9000);
+        var res = await safeFetch(url, {cache:'no-store'}, 20000);
         if (!res.ok) throw new Error('HTTP ' + res.status);
         var obj = await res.json();
         if (!obj || typeof obj !== 'object') continue;
@@ -16060,6 +16064,14 @@ document.addEventListener('change', function(e){
       } catch(e) { errors.push(folder + ': ' + (e && e.message ? e.message : e)); }
     }
     var rows = Object.keys(map).map(function(k){ return map[k]; }).sort(function(a,b){ return rowTime(b) - rowTime(a); });
+    // Fail-safe: if Firebase read timed out or partially failed, do NOT wipe the visible requests.
+    // This prevents requests from disappearing during sync.
+    var previousRows = [];
+    try { previousRows = (Array.isArray(syncedFormRows) ? syncedFormRows : []).filter(function(r){ return !sourceIsGoogleSheet(r); }); } catch(_e) { previousRows = []; }
+    if (errors.length && rows.length === 0 && previousRows.length) {
+      rows = previousRows;
+      errors.push('تم الحفاظ على آخر نسخة معروضة ولم يتم تصفير القائمة');
+    }
     storeOfficialRows(rows);
     try { if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge(); } catch(_e){}
     try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
