@@ -14986,7 +14986,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
 
   // ابدأ الـ stream عند تحميل الصفحة (إذا في user مسجّل دخول)
   setTimeout(function(){
-    if (typeof currentUser !== 'undefined' && currentUser) _startRegStream();
+    // Legacy root registration stream disabled. The official nursery_data stream is used instead.
   }, 4000);
 
   // اربط الـ stream على دورة حياة الـ login/logout
@@ -14994,7 +14994,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     var __originalStart = window.startFirebaseRealtimeListener;
     window.startFirebaseRealtimeListener = function(){
       var r = __originalStart.apply(this, arguments);
-      try { _startRegStream(); } catch(_e){}
+      // Legacy root registration stream disabled. The official nursery_data stream is used instead.
       return r;
     };
   }
@@ -15016,8 +15016,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   };
   window.kpRegStreamRestart = function(){
     _stopRegStream();
-    setTimeout(_startRegStream, 500);
-    return 'restarting...';
+    return { disabled:true, reason:'legacy_root_registration_stream_disabled' };
   };
 
   window.kpMigrateAllRows = async function(){
@@ -16954,6 +16953,525 @@ document.addEventListener('change', function(e){
 
   /* ── تشغيل ───────────────────────────────────────── */
   setTimeout(function(){ try{ window.startAutoSync(); }catch(e){ console.warn('startAutoSync UNIFIED failed',e); } },50);
+})();
+</script>
+<script>
+/* ============================================================
+   KP FIREBASE COMPATIBILITY REPAIR 2026-05-02
+   Keeps Firebase as the source of truth while cleaning records
+   left behind by the old array-shaped database.
+   ============================================================ */
+(function(){
+  'use strict';
+  if (window.__kpFirebaseCompatibilityRepairInstalled) return;
+  window.__kpFirebaseCompatibilityRepairInstalled = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, ''); }
+  function idEq(a,b){
+    try { return (typeof normKey === 'function') ? normKey(a) === normKey(b) : txt(a) === txt(b); }
+    catch(_e){ return txt(a) === txt(b); }
+  }
+  function safeKey(id){
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(id) : ('k_' + txt(id).replace(/[.#$\[\]\/\s]/g, '_')); }
+    catch(_e){ return 'k_' + txt(id).replace(/[.#$\[\]\/\s]/g, '_'); }
+  }
+  function candidateKeys(id){
+    var out = {};
+    [safeKey(id), txt(id), 'k_' + txt(id), txt(id).replace(/[.#$\[\]\/\s]/g, '_')].forEach(function(k){
+      if (k) out[k] = true;
+    });
+    return Object.keys(out);
+  }
+  function toArray(section){
+    if (!section) return [];
+    if (Array.isArray(section)) return section.filter(function(x){ return x && typeof x === 'object'; });
+    if (typeof section === 'object') {
+      return Object.keys(section).map(function(k){
+        var v = section[k];
+        if (!v || typeof v !== 'object') return null;
+        if (!v.firebaseKey) v.firebaseKey = k;
+        return v;
+      }).filter(Boolean);
+    }
+    return [];
+  }
+  function mapWithoutId(section, id, keyField){
+    var out = {};
+    toArray(section).forEach(function(item){
+      if (!item || idEq(item[keyField || 'id'], id)) return;
+      var key = '';
+      try { key = (typeof kpRecordKey === 'function') ? kpRecordKey(item, keyField || 'id') : safeKey(item[keyField || 'id']); }
+      catch(_e){ key = safeKey(item[keyField || 'id']); }
+      if (key) out[key] = Object.assign({}, item, { firebaseKey:key });
+    });
+    return out;
+  }
+  function mergeIdList(list, id){
+    var arr = Array.isArray(list) ? list.slice() : [];
+    if (!arr.some(function(x){ return idEq(x, id); })) arr.push(id);
+    return arr;
+  }
+  function removeIdList(list, id){
+    return (Array.isArray(list) ? list : []).filter(function(x){ return !idEq(x, id); });
+  }
+  async function fetchJson(url, opts, timeoutMs){
+    var res = await Promise.race([
+      fetch(url, opts || {}),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, timeoutMs || 15000); })
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res;
+  }
+
+  window.kpPurgeStudentFromFirebaseEverywhere = async function(id){
+    var base = baseUrl();
+    if (!base) return false;
+    var savedAt = new Date().toISOString();
+    var snap = {};
+    try {
+      var res = await fetchJson(base + '.json?ts=' + Date.now(), { cache:'no-store' }, 20000);
+      snap = await res.json() || {};
+    } catch(e) {
+      console.warn('student purge read failed, falling back to key deletes:', e && e.message);
+    }
+
+    var updates = {};
+    candidateKeys(id).forEach(function(k){
+      updates['students/' + k] = null;
+      updates['deletedStudents/' + k] = null;
+    });
+    if (snap && (Array.isArray(snap.students) || Array.isArray(snap.deletedStudents))) {
+      updates.students = mapWithoutId(snap.students, id, 'id');
+      updates.deletedStudents = mapWithoutId(snap.deletedStudents, id, 'id');
+    }
+
+    var ts = (snap.tombstones && typeof snap.tombstones === 'object') ? snap.tombstones : {};
+    ts.students = mergeIdList(ts.students, id);
+    var rk = (snap.restoredKeys && typeof snap.restoredKeys === 'object') ? snap.restoredKeys : {};
+    rk.students = removeIdList(rk.students, id);
+    updates['tombstones/students'] = ts.students;
+    updates['restoredKeys/students'] = rk.students;
+    updates.savedAt = savedAt;
+    updates.version = 2;
+
+    await fetchJson(base + '.json', {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(updates)
+    }, 25000);
+
+    try {
+      if (typeof tombstones !== 'undefined') {
+        if (!tombstones || typeof tombstones !== 'object') tombstones = {};
+        tombstones.students = ts.students;
+        localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+      }
+      if (typeof restoredKeys !== 'undefined') {
+        if (!restoredKeys || typeof restoredKeys !== 'object') restoredKeys = {};
+        restoredKeys.students = rk.students;
+        localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
+      }
+      localStorage.setItem('kp_last_synced_at', savedAt);
+    } catch(_e){}
+    if (typeof lastSavedAt !== 'undefined') lastSavedAt = savedAt;
+    return true;
+  };
+
+  var previousPurge = window.kpPurgeStudentFromFirebase;
+  window.kpPurgeStudentFromFirebase = async function(id){
+    try { return await window.kpPurgeStudentFromFirebaseEverywhere(id); }
+    catch(e) {
+      console.error('compat student purge failed:', e);
+      if (typeof previousPurge === 'function') return previousPurge(id);
+      throw e;
+    }
+  };
+
+  var previousMoveToTrash = window.moveRecordToTrashRemoteAware || (typeof moveRecordToTrashRemoteAware === 'function' ? moveRecordToTrashRemoteAware : null);
+  window.moveRecordToTrashRemoteAware = async function(config){
+    config = config || {};
+    if (config.type !== 'students') {
+      return previousMoveToTrash ? previousMoveToTrash(config) : false;
+    }
+    var ok = previousMoveToTrash ? await previousMoveToTrash(config) : false;
+    try {
+      var base = baseUrl();
+      if (base) {
+        var id = config.id;
+        var key = safeKey(id);
+        var savedAt = new Date().toISOString();
+        var deletedItem = Object.assign({}, config.deletedItem || {}, { firebaseKey:key });
+        var updates = {};
+        candidateKeys(id).forEach(function(k){ updates['students/' + k] = null; });
+        updates['deletedStudents/' + key] = deletedItem;
+        updates.savedAt = savedAt;
+        updates.version = 2;
+        await fetchJson(base + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) }, 15000);
+        ok = true;
+      }
+    } catch(e) {
+      console.warn('compat move student to trash cleanup failed:', e && e.message);
+    }
+    return ok;
+  };
+  try { moveRecordToTrashRemoteAware = window.moveRecordToTrashRemoteAware; } catch(_e){}
+
+  window.kpRepairFirebaseStudentsShape = async function(){
+    var base = baseUrl();
+    if (!base) return { ok:false, error:'missing_fb_url' };
+    var res = await fetchJson(base + '.json?ts=' + Date.now(), { cache:'no-store' }, 25000);
+    var data = await res.json() || {};
+    var deletedIds = {};
+    toArray(data.deletedStudents).forEach(function(s){ if (s && s.id != null) deletedIds[txt(s.id)] = true; });
+    (data.tombstones && Array.isArray(data.tombstones.students) ? data.tombstones.students : []).forEach(function(id){ deletedIds[txt(id)] = true; });
+    var active = toArray(data.students).filter(function(s){ return s && s.id != null && !deletedIds[txt(s.id)]; });
+    var deleted = toArray(data.deletedStudents).filter(function(s){ return s && s.id != null; });
+    var payload = {
+      students: (typeof kpMapFromArray === 'function') ? kpMapFromArray(active, 'id') : mapWithoutId(active, null, 'id'),
+      deletedStudents: (typeof kpMapFromArray === 'function') ? kpMapFromArray(deleted, 'id') : mapWithoutId(deleted, null, 'id'),
+      savedAt: new Date().toISOString(),
+      version: 2
+    };
+    await fetchJson(base + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) }, 25000);
+    return { ok:true, students:Object.keys(payload.students).length, deletedStudents:Object.keys(payload.deletedStudents).length };
+  };
+
+  try {
+    var oldStart = window.startFirebaseRealtimeListener;
+    window.startFirebaseRealtimeListener = function(){
+      var result = oldStart ? oldStart.apply(this, arguments) : undefined;
+      if (typeof window.kpOfficialRegStreamRestart === 'function') {
+        try { window.kpOfficialRegStreamRestart(); } catch(_e){}
+      }
+      return result;
+    };
+  } catch(_e){}
+})();
+</script>
+<script>
+/* ============================================================
+   KP WHOLE-SYSTEM FIREBASE CLEANUP 2026-05-02
+   Canonical entity paths:
+   students/k_id, payments/k_id, expenses/k_id, renewals/k_id
+   plus deletedXxx/k_id and tombstones/restoredKeys.
+   This layer repairs old array-shaped leftovers for every section.
+   ============================================================ */
+(function(){
+  'use strict';
+  if (window.__kpWholeSystemFirebaseCleanupInstalled) return;
+  window.__kpWholeSystemFirebaseCleanupInstalled = true;
+
+  var ENTITY = {
+    students: { active:'students', deleted:'deletedStudents', keyField:'id' },
+    payments: { active:'payments', deleted:'deletedPayments', keyField:'id' },
+    expenses: { active:'expenses', deleted:'deletedExpenses', keyField:'id' },
+    renewals: { active:'renewals', deleted:'deletedRenewals', keyField:'id' },
+    classes:  { active:'CLASSES', deleted:'deletedClasses', keyField:'key', classEntity:true }
+  };
+  var TYPES = ['students','payments','expenses','renewals','classes'];
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, ''); }
+  function idEq(a,b){
+    try { return (typeof normKey === 'function') ? normKey(a) === normKey(b) : txt(a) === txt(b); }
+    catch(_e){ return txt(a) === txt(b); }
+  }
+  function hasId(list,id){
+    return (Array.isArray(list) ? list : []).some(function(x){ return idEq(x,id); });
+  }
+  function removeId(list,id){
+    return (Array.isArray(list) ? list : []).filter(function(x){ return !idEq(x,id); });
+  }
+  function addId(list,id){
+    var arr = Array.isArray(list) ? list.slice() : [];
+    if (!hasId(arr,id)) arr.push(id);
+    return arr;
+  }
+  function safeKey(id){
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(id) : ('k_' + txt(id).replace(/[.#$\[\]\/\s]/g, '_')); }
+    catch(_e){ return 'k_' + txt(id).replace(/[.#$\[\]\/\s]/g, '_'); }
+  }
+  function recordKey(item,keyField){
+    try { return (typeof kpRecordKey === 'function') ? kpRecordKey(item, keyField || 'id') : safeKey(item && item[keyField || 'id']); }
+    catch(_e){ return safeKey(item && item[keyField || 'id']); }
+  }
+  function candidateKeys(id){
+    var out = {};
+    [safeKey(id), txt(id), 'k_' + txt(id), txt(id).replace(/[.#$\[\]\/\s]/g, '_')].forEach(function(k){
+      if (k) out[k] = true;
+    });
+    return Object.keys(out);
+  }
+  function toArray(section){
+    if (!section) return [];
+    if (Array.isArray(section)) return section.filter(function(x){ return x && typeof x === 'object'; });
+    if (typeof section === 'object') {
+      return Object.keys(section).map(function(k){
+        var v = section[k];
+        if (!v || typeof v !== 'object') return null;
+        if (!v.firebaseKey) v.firebaseKey = k;
+        return v;
+      }).filter(Boolean);
+    }
+    return [];
+  }
+  function toMap(arr,keyField,blockedIds){
+    var out = {};
+    (Array.isArray(arr) ? arr : []).forEach(function(item){
+      if (!item || typeof item !== 'object') return;
+      var id = item[keyField || 'id'];
+      if (id == null || id === '') return;
+      if (blockedIds && hasId(blockedIds,id)) return;
+      var key = recordKey(item,keyField || 'id');
+      if (!key) return;
+      out[key] = Object.assign({}, item, { firebaseKey:key });
+    });
+    return out;
+  }
+  function toClassObject(classesObj,blockedKeys){
+    var out = {};
+    if (!classesObj || typeof classesObj !== 'object' || Array.isArray(classesObj)) return out;
+    Object.keys(classesObj).forEach(function(k){
+      if (!hasId(blockedKeys,k)) out[k] = classesObj[k];
+    });
+    return out;
+  }
+  async function fetchWithTimeout(url, opts, timeoutMs){
+    var res = await Promise.race([
+      fetch(url, opts || {}),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, timeoutMs || 15000); })
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res;
+  }
+  function currentDeletedArray(type){
+    try {
+      if (type === 'students') return Array.isArray(deletedStudents) ? deletedStudents : [];
+      if (type === 'payments') return Array.isArray(deletedPayments) ? deletedPayments : [];
+      if (type === 'expenses') return Array.isArray(deletedExpenses) ? deletedExpenses : [];
+      if (type === 'renewals') return Array.isArray(deletedRenewals) ? deletedRenewals : [];
+      if (type === 'classes') return Array.isArray(deletedClasses) ? deletedClasses : [];
+    } catch(_e){}
+    return [];
+  }
+  function currentActiveArray(type){
+    try {
+      if (type === 'students') return Array.isArray(students) ? students : [];
+      if (type === 'payments') return Array.isArray(payments) ? payments : [];
+      if (type === 'expenses') return Array.isArray(expenses) ? expenses : [];
+      if (type === 'renewals') return Array.isArray(renewals) ? renewals : [];
+    } catch(_e){}
+    return [];
+  }
+  function updateLocalMeta(type,id,deleted){
+    try {
+      if (typeof tombstones !== 'undefined') {
+        if (!tombstones || typeof tombstones !== 'object') tombstones = {};
+        tombstones[type] = deleted ? addId(tombstones[type], id) : removeId(tombstones[type], id);
+        localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+      }
+      if (typeof restoredKeys !== 'undefined') {
+        if (!restoredKeys || typeof restoredKeys !== 'object') restoredKeys = {};
+        restoredKeys[type] = deleted ? removeId(restoredKeys[type], id) : addId(restoredKeys[type], id);
+        localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
+      }
+    } catch(_e){}
+  }
+
+  window.kpRepairFirebaseSystemShape = async function(options){
+    options = options || {};
+    var base = baseUrl();
+    if (!base) return { ok:false, error:'missing_fb_url' };
+    var res = await fetchWithTimeout(base + '.json?ts=' + Date.now(), { cache:'no-store' }, 25000);
+    var data = await res.json() || {};
+    var patch = { version:2, savedAt:new Date().toISOString() };
+    var summary = {};
+
+    TYPES.forEach(function(type){
+      var cfg = ENTITY[type];
+      var ts = data.tombstones && Array.isArray(data.tombstones[type]) ? data.tombstones[type] : [];
+      var restored = data.restoredKeys && Array.isArray(data.restoredKeys[type]) ? data.restoredKeys[type] : [];
+      var blocked = ts.filter(function(id){ return !hasId(restored,id); });
+      var remoteDeleted = cfg.classEntity ? toArray(data[cfg.deleted]) : toArray(data[cfg.deleted]);
+      remoteDeleted.forEach(function(item){
+        var id = item && item[cfg.keyField];
+        if (id != null && !hasId(restored,id)) blocked = addId(blocked,id);
+      });
+
+      if (cfg.classEntity) {
+        patch[cfg.active] = toClassObject(data[cfg.active], blocked);
+        patch[cfg.deleted] = toArray(data[cfg.deleted]).filter(function(item){ return item && item.key != null && !hasId(restored,item.key); });
+        summary[type] = { active:Object.keys(patch[cfg.active]).length, deleted:patch[cfg.deleted].length };
+      } else {
+        var active = toArray(data[cfg.active]);
+        var deleted = toArray(data[cfg.deleted]);
+        if (options.includeLocal === true) {
+          active = active.concat(currentActiveArray(type));
+          deleted = deleted.concat(currentDeletedArray(type));
+        }
+        patch[cfg.active] = toMap(active, cfg.keyField, blocked);
+        patch[cfg.deleted] = toMap(deleted, cfg.keyField, restored);
+        summary[type] = { active:Object.keys(patch[cfg.active]).length, deleted:Object.keys(patch[cfg.deleted]).length };
+      }
+    });
+
+    await fetchWithTimeout(base + '.json', {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(patch)
+    }, 30000);
+    if (typeof lastSavedAt !== 'undefined') lastSavedAt = patch.savedAt;
+    try { localStorage.setItem('kp_last_synced_at', patch.savedAt); } catch(_e){}
+    if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('تم تنظيف بنية Firebase لكل الأقسام');
+    return { ok:true, summary:summary };
+  };
+
+  var originalPermanentDelete = window.permanentDeleteRemoteAware || (typeof permanentDeleteRemoteAware === 'function' ? permanentDeleteRemoteAware : null);
+  window.permanentDeleteRemoteAware = async function(config){
+    config = config || {};
+    var type = config.type;
+    var cfg = ENTITY[type];
+    if (!cfg) return originalPermanentDelete ? originalPermanentDelete(config) : false;
+    var id = config.key;
+    var base = baseUrl();
+    if (!base) return false;
+    var snap = {};
+    try {
+      var res = await fetchWithTimeout(base + '.json?ts=' + Date.now(), { cache:'no-store' }, 20000);
+      snap = await res.json() || {};
+    } catch(e) {
+      console.warn('permanent delete read fallback:', type, e && e.message);
+    }
+    var savedAt = new Date().toISOString();
+    var updates = { savedAt:savedAt, version:2 };
+    if (!snap.tombstones || typeof snap.tombstones !== 'object') snap.tombstones = {};
+    if (!snap.restoredKeys || typeof snap.restoredKeys !== 'object') snap.restoredKeys = {};
+    updates['tombstones/' + type] = addId(snap.tombstones[type], id);
+    updates['restoredKeys/' + type] = removeId(snap.restoredKeys[type], id);
+
+    if (cfg.classEntity) {
+      updates[cfg.active + '/' + id] = null;
+      updates[cfg.deleted] = toArray(snap[cfg.deleted]).filter(function(item){ return !(item && idEq(item[cfg.keyField],id)); });
+    } else {
+      candidateKeys(id).forEach(function(k){
+        updates[cfg.active + '/' + k] = null;
+        updates[cfg.deleted + '/' + k] = null;
+      });
+      if (Array.isArray(snap[cfg.active])) updates[cfg.active] = toMap(snap[cfg.active], cfg.keyField, [id]);
+      if (Array.isArray(snap[cfg.deleted])) updates[cfg.deleted] = toMap(snap[cfg.deleted], cfg.keyField, [id]);
+    }
+
+    await fetchWithTimeout(base + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) }, 25000);
+    updateLocalMeta(type,id,true);
+    if (typeof lastSavedAt !== 'undefined') lastSavedAt = savedAt;
+    try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
+    if (typeof showSyncBadge === 'function') showSyncBadge('تم الحذف النهائي من Firebase');
+    return true;
+  };
+  try { permanentDeleteRemoteAware = window.permanentDeleteRemoteAware; } catch(_e){}
+
+  var originalMoveToTrash = window.moveRecordToTrashRemoteAware || (typeof moveRecordToTrashRemoteAware === 'function' ? moveRecordToTrashRemoteAware : null);
+  window.moveRecordToTrashRemoteAware = async function(config){
+    config = config || {};
+    var type = config.type;
+    var cfg = ENTITY[type];
+    if (!cfg || cfg.classEntity) return originalMoveToTrash ? originalMoveToTrash(config) : false;
+    var id = config.id;
+    var base = baseUrl();
+    if (!base) return originalMoveToTrash ? originalMoveToTrash(config) : false;
+    var key = safeKey(id);
+    var deletedItem = Object.assign({}, config.deletedItem || {}, { firebaseKey:key });
+    var savedAt = new Date().toISOString();
+    var updates = { savedAt:savedAt, version:2 };
+    candidateKeys(id).forEach(function(k){ updates[cfg.active + '/' + k] = null; });
+    updates[cfg.deleted + '/' + key] = deletedItem;
+    try {
+      if (typeof tombstones !== 'undefined') {
+        if (!tombstones || typeof tombstones !== 'object') tombstones = {};
+        updates['tombstones/' + type] = addId(tombstones[type], id);
+      }
+      if (typeof restoredKeys !== 'undefined') {
+        if (!restoredKeys || typeof restoredKeys !== 'object') restoredKeys = {};
+        updates['restoredKeys/' + type] = removeId(restoredKeys[type], id);
+      }
+    } catch(_e){}
+    await fetchWithTimeout(base + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) }, 20000);
+    updateLocalMeta(type,id,true);
+    if (typeof lastSavedAt !== 'undefined') lastSavedAt = savedAt;
+    try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
+    return true;
+  };
+  try { moveRecordToTrashRemoteAware = window.moveRecordToTrashRemoteAware; } catch(_e){}
+
+  var originalSaveRecord = window.saveRecordRemoteAware || (typeof saveRecordRemoteAware === 'function' ? saveRecordRemoteAware : null);
+  window.saveRecordRemoteAware = async function(config){
+    config = config || {};
+    var type = config.type || config.activeArrayName;
+    var cfg = ENTITY[type];
+    if (!cfg || cfg.classEntity) return originalSaveRecord ? originalSaveRecord(config) : false;
+    var record = Object.assign({}, config.record || {});
+    var id = record[cfg.keyField];
+    var base = baseUrl();
+    if (!base || id == null || id === '') return originalSaveRecord ? originalSaveRecord(config) : false;
+    var key = recordKey(record, cfg.keyField);
+    record.firebaseKey = key;
+    record.updatedAt = new Date().toISOString();
+    var updates = { savedAt:record.updatedAt, version:2 };
+    candidateKeys(id).forEach(function(k){
+      if (k !== key) updates[cfg.active + '/' + k] = null;
+      updates[cfg.deleted + '/' + k] = null;
+    });
+    updates[cfg.active + '/' + key] = record;
+    try {
+      if (typeof tombstones !== 'undefined') {
+        if (!tombstones || typeof tombstones !== 'object') tombstones = {};
+        updates['tombstones/' + type] = removeId(tombstones[type], id);
+      }
+      if (typeof restoredKeys !== 'undefined') {
+        if (!restoredKeys || typeof restoredKeys !== 'object') restoredKeys = {};
+        updates['restoredKeys/' + type] = addId(restoredKeys[type], id);
+      }
+    } catch(_e){}
+    await fetchWithTimeout(base + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) }, 20000);
+    updateLocalMeta(type,id,false);
+    if (typeof lastSavedAt !== 'undefined') lastSavedAt = record.updatedAt;
+    try { localStorage.setItem('kp_last_synced_at', record.updatedAt); } catch(_e){}
+    return true;
+  };
+  try { saveRecordRemoteAware = window.saveRecordRemoteAware; } catch(_e){}
+
+  var originalPushToFirebase = window.pushToFirebase || (typeof pushToFirebase === 'function' ? pushToFirebase : null);
+  window.pushToFirebase = async function(){
+    if (typeof cleanupDeletedBuckets === 'function') cleanupDeletedBuckets();
+    if (originalPushToFirebase) {
+      var result = await originalPushToFirebase.apply(this, arguments);
+      try { await window.kpRepairFirebaseSystemShape({ silent:true, includeLocal:true }); } catch(e){ console.warn('post-push system repair failed:', e && e.message); }
+      return result;
+    }
+    return window.kpRepairFirebaseSystemShape({ silent:true, includeLocal:true });
+  };
+  try { pushToFirebase = window.pushToFirebase; } catch(_e){}
+
+  window.kpSystemCleanupStatus = function(){
+    return {
+      version:'2026-05-02-whole-system',
+      canonicalPaths:['students','payments','expenses','renewals','deletedStudents','deletedPayments','deletedExpenses','deletedRenewals','CLASSES','deletedClasses'],
+      objectMapWrites:true,
+      permanentDeleteAllSections:true,
+      legacyRootRegistrationStreamDisabled:true
+    };
+  };
+
+  setTimeout(function(){
+    try {
+      if (typeof currentUser !== 'undefined' && currentUser && navigator.onLine !== false) {
+        window.kpRepairFirebaseSystemShape({ silent:true, includeLocal:false }).catch(function(e){
+          console.warn('startup system shape repair failed:', e && e.message);
+        });
+      }
+    } catch(_e){}
+  }, 7000);
 })();
 </script>
 </body>
