@@ -3259,8 +3259,7 @@ function getStudentHealthNotes(student) {
 
   const overrideHealth = String(student.healthOverride || '').trim();
   const manualHealth = String(student.health || student.healthStatus || '').trim();
-  const detailsHealth = String(student.healthDetails || student.medicalNotes || '').trim();
-  const effectiveManualHealth = overrideHealth || manualHealth || detailsHealth;
+  const effectiveManualHealth = overrideHealth || manualHealth;
   if (student.healthDeleted || overrideHealth) linked = [];
   if (effectiveManualHealth) {
     linked.unshift({
@@ -3302,8 +3301,6 @@ function hasStudentHealthMarker(student) {
     String(student.health || '').trim() ||
     String(student.healthStatus || '').trim() ||
     String(student.healthOverride || '').trim() ||
-    String(student.healthDetails || '').trim() ||
-    String(student.medicalNotes || '').trim() ||
     student.healthDeleted === true ||
     student.healthUpdatedAt ||
     student.healthChangedAt
@@ -3315,8 +3312,6 @@ function copyStudentHealthFields(target, source) {
   target.health = source.health || '';
   target.healthStatus = source.healthStatus || '';
   target.healthOverride = source.healthOverride || '';
-  target.healthDetails = source.healthDetails || '';
-  target.medicalNotes = source.medicalNotes || '';
   target.healthDeleted = source.healthDeleted === true;
   target.healthUpdatedAt = source.healthUpdatedAt || source.healthChangedAt || target.healthUpdatedAt || '';
   return target;
@@ -5366,6 +5361,7 @@ function renderStudents(){
       <td>
         <button class="btn btn-out btn-sm" onclick="viewStudentProfile(${s.id})" title="عرض الملف الكامل">👁</button><button class="btn btn-out btn-sm" onclick="editStudent(${s.id})" title="تعديل">✏️</button><button class="btn btn-y btn-sm" onclick="quickEditStudentHealth(${s.id})" title="تعديل الحالة الصحية">⚕️</button>
         ${isActiveStudent(s) ? `<button class="btn btn-b btn-sm" onclick="setStudentOperationalStatus(${s.id},'left')" title="وضع الطالب ترك بدون حذف بياناته">🚪 ترك</button>` : `<button class="btn btn-g btn-sm" onclick="setStudentOperationalStatus(${s.id},'active')" title="إرجاع الطالب لقائمة الموجودين">↩️ إرجاع</button>`}
+        <button class="btn btn-r btn-sm" onclick="delStudent(${s.id})" title="حذف إلى سلة المحذوفات">🗑 حذف</button>
       </td>
     </tr>`}).join('');
 }
@@ -6122,7 +6118,13 @@ function printStudentFullFile(studentId) {
       '<div class="item"><b>الموبايل</b><span class="ltr">'+(s.emergMob||'—')+'</span></div>'+
     '</div></div>' : '')+
 
-    '<div class="sec"><h2>الحالة الصحية والتوصيات</h2>'+healthHtml+'</div>'+
+    '<div class="sec"><h2>الحالة الصحية والتوصيات</h2>'+healthHtml+
+      ((s.allergy === 'نعم' || String(s.allergy||'').toLowerCase().includes('yes')) ?
+        '<div class="alert-box alert-r" style="margin-top:10px">⚠️ <b>حساسية إضافية:</b> ' + (s.allergyNote||s.allergyType||s.allergyMedicationFood||'يرجى المراجعة') + '</div>' : '')+
+      (s.diseaseDetails ? '<div class="alert-box alert-r">🦠 <b>تفاصيل الأمراض:</b> ' + s.diseaseDetails + '</div>' : '')+
+      (s.accidentDetails ? '<div class="alert-box alert-y">🏥 <b>تفاصيل الحوادث / العمليات:</b> ' + s.accidentDetails + '</div>' : '')+
+      (s.contagious && String(s.contagious).trim() && String(s.contagious).indexOf('لا')<0 && String(s.contagious).toLowerCase().indexOf('no')<0 ? '<div class="alert-box alert-r">🦠 <b>مرض معدي:</b> ' + s.contagious + '</div>' : '')+
+    '</div>'+
 
     ((s.photoConsent || s.socialConsent || s.nurseConsent || s.guardianUndertake) ?
     '<div class="sec"><h2>✅ الموافقات والتعهدات</h2><div class="grid">'+
@@ -6218,7 +6220,12 @@ function viewStudentProfile(id) {
         '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + (s.emergMob||'—') + '</div></div>' +
       '</div>' : '') +
     ((getStudentHealthSummary(s)) ? '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">⚕️ <b>الحالة الصحية / الحساسية:</b> ' + getStudentHealthSummary(s) + '</div>' : '') +
-    (function(){ var n = String(s.note || s.notes || '').trim(); if (!n || /^الحالة الصحية\s*:/i.test(n)) return ''; return '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📝 ' + n + '</div>'; })() +
+    (s.allergy === 'نعم' || String(s.allergy||'').toLowerCase().includes('yes') ?
+      '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">' +
+      '⚠️ <b>حساسية إضافية:</b> ' + (s.allergyNote||s.allergyType||'يرجى المراجعة') + '</div>' : '') +
+    (s.diseaseDetails ? '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">🦠 <b>تفاصيل الأمراض:</b> ' + s.diseaseDetails + '</div>' : '') +
+    (s.accidentDetails ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">🏥 <b>تفاصيل الحوادث / العمليات:</b> ' + s.accidentDetails + '</div>' : '') +
+    (s.note || s.notes ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📝 ' + (s.note||s.notes) + '</div>' : '') +
     (s.sub_end ? '<div style="background:var(--gp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📅 <b>تاريخ انتهاء الاشتراك:</b> ' + s.sub_end + '</div>' : '') +
     '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px;border-top:1.5px solid var(--border);padding-top:10px">💰 المدفوعات (' + (function(){
       const pays = payments.filter(function(p){ return p.stuId === id; });
@@ -10011,8 +10018,6 @@ async function archiveFirebaseRegistrationRequest(r, status) {
     r.allergy = kpSafeText(raw.allergy || '');
     r.allergyType = kpSafeText(raw.allergyType || '');
     r.nurseConsent = kpSafeText(raw.nurseConsent || '');
-    r.medicalNotes = kpSafeText(raw.medicalNotes || raw.healthDetails || raw.medicalDetails || raw.medicalNote || raw.healthNote || raw['Medical Notes / Health Details *'] || raw['Medical Notes / Health Details'] || raw['Health Details'] || raw['تفاصيل صحية'] || raw['ملاحظات طبية'] || '');
-    r.healthDetails = kpSafeText(raw.healthDetails || raw.medicalNotes || raw.medicalDetails || raw.medicalNote || raw.healthNote || raw['Medical Notes / Health Details *'] || raw['Medical Notes / Health Details'] || raw['Health Details'] || raw['تفاصيل صحية'] || raw['ملاحظات طبية'] || '');
 
     // صور صفحة التسجيل الحالية محفوظة base64 داخل نفس الطلب
     r.imgChildPhoto = raw.imgChildPhoto || (raw.imageUrls && raw.imageUrls.imgChildPhoto) || '';
@@ -11843,8 +11848,6 @@ async function syncFromGoogleSheets() {
         allergy: valByLabel(c, ['هل يعاني طفلك من أي نوع من أنواع الحساسية؟ Does your child have any type of allergy? '], 43),
         allergyType: valByLabel(c, ['ما نوع الحساسية إن وجد؟ What is the allergy type if any?'], 44),
         nurseConsent: valByLabel(c, ['هل توافقون على تقديم الممرضة ما قد يحتاجه طفلكم من: Do you agree to let the nurse give your child what might be necessary such as:'], 45),
-        medicalNotes: valByLabel(c, ['Medical Notes / Health Details *', 'Medical Notes / Health Details', 'Health Details', 'ملاحظات طبية', 'تفاصيل صحية'], 46),
-        healthDetails: valByLabel(c, ['Medical Notes / Health Details *', 'Medical Notes / Health Details', 'Health Details', 'ملاحظات طبية', 'تفاصيل صحية'], 46),
 
         imgEmiratesId:   valByLabel(c, ['الهوية الإماراتية | Emirates ID'], 46),
         imgVaccination:  valByLabel(c, ['شهادة التطعيم | Vaccination card'], 47),
@@ -11979,55 +11982,23 @@ function cleanArabicOnlyValue(value) {
   return v;
 }
 
-function isNegativeHealthAnswer(value) {
-  var v = String(value || '').trim().toLowerCase();
-  if (!v) return true;
-  v = v.replace(/[|،,.;:()\[\]{}\-_]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return /^(لا|كلا|no|none|nil|n\/a|na|not applicable)(\s|$)/i.test(v) ||
-         v === 'لا يوجد' || v === 'لا توجد' || v === 'بدون' || v === 'طبيعي';
-}
-
-function cleanHealthDetailValue(value) {
-  var v = String(value || '').trim();
-  if (!v) return '';
-  if (isNegativeHealthAnswer(v)) return '';
-  return v;
-}
-
-function pushUniqueHealthPart(parts, text) {
-  var v = String(text || '').trim();
-  if (!v) return;
-  var key = v.toLowerCase().replace(/\s+/g, ' ');
-  var exists = parts.some(function(x){ return String(x || '').toLowerCase().replace(/\s+/g, ' ') === key; });
-  if (!exists) parts.push(v);
-}
-
 function formatYesNoDetail(label, value, detail) {
   var v = String(value || '').trim();
-  var d = cleanHealthDetailValue(detail);
-  if (isNegativeHealthAnswer(v) && !d) return '';
-  if (isNegativeHealthAnswer(v) && d) return label + ': ' + d;
+  var d = String(detail || '').trim();
   if (!v && !d) return '';
   return label + ': ' + (v || '—') + (d ? ' — ' + d : '');
 }
 
 function buildHealthTextFromFormRow(r) {
-  r = r || {};
   var parts = [];
-  var allergyExtra = [r.allergyNote, r.allergyType, r.allergyMedicationFood]
-    .map(cleanHealthDetailValue)
-    .filter(Boolean)
-    .join(' — ');
-  pushUniqueHealthPart(parts, formatYesNoDetail('الحساسية', r.allergy, allergyExtra));
-  pushUniqueHealthPart(parts, formatYesNoDetail('مرض معدي', r.contagious, r.diseaseDetails || r.contagiousDetails));
-  pushUniqueHealthPart(parts, formatYesNoDetail('عملية أو حادث خطير', r.surgical, r.accidentDetails || r.surgicalDetails));
-  var medicalNotes = cleanHealthDetailValue(r.medicalNotes || r.healthDetails || r.medicalDetails || r.medicalNote || r.healthNote);
-  if (medicalNotes) pushUniqueHealthPart(parts, 'تفاصيل صحية / ملاحظات طبية: ' + medicalNotes);
-  var existingStatus = cleanHealthDetailValue(r.healthStatus);
-  var existingHealth = cleanHealthDetailValue(r.health);
-  if (existingStatus && !parts.join(' | ').includes(existingStatus)) pushUniqueHealthPart(parts, 'الحالة الصحية: ' + existingStatus);
-  if (existingHealth && !parts.join(' | ').includes(existingHealth)) pushUniqueHealthPart(parts, 'تفاصيل صحية: ' + existingHealth);
-  if (cleanHealthDetailValue(r.nurseConsent)) pushUniqueHealthPart(parts, 'موافقات إسعافية/تمريضية: ' + r.nurseConsent);
+  var allergyExtra = [r.allergyNote, r.allergyType, r.allergyMedicationFood].filter(Boolean).join(' — ');
+  parts.push(formatYesNoDetail('الحساسية', r.allergy, allergyExtra));
+  parts.push(formatYesNoDetail('مرض معدي', r.contagious, r.diseaseDetails || r.contagiousDetails));
+  parts.push(formatYesNoDetail('عملية أو حادث خطير', r.surgical, r.accidentDetails || r.surgicalDetails));
+  if (r.medicalNotes) parts.push('ملاحظات طبية: ' + r.medicalNotes);
+  if (r.healthStatus) parts.push('الحالة الصحية: ' + r.healthStatus);
+  if (r.health) parts.push('تفاصيل صحية: ' + r.health);
+  if (r.nurseConsent) parts.push('موافقات إسعافية/تمريضية: ' + r.nurseConsent);
   return parts.filter(function(x){ return String(x || '').trim(); }).join(' | ');
 }
 
@@ -12061,7 +12032,7 @@ function buildStudentFromFormRow(r, studentIdOverride) {
     mom: r.momFull,
     mph: r.momMob,
     addr: r.addr,
-    note: r.notes || '',
+    note: [r.notes, healthText ? ('الحالة الصحية: ' + healthText) : ''].filter(Boolean).join(' | '),
     familyName: r.familyName,
     firstName: r.firstName,
     emiratesId: r.emiratesId,
@@ -12093,8 +12064,6 @@ function buildStudentFromFormRow(r, studentIdOverride) {
     photoConsent: r.photoConsent,
     socialConsent: r.socialConsent,
     nurseConsent: r.nurseConsent,
-    medicalNotes: r.medicalNotes || r.healthDetails || '',
-    healthDetails: r.healthDetails || r.medicalNotes || '',
     contagious: r.contagious,
     surgical: r.surgical,
     diseaseDetails: r.diseaseDetails || r.contagiousDetails,
@@ -15578,6 +15547,145 @@ document.addEventListener('change', function(e){
   }, 800);
 })();
 
+
+
+/* ============================================================
+   KP PATCH 2026-05-02: student delete/trash + registration undo
+   - زر حذف الطالب يرجع ويحوّل الطالب إلى سلة المحذوفات
+   - الحذف النهائي من السلة يمسح السجل من students و deletedStudents في Firebase
+   - تراجع قبول طلب التسجيل يحذف الطالب الذي أُنشئ من Firebase ثم يرجع الطلب pending
+   ============================================================ */
+(function(){
+  function kpStudentEntityKey(id){
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(id) : ('k_' + String(id).replace(/[^A-Za-z0-9_\-]/g,'_')); }
+    catch(_e){ return 'k_' + String(id).replace(/[^A-Za-z0-9_\-]/g,'_'); }
+  }
+  function kpIdEq(a,b){
+    try { return (typeof normKey === 'function') ? normKey(a) === normKey(b) : String(a) === String(b); }
+    catch(_e){ return String(a) === String(b); }
+  }
+  async function kpPatchFirebase(updates){
+    var base = String(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, '');
+    if (!base) return false;
+    var res = await fetch(base + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return true;
+  }
+  window.kpPurgeStudentFromFirebase = async function(id){
+    var key = kpStudentEntityKey(id);
+    var savedAt = new Date().toISOString();
+    if (!window.tombstones && typeof tombstones !== 'undefined') window.tombstones = tombstones;
+    if (typeof tombstones !== 'undefined') {
+      if (!tombstones || typeof tombstones !== 'object') tombstones = {};
+      if (!Array.isArray(tombstones.students)) tombstones.students = [];
+      if (!tombstones.students.some(function(x){ return kpIdEq(x,id); })) tombstones.students.push(id);
+    }
+    if (typeof restoredKeys !== 'undefined' && restoredKeys && Array.isArray(restoredKeys.students)) {
+      restoredKeys.students = restoredKeys.students.filter(function(x){ return !kpIdEq(x,id); });
+    }
+    var updates = {};
+    updates['students/' + key] = null;
+    updates['deletedStudents/' + key] = null;
+    if (typeof tombstones !== 'undefined' && tombstones && Array.isArray(tombstones.students)) updates['tombstones/students'] = tombstones.students;
+    if (typeof restoredKeys !== 'undefined' && restoredKeys && Array.isArray(restoredKeys.students)) updates['restoredKeys/students'] = restoredKeys.students;
+    updates.savedAt = savedAt;
+    updates.version = 2;
+    await kpPatchFirebase(updates);
+    try { localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); } catch(_e){}
+    try { localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys)); } catch(_e){}
+    return true;
+  };
+
+  window.delStudent = async function(id){
+    var arr = Array.isArray(students) ? students : [];
+    var s = arr.find(function(x){ return kpIdEq(x && x.id, id); });
+    if (!s) return;
+    var reason = prompt('سبب الحذف (اختياري):', '') || '';
+    if (!confirm('حذف الطالب "' + (s.name || '') + '"؟\nسيتم نقله إلى سلة المحذوفات ويمكن استعادته.')) return;
+    var deletedCopy = Object.assign({}, s, {
+      deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
+      deletionReason: reason,
+      deletedBy: (typeof currentUser !== 'undefined' && currentUser) ? (currentUser.name || currentUser.username || 'نظام') : 'نظام'
+    });
+    if (!Array.isArray(deletedStudents)) deletedStudents = [];
+    deletedStudents = deletedStudents.filter(function(x){ return !kpIdEq(x && x.id, id); });
+    deletedStudents.unshift(deletedCopy);
+    students = arr.filter(function(x){ return !kpIdEq(x && x.id, id); });
+    try { if (typeof clearRestored === 'function') clearRestored('students', id); } catch(_e){}
+    try { if (typeof addTombstone === 'function') addTombstone('students', id); } catch(_e){}
+    try { localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents)); } catch(_e){}
+    try { if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage(); } catch(_e){}
+    try { if (typeof resetPaymentMatchCache === 'function') resetPaymentMatchCache(); } catch(_e){}
+    if (typeof renderStudents === 'function') renderStudents();
+    if (typeof renderDash === 'function') renderDash();
+    if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري نقل الطالب إلى سلة المحذوفات...');
+    var ok = false;
+    try {
+      ok = await moveRecordToTrashRemoteAware({type:'students', id:id, deletedItem:deletedCopy, activeArrayName:'students', deletedArrayName:'deletedStudents', keyField:'id', label:'الطالب'});
+    } catch(e) { console.error('student trash sync failed:', e); }
+    if (typeof showSyncBadge === 'function') showSyncBadge(ok ? '✅ تم نقل الطالب إلى سلة المحذوفات' : '⚠️ لم يصل الحذف إلى Firebase، راجعي الاتصال');
+  };
+
+  window.permanentDeleteStudent = async function(id){
+    if (!Array.isArray(deletedStudents)) deletedStudents = [];
+    var s = deletedStudents.find(function(x){ return kpIdEq(x && x.id, id); });
+    if (!s) return;
+    if (!confirm('⚠️ حذف نهائي للطالب "' + (s.name || '') + '"؟\nسيتم مسح بياناته من Firebase ولا يمكن التراجع.')) return;
+    if (!confirm('تأكيد أخير: حذف نهائي من Firebase؟')) return;
+    deletedStudents = deletedStudents.filter(function(x){ return !kpIdEq(x && x.id, id); });
+    students = (Array.isArray(students) ? students : []).filter(function(x){ return !kpIdEq(x && x.id, id); });
+    try { localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents)); } catch(_e){}
+    try { if (typeof addTombstone === 'function') addTombstone('students', id); } catch(_e){}
+    if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
+    if (typeof renderOtherDeletedItems === 'function') renderOtherDeletedItems();
+    if (typeof renderStudents === 'function') renderStudents();
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري الحذف النهائي من Firebase...');
+    var ok = false;
+    try { ok = await window.kpPurgeStudentFromFirebase(id); } catch(e) { console.error('student permanent delete failed:', e); }
+    if (typeof showSyncBadge === 'function') showSyncBadge(ok ? '✅ تم الحذف النهائي من Firebase' : '⚠️ فشل الحذف النهائي من Firebase');
+  };
+
+  window.undoFormDecision = async function(token){
+    var r = (typeof findRegistrationRowByToken === 'function') ? findRegistrationRowByToken(token) : null;
+    if (!r && Array.isArray(syncedFormRows)) {
+      r = syncedFormRows.find(function(x){
+        try { return x.timestamp === token || x.firebaseKey === token || x.requestId === token || (typeof kpKey === 'function' && kpKey(x) === token); }
+        catch(_e){ return x.timestamp === token || x.firebaseKey === token || x.requestId === token; }
+      });
+    }
+    if (!r || (r.status || 'pending') === 'pending') return;
+    if (!confirm('هل تريدين التراجع عن هذا القرار وإعادة الطلب إلى قائمة الجديدة؟')) return;
+    var idsToRemove = [];
+    if (r.status === 'approved') {
+      if (r.approvedAction === 'new') {
+        if (r.undoData && r.undoData.createdStudentId != null) idsToRemove.push(r.undoData.createdStudentId);
+        if (r.approvedStudentId != null) idsToRemove.push(r.approvedStudentId);
+      } else if (r.approvedAction === 'merge' && r.undoData && r.undoData.mergedStudentId != null && r.undoData.previousStudent) {
+        var sidx = (Array.isArray(students) ? students : []).findIndex(function(s){ return kpIdEq(s && s.id, r.undoData.mergedStudentId); });
+        if (sidx >= 0) students[sidx] = r.undoData.previousStudent;
+        try { await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:r.undoData.previousStudent, keyField:'id', label:'الطالب'}); } catch(_e){}
+      }
+    }
+    idsToRemove = idsToRemove.filter(function(v,i,a){ return v != null && a.findIndex(function(x){ return kpIdEq(x,v); }) === i; });
+    for (var i=0; i<idsToRemove.length; i++) {
+      var sid = idsToRemove[i];
+      students = (Array.isArray(students) ? students : []).filter(function(s){ return !kpIdEq(s && s.id, sid); });
+      if (Array.isArray(deletedStudents)) deletedStudents = deletedStudents.filter(function(s){ return !kpIdEq(s && s.id, sid); });
+      try { await window.kpPurgeStudentFromFirebase(sid); } catch(e){ console.error('undo purge student failed:', sid, e); }
+    }
+    if (typeof renderStudents === 'function') renderStudents();
+    if (typeof renderDash === 'function') renderDash();
+    if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
+    if (typeof window.setFormRowDecision === 'function') {
+      await window.setFormRowDecision(r, 'pending', { approvedStudentId:null, approvedAction:'', undoData:null });
+    } else {
+      r.status='pending'; r.decisionAt=''; r.rowUpdatedAt=new Date().toISOString(); r.approvedStudentId=null; r.approvedAction=''; r.undoData=null;
+      if (typeof persistFormRowsAndSync === 'function') await persistFormRowsAndSync(r);
+    }
+    if (typeof showSyncBadge === 'function') showSyncBadge('↩️ تم التراجع: رجع الطلب للجديدة وتم حذف الطالب من Firebase');
+  };
+})();
 </script>
 </body>
 </html>
