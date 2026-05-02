@@ -1799,8 +1799,6 @@ body.kp-teacher .kp-sync-panel{
     <div class="nav"     onclick="go('expenses')"> <span class="ni">🧾</span><span>المصاريف</span></div>
     <div class="nav"     onclick="go('receipts')" style="display:none"> <span class="ni">📄</span><span>سندات القبض</span></div>
     <div class="side-sep"></div>
-    <div class="nav"     onclick="go('finance')">  <span class="ni">📈</span><span>الإيرادات</span></div>
-    <div class="nav"     onclick="go('worksheets')"><span class="ni">🖼️</span><span>أوراق العمل</span></div>
     <div class="nav" id="nav-forms" onclick="go('forms')">      <span class="ni">📋</span><span>طلبات التسجيل</span><span id="forms-nav-badge" class="nav-badge" style="display:none">0</span></div>
     <div class="nav" id="nav-renewals" onclick="go('renewals')">   <span class="ni">🔔</span><span>التجديدات</span><span id="renewals-nav-badge" class="nav-badge" style="display:none">0</span></div>
     <div class="nav"     onclick="go('finreport')"> <span class="ni">📈</span><span>التقارير المالية</span></div>
@@ -1872,6 +1870,11 @@ body.kp-teacher .kp-sync-panel{
         </select>
         <select id="stu-gen" onchange="renderStudents()">
           <option value="">الجنسين</option><option value="ذكر">ذكر</option><option value="انثى">أنثى</option>
+        </select>
+        <select id="stu-status-filter" onchange="renderStudents()" title="حالة الطالب">
+          <option value="active">الطلاب الموجودون فقط</option>
+          <option value="left">الطلاب الذين تركوا</option>
+          <option value="all">كل الطلاب</option>
         </select>
         <button class="btn btn-out btn-sm" onclick="openExport('students')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('students')" title="استيراد من Excel">⬆ استيراد</button>
         <select id="stu-print-type" title="نوع القائمة المطلوبة">
@@ -2376,8 +2379,8 @@ body.kp-teacher .kp-sync-panel{
           </div>
           <div id="auto-backup-status" style="margin-top:10px;padding:10px;background:white;border-radius:8px;font-size:12px">
           </div>
-          <div style="display:none">
-          </div>
+                    <div style="display:none"></div>
+
         </div>
 
         <div class="admin-section">
@@ -2568,6 +2571,9 @@ body.kp-teacher .kp-sync-panel{
       </div>
       <div class="fl"><label>الفصل *</label>
         <select id="ns-cls"></select>
+      </div>
+      <div class="fl"><label>حالة الطالب</label>
+        <select id="ns-student-status"><option value="active">موجود</option><option value="left">ترك</option></select>
       </div>
       <div class="fl"><label>مكان الميلاد</label><input id="ns-bpl" placeholder=""></div>
       <div class="fl"><label>اسم الأب *</label><input id="ns-dad" placeholder=""></div>
@@ -3699,6 +3705,273 @@ function cleanupDeletedBuckets() {
 
 
 
+
+
+/* ============================================================
+   KP OBJECT-PATH FIREBASE LAYER v20260502
+   يحول الأقسام الكبيرة من Array إلى Object Map حتى يصبح الحفظ فردي:
+   students/k_123 ، payments/k_456 ...
+   مع توافق كامل للقراءة من البنية القديمة Array أو الجديدة Object.
+   ============================================================ */
+var KP_OBJECT_SECTIONS = {
+  students: { keyField:'id', deleted:'deletedStudents' },
+  payments: { keyField:'id', deleted:'deletedPayments' },
+  expenses: { keyField:'id', deleted:'deletedExpenses' },
+  renewals: { keyField:'id', deleted:'deletedRenewals' }
+};
+
+function kpSafeFirebaseKey(value) {
+  var raw = String(value == null ? '' : value).trim();
+  if (!raw) raw = 'missing_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+  raw = raw.replace(/[.#$\[\]\/\s]/g, '_').replace(/_+/g, '_');
+  if (/^\d+$/.test(raw)) raw = 'k_' + raw;
+  if (!/^k_/.test(raw)) raw = 'k_' + raw;
+  return raw.substring(0, 180);
+}
+
+function kpRecordKey(record, keyField) {
+  if (!record || typeof record !== 'object') return '';
+  var v = record[keyField || 'id'];
+  if (v == null || v === '') v = record.firebaseKey || record.key || record.receiptNo || record.no;
+  return kpSafeFirebaseKey(v);
+}
+
+function kpArrayFromFirebaseSection(section) {
+  if (!section) return [];
+  if (Array.isArray(section)) return section.filter(function(x){ return x && typeof x === 'object'; });
+  if (typeof section === 'object') {
+    return Object.keys(section).map(function(k){
+      var v = section[k];
+      if (!v || typeof v !== 'object') return null;
+      if (!v.firebaseKey) v.firebaseKey = k;
+      return v;
+    }).filter(Boolean);
+  }
+  return [];
+}
+
+function kpMapFromArray(arr, keyField) {
+  var out = {};
+  (Array.isArray(arr) ? arr : []).forEach(function(item){
+    if (!item || typeof item !== 'object') return;
+    var key = kpRecordKey(item, keyField || 'id');
+    if (!key) return;
+    var copy = Object.assign({}, item);
+    copy.firebaseKey = key;
+    out[key] = copy;
+  });
+  return out;
+}
+
+function kpNormalizeFirebaseObjectSections(data) {
+  if (!data || typeof data !== 'object') return data;
+  Object.keys(KP_OBJECT_SECTIONS).forEach(function(name){
+    var cfg = KP_OBJECT_SECTIONS[name];
+    if (data[name] !== undefined) data[name] = kpArrayFromFirebaseSection(data[name]);
+    if (cfg.deleted && data[cfg.deleted] !== undefined) data[cfg.deleted] = kpArrayFromFirebaseSection(data[cfg.deleted]);
+  });
+  return data;
+}
+
+
+// ============================================================
+// KP SAFE MIGRATION TO OBJECT PATHS v20260502
+// زرّان: نسخة احتياطية قبل التحويل + تحويل آمن للبنية الجديدة.
+// مهم: لا يلمس kp_form_rows ولا registrationRequests حتى تبقى طلبات App Script شغالة.
+// ============================================================
+function kpMigrationSetStatus(msg, kind) {
+  try {
+    var el = document.getElementById('kp-migration-status');
+    if (el) {
+      var color = kind === 'err' ? '#c62828' : (kind === 'ok' ? '#2e7d32' : '#6b8470');
+      el.style.color = color;
+      el.innerHTML = msg;
+    }
+  } catch(_e) {}
+  if (typeof showSyncBadge === 'function') showSyncBadge(String(msg || '').replace(/<[^>]*>/g, ''));
+}
+
+function kpDownloadJsonFile(obj, prefix) {
+  var now = new Date();
+  var stamp = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0') + '_' + String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0');
+  var blob = new Blob([JSON.stringify(obj || {}, null, 2)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = (prefix || 'firebase_backup') + '_' + stamp + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+}
+
+async function downloadPreMigrationFirebaseBackup() {
+  try {
+    kpMigrationSetStatus('⏳ جاري تحميل نسخة Firebase قبل التحويل...', '');
+    var data = null;
+    try {
+      var res = await fetch(FB_URL + '.json', { cache: 'no-store' });
+      if (res.ok) data = await res.json();
+    } catch(_e) {}
+    if (!data || typeof data !== 'object') {
+      data = {
+        backupDate: new Date().toISOString(),
+        source: 'local-fallback-before-migration',
+        students: students || [],
+        payments: payments || [],
+        expenses: expenses || [],
+        renewals: renewals || [],
+        attLog: attLog || {},
+        CLASSES: CLASSES || {},
+        nurserySettings: nurserySettings || {},
+        deletedStudents: (typeof deletedStudents !== 'undefined' ? deletedStudents : []),
+        deletedPayments: (typeof deletedPayments !== 'undefined' ? deletedPayments : []),
+        deletedExpenses: (typeof deletedExpenses !== 'undefined' ? deletedExpenses : []),
+        deletedRenewals: (typeof deletedRenewals !== 'undefined' ? deletedRenewals : []),
+        deletedClasses: (typeof deletedClasses !== 'undefined' ? deletedClasses : []),
+        tombstones: (typeof tombstones !== 'undefined' ? tombstones : {}),
+        restoredKeys: (typeof restoredKeys !== 'undefined' ? restoredKeys : {}),
+        kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
+        kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]')
+      };
+    }
+    data.__backupPurpose = 'before-object-path-migration';
+    data.__backupCreatedAt = new Date().toISOString();
+    kpDownloadJsonFile(data, 'قبل_تحويل_Firebase');
+    try { localStorage.setItem('kp_last_pre_migration_backup_at', new Date().toISOString()); } catch(_e) {}
+    kpMigrationSetStatus('✅ تم تحميل نسخة قبل التحويل. احفظيها بمكان آمن قبل الضغط على زر التحويل.', 'ok');
+    return true;
+  } catch(e) {
+    console.error('downloadPreMigrationFirebaseBackup failed:', e);
+    kpMigrationSetStatus('❌ تعذر تحميل نسخة قبل التحويل: ' + e.message, 'err');
+    alert('❌ تعذر تحميل نسخة قبل التحويل: ' + e.message);
+    return false;
+  }
+}
+
+function kpRecordTimeValue(r) {
+  if (!r || typeof r !== 'object') return 0;
+  var fields = ['updatedAt','rowUpdatedAt','decisionAt','createdAt','submittedAt','timestamp','date','savedAt'];
+  for (var i=0; i<fields.length; i++) {
+    var v = r[fields[i]];
+    if (!v) continue;
+    var t = Date.parse(v);
+    if (!isNaN(t) && t > 0) return t;
+  }
+  return 0;
+}
+
+function kpDedupeRecordsForMigration(section, keyField) {
+  var arr = kpArrayFromFirebaseSection(section);
+  var map = {};
+  arr.forEach(function(item, idx){
+    if (!item || typeof item !== 'object') return;
+    var key = kpRecordKey(item, keyField || 'id');
+    if (!key) return;
+    var copy = Object.assign({}, item);
+    copy.firebaseKey = key;
+    if (!copy.id && keyField === 'id') copy.id = String(key).replace(/^k_/, '');
+    copy.__migrationOrder = idx;
+    var existing = map[key];
+    if (!existing) { map[key] = copy; return; }
+    var t1 = kpRecordTimeValue(existing);
+    var t2 = kpRecordTimeValue(copy);
+    if (t2 > t1 || (t2 === t1 && (copy.__migrationOrder || 0) >= (existing.__migrationOrder || 0))) map[key] = copy;
+  });
+  Object.keys(map).forEach(function(k){ try { delete map[k].__migrationOrder; } catch(_e){} });
+  return map;
+}
+
+async function migrateFirebaseToObjectPathsSafe() {
+  try {
+    if (!confirm('⚠️ قبل التحويل لازم تكوني حمّلتي نسخة احتياطية قبل التحويل.\n\nالتحويل سيحوّل الطلاب/السندات/المصاريف/التجديدات إلى بنية Firebase السريعة، ولن يغيّر طلبات التسجيل القادمة من App Script.\n\nهل تريدين المتابعة؟')) return;
+    kpMigrationSetStatus('⏳ جاري قراءة Firebase وتجهيز التحويل...', '');
+    var res = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var data = await res.json();
+    if (!data || typeof data !== 'object') data = {};
+
+    var migrated = Object.assign({}, data);
+    migrated.students = kpDedupeRecordsForMigration(data.students, 'id');
+    migrated.payments = kpDedupeRecordsForMigration(data.payments, 'id');
+    migrated.expenses = kpDedupeRecordsForMigration(data.expenses, 'id');
+    migrated.renewals = kpDedupeRecordsForMigration(data.renewals, 'id');
+    migrated.deletedStudents = kpDedupeRecordsForMigration(data.deletedStudents, 'id');
+    migrated.deletedPayments = kpDedupeRecordsForMigration(data.deletedPayments, 'id');
+    migrated.deletedExpenses = kpDedupeRecordsForMigration(data.deletedExpenses, 'id');
+    migrated.deletedRenewals = kpDedupeRecordsForMigration(data.deletedRenewals, 'id');
+
+    // حماية طلبات التسجيل: نتركها كما هي تماماً سواء kp_form_rows أو registrationRequests.
+    if (Object.prototype.hasOwnProperty.call(data, 'kp_form_rows')) migrated.kp_form_rows = data.kp_form_rows;
+    if (Object.prototype.hasOwnProperty.call(data, 'registrationRequests')) migrated.registrationRequests = data.registrationRequests;
+
+    migrated.version = 2;
+    migrated.migrationVersion = 'object-paths-v20260502';
+    migrated.migratedAt = new Date().toISOString();
+    migrated.savedAt = migrated.migratedAt;
+
+    kpMigrationSetStatus('⏳ جاري رفع البنية الجديدة إلى Firebase...', '');
+    var put = await fetch(FB_URL + '.json', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(migrated)
+    });
+    if (!put.ok) {
+      var errText = await put.text().catch(function(){ return ''; });
+      throw new Error('HTTP ' + put.status + ' ' + errText.slice(0,80));
+    }
+
+    // حدّث الذاكرة المحلية بعد نجاح Firebase فقط.
+    students = kpArrayFromFirebaseSection(migrated.students);
+    payments = kpArrayFromFirebaseSection(migrated.payments);
+    expenses = kpArrayFromFirebaseSection(migrated.expenses);
+    renewals = kpArrayFromFirebaseSection(migrated.renewals);
+    deletedStudents = kpArrayFromFirebaseSection(migrated.deletedStudents);
+    deletedPayments = kpArrayFromFirebaseSection(migrated.deletedPayments);
+    deletedExpenses = kpArrayFromFirebaseSection(migrated.deletedExpenses);
+    deletedRenewals = kpArrayFromFirebaseSection(migrated.deletedRenewals);
+    if (migrated.tombstones && typeof migrated.tombstones === 'object') tombstones = migrated.tombstones;
+    if (migrated.restoredKeys && typeof migrated.restoredKeys === 'object') restoredKeys = migrated.restoredKeys;
+    lastSavedAt = migrated.savedAt;
+    localStorage.setItem('kp_last_synced_at', lastSavedAt);
+    persistCoreDataToLocalStorage();
+    try { localStorage.setItem('kp_deleted_students', JSON.stringify(deletedStudents)); } catch(_e){}
+    try { localStorage.setItem('kp_deleted_payments', JSON.stringify(deletedPayments)); } catch(_e){}
+    try { localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses)); } catch(_e){}
+    try { localStorage.setItem('kp_deleted_renewals', JSON.stringify(deletedRenewals)); } catch(_e){}
+
+    if (typeof refreshNextIds === 'function') refreshNextIds();
+    if (typeof renderDash === 'function') renderDash();
+    if (typeof renderStudents === 'function') renderStudents();
+    if (typeof renderPayments === 'function') renderPayments();
+    if (typeof renderExpenses === 'function') renderExpenses();
+    if (typeof renderReceipts === 'function') renderReceipts();
+    if (typeof renderRenewals === 'function') renderRenewals();
+    if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
+    if (typeof renderOtherDeletedItems === 'function') renderOtherDeletedItems();
+    if (typeof updateNotifications === 'function') updateNotifications();
+
+    kpMigrationSetStatus('✅ تم التحويل بنجاح. البنية القديمة تحولت إلى مسارات منفصلة، وطلبات التسجيل بقيت محفوظة كما هي.', 'ok');
+    alert('✅ تم تحويل قاعدة البيانات بنجاح.\n\nطلبات التسجيل لم يتم تغييرها.');
+    return true;
+  } catch(e) {
+    console.error('migrateFirebaseToObjectPathsSafe failed:', e);
+    kpMigrationSetStatus('❌ فشل التحويل ولم يتم اعتماد أي تغيير محلي: ' + e.message, 'err');
+    alert('❌ فشل التحويل:\n' + e.message + '\n\nإذا صار أي خلل، استخدمي النسخة الاحتياطية التي حمّلتيها قبل التحويل.');
+    return false;
+  }
+}
+
+async function kpPatchSavedAtOnly(savedAt) {
+  try {
+    await fetch(FB_URL + '.json', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ savedAt: savedAt || new Date().toISOString(), version: 2 })
+    });
+  } catch(_e) {}
+}
+
 // ============================================================
 // DELETE-TO-TRASH SAFE SYNC — all deletable sections
 // يجعل المحذوفات هي صاحبة الأولوية: يكتب السجل في سلة المحذوفات + tombstone
@@ -3707,62 +3980,50 @@ function cleanupDeletedBuckets() {
 async function moveRecordToTrashRemoteAware(config) {
   const type = config.type;
   const id = config.id;
-  const deletedItem = config.deletedItem;
+  const deletedItem = Object.assign({}, config.deletedItem || {});
   const activeArrayName = config.activeArrayName;
   const deletedArrayName = config.deletedArrayName;
   const keyField = config.keyField || 'id';
   const label = config.label || 'السجل';
-
   try {
     if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري نقل ' + label + ' إلى سلة المحذوفات...');
-    let remoteData = null;
-    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
-    if (fetchRes.ok) remoteData = await fetchRes.json();
-    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
-
-    const active = Array.isArray(remoteData[activeArrayName]) ? remoteData[activeArrayName] : [];
-    const deleted = Array.isArray(remoteData[deletedArrayName]) ? remoteData[deletedArrayName] : [];
-
-    remoteData[activeArrayName] = active.filter(function(x){ return normKey(x && x[keyField]) !== normKey(id); });
-    remoteData[deletedArrayName] = [deletedItem].concat(deleted.filter(function(x){ return normKey(x && x[keyField]) !== normKey(id); }));
-
-    const remoteTombstones = (remoteData.tombstones && typeof remoteData.tombstones === 'object') ? remoteData.tombstones : {};
-    if (!Array.isArray(remoteTombstones[type])) remoteTombstones[type] = [];
-    remoteTombstones[type] = remoteTombstones[type].filter(function(x){ return normKey(x) !== normKey(id); });
-    remoteTombstones[type].push(id);
-    remoteData.tombstones = remoteTombstones;
-
-    const remoteRestored = (remoteData.restoredKeys && typeof remoteData.restoredKeys === 'object') ? remoteData.restoredKeys : {};
-    if (!Array.isArray(remoteRestored[type])) remoteRestored[type] = [];
-    remoteRestored[type] = remoteRestored[type].filter(function(x){ return normKey(x) !== normKey(id); });
-    remoteData.restoredKeys = remoteRestored;
-
+    const entityKey = kpSafeFirebaseKey(id);
+    deletedItem.firebaseKey = entityKey;
     const savedAt = new Date().toISOString();
-    const patchPayload = {
-      savedAt: savedAt,
-      version: remoteData.version || 2,
-      tombstones: remoteData.tombstones,
-      restoredKeys: remoteData.restoredKeys
-    };
-    patchPayload[activeArrayName] = remoteData[activeArrayName];
-    patchPayload[deletedArrayName] = remoteData[deletedArrayName];
 
-    const putRes = await fetch(FB_URL + '.json', {
+    if (!tombstones || typeof tombstones !== 'object') tombstones = {};
+    if (!Array.isArray(tombstones[type])) tombstones[type] = [];
+    tombstones[type] = tombstones[type].filter(function(x){ return normKey(x) !== normKey(id); });
+    tombstones[type].push(id);
+
+    if (!restoredKeys || typeof restoredKeys !== 'object') restoredKeys = {};
+    if (!Array.isArray(restoredKeys[type])) restoredKeys[type] = [];
+    restoredKeys[type] = restoredKeys[type].filter(function(x){ return normKey(x) !== normKey(id); });
+
+    const updates = {};
+    updates[activeArrayName + '/' + entityKey] = null;
+    updates[deletedArrayName + '/' + entityKey] = deletedItem;
+    updates['tombstones/' + type] = tombstones[type];
+    updates['restoredKeys/' + type] = restoredKeys[type];
+    updates['savedAt'] = savedAt;
+    updates['version'] = 2;
+
+    const res = await fetch(FB_URL + '.json', {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(patchPayload)
+      body: JSON.stringify(updates)
     });
-    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
 
+    try { localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys)); } catch(_e){}
     if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم نقل ' + label + ' إلى سلة المحذوفات');
     hasUnsavedChanges = false;
     lastSavedAt = savedAt;
     localStorage.setItem('kp_last_synced_at', savedAt);
     return true;
   } catch (e) {
-    console.error('moveRecordToTrashRemoteAware failed:', type, id, e);
+    console.error('moveRecordToTrashRemoteAware object-path failed:', type, id, e);
     if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل نقل ' + label + ' إلى Firebase');
-    try { autoSave(); } catch(_e) {}
     return false;
   }
 }
@@ -3824,63 +4085,50 @@ async function moveClassToTrashRemoteAware(className, deletedItem) {
 // ما حدا يكتب فوق تغييرات حدا.
 // ============================================================
 async function saveRecordRemoteAware(config) {
-  // config: {activeArrayName, record, keyField, label, type}
-  // type: 'students'|'payments'|'expenses'|'renewals'  — لتنظيف tombstone/restoredKey إذا بدنا
   const activeArrayName = config.activeArrayName;
   const record = config.record;
   const keyField = config.keyField || 'id';
   const label = config.label || 'السجل';
-  const type = config.type;
+  const type = config.type || activeArrayName;
   try {
     if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ ' + label + '...');
-    let remoteData = null;
-    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
-    if (fetchRes.ok) remoteData = await fetchRes.json();
-    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
-
-    const active = Array.isArray(remoteData[activeArrayName]) ? remoteData[activeArrayName] : [];
     const saveRecord = Object.assign({}, record || {});
+    const entityKey = kpRecordKey(saveRecord, keyField);
+    saveRecord.firebaseKey = entityKey;
     saveRecord.updatedAt = new Date().toISOString();
     saveRecord.updatedBy = (currentUser && (currentUser.username || currentUser.name)) ? (currentUser.username || currentUser.name) : 'system';
     saveRecord.version = (parseInt(saveRecord.version || 0, 10) || 0) + 1;
-    // شيل أي نسخة قديمة بنفس الـ key وضيف السجل الجديد
-    const updatedActive = active.filter(function(x){ return normKey(x && x[keyField]) !== normKey(saveRecord[keyField]); });
-    updatedActive.push(saveRecord);
 
-    // إذا في tombstone للسجل (مثلاً مستعاد من السلة) شيلو من tombstones
-    if (type && remoteData.tombstones && Array.isArray(remoteData.tombstones[type])) {
-      remoteData.tombstones[type] = remoteData.tombstones[type].filter(function(x){ return normKey(x) !== normKey(saveRecord[keyField]); });
-    }
-    // وأضف للـ restoredKeys حتى ما يرجع يختفي بسبب tombstone قديم
-    if (type) {
-      if (!remoteData.restoredKeys || typeof remoteData.restoredKeys !== 'object') remoteData.restoredKeys = {};
-      if (!Array.isArray(remoteData.restoredKeys[type])) remoteData.restoredKeys[type] = [];
-      if (!hasKey(remoteData.restoredKeys[type], saveRecord[keyField])) {
-        remoteData.restoredKeys[type].push(saveRecord[keyField]);
-      }
-    }
-    // كمان شيل من سلة المحذوفات (في حالة الاستعادة)
     const deletedArrayName = 'deleted' + activeArrayName.charAt(0).toUpperCase() + activeArrayName.slice(1);
-    if (Array.isArray(remoteData[deletedArrayName])) {
-      remoteData[deletedArrayName] = remoteData[deletedArrayName].filter(function(x){ return normKey(x && x[keyField]) !== normKey(saveRecord[keyField]); });
+    const savedAt = new Date().toISOString();
+    const updates = {};
+
+    // حفظ فردي فعلي: /students/k_123 أو /payments/k_10 ...
+    updates[activeArrayName + '/' + entityKey] = saveRecord;
+    // إذا كان السجل مستعاداً، احذف نسخته من سلة المحذوفات الجديدة أيضاً.
+    updates[deletedArrayName + '/' + entityKey] = null;
+    updates['savedAt'] = savedAt;
+    updates['version'] = 2;
+
+    // تحديث tombstones/restoredKeys صغير فقط، وليس إعادة رفع القسم كله.
+    if (type) {
+      if (!tombstones || typeof tombstones !== 'object') tombstones = {};
+      if (!Array.isArray(tombstones[type])) tombstones[type] = [];
+      tombstones[type] = tombstones[type].filter(function(x){ return normKey(x) !== normKey(saveRecord[keyField]); });
+      if (!restoredKeys || typeof restoredKeys !== 'object') restoredKeys = {};
+      if (!Array.isArray(restoredKeys[type])) restoredKeys[type] = [];
+      if (!hasKey(restoredKeys[type], saveRecord[keyField])) restoredKeys[type].push(saveRecord[keyField]);
+      updates['tombstones/' + type] = tombstones[type];
+      updates['restoredKeys/' + type] = restoredKeys[type];
+      try { localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys)); } catch(_e){}
     }
 
-    const savedAt = new Date().toISOString();
-    // PATCH بدل PUT — يعدّل بس الحقول اللي بدنا ياها بدون ما يطغى على باقي البيانات
-    const patchPayload = {};
-    patchPayload[activeArrayName] = updatedActive;
-    if (remoteData.tombstones)   patchPayload.tombstones   = remoteData.tombstones;
-    if (remoteData.restoredKeys) patchPayload.restoredKeys = remoteData.restoredKeys;
-    if (remoteData[deletedArrayName] !== undefined) patchPayload[deletedArrayName] = remoteData[deletedArrayName];
-    patchPayload.savedAt = savedAt;
-    patchPayload.version = remoteData.version || 2;
-
-    const putRes = await fetch(FB_URL + '.json', {
+    const res = await fetch(FB_URL + '.json', {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(patchPayload)
+      body: JSON.stringify(updates)
     });
-    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
 
     if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ ' + label);
     hasUnsavedChanges = false;
@@ -3888,100 +4136,13 @@ async function saveRecordRemoteAware(config) {
     localStorage.setItem('kp_last_synced_at', savedAt);
     return true;
   } catch (e) {
-    console.error('saveRecordRemoteAware failed:', activeArrayName, e);
+    console.error('saveRecordRemoteAware object-path failed:', activeArrayName, e);
     if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل ' + label + ' إلى Firebase');
-    try { autoSave(); } catch(_e) {}
-    return false;
-  }
-}
-
-async function saveClassRemoteAware(className, classData) {
-  try {
-    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ الفصل...');
-    let remoteData = null;
-    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
-    if (fetchRes.ok) remoteData = await fetchRes.json();
-    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
-
-    const classesObj = (remoteData.CLASSES && typeof remoteData.CLASSES === 'object' && !Array.isArray(remoteData.CLASSES)) ? remoteData.CLASSES : {};
-    classesObj[className] = classData;
-    // شيل من tombstones
-    if (remoteData.tombstones && Array.isArray(remoteData.tombstones.classes)) {
-      remoteData.tombstones.classes = remoteData.tombstones.classes.filter(function(x){ return normKey(x) !== normKey(className); });
-    }
-    // شيل من سلة المحذوفات
-    if (Array.isArray(remoteData.deletedClasses)) {
-      remoteData.deletedClasses = remoteData.deletedClasses.filter(function(x){ return normKey(x && x.key) !== normKey(className); });
-    }
-
-    const savedAt = new Date().toISOString();
-    const patchPayload = { CLASSES: classesObj, savedAt: savedAt, version: remoteData.version || 2 };
-    if (remoteData.tombstones) patchPayload.tombstones = remoteData.tombstones;
-    if (remoteData.deletedClasses !== undefined) patchPayload.deletedClasses = remoteData.deletedClasses;
-
-    const putRes = await fetch(FB_URL + '.json', {
-      method: 'PATCH',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(patchPayload)
-    });
-    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
-
-    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ الفصل');
-    hasUnsavedChanges = false;
-    lastSavedAt = savedAt;
-    localStorage.setItem('kp_last_synced_at', savedAt);
-    return true;
-  } catch (e) {
-    console.error('saveClassRemoteAware failed:', className, e);
-    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل الفصل إلى Firebase');
-    try { autoSave(); } catch(_e) {}
-    return false;
-  }
-}
-
-async function renameClassRemoteAware(oldName, newName, newData) {
-  // حذف القديم وإضافة الجديد بـ PATCH واحد
-  try {
-    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري إعادة تسمية الفصل...');
-    let remoteData = null;
-    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
-    if (fetchRes.ok) remoteData = await fetchRes.json();
-    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
-
-    const classesObj = (remoteData.CLASSES && typeof remoteData.CLASSES === 'object' && !Array.isArray(remoteData.CLASSES)) ? remoteData.CLASSES : {};
-    if (Object.prototype.hasOwnProperty.call(classesObj, oldName)) delete classesObj[oldName];
-    classesObj[newName] = newData;
-
-    if (remoteData.tombstones && Array.isArray(remoteData.tombstones.classes)) {
-      remoteData.tombstones.classes = remoteData.tombstones.classes.filter(function(x){ return normKey(x) !== normKey(newName); });
-    }
-
-    const savedAt = new Date().toISOString();
-    const patchPayload = { CLASSES: classesObj, savedAt: savedAt, version: remoteData.version || 2 };
-    if (remoteData.tombstones) patchPayload.tombstones = remoteData.tombstones;
-
-    const putRes = await fetch(FB_URL + '.json', {
-      method: 'PATCH',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(patchPayload)
-    });
-    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
-
-    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم إعادة تسمية الفصل');
-    hasUnsavedChanges = false;
-    lastSavedAt = savedAt;
-    localStorage.setItem('kp_last_synced_at', savedAt);
-    return true;
-  } catch(e) {
-    console.error('renameClassRemoteAware failed:', e);
-    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط');
-    try { autoSave(); } catch(_e) {}
     return false;
   }
 }
 
 async function permanentDeleteRemoteAware(config) {
-  // config: {type, key, deletedArrayName, keyField, label, isClass}
   const type = config.type;
   const key = config.key;
   const deletedArrayName = config.deletedArrayName;
@@ -3989,74 +4150,44 @@ async function permanentDeleteRemoteAware(config) {
   const label = config.label || 'السجل';
   try {
     if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري الحذف النهائي لـ ' + label + '...');
-    let remoteData = null;
-    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
-    if (fetchRes.ok) remoteData = await fetchRes.json();
-    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
-
-    // شيل من سلة المحذوفات
-    if (Array.isArray(remoteData[deletedArrayName])) {
-      remoteData[deletedArrayName] = remoteData[deletedArrayName].filter(function(x){ return normKey(x && x[keyField]) !== normKey(key); });
-    }
-    // أضف tombstone
-    if (!remoteData.tombstones || typeof remoteData.tombstones !== 'object') remoteData.tombstones = {};
-    if (!Array.isArray(remoteData.tombstones[type])) remoteData.tombstones[type] = [];
-    if (!hasKey(remoteData.tombstones[type], key)) remoteData.tombstones[type].push(key);
-    // شيل من restoredKeys (لأن الحذف النهائي يلغي أي استعادة سابقة)
-    if (remoteData.restoredKeys && Array.isArray(remoteData.restoredKeys[type])) {
-      remoteData.restoredKeys[type] = remoteData.restoredKeys[type].filter(function(x){ return normKey(x) !== normKey(key); });
-    }
-
+    const entityKey = kpSafeFirebaseKey(key);
     const savedAt = new Date().toISOString();
-    const patchPayload = {
-      tombstones: remoteData.tombstones,
-      savedAt: savedAt,
-      version: remoteData.version || 2
-    };
-    patchPayload[deletedArrayName] = remoteData[deletedArrayName] || [];
-    if (remoteData.restoredKeys) patchPayload.restoredKeys = remoteData.restoredKeys;
 
-    const putRes = await fetch(FB_URL + '.json', {
+    if (!tombstones || typeof tombstones !== 'object') tombstones = {};
+    if (!Array.isArray(tombstones[type])) tombstones[type] = [];
+    if (!hasKey(tombstones[type], key)) tombstones[type].push(key);
+
+    if (restoredKeys && Array.isArray(restoredKeys[type])) {
+      restoredKeys[type] = restoredKeys[type].filter(function(x){ return normKey(x) !== normKey(key); });
+    }
+
+    const updates = {};
+    updates[deletedArrayName + '/' + entityKey] = null;
+    updates['tombstones/' + type] = tombstones[type];
+    if (restoredKeys && Array.isArray(restoredKeys[type])) updates['restoredKeys/' + type] = restoredKeys[type];
+    updates['savedAt'] = savedAt;
+    updates['version'] = 2;
+
+    const res = await fetch(FB_URL + '.json', {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(patchPayload)
+      body: JSON.stringify(updates)
     });
-    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
 
+    try { localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys)); } catch(_e){}
     if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم الحذف النهائي لـ ' + label);
     hasUnsavedChanges = false;
     lastSavedAt = savedAt;
     localStorage.setItem('kp_last_synced_at', savedAt);
     return true;
   } catch(e) {
-    console.error('permanentDeleteRemoteAware failed:', type, key, e);
+    console.error('permanentDeleteRemoteAware object-path failed:', type, key, e);
     if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل الحذف النهائي إلى Firebase');
-    try { autoSave(); } catch(_e) {}
     return false;
   }
 }
 
-function refreshAllViewsAfterSync() {
-  renderDash();
-  if (typeof renderStudents === 'function') renderStudents();
-  if (typeof renderPayments === 'function') renderPayments();
-  if (typeof renderExpenses === 'function') renderExpenses();
-  if (typeof renderReceipts === 'function') renderReceipts();
-  if (typeof renderRenewals === 'function') renderRenewals();
-  if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
-  if (typeof renderOtherDeletedItems === 'function') renderOtherDeletedItems();
-  if (typeof renderAtt === 'function') renderAtt();
-  if (typeof renderAdminClasses === 'function') renderAdminClasses();
-  if (typeof updateNotifications === 'function') updateNotifications();
-  if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
-  // ✅ تحديث طلبات التسجيل أيضاً حتى تنعكس قرارات الموظفين الآخرين فوراً
-  if (typeof renderFormRequests === 'function') renderFormRequests();
-  if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
-}
-
-// ============================================================
-// ✅ MORE PER-RECORD HELPERS — لباقي العمليات
-// ============================================================
 
 // حفظ سجل حضور واحد أو أكثر (entries: {key: status, key: status, ...})
 async function saveAttendanceEntriesRemoteAware(entries) {
@@ -5119,25 +5250,70 @@ function getStudentAlertKey(s){
   return s ? (String(s.id||'') + '|' + String(getStudentRegistrationExpiry(s)||'')) : '';
 }
 
+
+function getStudentOperationalStatus(s){
+  if(!s || typeof s !== 'object') return 'active';
+  const raw = String(s.studentStatus || s.enrollmentStatus || s.status || s.student_status || '').trim().toLowerCase();
+  if (s.left === true || s.inactive === true || s.withdrawn === true) return 'left';
+  if (['left','inactive','withdrawn','ترك','منسحب','غير موجود'].includes(raw)) return 'left';
+  return 'active';
+}
+function isActiveStudent(s){ return getStudentOperationalStatus(s) !== 'left'; }
+function getStudentStatusBadge(s){
+  return isActiveStudent(s)
+    ? '<span class="b bg">✅ موجود</span>'
+    : '<span class="b bgr">🚪 ترك</span>';
+}
+function getActiveStudents(){
+  return (Array.isArray(students) ? students : []).filter(isActiveStudent);
+}
+async function setStudentOperationalStatus(id, status){
+  const s = students.find(function(x){ return normKey(x && x.id) === normKey(id); });
+  if(!s) { alert('الطالب غير موجود'); return; }
+  const isLeft = status === 'left';
+  const msg = isLeft
+    ? 'تأكيد وضع الطالب "' + (s.name||'') + '" كطالب ترك؟\nسيختفي من قائمة الطلاب الموجودين، لكن ملفه وبياناته ستبقى محفوظة ويمكن إرجاعه لاحقاً.'
+    : 'إرجاع الطالب "' + (s.name||'') + '" إلى قائمة الطلاب الموجودين؟';
+  if(!confirm(msg)) return;
+  s.studentStatus = isLeft ? 'left' : 'active';
+  s.enrollmentStatus = s.studentStatus;
+  s.left = isLeft;
+  if(isLeft){
+    s.leftAt = s.leftAt || new Date().toISOString();
+    s.leftBy = currentUser ? currentUser.name : 'نظام';
+  } else {
+    delete s.leftAt; delete s.leftBy;
+  }
+  s.updatedAt = new Date().toISOString();
+  persistCoreDataToLocalStorage();
+  resetPaymentMatchCache();
+  renderStudents();
+  renderDash();
+  if (typeof renderAttTabs === 'function') renderAttTabs();
+  if (typeof renderAttGrid === 'function') renderAttGrid();
+  await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:s, keyField:'id', label:'حالة الطالب'});
+  alert(isLeft ? '✅ تم نقل الطالب إلى قائمة الذين تركوا' : '✅ تم إرجاع الطالب إلى قائمة الموجودين');
+}
+
 function renderStudents(){
   populateClassDropdowns();
-  const q=document.getElementById('stu-search').value.toLowerCase();
-  const cls=document.getElementById('stu-cls').value;
-  const gen=document.getElementById('stu-gen').value;
-  let f=students.filter(s=>(!q||String(s.name||'').includes(q)||String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q)||String(s.dad||'').includes(q)||String(s.mom||'').includes(q)||String(getStudentIdentity(s)||'').includes(q)||String(s.internalNote||'').includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen)).map(function(s){
-    const healthItems = getStudentHealthNotes(s);
-    return Object.assign({}, s, { healthSummary: getStudentHealthSummary(s) });
+  const q=(document.getElementById('stu-search')||{}).value ? document.getElementById('stu-search').value.toLowerCase() : '';
+  const cls=(document.getElementById('stu-cls')||{}).value || '';
+  const gen=(document.getElementById('stu-gen')||{}).value || '';
+  const statusFilter=(document.getElementById('stu-status-filter')||{}).value || 'active';
+  let f=students.filter(s=>(!q||String(s.name||'').includes(q)||String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q)||String(s.dad||'').includes(q)||String(s.mom||'').includes(q)||String(getStudentIdentity(s)||'').includes(q)||String(s.internalNote||'').includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen)&&(statusFilter==='all'||(statusFilter==='left'?!isActiveStudent(s):isActiveStudent(s)))).map(function(s){
+    return Object.assign({}, s, { healthSummary: getStudentHealthSummary(s), studentStatus: getStudentOperationalStatus(s) });
   });
   if (tableSortState['stu-table']) f = applyTableSort('stu-table', f);
   const stuTheadEl = document.getElementById('stu-thead');
   if (stuTheadEl) stuTheadEl.innerHTML = sortableHead('stu-table', [
     ['id','#'], ['name','اسم الطالب'], ['nameEn','الاسم الإنجليزي'], ['idNo','رقم الهوية'], ['internalNote','ملاحظات داخلية'], ['healthSummary','الحالة الصحية'], ['dob','تاريخ الميلاد'], ['gen','الجنس'],
-    ['nat','الجنسية'], ['cls','الفصل'], ['dad','اسم الأب'], ['dph','هاتف الأب'],
+    ['nat','الجنسية'], ['cls','الفصل'], ['studentStatus','حالة الطالب'], ['dad','اسم الأب'], ['dph','هاتف الأب'],
     ['mph','هاتف الأم'], ['addr','العنوان'], ['','إجراءات']
   ]);
-  document.getElementById('stu-count').textContent=`الطلاب (${f.length})`;
+  const statusTitle = statusFilter === 'left' ? 'الطلاب الذين تركوا' : (statusFilter === 'all' ? 'كل الطلاب' : 'الطلاب الموجودون');
+  document.getElementById('stu-count').textContent=statusTitle + ` (${f.length})`;
   document.getElementById('stu-tbody').innerHTML=f.map((s,i)=>{
-    const healthItems = getStudentHealthNotes(s);
     const healthSummary = getStudentHealthSummary(s) || '—';
     return `
     <tr>
@@ -5151,10 +5327,12 @@ function renderStudents(){
       <td><span class="b ${s.gen==='ذكر'?'bb':'bo'}">${s.gen}</span></td>
       <td>${formatNationalityWithFlag(s.nat)}</td>
       <td><span class="b bg">${CLASSES[s.cls]?.emoji||''} ${s.cls}</span></td>
+      <td>${getStudentStatusBadge(s)}</td>
       <td>${s.dad}</td><td dir="ltr">${s.dph}</td><td dir="ltr">${s.mph}</td>
       <td style="font-size:12px">${s.addr}</td>
       <td>
         <button class="btn btn-out btn-sm" onclick="viewStudentProfile(${s.id})" title="عرض الملف الكامل">👁</button><button class="btn btn-out btn-sm" onclick="editStudent(${s.id})" title="تعديل">✏️</button><button class="btn btn-y btn-sm" onclick="quickEditStudentHealth(${s.id})" title="تعديل الحالة الصحية">⚕️</button>
+        ${isActiveStudent(s) ? `<button class="btn btn-b btn-sm" onclick="setStudentOperationalStatus(${s.id},'left')" title="وضع الطالب ترك بدون حذف بياناته">🚪 ترك</button>` : `<button class="btn btn-g btn-sm" onclick="setStudentOperationalStatus(${s.id},'active')" title="إرجاع الطالب لقائمة الموجودين">↩️ إرجاع</button>`}
         <button class="btn btn-r btn-sm" onclick="delStudent(${s.id})">🗑</button>
       </td>
     </tr>`}).join('');
@@ -5175,10 +5353,12 @@ function getStudentsFilteredForPrint(){
   const q=(document.getElementById('stu-search')?.value||'').toLowerCase().trim();
   const cls=document.getElementById('stu-cls')?.value||'';
   const gen=document.getElementById('stu-gen')?.value||'';
+  const statusFilter=document.getElementById('stu-status-filter')?.value||'active';
   return students.filter(s =>
     (!q || String(s.name||'').includes(q) || String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q) || String(s.dad||'').includes(q) || String(s.mom||'').includes(q) || String(getStudentIdentity(s)||'').includes(q) || String(s.internalNote||'').includes(q)) &&
     (!cls || s.cls===cls) &&
-    (!gen || s.gen===gen)
+    (!gen || s.gen===gen) &&
+    (statusFilter==='all' || (statusFilter==='left' ? !isActiveStudent(s) : isActiveStudent(s)))
   );
 }
 
@@ -5676,9 +5856,10 @@ function openAddStudent(){
   populateClassDropdowns();
   editingStuId=null;
   document.getElementById('mo-stu-title').textContent='➕ إضافة طالب جديد';
-  ['ns-name','ns-dob','ns-nat','ns-bpl','ns-dad','ns-job','ns-dph','ns-mom','ns-mph','ns-addr','ns-health','ns-note'].forEach(id=>document.getElementById(id).value='');
+  ['ns-name','ns-name-en','ns-dob','ns-idno','ns-nat','ns-bpl','ns-dad','ns-job','ns-dph','ns-mom','ns-mph','ns-addr','ns-health','ns-note','ns-internal-note'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('ns-gen').value='ذكر';
   document.getElementById('ns-cls').value='النحل';
+  const statusEl=document.getElementById('ns-student-status'); if(statusEl) statusEl.value='active';
   document.getElementById('mo-student').classList.add('on');
 }
 
@@ -6165,6 +6346,7 @@ function editStudent(id){
   setVal('ns-gen',     s.gen);
   setVal('ns-nat',     s.nat);
   setVal('ns-cls',     s.cls || Object.keys(CLASSES)[0]);
+  setVal('ns-student-status', getStudentOperationalStatus(s));
   setVal('ns-bpl',     s.bpl);
   setVal('ns-dad',     s.dad);
   setVal('ns-job',     s.job);
@@ -6188,7 +6370,8 @@ async function saveStudent(){
   const previousHealthValue = existingStudent ? String(existingStudent.healthOverride || existingStudent.health || existingStudent.healthStatus || '').trim() : '';
   const healthChanged = !editingStuId || previousHealthValue !== manualHealthValue;
   const healthStamp = healthChanged ? new Date().toISOString() : (existingStudent && (existingStudent.healthUpdatedAt || existingStudent.healthChangedAt)) || '';
-  const data={name,nameEn:(nameEnInput || transliterateArabicName(name)),dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,addr:document.getElementById('ns-addr').value,idNo:document.getElementById('ns-idno').value,health:manualHealthValue,healthStatus:manualHealthValue,healthOverride:manualHealthValue,healthDeleted:false,healthUpdatedAt:healthStamp,note:document.getElementById('ns-note').value,internalNote:document.getElementById('ns-internal-note').value,sub_end:(document.getElementById('ns-sub-end')||{}).value||'',updatedAt:new Date().toISOString()};
+  const studentStatusValue=(document.getElementById('ns-student-status')||{}).value||'active';
+  const data={name,nameEn:(nameEnInput || transliterateArabicName(name)),dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,studentStatus:studentStatusValue,enrollmentStatus:studentStatusValue,left:studentStatusValue==='left',bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,addr:document.getElementById('ns-addr').value,idNo:document.getElementById('ns-idno').value,health:manualHealthValue,healthStatus:manualHealthValue,healthOverride:manualHealthValue,healthDeleted:false,healthUpdatedAt:healthStamp,note:document.getElementById('ns-note').value,internalNote:document.getElementById('ns-internal-note').value,sub_end:(document.getElementById('ns-sub-end')||{}).value||'',updatedAt:new Date().toISOString()};
   let savedRecord;
   if(editingStuId){
     const i=students.findIndex(x=>x.id===editingStuId);
@@ -6616,7 +6799,7 @@ function renderAttGrid(){
   const cls=currentClsTab;
   if (typeof renderAttendanceAdminLockControls === 'function') renderAttendanceAdminLockControls();
   if (!cls) { document.getElementById('att-grid').innerHTML=''; return; }
-  const list=students.filter(function(s){ return s && s.cls===cls; });
+  const list=students.filter(function(s){ return s && s.cls===cls && isActiveStudent(s); });
   let p=0,a=0,l=0;
   var blocked = isAttendanceEditBlocked(cls, date);
   var lockInfo = getAttendanceLock(cls, date);
@@ -10582,19 +10765,19 @@ async function pushToFirebase() {
       const hardData = {
         version: 2,
         savedAt: new Date().toISOString(),
-        students: sanitizeEntityArray(students || []),
-        payments: sanitizeEntityArray(payments || []),
-        expenses: sanitizeEntityArray(expenses || []),
+        students: kpMapFromArray(sanitizeEntityArray(students || []), 'id'),
+        payments: kpMapFromArray(sanitizeEntityArray(payments || []), 'id'),
+        expenses: kpMapFromArray(sanitizeEntityArray(expenses || []), 'id'),
         attLog: (attLog && typeof attLog === 'object' && !Array.isArray(attLog)) ? attLog : {},
         CLASSES: (CLASSES && typeof CLASSES === 'object' && !Array.isArray(CLASSES)) ? CLASSES : {},
         nurserySettings: cleanSettings,
-        renewals: sanitizeEntityArray(renewals || []),
+        renewals: kpMapFromArray(sanitizeEntityArray(renewals || []), 'id'),
         kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
         kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]'),
-        deletedStudents: sanitizeEntityArray(typeof deletedStudents !== 'undefined' ? deletedStudents : []),
-        deletedPayments: sanitizeEntityArray(typeof deletedPayments !== 'undefined' ? deletedPayments : []),
-        deletedExpenses: sanitizeEntityArray(typeof deletedExpenses !== 'undefined' ? deletedExpenses : []),
-        deletedRenewals: sanitizeEntityArray(typeof deletedRenewals !== 'undefined' ? deletedRenewals : []),
+        deletedStudents: kpMapFromArray(sanitizeEntityArray(typeof deletedStudents !== 'undefined' ? deletedStudents : []), 'id'),
+        deletedPayments: kpMapFromArray(sanitizeEntityArray(typeof deletedPayments !== 'undefined' ? deletedPayments : []), 'id'),
+        deletedExpenses: kpMapFromArray(sanitizeEntityArray(typeof deletedExpenses !== 'undefined' ? deletedExpenses : []), 'id'),
+        deletedRenewals: kpMapFromArray(sanitizeEntityArray(typeof deletedRenewals !== 'undefined' ? deletedRenewals : []), 'id'),
         deletedClasses: sanitizeEntityArray(typeof deletedClasses !== 'undefined' ? deletedClasses : []),
         tombstones: (typeof tombstones !== 'undefined' && tombstones && typeof tombstones === 'object') ? tombstones : {},
         restoredKeys: (typeof restoredKeys !== 'undefined' && restoredKeys && typeof restoredKeys === 'object') ? restoredKeys : {}
@@ -10625,6 +10808,7 @@ async function pushToFirebase() {
       try {
         const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
         if (fetchRes.ok) remoteData = await fetchRes.json();
+        if (remoteData) remoteData = kpNormalizeFirebaseObjectSections(remoteData);
       } catch(_) { /* نتابع بدون بيانات سحابية */ }
     }
 
@@ -10825,19 +11009,19 @@ async function pushToFirebase() {
     const mergedData = {
       version:         2,
       savedAt:         new Date().toISOString(),
-      students:        students,
-      payments:        payments,
-      expenses:        expenses,
+      students:        kpMapFromArray(students, 'id'),
+      payments:        kpMapFromArray(payments, 'id'),
+      expenses:        kpMapFromArray(expenses, 'id'),
       attLog:          attLog,
       CLASSES:         CLASSES,
       nurserySettings: cleanSettings,
-      renewals:        renewals,
+      renewals:        kpMapFromArray(renewals, 'id'),
       kp_users:        JSON.parse(localStorage.getItem('kp_users') || '[]'),
       kp_form_rows:    mergedFormRows,
-      deletedStudents: mergedDeleted,
-      deletedPayments: mergedDeletedPayments,
-      deletedExpenses: mergedDeletedExpenses,
-      deletedRenewals: mergedDeletedRenewals,
+      deletedStudents: kpMapFromArray(mergedDeleted, 'id'),
+      deletedPayments: kpMapFromArray(mergedDeletedPayments, 'id'),
+      deletedExpenses: kpMapFromArray(mergedDeletedExpenses, 'id'),
+      deletedRenewals: kpMapFromArray(mergedDeletedRenewals, 'id'),
       deletedClasses:  mergedDeletedClasses,
       tombstones:      mergedTombstones,
       restoredKeys:    mergedRestoredKeys,
@@ -10915,6 +11099,7 @@ async function loadFromFirebase() {
     const res = await fetch(FB_URL + '.json', { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
+    kpNormalizeFirebaseObjectSections(data);
     if (!data || !data.version) { showSyncBadge('☁️ لا توجد بيانات سحابية'); return; }
 
     // دمج restoredKeys أولاً من Firebase مع المحلي (الاتحاد)
