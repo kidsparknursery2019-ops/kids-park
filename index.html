@@ -18021,7 +18021,8 @@ document.addEventListener('change', function(e){
       }, 800);
     }).catch(function(e){
       console.error('fast registration background save failed:', e);
-      if (typeof showSyncBadge === 'function') showSyncBadge('لم يكتمل حفظ القرار في Firebase - راجعي الاتصال');
+      if (typeof window.kpShowFirebaseFailure === 'function') window.kpShowFirebaseFailure(label || 'قرار طلب التسجيل', e, { alert:true });
+      else if (typeof showSyncBadge === 'function') showSyncBadge('لم يكتمل حفظ القرار في Firebase - راجعي الاتصال');
     });
   }
   function markRow(row, status, meta){
@@ -18113,6 +18114,237 @@ document.addEventListener('change', function(e){
     return true;
   };
   try { setFormRowDecision = window.setFormRowDecision; } catch(_e){}
+})();
+</script>
+<script>
+/* ============================================================
+   KP CLEAR FIREBASE FAILURE MESSAGES 2026-05-02
+   Makes failed cloud saves obvious to end users.
+   ============================================================ */
+(function(){
+  'use strict';
+  if (window.__kpClearFirebaseFailureMessagesInstalled) return;
+  window.__kpClearFirebaseFailureMessagesInstalled = true;
+
+  function txName(config, fallback){
+    config = config || {};
+    var label = config.label || fallback || 'العملية';
+    var type = config.type || config.activeArrayName || '';
+    if (/students/.test(type)) return label || 'الطالب';
+    if (/payments/.test(type)) return label || 'السند';
+    if (/expenses/.test(type)) return label || 'المصروف';
+    if (/renewals/.test(type)) return label || 'التجديد';
+    if (/classes/.test(type)) return label || 'الفصل';
+    return label;
+  }
+  function errorText(error){
+    var msg = error && (error.message || String(error)) || '';
+    if (!navigator.onLine) return 'لا يوجد اتصال بالإنترنت.';
+    if (/timeout/i.test(msg)) return 'انتهت مهلة الاتصال مع Firebase.';
+    if (/permission|denied|401|403/i.test(msg)) return 'لا توجد صلاحية كافية للحفظ على Firebase.';
+    if (/HTTP\s*5|500|502|503|504/i.test(msg)) return 'Firebase لم يستجب حالياً.';
+    if (msg) return msg;
+    return 'حدث خطأ غير معروف أثناء الحفظ.';
+  }
+  window.kpShowFirebaseFailure = function(action, error, options){
+    options = options || {};
+    var message = 'لم يتم حفظ ' + action + ' على Firebase. التغيير ظاهر على هذا الجهاز فقط، وقد لا يظهر لباقي المستخدمين حتى ينجح الحفظ. السبب: ' + errorText(error);
+    try { if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ ' + message); } catch(_e){}
+    try { if (typeof kpToast === 'function') kpToast(message, 'err'); } catch(_e){}
+    if (options.alert !== false) {
+      try { alert(message); } catch(_e){}
+    }
+    return message;
+  };
+
+  function wrapAsync(name, labelBuilder){
+    var original = window[name];
+    if (typeof original !== 'function' || original.__kpFailureWrapped) return;
+    var wrapped = async function(){
+      try {
+        var result = await original.apply(this, arguments);
+        if (result === false) window.kpShowFirebaseFailure(labelBuilder.apply(this, arguments), new Error('لم يرجع Firebase تأكيداً بنجاح الحفظ.'), { alert:false });
+        return result;
+      } catch(e) {
+        window.kpShowFirebaseFailure(labelBuilder.apply(this, arguments), e, { alert:true });
+        throw e;
+      }
+    };
+    wrapped.__kpFailureWrapped = true;
+    window[name] = wrapped;
+    try {
+      if (name === 'saveRecordRemoteAware') saveRecordRemoteAware = wrapped;
+      else if (name === 'moveRecordToTrashRemoteAware') moveRecordToTrashRemoteAware = wrapped;
+      else if (name === 'permanentDeleteRemoteAware') permanentDeleteRemoteAware = wrapped;
+      else if (name === 'archiveFirebaseRegistrationRequest') archiveFirebaseRegistrationRequest = wrapped;
+      else if (name === 'pushToFirebase') pushToFirebase = wrapped;
+    } catch(_e){}
+  }
+
+  wrapAsync('saveRecordRemoteAware', function(config){ return 'حفظ ' + txName(config); });
+  wrapAsync('moveRecordToTrashRemoteAware', function(config){ return 'نقل ' + txName(config) + ' إلى سلة المحذوفات'; });
+  wrapAsync('permanentDeleteRemoteAware', function(config){ return 'الحذف النهائي لـ ' + txName(config); });
+  wrapAsync('archiveFirebaseRegistrationRequest', function(row, status){
+    status = String(status || row && row.status || 'pending');
+    if (status === 'approved' || status === 'accepted') return 'قرار قبول طلب التسجيل';
+    if (status === 'rejected') return 'قرار رفض طلب التسجيل';
+    return 'حفظ طلب التسجيل';
+  });
+  wrapAsync('pushToFirebase', function(){ return 'مزامنة البيانات'; });
+
+  var oldBackgroundSave = window.kpRegistrationBackgroundSave;
+  window.kpRegistrationBackgroundSave = function(label, promise){
+    return Promise.resolve(promise).catch(function(e){
+      window.kpShowFirebaseFailure(label || 'قرار طلب التسجيل', e, { alert:true });
+      throw e;
+    });
+  };
+
+  window.kpFirebaseFailureMessageStatus = function(){
+    return {
+      enabled:true,
+      alertsEndUser:true,
+      wrapped:['saveRecordRemoteAware','moveRecordToTrashRemoteAware','permanentDeleteRemoteAware','archiveFirebaseRegistrationRequest','pushToFirebase']
+    };
+  };
+})();
+</script>
+<script>
+/* ============================================================
+   KP NO-BLINK REGISTRATION ACTIONS 2026-05-02
+   Prevents approve/reject from re-rendering repeatedly while
+   the quiet Firebase save finishes.
+   ============================================================ */
+(function(){
+  'use strict';
+  if (window.__kpNoBlinkRegistrationActionsInstalled) return;
+  window.__kpNoBlinkRegistrationActionsInstalled = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, '') + '/registrationRequests'; }
+  function folderFromStatus(status){
+    status = txt(status || 'pending').toLowerCase();
+    if (status === 'approved' || status === 'accepted' || status === 'accept') return 'accepted';
+    if (status === 'rejected' || status === 'reject') return 'rejected';
+    return 'pending';
+  }
+  function statusFromFolder(folder){
+    return folder === 'accepted' ? 'approved' : (folder === 'rejected' ? 'rejected' : 'pending');
+  }
+  function safeKey(row){
+    row = row || {};
+    var raw = txt(row._fbKey || row.firebaseKey || row.requestId || row.key || row.timestamp || ((row.name || '') + '_' + (row.dob || '')));
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(raw) : raw.replace(/[.#$\[\]\/\s]/g, '_'); }
+    catch(_e){ return raw.replace(/[.#$\[\]\/\s]/g, '_'); }
+  }
+  function quietFetch(url, opts, ms){
+    return Promise.race([
+      fetch(url, opts || {}),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, ms || 9000); })
+    ]).then(function(res){
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res;
+    });
+  }
+  function touchRecentAction(){
+    window.__kpRecentRegistrationActionUntil = Date.now() + 3500;
+  }
+  function isRecentAction(){
+    return Date.now() < (window.__kpRecentRegistrationActionUntil || 0);
+  }
+
+  window.archiveFirebaseRegistrationRequest = async function(row, targetStatus){
+    row = row || {};
+    var folder = folderFromStatus(targetStatus || row.status || 'pending');
+    var key = safeKey(row);
+    var now = new Date().toISOString();
+    var payload = Object.assign({}, row, {
+      firebaseKey:key,
+      requestId:row.requestId || key,
+      _fbKey:key,
+      status:statusFromFolder(folder),
+      rowUpdatedAt:row.rowUpdatedAt || now,
+      sourcePath:'nursery_data/registrationRequests/' + folder
+    });
+    if (folder === 'accepted' && !payload.approvedAt) payload.approvedAt = payload.decisionAt || now;
+    if (folder === 'rejected' && !payload.rejectedAt) payload.rejectedAt = payload.decisionAt || now;
+
+    var base = baseUrl();
+    await quietFetch(base + '/' + folder + '/' + encodeURIComponent(key) + '.json', {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    }, 10000);
+
+    var folders = ['pending','accepted','rejected'];
+    await Promise.all(folders.filter(function(f){ return f !== folder; }).map(function(f){
+      return quietFetch(base + '/' + f + '/' + encodeURIComponent(key) + '.json', { method:'DELETE' }, 6000).catch(function(){});
+    }));
+
+    try {
+      row.firebaseKey = key;
+      row.requestId = row.requestId || key;
+      row._fbKey = key;
+      row.status = payload.status;
+      row.sourcePath = payload.sourcePath;
+      if (payload.approvedAt) row.approvedAt = payload.approvedAt;
+      if (payload.rejectedAt) row.rejectedAt = payload.rejectedAt;
+    } catch(_e){}
+    return true;
+  };
+  try { archiveFirebaseRegistrationRequest = window.archiveFirebaseRegistrationRequest; } catch(_e){}
+
+  var oldSync = window.syncRegistrationRequestsFromFirebase;
+  window.syncRegistrationRequestsFromFirebase = async function(options){
+    options = options || {};
+    if (isRecentAction() && options.silent !== false) {
+      return { skipped:'recent_local_registration_action' };
+    }
+    return oldSync ? oldSync.apply(this, arguments) : { skipped:'missing_sync' };
+  };
+  try { syncRegistrationRequestsFromFirebase = window.syncRegistrationRequestsFromFirebase; } catch(_e){}
+
+  ['performApproveNew','performApproveMerge','rejectFormRow','setFormRowDecision'].forEach(function(name){
+    var old = window[name];
+    if (typeof old !== 'function') return;
+    window[name] = function(){
+      touchRecentAction();
+      return old.apply(this, arguments);
+    };
+    try {
+      if (name === 'performApproveNew') performApproveNew = window[name];
+      else if (name === 'performApproveMerge') performApproveMerge = window[name];
+      else if (name === 'rejectFormRow') rejectFormRow = window[name];
+      else if (name === 'setFormRowDecision') setFormRowDecision = window[name];
+    } catch(_e){}
+  });
+
+  var oldShowSyncBadge = window.showSyncBadge;
+  var lastBadgeAt = 0;
+  var lastBadgeText = '';
+  if (typeof oldShowSyncBadge === 'function') {
+    window.showSyncBadge = function(msg){
+      var text = txt(msg);
+      if (isRecentAction()) {
+        var noisy = /جاري|الحفظ|تم الحفظ|تحديث|Firebase|قبول الطلب|رفض الطلب|دمج الطلب|saving|saved/i.test(text);
+        var now = Date.now();
+        if (noisy && (text === lastBadgeText || now - lastBadgeAt < 1200)) return;
+        lastBadgeAt = now;
+        lastBadgeText = text;
+      }
+      return oldShowSyncBadge.apply(this, arguments);
+    };
+    try { showSyncBadge = window.showSyncBadge; } catch(_e){}
+  }
+
+  window.kpNoBlinkRegistrationStatus = function(){
+    return {
+      enabled:true,
+      quietArchive:true,
+      suppressRealtimeRefreshMs:3500,
+      recentActionActive:isRecentAction()
+    };
+  };
 })();
 </script>
 </body>
