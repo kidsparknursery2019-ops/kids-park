@@ -12562,17 +12562,49 @@ function openRenAttachmentFromModal() {
   openRenAttachmentById(editingRenId);
 }
 
+function kpDataUrlToBlobUrl(dataUrl) {
+  try {
+    if (!dataUrl || String(dataUrl).indexOf('data:') !== 0) return null;
+    var parts = String(dataUrl).split(',');
+    if (parts.length < 2) return null;
+    var meta = parts[0];
+    var mime = ((meta.match(/^data:([^;]+)/) || [])[1]) || 'application/octet-stream';
+    var bin = atob(parts.slice(1).join(','));
+    var len = bin.length;
+    var bytes = new Uint8Array(len);
+    for (var i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: mime }));
+  } catch(e) {
+    console.warn('kpDataUrlToBlobUrl failed:', e);
+    return null;
+  }
+}
+
 function openRenAttachmentById(id) {
   const r = renewals.find(function(x){ return normKey(x && x.id) === normKey(id); });
   const att = getRenAttachment(r);
   if (!att || !att.data) { alert('لا يوجد مرفق لهذا التجديد'); return; }
+
+  // ✅ فتح آمن: لا نعرض PDF داخل iframe data-url لأنه يطلع فاضي على بعض الموبايلات.
+  // نحول المرفق إلى Blob URL ونفتحه مباشرة، مع صفحة بديلة فيها زر فتح/تحميل.
+  const safeTitle = (att.name || 'مرفق التجديد').replace(/[<>&"]/g, '');
+  const blobUrl = kpDataUrlToBlobUrl(att.data) || att.data;
+  const isPdf = ((att.type || '').toLowerCase().indexOf('pdf') !== -1) || String(att.data).indexOf('application/pdf') === 5;
+
+  if (isPdf) {
+    const direct = window.open(blobUrl, '_blank');
+    if (direct) {
+      setTimeout(function(){ try { if (String(blobUrl).indexOf('blob:') === 0) URL.revokeObjectURL(blobUrl); } catch(_e){} }, 120000);
+      return;
+    }
+  }
+
   const w = window.open('', '_blank');
   if (!w) { alert('المتصفح منع فتح الملف. اسمحي بالنوافذ المنبثقة ثم جربي مرة ثانية.'); return; }
-  const safeTitle = (att.name || 'مرفق التجديد').replace(/[<>&"]/g, '');
-  if ((att.type || '').indexOf('pdf') !== -1 || String(att.data).indexOf('application/pdf') === 5) {
-    w.document.write('<!doctype html><html><head><title>'+safeTitle+'</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0"><iframe src="'+att.data+'" style="border:0;width:100vw;height:100vh"></iframe></body></html>');
+  if (isPdf) {
+    w.document.write('<!doctype html><html dir="rtl"><head><title>'+safeTitle+'</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:Tajawal,Arial,sans-serif;margin:0;padding:18px;background:#f7fbf9;text-align:center"><h3>📎 '+safeTitle+'</h3><p>إذا ظهرت الصفحة فارغة اضغطي فتح مباشر أو تنزيل.</p><p><a href="'+blobUrl+'" target="_blank" style="display:inline-block;margin:6px;padding:10px 16px;background:#2a8b54;color:white;border-radius:12px;text-decoration:none;font-weight:bold">فتح مباشر</a><a href="'+blobUrl+'" download="'+safeTitle+'" style="display:inline-block;margin:6px;padding:10px 16px;background:#3b7dd8;color:white;border-radius:12px;text-decoration:none;font-weight:bold">تنزيل</a></p><embed src="'+blobUrl+'" type="application/pdf" style="width:100%;height:80vh;border:0;background:white;border-radius:12px" /></body></html>');
   } else {
-    w.document.write('<!doctype html><html><head><title>'+safeTitle+'</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;text-align:center;background:#f7fbf9"><img src="'+att.data+'" style="max-width:100%;height:auto"></body></html>');
+    w.document.write('<!doctype html><html><head><title>'+safeTitle+'</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;text-align:center;background:#f7fbf9"><img src="'+blobUrl+'" style="max-width:100%;height:auto"></body></html>');
   }
   w.document.close();
 }
@@ -12888,17 +12920,49 @@ function openRenAttachmentFromModal() {
   openRenAttachmentById(editingRenId);
 }
 
+function kpDataUrlToBlobUrl(dataUrl) {
+  try {
+    if (!dataUrl || String(dataUrl).indexOf('data:') !== 0) return null;
+    var parts = String(dataUrl).split(',');
+    if (parts.length < 2) return null;
+    var meta = parts[0];
+    var mime = ((meta.match(/^data:([^;]+)/) || [])[1]) || 'application/octet-stream';
+    var bin = atob(parts.slice(1).join(','));
+    var len = bin.length;
+    var bytes = new Uint8Array(len);
+    for (var i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: mime }));
+  } catch(e) {
+    console.warn('kpDataUrlToBlobUrl failed:', e);
+    return null;
+  }
+}
+
 function openRenAttachmentById(id) {
   const r = renewals.find(function(x){ return normKey(x && x.id) === normKey(id); });
   const att = getRenAttachment(r);
   if (!att || !att.data) { alert('لا يوجد مرفق لهذا التجديد'); return; }
+
+  // ✅ فتح آمن: لا نعرض PDF داخل iframe data-url لأنه يطلع فاضي على بعض الموبايلات.
+  // نحول المرفق إلى Blob URL ونفتحه مباشرة، مع صفحة بديلة فيها زر فتح/تحميل.
+  const safeTitle = (att.name || 'مرفق التجديد').replace(/[<>&"]/g, '');
+  const blobUrl = kpDataUrlToBlobUrl(att.data) || att.data;
+  const isPdf = ((att.type || '').toLowerCase().indexOf('pdf') !== -1) || String(att.data).indexOf('application/pdf') === 5;
+
+  if (isPdf) {
+    const direct = window.open(blobUrl, '_blank');
+    if (direct) {
+      setTimeout(function(){ try { if (String(blobUrl).indexOf('blob:') === 0) URL.revokeObjectURL(blobUrl); } catch(_e){} }, 120000);
+      return;
+    }
+  }
+
   const w = window.open('', '_blank');
   if (!w) { alert('المتصفح منع فتح الملف. اسمحي بالنوافذ المنبثقة ثم جربي مرة ثانية.'); return; }
-  const safeTitle = (att.name || 'مرفق التجديد').replace(/[<>&"]/g, '');
-  if ((att.type || '').indexOf('pdf') !== -1 || String(att.data).indexOf('application/pdf') === 5) {
-    w.document.write('<!doctype html><html><head><title>'+safeTitle+'</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0"><iframe src="'+att.data+'" style="border:0;width:100vw;height:100vh"></iframe></body></html>');
+  if (isPdf) {
+    w.document.write('<!doctype html><html dir="rtl"><head><title>'+safeTitle+'</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:Tajawal,Arial,sans-serif;margin:0;padding:18px;background:#f7fbf9;text-align:center"><h3>📎 '+safeTitle+'</h3><p>إذا ظهرت الصفحة فارغة اضغطي فتح مباشر أو تنزيل.</p><p><a href="'+blobUrl+'" target="_blank" style="display:inline-block;margin:6px;padding:10px 16px;background:#2a8b54;color:white;border-radius:12px;text-decoration:none;font-weight:bold">فتح مباشر</a><a href="'+blobUrl+'" download="'+safeTitle+'" style="display:inline-block;margin:6px;padding:10px 16px;background:#3b7dd8;color:white;border-radius:12px;text-decoration:none;font-weight:bold">تنزيل</a></p><embed src="'+blobUrl+'" type="application/pdf" style="width:100%;height:80vh;border:0;background:white;border-radius:12px" /></body></html>');
   } else {
-    w.document.write('<!doctype html><html><head><title>'+safeTitle+'</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;text-align:center;background:#f7fbf9"><img src="'+att.data+'" style="max-width:100%;height:auto"></body></html>');
+    w.document.write('<!doctype html><html><head><title>'+safeTitle+'</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;text-align:center;background:#f7fbf9"><img src="'+blobUrl+'" style="max-width:100%;height:auto"></body></html>');
   }
   w.document.close();
 }
