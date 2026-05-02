@@ -242,7 +242,7 @@ body{
 .nav.on .nav-badge{background:linear-gradient(135deg,var(--g1),var(--g2))}
 .side-sep{height:2px;background:linear-gradient(90deg,transparent,var(--border),transparent);margin:10px 16px}
 
-.main{flex:1;padding:26px;overflow-y:auto;max-width:calc(100vw - 210px);min-width:0}
+.main{flex:1;padding:26px;overflow-y:auto;overflow-x:auto;max-width:calc(100vw - 210px);min-width:0}
 @media(max-width:760px){
   .main{padding:16px;max-width:calc(100vw - 170px)}
 }
@@ -340,10 +340,11 @@ body{
 .ct2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
 
 /* 📊 الجداول */
-.tw{overflow-x:auto;overflow-y:visible;border-radius:14px;scrollbar-width:thin;scrollbar-color:var(--g2) var(--gp)}
-.tw::-webkit-scrollbar{height:8px}
+.tw{overflow-x:auto;overflow-y:visible;border-radius:14px;scrollbar-width:thin;scrollbar-color:var(--g2) var(--gp);-webkit-overflow-scrolling:touch}
+.tw::-webkit-scrollbar{height:7px;display:block}
 .tw::-webkit-scrollbar-track{background:var(--gp);border-radius:8px}
-.tw::-webkit-scrollbar-thumb{background:linear-gradient(90deg,var(--g3),var(--g2));border-radius:8px;border:1px solid var(--gp)}
+.tw::-webkit-scrollbar-thumb{background:linear-gradient(90deg,var(--g3),var(--g2));border-radius:8px;border:1px solid var(--gp);min-width:40px}
+.tw table{min-width:max-content}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
 th{
   background:linear-gradient(180deg,#f4fbf7 0%,var(--gp) 100%);
@@ -1435,11 +1436,11 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
 /* ============================================================
    KP MOBILE SYNC/UI HOTFIX v2 — ترتيب الموبايل الحقيقي
    ============================================================ */
-html,body{max-width:100%;overflow-x:hidden!important}
+html{max-width:100%;overflow-x:hidden}body{max-width:100%}
 .kp-sync-panel{width:100%;box-sizing:border-box}
 
 @media(max-width:760px){
-  html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!important}
+  html,body{width:100%!important;max-width:100%!important}
   body{font-size:14px!important}
 
   /* الهيدر: يمنع أي خروج يمين/يسار على الموبايل */
@@ -1587,9 +1588,9 @@ html,body{max-width:100%;overflow-x:hidden!important}
   .ct,.ct2{width:100%!important;max-width:100%!important}
   .ct2,.admin-grid,.email-grid,.email-main-layout,.fg,.form-detail-grid{grid-template-columns:1fr!important}
   .sg{grid-template-columns:1fr!important;gap:10px!important}
-  .card{width:100%!important;max-width:100%!important;padding:15px!important;border-radius:18px!important;margin-bottom:12px!important;overflow:hidden!important}
+  .card{width:100%!important;max-width:100%!important;padding:15px!important;border-radius:18px!important;margin-bottom:12px!important;overflow:visible!important}
   table{font-size:12.5px!important}
-  .tw{max-width:100%!important;overflow-x:auto!important}
+  .tw{max-width:100%!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important}
   input,select,textarea{font-size:13px!important;min-height:40px!important}
   .sbar{width:100%!important;display:flex!important;flex-direction:column!important;align-items:stretch!important}
   .sbar input,.sbar select,.sbar .btn{width:100%!important;max-width:100%!important}
@@ -4200,11 +4201,17 @@ async function permanentDeleteRemoteAware(config) {
     updates['savedAt'] = savedAt;
     updates['version'] = 2;
 
-    const res = await fetch(FB_URL + '.json', {
-      method: 'PATCH',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(updates)
-    });
+    const _ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const _timer = _ctrl ? setTimeout(()=>_ctrl.abort(), 8000) : null;
+    let res;
+    try {
+      res = await fetch(FB_URL + '.json', {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(updates),
+        signal: _ctrl ? _ctrl.signal : undefined
+      });
+    } finally { if (_timer) clearTimeout(_timer); }
     if (!res.ok) throw new Error('HTTP ' + res.status);
 
     try { localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys)); } catch(_e){}
@@ -15651,9 +15658,14 @@ document.addEventListener('change', function(e){
   async function kpPatchFirebase(updates){
     var base = String(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, '');
     if (!base) return false;
-    var res = await fetch(base + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return true;
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = controller ? setTimeout(function(){ controller.abort(); }, 8000) : null;
+    try {
+      var res = await fetch(base + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates), signal: controller ? controller.signal : undefined });
+      if (timer) clearTimeout(timer);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return true;
+    } catch(e) { if (timer) clearTimeout(timer); throw e; }
   }
   window.kpPurgeStudentFromFirebase = async function(id){
     var key = kpStudentEntityKey(id);
