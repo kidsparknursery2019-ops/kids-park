@@ -10758,6 +10758,60 @@ function mergeArrayById(localArr, remoteArr, localTombstones, localDeletedBucket
   return Object.values(merged).sort(function(a,b){ return (a.id||0)-(b.id||0); });
 }
 
+
+// ✅ FIX renewals real-time edits:
+// mergeArrayById intentionally lets local records win to protect unsaved work,
+// but renewals are saved as individual Firebase records with updatedAt/version.
+// On other devices that made no local edit, the older local copy was overwriting
+// the newer Firebase copy, so edited renewal name/date did not appear.
+function mergeRenewalsByUpdatedAt(localArr, remoteArr, localTombstones, localDeletedBucket) {
+  const ts = Array.isArray(localTombstones) ? localTombstones : [];
+  const deletedIds = new Set((Array.isArray(localDeletedBucket) ? localDeletedBucket : [])
+    .map(function(x){ return x && x.id != null ? normKey(x.id) : null; })
+    .filter(function(v){ return v !== null; }));
+  const map = {};
+
+  function stamp(item) {
+    if (!item) return 0;
+    const t = Date.parse(item.updatedAt || item.savedAt || item.modifiedAt || item.createdAt || '');
+    if (!isNaN(t)) return t;
+    const v = parseInt(item.version || 0, 10) || 0;
+    return v;
+  }
+  function keepAttachment(chosen, other) {
+    if (!chosen || !other) return chosen;
+    // إذا اخترنا سجل Firebase الجديد بدون المرفق inline، حافظ مؤقتاً على المرفق المحلي
+    // إلى أن attachRenewalAttachmentsFromRemote يركّبه من renewalAttachments.
+    if (!getRenAttachment(chosen) && getRenAttachment(other)) {
+      const att = getRenAttachment(other);
+      if (att && att.data) chosen.attachment = att;
+    }
+    return chosen;
+  }
+  function add(item, source) {
+    if (!item || item.id == null) return;
+    if (hasKey(ts, item.id) || deletedIds.has(normKey(item.id))) return;
+    const key = normKey(item.id);
+    const existing = map[key];
+    if (!existing) {
+      map[key] = Object.assign({}, item);
+      return;
+    }
+    const a = stamp(existing), b = stamp(item);
+    // لو Firebase فيه updatedAt أو version أحدث فهو يفوز؛ هذا هو المطلوب لتحديث الأجهزة الأخرى.
+    // لو ما في timestamps، خلّي المحلي يفوز كما كان سابقاً لحماية البيانات القديمة.
+    if (b > a || (source === 'remote' && (item.updatedAt || item.version) && b >= a)) {
+      map[key] = keepAttachment(Object.assign({}, item), existing);
+    } else {
+      map[key] = keepAttachment(existing, item);
+    }
+  }
+
+  (Array.isArray(remoteArr) ? remoteArr : []).forEach(function(item){ add(item, 'remote'); });
+  (Array.isArray(localArr) ? localArr : []).forEach(function(item){ add(item, 'local'); });
+  return Object.values(map).sort(function(a,b){ return (Number(a.id)||0) - (Number(b.id)||0); });
+}
+
 // دمج attLog (كائن مفاتيح)
 function mergeAttLog(localLog, remoteLog) {
   const result = Object.assign({}, remoteLog || {});
@@ -11262,7 +11316,7 @@ async function loadFromFirebase() {
       expenses = sanitizeEntityArray(expenses).filter(function(e){ return !(e && _deletedExpenseIdsNow.has(normKey(e.id))); });
     }
     if (Array.isArray(data.renewals)) {
-      renewals = mergeArrayById(renewals, data.renewals, tombstones.renewals || [], deletedRenewals);
+      renewals = mergeRenewalsByUpdatedAt(renewals, data.renewals, tombstones.renewals || [], deletedRenewals);
       renewals = sanitizeEntityArray(renewals);
     } else if (data.renewals && typeof data.renewals === 'object') {
       const remoteRenewalsObjArr = Object.keys(data.renewals).map(function(k){
@@ -11270,7 +11324,7 @@ async function loadFromFirebase() {
         if (v && typeof v === 'object' && v.id == null) v.id = k;
         return v;
       }).filter(Boolean);
-      renewals = mergeArrayById(renewals, remoteRenewalsObjArr, tombstones.renewals || [], deletedRenewals);
+      renewals = mergeRenewalsByUpdatedAt(renewals, remoteRenewalsObjArr, tombstones.renewals || [], deletedRenewals);
       renewals = sanitizeEntityArray(renewals);
     }
     if (typeof attachRenewalAttachmentsFromRemote === 'function') {
@@ -13107,7 +13161,11 @@ async function saveRenewal() {
   renderRenewals();
   // ✅ حفظ فردي للتجديدات + حفظ المرفقات بمسار مستقل حتى تظهر عند كل الموظفين
   if (savedRenewal) {
-    await saveRenewalRemoteAware(savedRenewal, { attachment: newAttachment || getRenAttachment(savedRenewal), removeAttachment: !!removeAtt });
+    const ok = await saveRenewalRemoteAware(savedRenewal, { attachment: newAttachment || getRenAttachment(savedRenewal), removeAttachment: !!removeAtt });
+    // بعد نجاح الحفظ، اعمل قراءة سريعة حتى كل الحقول التي كتبها Firebase مثل updatedAt/version تثبت محلياً أيضاً.
+    if (ok) {
+      try { await loadFromFirebase(); refreshAllViewsAfterSync(); } catch(_e) {}
+    }
   }
 }
 
