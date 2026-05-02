@@ -5605,7 +5605,9 @@ function printStudentsSelectedReport(){
       .moe-grid th:nth-child(15),.moe-grid td:nth-child(15){width:58px}
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
-    <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script></body></html>`);
+    <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script>
+
+</body></html>`);
     w.document.close();
     return;
   }
@@ -14915,7 +14917,8 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   var __regStreamRetryTimer = null;
 
   function _regStreamUrl(){
-    return _rootUrl() + '/registrationRequests.json';
+    // المسار الرسمي فقط: لا نفتح stream على /registrationRequests القديم حتى لا يرجع تضارب.
+    return String(FB_URL || '').replace(/\/$/, '') + '/registrationRequests.json';
   }
 
   function _stopRegStream(){
@@ -15204,6 +15207,28 @@ document.addEventListener('change', function(e){
     }
     return false;
   }
+
+  async function uCleanupOfficialDuplicates(options){
+    options = options || {};
+    var rawTotal = 0;
+    var map = {};
+    var folders = ['pending','accepted','rejected'];
+    for (var f=0; f<folders.length; f++) {
+      var folder = folders[f];
+      var obj = await uFetchJson(primaryBase + '/' + folder + '.json', 7000);
+      if (obj && typeof obj === 'object') rawTotal += Object.keys(obj).length;
+      uAddFolderToMap(map, obj, folder, 'nursery_data/registrationRequests/' + folder);
+    }
+    var unified = uMapToFirebaseObject(map);
+    var cleanTotal = Object.keys(unified.pending).length + Object.keys(unified.accepted).length + Object.keys(unified.rejected).length;
+    // لو نفس الطلب موجود بأكتر من فولدر أو بمفتاحين مختلفين، نكتب النسخة النظيفة على المسار الرسمي فقط.
+    // الأولوية: accepted ثم rejected ثم pending، وداخل نفس الحالة الأحدث يفوز.
+    if (rawTotal !== cleanTotal || options.force) {
+      var ok = await uPutJson(primaryBase + '.json', unified, 'PUT', 15000);
+      if (ok && !options.silent && typeof showSyncBadge === 'function') showSyncBadge('🧹 تم تنظيف تكرار طلبات التسجيل');
+    }
+    return { map: map, unified: unified, rawTotal: rawTotal, cleanTotal: cleanTotal };
+  }
   async function uShouldRunMigration(options){
     if (options && options.force) return true;
     var flag = await uFetchJson(migrationFlagUrl, 4000);
@@ -15269,8 +15294,10 @@ document.addEventListener('change', function(e){
     }
 
     try {
-      var map = await uBuildUnifiedMap(false); // قراءة رسمية فقط بعد الترحيل
-      var unified = uMapToFirebaseObject(map);
+      // قراءة وتنظيف من المسار الرسمي فقط. لا نعتمد على localStorage ولا على legacy.
+      var clean = await uCleanupOfficialDuplicates({ silent:true, force: !!options.forceCleanup });
+      var map = clean.map;
+      var unified = clean.unified;
       var rows = uRowsFromUnifiedObject(unified);
 
       // القرار محفوظ من المسار، ومفيش fallback محلي يغيّر الأرقام.
@@ -15759,6 +15786,28 @@ document.addEventListener('change', function(e){
     if (typeof showSyncBadge === 'function') showSyncBadge('↩️ تم التراجع: رجع الطلب للجديدة وتم حذف الطالب من Firebase');
   };
 })();
+/* ============================================================
+   ✅ HARD GUARD 2026-05-02 — منع روابط /undefined ومسارات registration legacy
+   هذا الحارس لا يغير البيانات، فقط يمنع الاتصالات الخاطئة التي كانت تظهر بالكونسول.
+   ============================================================ */
+(function(){
+  if (window.__kpHardRegistrationNetworkGuardInstalled) return;
+  window.__kpHardRegistrationNetworkGuardInstalled = true;
+  var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+  if (nativeFetch) {
+    window.fetch = function(input, init){
+      try {
+        var url = (typeof input === 'string') ? input : (input && input.url ? input.url : '');
+        var s = String(url || '');
+        if (!s || s.indexOf('/undefined') >= 0 || /\/undefined(?:\?|$)/.test(s)) {
+          return Promise.reject(new Error('blocked-invalid-url'));
+        }
+      } catch(_e){}
+      return nativeFetch(input, init);
+    };
+  }
+})();
+
 </script>
 </body>
 </html>
