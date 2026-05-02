@@ -4194,11 +4194,16 @@ async function permanentDeleteRemoteAware(config) {
       restoredKeys[type] = restoredKeys[type].filter(function(x){ return normKey(x) !== normKey(key); });
     }
 
-    // الخطوة 1: احذف السجل بـ DELETE مباشرة على مساره (PATCH+null لا يحذف في Firebase)
-    const _delP = fetch(FB_URL + '/' + deletedArrayName + '/' + encodeURIComponent(entityKey) + '.json', { method: 'DELETE' });
+    // الخطوة 1: احذف السجل — DELETE أولاً، ثم PUT null كـ fallback
+    const _delUrl = FB_URL + '/' + deletedArrayName + '/' + encodeURIComponent(entityKey) + '.json';
     const _delTimeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000));
-    const delRes = await Promise.race([_delP, _delTimeout]);
-    if (!delRes.ok) throw new Error('HTTP ' + delRes.status);
+    const delRes = await Promise.race([fetch(_delUrl, { method: 'DELETE' }), _delTimeout]);
+    if (!delRes.ok) {
+      // بعض Firebase Rules تسمح PUT null لكن لا تسمح DELETE
+      const _putTimeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000));
+      const putRes = await Promise.race([fetch(_delUrl, { method:'PUT', headers:{'Content-Type':'application/json'}, body:'null' }), _putTimeout]);
+      if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+    }
 
     // الخطوة 2: حدّث tombstones + restoredKeys + savedAt بـ PATCH منفصل
     const updates = {};
@@ -6673,7 +6678,8 @@ function renderDeletedStudents() {
       (s.deletedBy ? '<br>👤 بواسطة: ' + s.deletedBy : ''),
       '<button class="btn btn-out btn-sm" onclick="viewDeletedStudent(' + s.id + ')">👁 عرض</button>' +
       '<button class="btn btn-g btn-sm" onclick="restoreStudent(' + s.id + ')">♻️ استعادة</button>' +
-      '<button class="btn btn-r btn-sm" onclick="permanentDeleteStudent(' + s.id + ')">🗑 حذف نهائي</button>'
+      '<button class="btn btn-r btn-sm" onclick="permanentDeleteStudent(' + s.id + ')">🗑 حذف نهائي</button>' +
+      '<button class="btn btn-sm" style="background:#fff0e0;color:#b35900;border:1.5px solid #ffbb77" onclick="forceLocalDeleteStudent(' + s.id + ')" title="احذف من الجهاز فقط إذا فشل الحذف النهائي">⚡ محلي فقط</button>'
     );
   }).join('');
   el.innerHTML = html;
@@ -15862,12 +15868,20 @@ document.addEventListener('change', function(e){
     // حذف حقيقي بـ DELETE على كل مسار — PATCH+null لا يحذف في Firebase Realtime Database
     var encodedKey = encodeURIComponent(key);
     var mkTimeout = function(ms){ return new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, ms); }); };
-    // احذف من deletedStudents (الأهم — هاد اللي يظهر في الصفحة)
+    // احذف من deletedStudents بـ DELETE أولاً، ثم PUT null كـ fallback
+    var delUrl = base + '/deletedStudents/' + encodedKey + '.json';
     var delRes = await Promise.race([
-      fetch(base + '/deletedStudents/' + encodedKey + '.json', { method:'DELETE' }),
+      fetch(delUrl, { method:'DELETE' }),
       mkTimeout(10000)
     ]);
-    if (!delRes.ok) throw new Error('HTTP ' + delRes.status);
+    // بعض Firebase Rules لا تسمح DELETE لكن تسمح PUT null — نجرب الاثنين
+    if (!delRes.ok) {
+      var putRes = await Promise.race([
+        fetch(delUrl, { method:'PUT', headers:{'Content-Type':'application/json'}, body:'null' }),
+        mkTimeout(10000)
+      ]);
+      if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+    }
     // احذف من students أيضاً (لو موجود بالغلط)
     fetch(base + '/students/' + encodedKey + '.json', { method:'DELETE' }).catch(function(){});
     // حدّث tombstones + savedAt بـ PATCH منفصل (لا ينتظر)
@@ -15927,7 +15941,41 @@ document.addEventListener('change', function(e){
     if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري الحذف النهائي من Firebase...');
     var ok = false;
     try { ok = await window.kpPurgeStudentFromFirebase(id); } catch(e) { console.error('student permanent delete failed:', e); }
-    if (typeof showSyncBadge === 'function') showSyncBadge(ok ? '✅ تم الحذف النهائي من Firebase' : '⚠️ فشل الحذف النهائي من Firebase');
+    if (typeof showSyncBadge === 'function') showSyncBadge(ok ? '✅ تم الحذف النهائي من Firebase' : '⚠️ فشل الحذف النهائي من Firebase — تم الحذف من الجهاز. سيُعاد المحاولة تلقائياً.');
+    // إذا فشل Firebase، نحاول مرة أخرى في الخلفية بعد 5 ثواني
+    if (!ok) {
+      setTimeout(function(){
+        window.kpPurgeStudentFromFirebase(id).then(function(r){
+          if (r && typeof showSyncBadge === 'function') showSyncBadge('✅ تم الحذف النهائي من Firebase (إعادة محاولة)');
+        }).catch(function(){});
+      }, 5000);
+    }
+  };
+
+  // حذف محلي فوري — للطلاب المعلقين بسبب timeout Firebase
+  window.forceLocalDeleteStudent = function(id){
+    if (!Array.isArray(deletedStudents)) deletedStudents = [];
+    var s = deletedStudents.find(function(x){ return kpIdEq(x && x.id, id); });
+    if (!s) return;
+    if (!confirm('سيتم حذف الطالب "' + (s.name || '') + '" من الجهاز فقط.\nإذا كان لا يزال في Firebase يمكن أن يعود عند المزامنة التالية.\nمتابعة؟')) return;
+    deletedStudents = deletedStudents.filter(function(x){ return !kpIdEq(x && x.id, id); });
+    students = (Array.isArray(students) ? students : []).filter(function(x){ return !kpIdEq(x && x.id, id); });
+    try { _safeSetSlim('kp_deleted_students', deletedStudents); } catch(_e){}
+    try { if (typeof addTombstone === 'function') addTombstone('students', id); } catch(_e){}
+    try { localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); } catch(_e){}
+    if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
+    if (typeof renderStudents === 'function') renderStudents();
+    if (typeof renderDash === 'function') renderDash();
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم الحذف من الجهاز. سيُحاول الحذف من Firebase في الخلفية...');
+    // محاولة Firebase في الخلفية
+    var base = String(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, '');
+    if (base) {
+      var encodedKey = encodeURIComponent((typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(id) : String(id));
+      fetch(base + '/deletedStudents/' + encodedKey + '.json', { method:'DELETE' })
+        .then(function(r){ if(r.ok && typeof showSyncBadge==='function') showSyncBadge('✅ تم الحذف من Firebase أيضاً'); })
+        .catch(function(){});
+      fetch(base + '/students/' + encodedKey + '.json', { method:'DELETE' }).catch(function(){});
+    }
   };
 
   window.undoFormDecision = async function(token){
