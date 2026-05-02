@@ -14942,6 +14942,329 @@ document.addEventListener('change', function(e){
   }
 });
 
+
+/* ============================================================
+   ✅ FINAL FIX 2026-05-02 — توحيد registrationRequests على مسار واحد
+   المسار الرسمي الوحيد داخل النظام:
+   /nursery_data/registrationRequests/{pending,accepted,rejected}
+   - أي بيانات قديمة في /registrationRequests أو /requests تُرحّل للرسمي.
+   - بعد الترحيل تُحذف المسارات القديمة حتى لا تعطي أرقام مختلفة بين الأجهزة.
+   - العرض والمزامنة يقرآن من المسار الرسمي فقط.
+   ============================================================ */
+(function(){
+  if (window.__kpUnifiedRegistrationRequestsInstalled) return;
+  window.__kpUnifiedRegistrationRequestsInstalled = true;
+
+  var REG_UNIFIED_KEY = 'kp_registration_unified_last_migration_v1';
+  var REG_MIGRATION_THROTTLE_MS = 30000;
+  var lastMigrationStartedAt = 0;
+  var migrationPromise = null;
+  var primaryBase = String(FB_URL || '').replace(/\/$/, '') + '/registrationRequests';
+  var rootBase = String(FB_URL || '').replace(/\/nursery_data\/?$/, '').replace(/\/$/, '');
+  var legacyBases = [
+    rootBase + '/registrationRequests',
+    String(FB_URL || '').replace(/\/$/, '') + '/requests',
+    rootBase + '/requests'
+  ].filter(function(v, i, a){ return v && v !== primaryBase && a.indexOf(v) === i; });
+
+  function uTxt(v){ return String(v == null ? '' : v).trim(); }
+  function uSanitizeKey(s){
+    s = uTxt(s);
+    return s ? s.replace(/[.#$\[\]\/\s]/g, '_').replace(/_+/g, '_').substring(0, 200) : '';
+  }
+  function uStableKey(r){
+    if (!r) return '';
+    var existing = uTxt(r.firebaseKey || r.requestId || r._fbKey);
+    if (existing) return uSanitizeKey(existing);
+    var seed = uTxt(r.timestamp || r.submittedAt || r.createdAt || '') + '|' +
+               uTxt(r.emiratesId || r.idNo || r.identityNo || '') + '|' +
+               uTxt(r.name || r.childName || r.childNameAr || '');
+    if (!seed.replace(/\|/g, '').trim()) return '';
+    var h = 0;
+    for (var i = 0; i < seed.length; i++) { h = ((h << 5) - h) + seed.charCodeAt(i); h |= 0; }
+    return 'req_' + Math.abs(h).toString(36) + '_' + uSanitizeKey(seed.substring(0, 30));
+  }
+  function uStatusToFolder(status){
+    status = uTxt(status).toLowerCase();
+    if (status === 'approved' || status === 'accepted') return 'accepted';
+    if (status === 'rejected' || status === 'declined') return 'rejected';
+    return 'pending';
+  }
+  function uFolderToStatus(folder){
+    return folder === 'accepted' ? 'approved' : (folder === 'rejected' ? 'rejected' : 'pending');
+  }
+  function uRank(folder){ return folder === 'accepted' ? 3 : (folder === 'rejected' ? 2 : 1); }
+  function uTime(r){
+    return Date.parse((r && (r.rowUpdatedAt || r.decisionAt || r.approvedAt || r.rejectedAt || r.submittedAt || r.createdAt || r.timestamp)) || '') || 0;
+  }
+  function uNormalize(raw, fbKey, folder, sourcePath){
+    var r = raw && typeof raw === 'object' ? Object.assign({}, raw) : {};
+    if (typeof normalizeParentRegistrationRow === 'function') {
+      try { r = normalizeParentRegistrationRow(r, fbKey); } catch(_e) { r.firebaseKey = fbKey; }
+    }
+    var key = uStableKey(r) || uSanitizeKey(fbKey);
+    if (key) { r.firebaseKey = key; r.requestId = r.requestId || key; }
+    r.status = uFolderToStatus(folder || uStatusToFolder(r.status));
+    r.sourcePath = sourcePath || r.sourcePath || '';
+    return r;
+  }
+  function uChoose(a, b){
+    if (!a) return b;
+    if (!b) return a;
+    if (uRank(b.folder) !== uRank(a.folder)) return uRank(b.folder) > uRank(a.folder) ? b : a;
+    if (uTime(b.row) !== uTime(a.row)) return uTime(b.row) > uTime(a.row) ? b : a;
+    return b;
+  }
+  async function uFetchJson(url, timeoutMs){
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var tid = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, timeoutMs || 7000) : null;
+    try {
+      var sep = url.indexOf('?') >= 0 ? '&' : '?';
+      var opts = { cache:'no-store' };
+      if (ctrl) opts.signal = ctrl.signal;
+      var res = await fetch(url + sep + 'ts=' + Date.now(), opts);
+      if (tid) clearTimeout(tid);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch(_e){ if (tid) clearTimeout(tid); return null; }
+  }
+  async function uPutJson(url, data, method, timeoutMs){
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var tid = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, timeoutMs || 12000) : null;
+    try {
+      var opts = { method: method || 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) };
+      if (ctrl) opts.signal = ctrl.signal;
+      var res = await fetch(url, opts);
+      if (tid) clearTimeout(tid);
+      return !!(res && res.ok);
+    } catch(_e){ if (tid) clearTimeout(tid); return false; }
+  }
+  async function uDeleteJson(url, timeoutMs){
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var tid = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, timeoutMs || 7000) : null;
+    try {
+      var opts = { method:'DELETE' };
+      if (ctrl) opts.signal = ctrl.signal;
+      var res = await fetch(url, opts);
+      if (tid) clearTimeout(tid);
+      return !!(res && res.ok);
+    } catch(_e){ if (tid) clearTimeout(tid); return false; }
+  }
+  function uAddFolderToMap(map, obj, folder, sourcePath){
+    if (!obj || typeof obj !== 'object') return 0;
+    var count = 0;
+    Object.keys(obj).forEach(function(k){
+      var v = obj[k];
+      if (!v || typeof v !== 'object') return;
+      var row = uNormalize(v, k, folder, sourcePath);
+      var key = uStableKey(row) || uSanitizeKey(k);
+      if (!key) return;
+      var entry = { key:key, folder:uStatusToFolder(row.status), row:row };
+      map[key] = uChoose(map[key], entry);
+      count++;
+    });
+    return count;
+  }
+  async function uBuildUnifiedMap(includeLegacy){
+    var map = {};
+    var folders = ['pending','accepted','rejected'];
+    for (var f=0; f<folders.length; f++) {
+      var folder = folders[f];
+      var primaryObj = await uFetchJson(primaryBase + '/' + folder + '.json', 7000);
+      uAddFolderToMap(map, primaryObj, folder, 'nursery_data/registrationRequests/' + folder);
+    }
+    if (includeLegacy) {
+      for (var b=0; b<legacyBases.length; b++) {
+        for (var j=0; j<folders.length; j++) {
+          var lf = folders[j];
+          var obj = await uFetchJson(legacyBases[b] + '/' + lf + '.json', 7000);
+          uAddFolderToMap(map, obj, lf, legacyBases[b].replace(rootBase + '/', '') + '/' + lf);
+        }
+      }
+    }
+    return map;
+  }
+  function uMapToFirebaseObject(map){
+    var out = { pending:{}, accepted:{}, rejected:{} };
+    Object.keys(map || {}).forEach(function(k){
+      var entry = map[k];
+      if (!entry || !entry.row) return;
+      var folder = uStatusToFolder(entry.row.status || entry.folder);
+      var row = Object.assign({}, entry.row, { firebaseKey:k, requestId: entry.row.requestId || k, status: uFolderToStatus(folder) });
+      delete row._fbKey;
+      out[folder][k] = row;
+    });
+    return out;
+  }
+  function uRowsFromUnifiedObject(obj){
+    var rows = [];
+    ['pending','accepted','rejected'].forEach(function(folder){
+      var group = obj && obj[folder];
+      if (!group || typeof group !== 'object') return;
+      Object.keys(group).forEach(function(k){
+        rows.push(uNormalize(group[k], k, folder, 'nursery_data/registrationRequests/' + folder));
+      });
+    });
+    return rows;
+  }
+  function uSafeStoreRows(rows){
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(rows || [])); return; } catch(e) {}
+    // إذا امتلأ localStorage بسبب صور base64، خزّن نسخة خفيفة محلياً فقط، والنسخة الكاملة تبقى على Firebase.
+    try {
+      var light = (rows || []).map(function(r){
+        var x = Object.assign({}, r);
+        Object.keys(x).forEach(function(k){
+          if (/^img|image|photo|file|attachment/i.test(k) && String(x[k] || '').length > 800) x[k] = '';
+        });
+        return x;
+      });
+      localStorage.setItem('kp_form_rows', JSON.stringify(light));
+    } catch(_e) {}
+  }
+
+  window.kpMigrateRegistrationRequestsToNurseryData = async function(options){
+    options = options || {};
+    if (migrationPromise && !options.force) return migrationPromise;
+    var now = Date.now();
+    if (!options.force && (now - lastMigrationStartedAt) < REG_MIGRATION_THROTTLE_MS) return { skipped:true, reason:'throttled' };
+    lastMigrationStartedAt = now;
+    migrationPromise = (async function(){
+      var map = await uBuildUnifiedMap(true);
+      var unified = uMapToFirebaseObject(map);
+      var ok = await uPutJson(primaryBase + '.json', unified, 'PUT', 15000);
+      if (!ok) throw new Error('تعذر حفظ المسار الرسمي registrationRequests');
+
+      // بعد نجاح الحفظ الرسمي، احذف المسارات القديمة حتى لا يرجع الاختلاف بين الأجهزة.
+      var deleted = [];
+      for (var i=0; i<legacyBases.length; i++) {
+        var delOk = await uDeleteJson(legacyBases[i] + '.json', 8000);
+        if (delOk) deleted.push(legacyBases[i].replace(rootBase + '/', ''));
+      }
+      try { localStorage.setItem(REG_UNIFIED_KEY, new Date().toISOString()); } catch(_e){}
+      try { await uPutJson(String(FB_URL || '').replace(/\/$/, '') + '/adminMigrations/registrationRequestsUnified20260502.json', {doneAt:new Date().toISOString(), deletedLegacy:deleted}, 'PUT', 8000); } catch(_e){}
+      if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('✅ تم توحيد طلبات التسجيل على مسار واحد');
+      return {
+        pending: Object.keys(unified.pending).length,
+        accepted: Object.keys(unified.accepted).length,
+        rejected: Object.keys(unified.rejected).length,
+        deletedLegacy: deleted
+      };
+    })();
+    try { return await migrationPromise; }
+    finally { migrationPromise = null; }
+  };
+
+  async function uOfficialSync(options){
+    options = options || {};
+    try {
+      // يسحب أي طلبات قديمة/جديدة كتبتها فورمات أقدم على root ثم ينقلها للرسمي.
+      await window.kpMigrateRegistrationRequestsToNurseryData({ silent:true, force: !!options.forceMigration });
+    } catch(e) { console.warn('registration migration skipped:', e && e.message); }
+
+    try {
+      var map = await uBuildUnifiedMap(false); // قراءة رسمية فقط بعد الترحيل
+      var unified = uMapToFirebaseObject(map);
+      var rows = uRowsFromUnifiedObject(unified);
+
+      // القرار محفوظ من المسار، ومفيش fallback محلي يغيّر الأرقام.
+      syncedFormRows = rows.sort(function(a,b){ return uTime(b) - uTime(a); });
+      uSafeStoreRows(syncedFormRows);
+
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (!options.silent && typeof showSyncBadge === 'function') {
+        showSyncBadge('✅ المزامنة الرسمية: ' + Object.keys(unified.pending).length + ' جديد، ' + Object.keys(unified.accepted).length + ' مقبول، ' + Object.keys(unified.rejected).length + ' مرفوض');
+      }
+      return {
+        officialPath: 'nursery_data/registrationRequests',
+        pending: Object.keys(unified.pending).length,
+        accepted: Object.keys(unified.accepted).length,
+        rejected: Object.keys(unified.rejected).length,
+        total: syncedFormRows.length
+      };
+    } catch(e) {
+      console.warn('official registration sync failed:', e);
+      if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('⚠️ تعذرت مزامنة طلبات التسجيل');
+      return { error: e && e.message };
+    }
+  }
+
+  window.syncRegistrationRequestsFromFirebase = uOfficialSync;
+  window.kpForceFullSync = async function(){ return await uOfficialSync({ silent:false, forceMigration:true }); };
+  window.kpUnifiedRegistrationRequestsStatus = async function(){
+    var map = await uBuildUnifiedMap(true);
+    var unified = uMapToFirebaseObject(map);
+    return {
+      officialPath: 'nursery_data/registrationRequests',
+      pending: Object.keys(unified.pending).length,
+      accepted: Object.keys(unified.accepted).length,
+      rejected: Object.keys(unified.rejected).length,
+      legacyBases: legacyBases.map(function(x){ return x.replace(rootBase + '/', ''); })
+    };
+  };
+
+  window.archiveFirebaseRegistrationRequest = async function(r, status){
+    if (!r) return false;
+    var folder = uStatusToFolder(status || r.status || 'pending');
+    var key = uStableKey(r);
+    if (!key) return false;
+    r.firebaseKey = key;
+    r.requestId = r.requestId || key;
+    var payload = Object.assign({}, r, {
+      firebaseKey:key,
+      requestId:r.requestId || key,
+      status:uFolderToStatus(folder),
+      decisionAt: (folder === 'pending') ? (r.decisionAt || '') : (r.decisionAt || new Date().toISOString()),
+      rowUpdatedAt: new Date().toISOString()
+    });
+    var ok = await uPutJson(primaryBase + '/' + folder + '/' + encodeURIComponent(key) + '.json', payload, 'PUT', 10000);
+    if (!ok) return false;
+    var others = ['pending','accepted','rejected'].filter(function(f){ return f !== folder; });
+    for (var i=0; i<others.length; i++) {
+      await uDeleteJson(primaryBase + '/' + others[i] + '/' + encodeURIComponent(key) + '.json', 5000);
+    }
+    // تنظيف نفس السجل من المسارات القديمة لو كان موجوداً.
+    for (var b=0; b<legacyBases.length; b++) {
+      for (var j=0; j<['pending','accepted','rejected'].length; j++) {
+        await uDeleteJson(legacyBases[b] + '/' + ['pending','accepted','rejected'][j] + '/' + encodeURIComponent(key) + '.json', 3000);
+      }
+    }
+    return true;
+  };
+
+  window.persistFormRowsAndSync = async function(formRow){
+    uSafeStoreRows(Array.isArray(syncedFormRows) ? syncedFormRows : []);
+    try { localStorage.setItem('kp_students', JSON.stringify(students)); } catch(_e){}
+    if (formRow && formRow.status) return await window.archiveFirebaseRegistrationRequest(formRow, formRow.status);
+    return false;
+  };
+
+  // EventSource رسمي جديد على nursery_data فقط، حتى التحديث المباشر ما يتأثر بالمسار القديم.
+  var officialStream = null, officialTimer = null;
+  function startOfficialRegStream(){
+    if (officialStream || typeof EventSource === 'undefined') return;
+    try {
+      officialStream = new EventSource(primaryBase + '.json');
+      function onAny(){
+        if (officialTimer) clearTimeout(officialTimer);
+        officialTimer = setTimeout(function(){
+          officialTimer = null;
+          try { window.syncRegistrationRequestsFromFirebase({ silent:true }); } catch(_e){}
+        }, 400);
+      }
+      officialStream.addEventListener('put', onAny);
+      officialStream.addEventListener('patch', onAny);
+      officialStream.onerror = function(){ try { officialStream.close(); } catch(_e){} officialStream = null; setTimeout(startOfficialRegStream, 5000); };
+    } catch(_e){}
+  }
+  window.kpOfficialRegStreamRestart = function(){ try { if (officialStream) officialStream.close(); } catch(_e){} officialStream = null; startOfficialRegStream(); };
+  setTimeout(function(){
+    try { window.kpMigrateRegistrationRequestsToNurseryData({ silent:true }); } catch(_e){}
+    try { window.syncRegistrationRequestsFromFirebase({ silent:true, forceMigration:true }); } catch(_e){}
+    startOfficialRegStream();
+  }, 1200);
+})();
+
 </script>
 </body>
 </html>
