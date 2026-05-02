@@ -3259,7 +3259,8 @@ function getStudentHealthNotes(student) {
 
   const overrideHealth = String(student.healthOverride || '').trim();
   const manualHealth = String(student.health || student.healthStatus || '').trim();
-  const effectiveManualHealth = overrideHealth || manualHealth;
+  const detailsHealth = String(student.healthDetails || student.medicalNotes || '').trim();
+  const effectiveManualHealth = overrideHealth || manualHealth || detailsHealth;
   if (student.healthDeleted || overrideHealth) linked = [];
   if (effectiveManualHealth) {
     linked.unshift({
@@ -3301,6 +3302,8 @@ function hasStudentHealthMarker(student) {
     String(student.health || '').trim() ||
     String(student.healthStatus || '').trim() ||
     String(student.healthOverride || '').trim() ||
+    String(student.healthDetails || '').trim() ||
+    String(student.medicalNotes || '').trim() ||
     student.healthDeleted === true ||
     student.healthUpdatedAt ||
     student.healthChangedAt
@@ -3312,6 +3315,8 @@ function copyStudentHealthFields(target, source) {
   target.health = source.health || '';
   target.healthStatus = source.healthStatus || '';
   target.healthOverride = source.healthOverride || '';
+  target.healthDetails = source.healthDetails || '';
+  target.medicalNotes = source.medicalNotes || '';
   target.healthDeleted = source.healthDeleted === true;
   target.healthUpdatedAt = source.healthUpdatedAt || source.healthChangedAt || target.healthUpdatedAt || '';
   return target;
@@ -6117,13 +6122,7 @@ function printStudentFullFile(studentId) {
       '<div class="item"><b>الموبايل</b><span class="ltr">'+(s.emergMob||'—')+'</span></div>'+
     '</div></div>' : '')+
 
-    '<div class="sec"><h2>الحالة الصحية والتوصيات</h2>'+healthHtml+
-      ((s.allergy === 'نعم' || String(s.allergy||'').toLowerCase().includes('yes')) ?
-        '<div class="alert-box alert-r" style="margin-top:10px">⚠️ <b>حساسية إضافية:</b> ' + (s.allergyNote||s.allergyType||s.allergyMedicationFood||'يرجى المراجعة') + '</div>' : '')+
-      (s.diseaseDetails ? '<div class="alert-box alert-r">🦠 <b>تفاصيل الأمراض:</b> ' + s.diseaseDetails + '</div>' : '')+
-      (s.accidentDetails ? '<div class="alert-box alert-y">🏥 <b>تفاصيل الحوادث / العمليات:</b> ' + s.accidentDetails + '</div>' : '')+
-      (s.contagious && String(s.contagious).trim() && String(s.contagious).indexOf('لا')<0 && String(s.contagious).toLowerCase().indexOf('no')<0 ? '<div class="alert-box alert-r">🦠 <b>مرض معدي:</b> ' + s.contagious + '</div>' : '')+
-    '</div>'+
+    '<div class="sec"><h2>الحالة الصحية والتوصيات</h2>'+healthHtml+'</div>'+
 
     ((s.photoConsent || s.socialConsent || s.nurseConsent || s.guardianUndertake) ?
     '<div class="sec"><h2>✅ الموافقات والتعهدات</h2><div class="grid">'+
@@ -6219,12 +6218,7 @@ function viewStudentProfile(id) {
         '<div><label style="font-size:11px;color:var(--muted)">الموبايل</label><div dir="ltr">' + (s.emergMob||'—') + '</div></div>' +
       '</div>' : '') +
     ((getStudentHealthSummary(s)) ? '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">⚕️ <b>الحالة الصحية / الحساسية:</b> ' + getStudentHealthSummary(s) + '</div>' : '') +
-    (s.allergy === 'نعم' || String(s.allergy||'').toLowerCase().includes('yes') ?
-      '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">' +
-      '⚠️ <b>حساسية إضافية:</b> ' + (s.allergyNote||s.allergyType||'يرجى المراجعة') + '</div>' : '') +
-    (s.diseaseDetails ? '<div style="background:var(--rp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">🦠 <b>تفاصيل الأمراض:</b> ' + s.diseaseDetails + '</div>' : '') +
-    (s.accidentDetails ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">🏥 <b>تفاصيل الحوادث / العمليات:</b> ' + s.accidentDetails + '</div>' : '') +
-    (s.note || s.notes ? '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📝 ' + (s.note||s.notes) + '</div>' : '') +
+    (function(){ var n = String(s.note || s.notes || '').trim(); if (!n || /^الحالة الصحية\s*:/i.test(n)) return ''; return '<div style="background:var(--yp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📝 ' + n + '</div>'; })() +
     (s.sub_end ? '<div style="background:var(--gp);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">📅 <b>تاريخ انتهاء الاشتراك:</b> ' + s.sub_end + '</div>' : '') +
     '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px;border-top:1.5px solid var(--border);padding-top:10px">💰 المدفوعات (' + (function(){
       const pays = payments.filter(function(p){ return p.stuId === id; });
@@ -10017,6 +10011,8 @@ async function archiveFirebaseRegistrationRequest(r, status) {
     r.allergy = kpSafeText(raw.allergy || '');
     r.allergyType = kpSafeText(raw.allergyType || '');
     r.nurseConsent = kpSafeText(raw.nurseConsent || '');
+    r.medicalNotes = kpSafeText(raw.medicalNotes || raw.healthDetails || raw.medicalDetails || raw.medicalNote || raw.healthNote || raw['Medical Notes / Health Details *'] || raw['Medical Notes / Health Details'] || raw['Health Details'] || raw['تفاصيل صحية'] || raw['ملاحظات طبية'] || '');
+    r.healthDetails = kpSafeText(raw.healthDetails || raw.medicalNotes || raw.medicalDetails || raw.medicalNote || raw.healthNote || raw['Medical Notes / Health Details *'] || raw['Medical Notes / Health Details'] || raw['Health Details'] || raw['تفاصيل صحية'] || raw['ملاحظات طبية'] || '');
 
     // صور صفحة التسجيل الحالية محفوظة base64 داخل نفس الطلب
     r.imgChildPhoto = raw.imgChildPhoto || (raw.imageUrls && raw.imageUrls.imgChildPhoto) || '';
@@ -10270,14 +10266,17 @@ function getAllData() {
 }
 
 function persistCoreDataToLocalStorage() {
-  // ✅ SAFE FIX 2026-05-02:
-  // لا نحفظ بيانات النظام الكبيرة محلياً حتى لا تمتلئ localStorage ويظهر خطأ quota.
-  // Firebase هو المصدر الأساسي. نحتفظ فقط بالأشياء الصغيرة/المسموحة خارج هذه الدالة.
   try {
-    ['kp_students_data','kp_payments_data','kp_expenses_data','kp_renewals_data','kp_form_rows'].forEach(function(k){
-      try { localStorage.removeItem(k); } catch(_e){}
-    });
-  } catch (_e) {}
+    localStorage.setItem('kp_students_data', JSON.stringify(sanitizeEntityArray(students)));
+    localStorage.setItem('kp_payments_data', JSON.stringify(sanitizeEntityArray(payments)));
+    localStorage.setItem('kp_expenses_data', JSON.stringify(sanitizeEntityArray(expenses)));
+    localStorage.setItem('kp_renewals_data', JSON.stringify(sanitizeEntityArray(renewals)));
+    localStorage.setItem('kp_attlog_data', JSON.stringify(attLog || {}));
+    localStorage.setItem('kp_attendance_locks', JSON.stringify(attendanceLocks || {}));
+    localStorage.setItem('kp_classes', JSON.stringify(CLASSES || {}));
+  } catch (e) {
+    console.warn('persistCoreDataToLocalStorage failed:', e);
+  }
 }
 
 function loadCoreDataFromLocalStorage() {
@@ -11844,6 +11843,8 @@ async function syncFromGoogleSheets() {
         allergy: valByLabel(c, ['هل يعاني طفلك من أي نوع من أنواع الحساسية؟ Does your child have any type of allergy? '], 43),
         allergyType: valByLabel(c, ['ما نوع الحساسية إن وجد؟ What is the allergy type if any?'], 44),
         nurseConsent: valByLabel(c, ['هل توافقون على تقديم الممرضة ما قد يحتاجه طفلكم من: Do you agree to let the nurse give your child what might be necessary such as:'], 45),
+        medicalNotes: valByLabel(c, ['Medical Notes / Health Details *', 'Medical Notes / Health Details', 'Health Details', 'ملاحظات طبية', 'تفاصيل صحية'], 46),
+        healthDetails: valByLabel(c, ['Medical Notes / Health Details *', 'Medical Notes / Health Details', 'Health Details', 'ملاحظات طبية', 'تفاصيل صحية'], 46),
 
         imgEmiratesId:   valByLabel(c, ['الهوية الإماراتية | Emirates ID'], 46),
         imgVaccination:  valByLabel(c, ['شهادة التطعيم | Vaccination card'], 47),
@@ -11978,23 +11979,55 @@ function cleanArabicOnlyValue(value) {
   return v;
 }
 
+function isNegativeHealthAnswer(value) {
+  var v = String(value || '').trim().toLowerCase();
+  if (!v) return true;
+  v = v.replace(/[|،,.;:()\[\]{}\-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return /^(لا|كلا|no|none|nil|n\/a|na|not applicable)(\s|$)/i.test(v) ||
+         v === 'لا يوجد' || v === 'لا توجد' || v === 'بدون' || v === 'طبيعي';
+}
+
+function cleanHealthDetailValue(value) {
+  var v = String(value || '').trim();
+  if (!v) return '';
+  if (isNegativeHealthAnswer(v)) return '';
+  return v;
+}
+
+function pushUniqueHealthPart(parts, text) {
+  var v = String(text || '').trim();
+  if (!v) return;
+  var key = v.toLowerCase().replace(/\s+/g, ' ');
+  var exists = parts.some(function(x){ return String(x || '').toLowerCase().replace(/\s+/g, ' ') === key; });
+  if (!exists) parts.push(v);
+}
+
 function formatYesNoDetail(label, value, detail) {
   var v = String(value || '').trim();
-  var d = String(detail || '').trim();
+  var d = cleanHealthDetailValue(detail);
+  if (isNegativeHealthAnswer(v) && !d) return '';
+  if (isNegativeHealthAnswer(v) && d) return label + ': ' + d;
   if (!v && !d) return '';
   return label + ': ' + (v || '—') + (d ? ' — ' + d : '');
 }
 
 function buildHealthTextFromFormRow(r) {
+  r = r || {};
   var parts = [];
-  var allergyExtra = [r.allergyNote, r.allergyType, r.allergyMedicationFood].filter(Boolean).join(' — ');
-  parts.push(formatYesNoDetail('الحساسية', r.allergy, allergyExtra));
-  parts.push(formatYesNoDetail('مرض معدي', r.contagious, r.diseaseDetails || r.contagiousDetails));
-  parts.push(formatYesNoDetail('عملية أو حادث خطير', r.surgical, r.accidentDetails || r.surgicalDetails));
-  if (r.medicalNotes) parts.push('ملاحظات طبية: ' + r.medicalNotes);
-  if (r.healthStatus) parts.push('الحالة الصحية: ' + r.healthStatus);
-  if (r.health) parts.push('تفاصيل صحية: ' + r.health);
-  if (r.nurseConsent) parts.push('موافقات إسعافية/تمريضية: ' + r.nurseConsent);
+  var allergyExtra = [r.allergyNote, r.allergyType, r.allergyMedicationFood]
+    .map(cleanHealthDetailValue)
+    .filter(Boolean)
+    .join(' — ');
+  pushUniqueHealthPart(parts, formatYesNoDetail('الحساسية', r.allergy, allergyExtra));
+  pushUniqueHealthPart(parts, formatYesNoDetail('مرض معدي', r.contagious, r.diseaseDetails || r.contagiousDetails));
+  pushUniqueHealthPart(parts, formatYesNoDetail('عملية أو حادث خطير', r.surgical, r.accidentDetails || r.surgicalDetails));
+  var medicalNotes = cleanHealthDetailValue(r.medicalNotes || r.healthDetails || r.medicalDetails || r.medicalNote || r.healthNote);
+  if (medicalNotes) pushUniqueHealthPart(parts, 'تفاصيل صحية / ملاحظات طبية: ' + medicalNotes);
+  var existingStatus = cleanHealthDetailValue(r.healthStatus);
+  var existingHealth = cleanHealthDetailValue(r.health);
+  if (existingStatus && !parts.join(' | ').includes(existingStatus)) pushUniqueHealthPart(parts, 'الحالة الصحية: ' + existingStatus);
+  if (existingHealth && !parts.join(' | ').includes(existingHealth)) pushUniqueHealthPart(parts, 'تفاصيل صحية: ' + existingHealth);
+  if (cleanHealthDetailValue(r.nurseConsent)) pushUniqueHealthPart(parts, 'موافقات إسعافية/تمريضية: ' + r.nurseConsent);
   return parts.filter(function(x){ return String(x || '').trim(); }).join(' | ');
 }
 
@@ -12028,7 +12061,7 @@ function buildStudentFromFormRow(r, studentIdOverride) {
     mom: r.momFull,
     mph: r.momMob,
     addr: r.addr,
-    note: [r.notes, healthText ? ('الحالة الصحية: ' + healthText) : ''].filter(Boolean).join(' | '),
+    note: r.notes || '',
     familyName: r.familyName,
     firstName: r.firstName,
     emiratesId: r.emiratesId,
@@ -12060,6 +12093,8 @@ function buildStudentFromFormRow(r, studentIdOverride) {
     photoConsent: r.photoConsent,
     socialConsent: r.socialConsent,
     nurseConsent: r.nurseConsent,
+    medicalNotes: r.medicalNotes || r.healthDetails || '',
+    healthDetails: r.healthDetails || r.medicalNotes || '',
     contagious: r.contagious,
     surgical: r.surgical,
     diseaseDetails: r.diseaseDetails || r.contagiousDetails,
@@ -12141,19 +12176,18 @@ function findPotentialStudentMatches(r) {
 }
 
 async function persistFormRowsAndSync(formRow) {
-  // ✅ طلبات التسجيل لا تُخزن محلياً نهائياً؛ Firebase فقط.
-  try { localStorage.removeItem('kp_form_rows'); } catch(_e) {}
+  // ✅ حفظ فردي — إذا تم تمرير formRow بنحفظه فردياً
+  // إذا ما تم تمرير شي بنحفظ كل المصفوفة (للتراجع عن قرارات قديمة)
+  localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
   if (formRow) {
     await saveFormRowRemoteAware(formRow);
   } else {
-    // fallback نادر: لا نرفع قاعدة كاملة بسبب طلبات التسجيل
-    if (typeof syncRegistrationRequestsFromFirebase === 'function') {
-      try { await syncRegistrationRequestsFromFirebase({ silent: true }); } catch(_e) {}
-    }
+    // حالة fallback — نادرة جداً
+    autoSave();
   }
 }
 
-async function setFormRowDecision(r, status, meta) {
+function setFormRowDecision(r, status, meta) {
   meta = meta || {};
   r.status = status;
   r.decisionAt = new Date().toISOString();
@@ -12163,10 +12197,10 @@ async function setFormRowDecision(r, status, meta) {
   if (typeof rememberLocalFormDecision === 'function') {
     try { rememberLocalFormDecision(r, r.decisionAt); } catch(_e){}
   }
-  await persistFormRowsAndSync(r);
+  persistFormRowsAndSync(r);
   updateFormsNavBadge();
   if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
-    await archiveFirebaseRegistrationRequest(r, status);
+    archiveFirebaseRegistrationRequest(r, status);
   }
 }
 
@@ -12378,74 +12412,12 @@ function openDuplicateDecisionModal(r, matches) {
   document.getElementById('mo-form-duplicates').classList.add('on');
 }
 
-async function kpSaveStudentFromRegistrationRemote(student) {
-  // حفظ/تحديث طالب واحد فقط على Firebase بدل رفع القاعدة كاملة.
-  if (!student || student.id == null) return false;
-  try {
-    var clean = (typeof sanitizeEntityArray === 'function') ? sanitizeEntityArray([student])[0] : student;
-    var res = await fetch(FB_URL + '/students/' + encodeURIComponent(String(student.id)) + '.json', {
-      method: 'PUT',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(clean)
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    await fetch(FB_URL + '.json', {
-      method:'PATCH',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ savedAt: new Date().toISOString(), version: 2 })
-    }).catch(function(){});
-    return true;
-  } catch(e) {
-    console.warn('kpSaveStudentFromRegistrationRemote failed:', e.message || e);
-    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ تعذر حفظ الطالب سحابياً، أعيدي المحاولة');
-    return false;
-  }
-}
-
-async function kpDeleteStudentFromRegistrationRemote(studentId) {
-  if (studentId == null || studentId === '') return false;
-  try {
-    var res = await fetch(FB_URL + '/students/' + encodeURIComponent(String(studentId)) + '.json', { method:'DELETE' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    await fetch(FB_URL + '.json', {
-      method:'PATCH',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ savedAt: new Date().toISOString(), version: 2 })
-    }).catch(function(){});
-    return true;
-  } catch(e) {
-    console.warn('kpDeleteStudentFromRegistrationRemote failed:', e.message || e);
-    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ تعذر حذف الطالب من Firebase، أعيدي المحاولة');
-    return false;
-  }
-}
-
-async function kpRestoreRegistrationRequestToPending(r) {
-  // عند التراجع عن القبول/الرفض: يرجع الطلب إلى pending ويُزال من accepted/rejected.
-  try {
-    if (r && r.firebaseKey) {
-      var key = encodeURIComponent(String(r.firebaseKey));
-      var payload = Object.assign({}, r, { status:'pending', decisionAt:'', approvedStudentId:null, approvedAction:'', undoData:null, rowUpdatedAt:new Date().toISOString() });
-      await fetch(REGISTRATION_PENDING_URL + '/' + key + '.json', {
-        method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-      });
-      await fetch(REGISTRATION_ACCEPTED_URL + '/' + key + '.json', { method:'DELETE' }).catch(function(){});
-      await fetch(REGISTRATION_REJECTED_URL + '/' + key + '.json', { method:'DELETE' }).catch(function(){});
-      return true;
-    }
-  } catch(e) {
-    console.warn('kpRestoreRegistrationRequestToPending failed:', e.message || e);
-  }
-  return false;
-}
-
-async function performApproveNew(r) {
-  // ✅ قبول كطالب جديد: إنشاء الطالب + حفظه فردياً على Firebase فوراً.
+function performApproveNew(r) {
+  // ✅ FIX: استخدم رقم آمن لا يتعارض مع المحذوفين
   var newStudent = buildStudentFromFormRow(r, getSafeNextStudentId());
   students.push(newStudent);
   nextStuId = getSafeNextStudentId();
-  await kpSaveStudentFromRegistrationRemote(newStudent);
-  await setFormRowDecision(r, 'approved', {
+  setFormRowDecision(r, 'approved', {
     approvedStudentId: newStudent.id,
     approvedAction: 'new',
     undoData: { createdStudentId: newStudent.id }
@@ -12454,13 +12426,12 @@ async function performApproveNew(r) {
   showSyncBadge('✅ تم قبول الطالب وإضافته');
 }
 
-async function performApproveMerge(r, studentId) {
+function performApproveMerge(r, studentId) {
   var idx = students.findIndex(function(s){ return s.id === studentId; });
   if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
   var before = JSON.parse(JSON.stringify(students[idx]));
   students[idx] = mergeStudentWithFormData(students[idx], r);
-  await kpSaveStudentFromRegistrationRemote(students[idx]);
-  await setFormRowDecision(r, 'approved', {
+  setFormRowDecision(r, 'approved', {
     approvedStudentId: studentId,
     approvedAction: 'merge',
     undoData: { mergedStudentId: studentId, previousStudent: before }
@@ -12469,11 +12440,11 @@ async function performApproveMerge(r, studentId) {
   showSyncBadge('✅ تم قبول الطلب ودمج البيانات');
 }
 
-async function rejectFormRow(ts) {
-  var r = (typeof findRegistrationRowByToken === 'function' ? findRegistrationRowByToken(ts) : syncedFormRows.find(function(x){ return x.timestamp === ts; }));
+function rejectFormRow(ts) {
+  var r = (typeof findRegistrationRowByToken === 'function' ? findRegistrationRowByToken(ts) : syncedFormRows.find(function(x){ return x.timestamp === ts; }))
   if (!r) return;
   if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
-  await setFormRowDecision(r, 'rejected', {
+  setFormRowDecision(r, 'rejected', {
     approvedStudentId: null,
     approvedAction: 'reject',
     undoData: { revertTo: 'pending' }
@@ -12482,26 +12453,17 @@ async function rejectFormRow(ts) {
   showSyncBadge('✅ تم رفض الطلب');
 }
 
-async function undoFormDecision(ts) {
-  var r = (typeof findRegistrationRowByToken === 'function' ? findRegistrationRowByToken(ts) : syncedFormRows.find(function(x){ return x.timestamp === ts; }));
+function undoFormDecision(ts) {
+  var r = (typeof findRegistrationRowByToken === 'function' ? findRegistrationRowByToken(ts) : syncedFormRows.find(function(x){ return x.timestamp === ts; }))
   if (!r || r.status === 'pending') return;
   if (!confirm('هل تريدين التراجع عن هذا القرار وإعادة الطلب إلى قائمة الجديدة؟')) return;
 
-  if (r.status === 'approved') {
-    // الحالة 1: الطلب كان مقبول كطالب جديد => احذف الطالب من المصفوفة ومن Firebase.
-    var createdId = r.undoData && r.undoData.createdStudentId != null ? r.undoData.createdStudentId : null;
-    if (createdId == null && (r.approvedAction === 'new' || !r.approvedAction) && r.approvedStudentId != null) createdId = r.approvedStudentId;
-    if (createdId != null) {
-      students = students.filter(function(s){ return String(s.id) !== String(createdId); });
-      await kpDeleteStudentFromRegistrationRemote(createdId);
-    }
-
-    // الحالة 2: الطلب كان دمج مع طالب قديم => رجّع نسخة الطالب السابقة واحفظها على Firebase.
-    if (r.approvedAction === 'merge' && r.undoData && r.undoData.mergedStudentId != null && r.undoData.previousStudent) {
-      var idx = students.findIndex(function(s){ return String(s.id) === String(r.undoData.mergedStudentId); });
+  if (r.status === 'approved' && r.undoData) {
+    if (r.approvedAction === 'new' && r.undoData.createdStudentId != null) {
+      students = students.filter(function(s){ return s.id !== r.undoData.createdStudentId; });
+    } else if (r.approvedAction === 'merge' && r.undoData.mergedStudentId != null && r.undoData.previousStudent) {
+      var idx = students.findIndex(function(s){ return s.id === r.undoData.mergedStudentId; });
       if (idx >= 0) students[idx] = r.undoData.previousStudent;
-      else students.push(r.undoData.previousStudent);
-      await kpSaveStudentFromRegistrationRemote(r.undoData.previousStudent);
     }
   }
 
@@ -12511,13 +12473,10 @@ async function undoFormDecision(ts) {
   r.approvedStudentId = null;
   r.approvedAction = '';
   r.undoData = null;
-
-  await kpRestoreRegistrationRequestToPending(r);
-  await persistFormRowsAndSync(r);
+  persistFormRowsAndSync(r);
   updateFormsNavBadge();
-  refreshNextIds();
   refreshAllAfterFormDecision();
-  showSyncBadge('↩️ تم التراجع: رجع الطلب للجديدة وتم تحديث قائمة الطلاب');
+  showSyncBadge('↩️ تم التراجع عن القرار');
 }
 // ============================================================
 // RENEWALS — التجديدات والوثائق الرسمية
@@ -15103,10 +15062,6 @@ document.addEventListener('change', function(e){
     } catch(_e){ if (tid) clearTimeout(tid); return null; }
   }
   async function uPutJson(url, data, method, timeoutMs){
-    if (!url || String(url).indexOf('/undefined') >= 0 || (/github\.io/i.test(String(url)) && method !== 'GET')) {
-      console.warn('Blocked invalid write URL:', url);
-      return false;
-    }
     var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     var tid = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, timeoutMs || 12000) : null;
     try {
@@ -15382,8 +15337,7 @@ document.addEventListener('change', function(e){
     localStorage.removeItem('kp_form_rows');
     if (!Storage.prototype.__kpOriginalSetItem) Storage.prototype.__kpOriginalSetItem = Storage.prototype.setItem;
     Storage.prototype.setItem = function(key, value){
-      var k = String(key);
-      if (k === 'kp_form_rows' || k === 'kp_students_data' || k === 'kp_payments_data' || k === 'kp_expenses_data' || k === 'kp_renewals_data') return;
+      if (String(key) === 'kp_form_rows') return;
       return Storage.prototype.__kpOriginalSetItem.call(this, key, value);
     };
   } catch(_e) {}
