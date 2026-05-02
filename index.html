@@ -18765,5 +18765,844 @@ document.addEventListener('change', function(e){
   try { if (typeof setFormRowDecision === 'function') setFormRowDecision = window.setFormRowDecision; } catch(_e){}
 })();
 </script>
+<script>
+/*
+ KP REGISTRATION DECISION SHIELD 2026-05-02
+ Keeps a just-approved/rejected request from briefly returning as pending
+ while Firebase finishes moving it between folders.
+*/
+(function(){
+  if (window.__kpRegistrationDecisionShieldInstalled) return;
+  window.__kpRegistrationDecisionShieldInstalled = true;
+
+  var HOLD_MS = 45000;
+  var decisions = window.__kpRegistrationDecisionShield || {};
+  window.__kpRegistrationDecisionShield = decisions;
+
+  function txt(value){
+    return String(value == null ? '' : value).trim();
+  }
+  function normalizeStatus(status){
+    status = txt(status || 'pending').toLowerCase();
+    if (status === 'accepted' || status === 'accept' || status === 'approved' || status === 'approve') return 'approved';
+    if (status === 'rejected' || status === 'reject') return 'rejected';
+    return 'pending';
+  }
+  function safeKey(raw){
+    raw = txt(raw);
+    if (!raw) return '';
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(raw) : raw.replace(/[.#$\[\]\/\s]/g, '_'); }
+    catch(_e){ return raw.replace(/[.#$\[\]\/\s]/g, '_'); }
+  }
+  function keysOf(row){
+    if (!row) return [];
+    var keys = [
+      row._fbKey,
+      row.firebaseKey,
+      row.requestId,
+      row.key,
+      row.timestamp,
+      row.submittedAt,
+      row.createdAt,
+      txt(row.emiratesId) ? 'eid_' + txt(row.emiratesId) : '',
+      txt(row.passport) ? 'pass_' + txt(row.passport) : '',
+      (txt(row.name) && txt(row.dob)) ? 'child_' + txt(row.name) + '_' + txt(row.dob) : '',
+      (txt(row.name) && txt(row.dob) && txt(row.dadMob || row.momMob)) ? 'family_' + txt(row.name) + '_' + txt(row.dob) + '_' + txt(row.dadMob || row.momMob) : ''
+    ].map(safeKey).filter(Boolean);
+    return keys.filter(function(key, index){ return keys.indexOf(key) === index; });
+  }
+  function findRow(token){
+    token = txt(token);
+    try {
+      if (typeof findRegistrationRowByToken === 'function') {
+        var found = findRegistrationRowByToken(token);
+        if (found) return found;
+      }
+    } catch(_e){}
+    var tokenKey = safeKey(token);
+    var rows = [];
+    try { rows = Array.isArray(syncedFormRows) ? syncedFormRows : []; } catch(_e){}
+    return rows.find(function(row){
+      return keysOf(row).indexOf(tokenKey) >= 0 || txt(row && row.timestamp) === token;
+    }) || null;
+  }
+  function remember(row, status){
+    if (!row) return;
+    status = normalizeStatus(status || row.status);
+    if (status === 'pending') return;
+    var now = new Date().toISOString();
+    var snapshot;
+    try { snapshot = JSON.parse(JSON.stringify(row)); }
+    catch(_e){ snapshot = Object.assign({}, row); }
+    snapshot.status = status;
+    snapshot.decisionAt = snapshot.decisionAt || now;
+    snapshot.rowUpdatedAt = snapshot.rowUpdatedAt || now;
+    if (status === 'rejected') snapshot.rejectedAt = snapshot.rejectedAt || now;
+    if (status === 'approved') snapshot.approvedAt = snapshot.approvedAt || now;
+    var entry = {
+      status:status,
+      row:snapshot,
+      expiresAt:Date.now() + HOLD_MS
+    };
+    keysOf(snapshot).forEach(function(key){ decisions[key] = entry; });
+    try {
+      if (typeof rememberLocalFormDecision === 'function') rememberLocalFormDecision(snapshot, snapshot.decisionAt);
+    } catch(_e){}
+  }
+  function activeFor(row){
+    var now = Date.now();
+    var keys = keysOf(row);
+    for (var i = 0; i < keys.length; i++) {
+      var entry = decisions[keys[i]];
+      if (!entry) continue;
+      if (entry.expiresAt && entry.expiresAt < now) {
+        delete decisions[keys[i]];
+        continue;
+      }
+      return entry;
+    }
+    return null;
+  }
+  function applyShield(){
+    var rows = [];
+    try { rows = Array.isArray(syncedFormRows) ? syncedFormRows : []; } catch(_e){}
+    var byKey = {};
+    rows.forEach(function(row, index){
+      if (!row) return;
+      var entry = activeFor(row);
+      if (entry && normalizeStatus(row.status) === 'pending') {
+        Object.assign(row, entry.row, {
+          status:entry.status,
+          decisionAt:entry.row.decisionAt || row.decisionAt,
+          rowUpdatedAt:entry.row.rowUpdatedAt || row.rowUpdatedAt
+        });
+      }
+      keysOf(row).forEach(function(key){ byKey[key] = index; });
+    });
+    Object.keys(decisions).forEach(function(key){
+      var entry = decisions[key];
+      if (!entry || (entry.expiresAt && entry.expiresAt < Date.now())) {
+        delete decisions[key];
+        return;
+      }
+      if (byKey[key] == null && entry.row) {
+        rows.unshift(entry.row);
+        keysOf(entry.row).forEach(function(k){ byKey[k] = 0; });
+      }
+    });
+    try {
+      syncedFormRows = rows;
+      window.syncedFormRows = rows;
+      if (typeof _saveFormRowsSlim === 'function') _saveFormRowsSlim(rows);
+    } catch(_e){}
+    try { if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge(); } catch(_e){}
+    try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+    return rows;
+  }
+
+  var oldSync = window.syncRegistrationRequestsFromFirebase;
+  if (typeof oldSync === 'function') {
+    window.syncRegistrationRequestsFromFirebase = async function(options){
+      options = options || {};
+      var hasActive = Object.keys(decisions).some(function(key){
+        var entry = decisions[key];
+        return entry && (!entry.expiresAt || entry.expiresAt >= Date.now());
+      });
+      if (hasActive && options.silent !== false && options.full !== true) {
+        applyShield();
+        return { skipped:'registration_decision_shield_active' };
+      }
+      var result = await oldSync.apply(this, arguments);
+      applyShield();
+      return result;
+    };
+    try { syncRegistrationRequestsFromFirebase = window.syncRegistrationRequestsFromFirebase; } catch(_e){}
+  }
+
+  function wrapDecisionAction(name, statusFromArgs){
+    var old = window[name];
+    if (typeof old !== 'function' || old.__kpDecisionShieldWrapped) return;
+    var wrapped = function(){
+      var row = null;
+      var status = '';
+      try {
+        status = statusFromArgs ? statusFromArgs.apply(this, arguments) : '';
+        row = arguments[0] && typeof arguments[0] === 'object' ? arguments[0] : findRow(arguments[0]);
+      } catch(_e){}
+      var result = old.apply(this, arguments);
+      try {
+        var finalStatus = normalizeStatus((row && row.status) || status);
+        if (row && finalStatus !== 'pending') {
+          remember(row, finalStatus);
+          applyShield();
+        }
+      } catch(_e){}
+      return result;
+    };
+    Object.keys(old).forEach(function(key){ try { wrapped[key] = old[key]; } catch(_e){} });
+    wrapped.__kpDecisionShieldWrapped = true;
+    window[name] = wrapped;
+  }
+
+  wrapDecisionAction('rejectFormRow', function(){ return 'rejected'; });
+  wrapDecisionAction('performApproveNew', function(){ return 'approved'; });
+  wrapDecisionAction('performApproveMerge', function(){ return 'approved'; });
+  wrapDecisionAction('setFormRowDecision', function(row, status){ return status; });
+
+  try { if (typeof rejectFormRow === 'function') rejectFormRow = window.rejectFormRow; } catch(_e){}
+  try { if (typeof performApproveNew === 'function') performApproveNew = window.performApproveNew; } catch(_e){}
+  try { if (typeof performApproveMerge === 'function') performApproveMerge = window.performApproveMerge; } catch(_e){}
+  try { if (typeof setFormRowDecision === 'function') setFormRowDecision = window.setFormRowDecision; } catch(_e){}
+
+  window.kpRegistrationDecisionShieldStatus = function(){
+    return {
+      enabled:true,
+      active:Object.keys(decisions).filter(function(key){
+        var entry = decisions[key];
+        return entry && (!entry.expiresAt || entry.expiresAt >= Date.now());
+      }).length,
+      holdMs:HOLD_MS
+    };
+  };
+})();
+</script>
+<script>
+/*
+ KP INTERNAL NOTES VISIBILITY FIX 2026-05-02
+ Old database shapes used several names for internal notes. Keep them visible
+ without changing or dropping existing data.
+*/
+(function(){
+  if (window.__kpInternalNotesVisibilityInstalled) return;
+  window.__kpInternalNotesVisibilityInstalled = true;
+
+  var INTERNAL_NOTE_KEYS = [
+    'internalNote',
+    'internal_note',
+    'internal',
+    'privateNote',
+    'private_note',
+    'staffNote',
+    'staff_note',
+    'adminNote',
+    'admin_note',
+    'officeNote',
+    'office_note',
+    'notesInternal',
+    'internalNotes'
+  ];
+
+  function txt(value){
+    return String(value == null ? '' : value).trim();
+  }
+  function escapeValue(value){
+    if (typeof escapeHtml === 'function') return escapeHtml(value);
+    return String(value == null ? '' : value)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;');
+  }
+  function getInternalNote(record){
+    record = record || {};
+    for (var i = 0; i < INTERNAL_NOTE_KEYS.length; i++) {
+      var value = txt(record[INTERNAL_NOTE_KEYS[i]]);
+      if (value) return value;
+    }
+    return '';
+  }
+  function normalizeOne(record){
+    if (!record || typeof record !== 'object') return record;
+    var note = getInternalNote(record);
+    if (note) {
+      record.internalNote = note;
+      record.internal_note = note;
+    }
+    return record;
+  }
+  function normalizeAll(){
+    try { if (Array.isArray(students)) students.forEach(normalizeOne); } catch(_e){}
+    try { if (Array.isArray(window.students) && window.students !== students) window.students.forEach(normalizeOne); } catch(_e){}
+    try { if (Array.isArray(deletedStudents)) deletedStudents.forEach(normalizeOne); } catch(_e){}
+    try { if (Array.isArray(payments)) payments.forEach(normalizeOne); } catch(_e){}
+    try { if (Array.isArray(window.payments) && window.payments !== payments) window.payments.forEach(normalizeOne); } catch(_e){}
+  }
+  function appendProfileInternalNote(student){
+    var note = getInternalNote(student);
+    var body = document.getElementById('mo-stu-profile-body');
+    if (!body || !note) return;
+    var old = document.getElementById('kp-profile-internal-note');
+    if (old) old.remove();
+    var block = document.createElement('div');
+    block.id = 'kp-profile-internal-note';
+    block.style.cssText = 'background:#fff7d6;border:1px solid #ead083;border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px;line-height:1.7';
+    block.innerHTML = '🔒 <b>ملاحظات داخلية:</b> ' + escapeValue(note).replace(/\n/g, '<br>');
+    var quick = document.getElementById('mo-stu-health-quick');
+    if (quick && quick.parentNode === body) body.insertBefore(block, quick);
+    else body.appendChild(block);
+  }
+
+  window.kpGetInternalNote = getInternalNote;
+  window.kpNormalizeInternalNotes = normalizeAll;
+
+  var oldRenderStudents = window.renderStudents;
+  if (typeof oldRenderStudents === 'function') {
+    window.renderStudents = function(){
+      normalizeAll();
+      return oldRenderStudents.apply(this, arguments);
+    };
+    try { renderStudents = window.renderStudents; } catch(_e){}
+  }
+
+  var oldEditStudent = window.editStudent;
+  if (typeof oldEditStudent === 'function') {
+    window.editStudent = function(id){
+      normalizeAll();
+      var result = oldEditStudent.apply(this, arguments);
+      try {
+        var s = (Array.isArray(students) ? students : []).find(function(x){ return String(x && x.id) === String(id); });
+        var el = document.getElementById('ns-internal-note');
+        if (el && s) el.value = getInternalNote(s);
+      } catch(_e){}
+      return result;
+    };
+    try { editStudent = window.editStudent; } catch(_e){}
+  }
+
+  var oldViewStudentProfile = window.viewStudentProfile;
+  if (typeof oldViewStudentProfile === 'function') {
+    window.viewStudentProfile = function(id){
+      normalizeAll();
+      var result = oldViewStudentProfile.apply(this, arguments);
+      try {
+        var s = (Array.isArray(students) ? students : []).find(function(x){ return String(x && x.id) === String(id); });
+        appendProfileInternalNote(s);
+      } catch(_e){}
+      return result;
+    };
+    try { viewStudentProfile = window.viewStudentProfile; } catch(_e){}
+  }
+
+  var oldPrintStudentFullFile = window.printStudentFullFile;
+  if (typeof oldPrintStudentFullFile === 'function') {
+    window.printStudentFullFile = function(){
+      normalizeAll();
+      var backups = [];
+      try {
+        if (Array.isArray(students)) {
+          students.forEach(function(student){
+            if (!student || typeof student !== 'object') return;
+            var backup = {};
+            var touched = false;
+            INTERNAL_NOTE_KEYS.forEach(function(key){
+              if (Object.prototype.hasOwnProperty.call(student, key)) {
+                backup[key] = student[key];
+                student[key] = '';
+                touched = true;
+              }
+            });
+            if (touched) backups.push({ student:student, values:backup });
+          });
+        }
+        return oldPrintStudentFullFile.apply(this, arguments);
+      } finally {
+        backups.forEach(function(item){
+          Object.keys(item.values).forEach(function(key){
+            item.student[key] = item.values[key];
+          });
+        });
+      }
+    };
+    try { printStudentFullFile = window.printStudentFullFile; } catch(_e){}
+  }
+
+  var oldSaveRecordRemoteAware = window.saveRecordRemoteAware;
+  if (typeof oldSaveRecordRemoteAware === 'function') {
+    window.saveRecordRemoteAware = function(config){
+      try {
+        if (config && config.record) normalizeOne(config.record);
+        if (config && config.deletedItem) normalizeOne(config.deletedItem);
+      } catch(_e){}
+      return oldSaveRecordRemoteAware.apply(this, arguments);
+    };
+    try { saveRecordRemoteAware = window.saveRecordRemoteAware; } catch(_e){}
+  }
+
+  normalizeAll();
+  try { if (typeof renderStudents === 'function') renderStudents(); } catch(_e){}
+
+  window.kpInternalNotesStatus = function(){
+    var studentCount = 0;
+    var paymentCount = 0;
+    try { studentCount = (Array.isArray(students) ? students : []).filter(function(s){ return !!getInternalNote(s); }).length; } catch(_e){}
+    try { paymentCount = (Array.isArray(payments) ? payments : []).filter(function(p){ return !!getInternalNote(p); }).length; } catch(_e){}
+    return { enabled:true, studentInternalNotes:studentCount, paymentInternalNotes:paymentCount, fields:INTERNAL_NOTE_KEYS };
+  };
+})();
+</script>
+<script>
+/*
+ KP FIREBASE COMMIT GUARANTEE 2026-05-02
+ Final safety layer: every normal system change is pushed to Firebase
+ using the current object-map shape. Registration requests remain handled
+ by their own immediate decision path.
+*/
+(function(){
+  if (window.__kpFirebaseCommitGuaranteeInstalled) return;
+  window.__kpFirebaseCommitGuaranteeInstalled = true;
+
+  var ENTITY = {
+    students: { active:'students', deleted:'deletedStudents', keyField:'id' },
+    payments: { active:'payments', deleted:'deletedPayments', keyField:'id' },
+    expenses: { active:'expenses', deleted:'deletedExpenses', keyField:'id' },
+    renewals: { active:'renewals', deleted:'deletedRenewals', keyField:'id' }
+  };
+  var commitTimer = null;
+  var committing = false;
+  var pendingCommit = false;
+
+  function txt(value){ return String(value == null ? '' : value).trim(); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, ''); }
+  function safeKey(value){
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(value) : ('k_' + txt(value).replace(/[.#$\[\]\/\s]/g, '_')); }
+    catch(_e){ return 'k_' + txt(value).replace(/[.#$\[\]\/\s]/g, '_'); }
+  }
+  function recordKey(record, keyField){
+    try { return (typeof kpRecordKey === 'function') ? kpRecordKey(record, keyField || 'id') : safeKey(record && record[keyField || 'id']); }
+    catch(_e){ return safeKey(record && record[keyField || 'id']); }
+  }
+  function idEq(a,b){
+    try { return (typeof normKey === 'function') ? normKey(a) === normKey(b) : txt(a) === txt(b); }
+    catch(_e){ return txt(a) === txt(b); }
+  }
+  function arr(value){
+    return Array.isArray(value) ? value.filter(function(item){ return item && typeof item === 'object' && !Array.isArray(item); }) : [];
+  }
+  function currentArray(type){
+    try {
+      if (type === 'students') return arr(students);
+      if (type === 'payments') return arr(payments);
+      if (type === 'expenses') return arr(expenses);
+      if (type === 'renewals') return arr(renewals);
+    } catch(_e){}
+    return [];
+  }
+  function currentDeleted(type){
+    try {
+      if (type === 'students') return arr(deletedStudents);
+      if (type === 'payments') return arr(deletedPayments);
+      if (type === 'expenses') return arr(deletedExpenses);
+      if (type === 'renewals') return arr(deletedRenewals);
+    } catch(_e){}
+    return [];
+  }
+  function toMap(list, keyField){
+    var out = {};
+    arr(list).forEach(function(item){
+      var id = item[keyField || 'id'];
+      if (id == null || id === '') return;
+      var key = recordKey(item, keyField || 'id');
+      if (!key) return;
+      out[key] = Object.assign({}, item, { firebaseKey:key });
+    });
+    return out;
+  }
+  function sectionToMap(section, keyField){
+    var out = {};
+    if (!section) return out;
+    if (Array.isArray(section)) return toMap(section, keyField);
+    if (typeof section === 'object') {
+      Object.keys(section).forEach(function(key){
+        var item = section[key];
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          out[key] = Object.assign({}, item, { firebaseKey:item.firebaseKey || key });
+        }
+      });
+    }
+    return out;
+  }
+  function mergeMaps(remoteMap, localMap){
+    return Object.assign({}, remoteMap || {}, localMap || {});
+  }
+  function deletedIdsFromMap(map, keyField){
+    var ids = {};
+    Object.keys(map || {}).forEach(function(key){
+      var item = map[key];
+      var id = item && item[keyField || 'id'];
+      if (id != null && id !== '') ids[String(id)] = true;
+    });
+    return ids;
+  }
+  function removeBlockedFromActive(activeMap, deletedMap, tombstoneList, keyField){
+    var deletedIds = deletedIdsFromMap(deletedMap, keyField);
+    (Array.isArray(tombstoneList) ? tombstoneList : []).forEach(function(id){ deletedIds[String(id)] = true; });
+    Object.keys(activeMap || {}).forEach(function(key){
+      var item = activeMap[key];
+      var id = item && item[keyField || 'id'];
+      if (id != null && deletedIds[String(id)]) delete activeMap[key];
+    });
+    return activeMap;
+  }
+  function mergeAttendanceLocks(remoteLocks, localLocks){
+    var out = {};
+    [remoteLocks, localLocks].forEach(function(src){
+      if (!src || typeof src !== 'object' || Array.isArray(src)) return;
+      Object.keys(src).forEach(function(cls){
+        if (!out[cls]) out[cls] = {};
+        if (src[cls] && typeof src[cls] === 'object' && !Array.isArray(src[cls])) {
+          Object.assign(out[cls], src[cls]);
+        }
+      });
+    });
+    return out;
+  }
+  function classMap(){
+    var out = {};
+    try {
+      Object.keys(CLASSES || {}).forEach(function(k){ out[k] = CLASSES[k]; });
+    } catch(_e){}
+    return out;
+  }
+  function cleanSettings(){
+    var settings = {};
+    try { settings = Object.assign({}, nurserySettings || {}); } catch(_e){}
+    delete settings.logoDataUrl;
+    return settings;
+  }
+  function deletePathKeys(updates, section, id){
+    var keys = {};
+    [safeKey(id), txt(id), 'k_' + txt(id), txt(id).replace(/[.#$\[\]\/\s]/g, '_')].forEach(function(key){
+      if (key) keys[key] = true;
+    });
+    Object.keys(keys).forEach(function(key){ updates[section + '/' + key] = null; });
+  }
+  async function patchFirebase(updates, timeoutMs){
+    var base = baseUrl();
+    if (!base) throw new Error('missing Firebase URL');
+    var res = await Promise.race([
+      fetch(base + '.json', {
+        method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(updates)
+      }),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, timeoutMs || 18000); })
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return true;
+  }
+  function markSaved(savedAt){
+    try { if (typeof lastSavedAt !== 'undefined') lastSavedAt = savedAt; } catch(_e){}
+    try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
+    try { hasUnsavedChanges = false; } catch(_e){}
+  }
+  function showFail(action, error, record){
+    if (typeof window.kpShowFirebaseFailure === 'function') {
+      window.kpShowFirebaseFailure(action, error, { alert:true, record:record });
+    } else {
+      alert('لم يتم حفظ ' + action + ' على Firebase: ' + (error && error.message ? error.message : error));
+    }
+  }
+  function showOk(message){
+    try { if (typeof showSyncBadge === 'function') showSyncBadge(message); } catch(_e){}
+  }
+
+  window.kpCommitCurrentSystemRecords = async function(reason){
+    if (committing) {
+      pendingCommit = true;
+      return { queued:true };
+    }
+    committing = true;
+    try {
+      var savedAt = new Date().toISOString();
+      var remote = {};
+      try {
+        var base = baseUrl();
+        if (base) {
+          var res = await Promise.race([
+            fetch(base + '.json?ts=' + Date.now(), { cache:'no-store' }),
+            new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, 9000); })
+          ]);
+          if (res && res.ok) remote = await res.json() || {};
+        }
+      } catch(_e){}
+      var localTombstones = (typeof tombstones !== 'undefined' && tombstones && typeof tombstones === 'object') ? tombstones : {};
+      var localStudents = toMap(currentArray('students'), 'id');
+      var localPayments = toMap(currentArray('payments'), 'id');
+      var localExpenses = toMap(currentArray('expenses'), 'id');
+      var localRenewals = toMap(currentArray('renewals'), 'id');
+      var localDeletedStudents = toMap(currentDeleted('students'), 'id');
+      var localDeletedPayments = toMap(currentDeleted('payments'), 'id');
+      var localDeletedExpenses = toMap(currentDeleted('expenses'), 'id');
+      var localDeletedRenewals = toMap(currentDeleted('renewals'), 'id');
+      var mergedDeletedStudents = mergeMaps(sectionToMap(remote.deletedStudents, 'id'), localDeletedStudents);
+      var mergedDeletedPayments = mergeMaps(sectionToMap(remote.deletedPayments, 'id'), localDeletedPayments);
+      var mergedDeletedExpenses = mergeMaps(sectionToMap(remote.deletedExpenses, 'id'), localDeletedExpenses);
+      var mergedDeletedRenewals = mergeMaps(sectionToMap(remote.deletedRenewals, 'id'), localDeletedRenewals);
+      var updates = {
+        version:2,
+        savedAt:savedAt,
+        students:removeBlockedFromActive(mergeMaps(sectionToMap(remote.students, 'id'), localStudents), mergedDeletedStudents, localTombstones.students, 'id'),
+        payments:removeBlockedFromActive(mergeMaps(sectionToMap(remote.payments, 'id'), localPayments), mergedDeletedPayments, localTombstones.payments, 'id'),
+        expenses:removeBlockedFromActive(mergeMaps(sectionToMap(remote.expenses, 'id'), localExpenses), mergedDeletedExpenses, localTombstones.expenses, 'id'),
+        renewals:removeBlockedFromActive(mergeMaps(sectionToMap(remote.renewals, 'id'), localRenewals), mergedDeletedRenewals, localTombstones.renewals, 'id'),
+        deletedStudents:mergedDeletedStudents,
+        deletedPayments:mergedDeletedPayments,
+        deletedExpenses:mergedDeletedExpenses,
+        deletedRenewals:mergedDeletedRenewals,
+        CLASSES:Object.assign({}, (remote.CLASSES && typeof remote.CLASSES === 'object' && !Array.isArray(remote.CLASSES)) ? remote.CLASSES : {}, classMap()),
+        deletedClasses:arr(remote.deletedClasses).concat(arr(typeof deletedClasses !== 'undefined' ? deletedClasses : [])),
+        attendanceLocks:mergeAttendanceLocks(remote.attendanceLocks, (typeof attendanceLocks !== 'undefined' && attendanceLocks && typeof attendanceLocks === 'object' && !Array.isArray(attendanceLocks)) ? attendanceLocks : {}),
+        nurserySettings:cleanSettings(),
+        tombstones:(typeof tombstones !== 'undefined' && tombstones && typeof tombstones === 'object') ? tombstones : {},
+        restoredKeys:(typeof restoredKeys !== 'undefined' && restoredKeys && typeof restoredKeys === 'object') ? restoredKeys : {}
+      };
+      await patchFirebase(updates, 25000);
+      markSaved(savedAt);
+      showOk('تم حفظ تغييرات النظام على Firebase');
+      return { ok:true, reason:reason || 'system', savedAt:savedAt };
+    } catch(e) {
+      showFail('تغييرات النظام', e, { reason:reason || 'system' });
+      return { ok:false, error:e && e.message };
+    } finally {
+      committing = false;
+      if (pendingCommit) {
+        pendingCommit = false;
+        setTimeout(function(){ window.kpCommitCurrentSystemRecords('queued').catch(function(){}); }, 500);
+      }
+    }
+  };
+
+  window.kpScheduleSystemFirebaseCommit = function(reason, delay){
+    clearTimeout(commitTimer);
+    commitTimer = setTimeout(function(){
+      window.kpCommitCurrentSystemRecords(reason || 'scheduled').catch(function(){});
+    }, delay == null ? 900 : delay);
+  };
+
+  var oldSaveRecord = window.saveRecordRemoteAware;
+  window.saveRecordRemoteAware = async function(config){
+    config = config || {};
+    var type = config.type || config.activeArrayName;
+    var cfg = ENTITY[type];
+    if (!cfg || !config.record) {
+      return oldSaveRecord ? oldSaveRecord.apply(this, arguments) : false;
+    }
+    var record = Object.assign({}, config.record);
+    var id = record[cfg.keyField];
+    if (id == null || id === '') {
+      return oldSaveRecord ? oldSaveRecord.apply(this, arguments) : false;
+    }
+    var savedAt = new Date().toISOString();
+    var key = recordKey(record, cfg.keyField);
+    record.firebaseKey = key;
+    record.updatedAt = savedAt;
+    record.updatedBy = (typeof currentUser !== 'undefined' && currentUser && (currentUser.username || currentUser.name)) ? (currentUser.username || currentUser.name) : 'system';
+    record.version = (parseInt(record.version || 0, 10) || 0) + 1;
+    try {
+      var updates = { savedAt:savedAt, version:2 };
+      updates[cfg.active + '/' + key] = record;
+      deletePathKeys(updates, cfg.deleted, id);
+      try {
+        if (typeof tombstones !== 'undefined') {
+          if (!tombstones || typeof tombstones !== 'object') tombstones = {};
+          tombstones[type] = (Array.isArray(tombstones[type]) ? tombstones[type] : []).filter(function(x){ return !idEq(x,id); });
+          updates['tombstones/' + type] = tombstones[type];
+          localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+        }
+        if (typeof restoredKeys !== 'undefined') {
+          if (!restoredKeys || typeof restoredKeys !== 'object') restoredKeys = {};
+          restoredKeys[type] = Array.isArray(restoredKeys[type]) ? restoredKeys[type] : [];
+          if (!restoredKeys[type].some(function(x){ return idEq(x,id); })) restoredKeys[type].push(id);
+          updates['restoredKeys/' + type] = restoredKeys[type];
+          localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
+        }
+      } catch(_e){}
+      await patchFirebase(updates, 16000);
+      Object.assign(config.record, record);
+      markSaved(savedAt);
+      showOk('تم الحفظ على Firebase');
+      return true;
+    } catch(e) {
+      showFail(config.label || 'السجل', e, record);
+      return false;
+    }
+  };
+  try { saveRecordRemoteAware = window.saveRecordRemoteAware; } catch(_e){}
+
+  var oldMove = window.moveRecordToTrashRemoteAware;
+  window.moveRecordToTrashRemoteAware = async function(config){
+    config = config || {};
+    var type = config.type;
+    var cfg = ENTITY[type];
+    if (!cfg) return oldMove ? oldMove.apply(this, arguments) : false;
+    var id = config.id;
+    var savedAt = new Date().toISOString();
+    var deletedItem = Object.assign({}, config.deletedItem || {}, {
+      firebaseKey:safeKey(id),
+      updatedAt:savedAt
+    });
+    try {
+      var updates = { savedAt:savedAt, version:2 };
+      deletePathKeys(updates, cfg.active, id);
+      updates[cfg.deleted + '/' + safeKey(id)] = deletedItem;
+      try {
+        if (typeof tombstones !== 'undefined') {
+          if (!tombstones || typeof tombstones !== 'object') tombstones = {};
+          tombstones[type] = Array.isArray(tombstones[type]) ? tombstones[type] : [];
+          if (!tombstones[type].some(function(x){ return idEq(x,id); })) tombstones[type].push(id);
+          updates['tombstones/' + type] = tombstones[type];
+          localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+        }
+        if (typeof restoredKeys !== 'undefined') {
+          if (!restoredKeys || typeof restoredKeys !== 'object') restoredKeys = {};
+          restoredKeys[type] = (Array.isArray(restoredKeys[type]) ? restoredKeys[type] : []).filter(function(x){ return !idEq(x,id); });
+          updates['restoredKeys/' + type] = restoredKeys[type];
+          localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
+        }
+      } catch(_e){}
+      await patchFirebase(updates, 16000);
+      markSaved(savedAt);
+      showOk('تم نقل السجل إلى المحذوفات على Firebase');
+      return true;
+    } catch(e) {
+      showFail(config.label || 'نقل السجل للمحذوفات', e, deletedItem);
+      return false;
+    }
+  };
+  try { moveRecordToTrashRemoteAware = window.moveRecordToTrashRemoteAware; } catch(_e){}
+
+  var oldPermanent = window.permanentDeleteRemoteAware;
+  window.permanentDeleteRemoteAware = async function(config){
+    config = config || {};
+    var type = config.type;
+    var cfg = ENTITY[type];
+    if (!cfg) return oldPermanent ? oldPermanent.apply(this, arguments) : false;
+    var id = config.key;
+    var savedAt = new Date().toISOString();
+    try {
+      var updates = { savedAt:savedAt, version:2 };
+      deletePathKeys(updates, cfg.active, id);
+      deletePathKeys(updates, cfg.deleted, id);
+      try {
+        if (typeof tombstones !== 'undefined') {
+          if (!tombstones || typeof tombstones !== 'object') tombstones = {};
+          tombstones[type] = Array.isArray(tombstones[type]) ? tombstones[type] : [];
+          if (!tombstones[type].some(function(x){ return idEq(x,id); })) tombstones[type].push(id);
+          updates['tombstones/' + type] = tombstones[type];
+          localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+        }
+        if (typeof restoredKeys !== 'undefined') {
+          if (!restoredKeys || typeof restoredKeys !== 'object') restoredKeys = {};
+          restoredKeys[type] = (Array.isArray(restoredKeys[type]) ? restoredKeys[type] : []).filter(function(x){ return !idEq(x,id); });
+          updates['restoredKeys/' + type] = restoredKeys[type];
+          localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
+        }
+      } catch(_e){}
+      await patchFirebase(updates, 16000);
+      markSaved(savedAt);
+      showOk('تم الحذف النهائي من Firebase');
+      return true;
+    } catch(e) {
+      showFail(config.label || 'الحذف النهائي', e, { id:id, type:type });
+      return false;
+    }
+  };
+  try { permanentDeleteRemoteAware = window.permanentDeleteRemoteAware; } catch(_e){}
+
+  var oldAutoSave = window.autoSave || (typeof autoSave === 'function' ? autoSave : null);
+  window.autoSave = function(){
+    var result;
+    try { result = oldAutoSave ? oldAutoSave.apply(this, arguments) : undefined; } catch(e) { console.warn('old autoSave failed:', e); }
+    window.kpScheduleSystemFirebaseCommit('autoSave', 900);
+    return result;
+  };
+  try { autoSave = window.autoSave; } catch(_e){}
+
+  var oldPush = window.pushToFirebase;
+  window.pushToFirebase = async function(){
+    var oldResult = true;
+    try {
+      if (oldPush) oldResult = await oldPush.apply(this, arguments);
+    } catch(e) {
+      console.warn('old pushToFirebase failed before guarantee commit:', e);
+      oldResult = false;
+    }
+    var direct = await window.kpCommitCurrentSystemRecords('pushToFirebase');
+    return direct && direct.ok ? true : oldResult;
+  };
+  try { pushToFirebase = window.pushToFirebase; } catch(_e){}
+
+  ['saveSettingsRemoteAware','saveClasses'].forEach(function(name){
+    var old = window[name];
+    if (typeof old !== 'function') return;
+    window[name] = function(){
+      var result = old.apply(this, arguments);
+      Promise.resolve(result).finally(function(){
+        window.kpScheduleSystemFirebaseCommit(name, 300);
+      });
+      return result;
+    };
+    try {
+      if (name === 'saveSettingsRemoteAware') saveSettingsRemoteAware = window[name];
+      if (name === 'saveClasses') saveClasses = window[name];
+    } catch(_e){}
+  });
+
+  var oldAttendanceEntries = window.saveAttendanceEntriesRemoteAware;
+  if (typeof oldAttendanceEntries === 'function') {
+    window.saveAttendanceEntriesRemoteAware = async function(entries){
+      entries = entries || {};
+      var savedAt = new Date().toISOString();
+      try {
+        var updates = { savedAt:savedAt, version:2 };
+        Object.keys(entries).forEach(function(key){
+          updates['attLog/' + key] = entries[key];
+        });
+        await patchFirebase(updates, 12000);
+        markSaved(savedAt);
+        showOk('تم حفظ الحضور على Firebase');
+        return true;
+      } catch(e) {
+        showFail('الحضور', e, { entries:entries });
+        return false;
+      }
+    };
+    try { saveAttendanceEntriesRemoteAware = window.saveAttendanceEntriesRemoteAware; } catch(_e){}
+  }
+
+  var oldAttendanceLock = window.saveAttendanceLockRemoteAware;
+  if (typeof oldAttendanceLock === 'function') {
+    window.saveAttendanceLockRemoteAware = async function(className, date, lockData){
+      var savedAt = new Date().toISOString();
+      try {
+        if (!attendanceLocks[className]) attendanceLocks[className] = {};
+        attendanceLocks[className][date] = lockData;
+        try { localStorage.setItem('kp_attendance_locks', JSON.stringify(attendanceLocks)); } catch(_e){}
+        var updates = { savedAt:savedAt, version:2 };
+        updates['attendanceLocks/' + String(className).replace(/[.#$\[\]\/]/g, '_') + '/' + date] = lockData;
+        await patchFirebase(updates, 12000);
+        markSaved(savedAt);
+        showOk('تم إرسال الحضور وحفظ القفل على Firebase');
+        return true;
+      } catch(e) {
+        showFail('قفل الحضور', e, { className:className, date:date, lockData:lockData });
+        return false;
+      }
+    };
+    try { saveAttendanceLockRemoteAware = window.saveAttendanceLockRemoteAware; } catch(_e){}
+  }
+
+  window.kpFirebaseCommitGuaranteeStatus = function(){
+    return {
+      enabled:true,
+      perRecordDirectWrites:true,
+      systemSnapshotCommit:true,
+      pending:!!commitTimer || pendingCommit,
+      committing:committing
+    };
+  };
+})();
+</script>
 </body>
 </html>
