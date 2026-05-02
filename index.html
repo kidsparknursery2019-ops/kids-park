@@ -15,7 +15,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-<link rel="preconnect" href="https://alcdn.msauth.net" crossorigin>
 <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
 <link rel="dns-prefetch" href="https://unpkg.com">
 
@@ -42,7 +41,6 @@ document.addEventListener('click', function(e) {
 // Microsoft MSAL loader with multiple CDNs for GitHub Pages/mobile browsers
 (function(){
   window.KP_MSAL_SOURCES = [
-    'https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js',
     'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js',
     'https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js'
   ];
@@ -14171,6 +14169,26 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
 
 
 
+
+/* KP SAFE FETCH TIMEOUT PATCH 2026-05-02
+   يمنع AbortError الفوري ويمنع أي طلب إلى /undefined على GitHub Pages. */
+(function(){
+  if (window.__kpSafeFetchTimeoutInstalled) return;
+  window.__kpSafeFetchTimeoutInstalled = true;
+  window.kpIsValidRemoteUrl = function(url){
+    url = String(url || '').trim();
+    return !!url && url !== 'undefined' && url !== 'null' && /^https:\/\//i.test(url) && url.indexOf('/undefined') === -1;
+  };
+  window.kpFetchWithSoftTimeout = function(url, opts, timeoutMs){
+    if (!window.kpIsValidRemoteUrl(url)) return Promise.reject(new Error('invalid-url'));
+    var fetchPromise = fetch(url, opts || {});
+    var timeoutPromise = new Promise(function(_, reject){
+      setTimeout(function(){ reject(new Error('timeout')); }, timeoutMs || 10000);
+    });
+    return Promise.race([fetchPromise, timeoutPromise]);
+  };
+})();
+
 /* ============================================================
    ✅ FIX 2026-04-29C — منع ظهور طلبات التسجيل بعد الرفض/القبول
    ============================================================ */
@@ -14521,16 +14539,14 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     var basePaths = primary === fallback ? [primary] : [primary, fallback];
     for (var i=0;i<basePaths.length;i++){
       try {
-        var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-        var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 10000) : null;
         var fetchOpts = {
           method: 'PUT',
           headers: {'Content-Type':'application/json'},
           body: JSON.stringify(payload)
         };
-        if (ctrl) fetchOpts.signal = ctrl.signal;
-        var res = await fetch(basePaths[i] + '/' + folder + '/' + encodeURIComponent(key) + '.json', fetchOpts);
-        if (timeoutId) clearTimeout(timeoutId);
+        var targetUrl = basePaths[i] + '/' + folder + '/' + encodeURIComponent(key) + '.json';
+        if (!window.kpIsValidRemoteUrl(targetUrl)) continue;
+        var res = await window.kpFetchWithSoftTimeout(targetUrl, fetchOpts, 10000);
         if (res.ok) return true; // نجح → ما نحتاج fallback
       } catch(_e){}
     }
@@ -14545,12 +14561,9 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     for (var j=0;j<keys.length;j++){
       for (var i=0;i<basePaths.length;i++){
         try {
-          var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-          var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 5000) : null;
-          var fetchOpts = { method: 'DELETE' };
-          if (ctrl) fetchOpts.signal = ctrl.signal;
-          var res = await fetch(basePaths[i] + '/' + folder + '/' + encodeURIComponent(keys[j]) + '.json', fetchOpts);
-          if (timeoutId) clearTimeout(timeoutId);
+          var targetUrl = basePaths[i] + '/' + folder + '/' + encodeURIComponent(keys[j]) + '.json';
+          if (!window.kpIsValidRemoteUrl(targetUrl)) continue;
+          var res = await window.kpFetchWithSoftTimeout(targetUrl, { method: 'DELETE' }, 5000);
           if (res && res.ok) break; // نجح → التالي
         } catch(_e){}
       }
@@ -14601,13 +14614,10 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     for (var i=0;i<urls.length;i++){
       try {
         var sep = urls[i].indexOf('?')>=0 ? '&' : '?';
-        // timeout ٨ ثواني لكل طلب
-        var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-        var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 5000) : null;
-        var fetchOpts = { cache: 'no-store' };
-        if (ctrl) fetchOpts.signal = ctrl.signal;
-        var res = await fetch(urls[i] + sep + 'ts=' + Date.now(), fetchOpts);
-        if (timeoutId) clearTimeout(timeoutId);
+        // timeout soft بدون AbortController حتى لا يظهر AbortError فوري
+        var targetUrl = urls[i] + sep + 'ts=' + Date.now();
+        if (!window.kpIsValidRemoteUrl(targetUrl)) continue;
+        var res = await window.kpFetchWithSoftTimeout(targetUrl, { cache: 'no-store' }, 5000);
         if (!res.ok) continue;
         var obj = await res.json();
         if (!obj || typeof obj !== 'object') continue;
@@ -14791,8 +14801,6 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
         try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
         // kp_students: skipped — load from Firebase
 
-        var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-        var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 12000) : null;
         var patchPayload = {
           students: Array.isArray(students) ? students : [],
           savedAt: savedAt
@@ -14805,9 +14813,10 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify(patchPayload)
         };
-        if (ctrl) fetchOpts.signal = ctrl.signal;
-        var putRes = await fetch(FB_URL + '.json', fetchOpts);
-        if (timeoutId) clearTimeout(timeoutId);
+        var targetUrl = FB_URL + '.json';
+        if (window.kpIsValidRemoteUrl(targetUrl)) {
+          var putRes = await window.kpFetchWithSoftTimeout(targetUrl, fetchOpts, 12000);
+        }
       } catch(e){
         console.warn('students upload after approval failed:', e);
       }
@@ -14850,8 +14859,6 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
           try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
           // kp_students: skipped — load from Firebase
 
-          var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-          var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 12000) : null;
           var patchPayload = {
             students: Array.isArray(students) ? students : [],
             savedAt: savedAt
@@ -14864,9 +14871,10 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(patchPayload)
           };
-          if (ctrl) fetchOpts.signal = ctrl.signal;
-          var putRes = await fetch(FB_URL + '.json', fetchOpts);
-          if (timeoutId) clearTimeout(timeoutId);
+          var targetUrl = FB_URL + '.json';
+          if (window.kpIsValidRemoteUrl(targetUrl)) {
+            var putRes = await window.kpFetchWithSoftTimeout(targetUrl, fetchOpts, 12000);
+          }
         } catch(e){ console.warn('students upload after undo failed:', e); }
       }
 
@@ -15044,7 +15052,7 @@ document.addEventListener('change', function(e){
   var lastMigrationStartedAt = 0;
   var migrationPromise = null;
   var primaryBase = String(FB_URL || '').replace(/\/$/, '') + '/registrationRequests';
-  var migrationFlagUrl = migrationFlagUrl;
+  var migrationFlagUrl = String(FB_URL || '').replace(/\/$/, '') + '/registrationRequestsMigrationFlag.json';
   var rootBase = String(FB_URL || '').replace(/\/nursery_data\/?$/, '').replace(/\/$/, '');
   var legacyBases = [
     rootBase + '/registrationRequests',
@@ -15101,39 +15109,28 @@ document.addEventListener('change', function(e){
     return b;
   }
   async function uFetchJson(url, timeoutMs){
-    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var tid = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, timeoutMs || 7000) : null;
     try {
+      if (!window.kpIsValidRemoteUrl(url)) return null;
       var sep = url.indexOf('?') >= 0 ? '&' : '?';
-      var opts = { cache:'no-store' };
-      if (ctrl) opts.signal = ctrl.signal;
-      var res = await fetch(url + sep + 'ts=' + Date.now(), opts);
-      if (tid) clearTimeout(tid);
+      var res = await window.kpFetchWithSoftTimeout(url + sep + 'ts=' + Date.now(), { cache:'no-store' }, timeoutMs || 7000);
       if (!res.ok) return null;
       return await res.json();
-    } catch(_e){ if (tid) clearTimeout(tid); return null; }
+    } catch(_e){ return null; }
   }
   async function uPutJson(url, data, method, timeoutMs){
-    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var tid = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, timeoutMs || 12000) : null;
     try {
+      if (!window.kpIsValidRemoteUrl(url)) return false;
       var opts = { method: method || 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) };
-      if (ctrl) opts.signal = ctrl.signal;
-      var res = await fetch(url, opts);
-      if (tid) clearTimeout(tid);
+      var res = await window.kpFetchWithSoftTimeout(url, opts, timeoutMs || 12000);
       return !!(res && res.ok);
-    } catch(_e){ if (tid) clearTimeout(tid); return false; }
+    } catch(_e){ return false; }
   }
   async function uDeleteJson(url, timeoutMs){
-    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var tid = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, timeoutMs || 7000) : null;
     try {
-      var opts = { method:'DELETE' };
-      if (ctrl) opts.signal = ctrl.signal;
-      var res = await fetch(url, opts);
-      if (tid) clearTimeout(tid);
+      if (!window.kpIsValidRemoteUrl(url)) return false;
+      var res = await window.kpFetchWithSoftTimeout(url, { method:'DELETE' }, timeoutMs || 7000);
       return !!(res && res.ok);
-    } catch(_e){ if (tid) clearTimeout(tid); return false; }
+    } catch(_e){ return false; }
   }
   function uAddFolderToMap(map, obj, folder, sourcePath){
     if (!obj || typeof obj !== 'object') return 0;
@@ -15450,36 +15447,27 @@ document.addEventListener('change', function(e){
     return !!(an && bn && an === bn && ((ad && bd && ad === bd) || (aph && bph && aph === bph)));
   }
   async function rfFetch(url, timeoutMs){
-    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var tid = ctrl ? setTimeout(function(){ try{ctrl.abort();}catch(_e){} }, timeoutMs || 7000) : null;
     try {
-      var opts = { cache:'no-store' }; if (ctrl) opts.signal = ctrl.signal;
-      var res = await fetch(url + (url.indexOf('?') >= 0 ? '&' : '?') + 'ts=' + Date.now(), opts);
-      if (tid) clearTimeout(tid);
+      if (!window.kpIsValidRemoteUrl(url)) return null;
+      var res = await window.kpFetchWithSoftTimeout(url + (url.indexOf('?') >= 0 ? '&' : '?') + 'ts=' + Date.now(), { cache:'no-store' }, timeoutMs || 7000);
       if (!res.ok) return null;
       return await res.json();
-    } catch(_e){ if (tid) clearTimeout(tid); return null; }
+    } catch(_e){ return null; }
   }
   async function rfWrite(url, data, method, timeoutMs){
-    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var tid = ctrl ? setTimeout(function(){ try{ctrl.abort();}catch(_e){} }, timeoutMs || 10000) : null;
     try {
+      if (!window.kpIsValidRemoteUrl(url)) return false;
       var opts = { method: method || 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) };
-      if (ctrl) opts.signal = ctrl.signal;
-      var res = await fetch(url, opts);
-      if (tid) clearTimeout(tid);
+      var res = await window.kpFetchWithSoftTimeout(url, opts, timeoutMs || 10000);
       return !!(res && res.ok);
-    } catch(_e){ if (tid) clearTimeout(tid); return false; }
+    } catch(_e){ return false; }
   }
   async function rfDelete(url, timeoutMs){
-    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var tid = ctrl ? setTimeout(function(){ try{ctrl.abort();}catch(_e){} }, timeoutMs || 6000) : null;
     try {
-      var opts = { method:'DELETE' }; if (ctrl) opts.signal = ctrl.signal;
-      var res = await fetch(url, opts);
-      if (tid) clearTimeout(tid);
+      if (!window.kpIsValidRemoteUrl(url)) return false;
+      var res = await window.kpFetchWithSoftTimeout(url, { method:'DELETE' }, timeoutMs || 6000);
       return !!(res && res.ok);
-    } catch(_e){ if (tid) clearTimeout(tid); return false; }
+    } catch(_e){ return false; }
   }
   async function rfFindMatchingKeys(row){
     var folders = ['pending','accepted','rejected'];
