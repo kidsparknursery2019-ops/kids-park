@@ -5605,9 +5605,7 @@ function printStudentsSelectedReport(){
       .moe-grid th:nth-child(15),.moe-grid td:nth-child(15){width:58px}
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
-    <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script>
-
-</body></html>`);
+    <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script></body></html>`);
     w.document.close();
     return;
   }
@@ -14917,8 +14915,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   var __regStreamRetryTimer = null;
 
   function _regStreamUrl(){
-    // المسار الرسمي فقط: لا نفتح stream على /registrationRequests القديم حتى لا يرجع تضارب.
-    return String(FB_URL || '').replace(/\/$/, '') + '/registrationRequests.json';
+    return _rootUrl() + '/registrationRequests.json';
   }
 
   function _stopRegStream(){
@@ -15207,28 +15204,6 @@ document.addEventListener('change', function(e){
     }
     return false;
   }
-
-  async function uCleanupOfficialDuplicates(options){
-    options = options || {};
-    var rawTotal = 0;
-    var map = {};
-    var folders = ['pending','accepted','rejected'];
-    for (var f=0; f<folders.length; f++) {
-      var folder = folders[f];
-      var obj = await uFetchJson(primaryBase + '/' + folder + '.json', 7000);
-      if (obj && typeof obj === 'object') rawTotal += Object.keys(obj).length;
-      uAddFolderToMap(map, obj, folder, 'nursery_data/registrationRequests/' + folder);
-    }
-    var unified = uMapToFirebaseObject(map);
-    var cleanTotal = Object.keys(unified.pending).length + Object.keys(unified.accepted).length + Object.keys(unified.rejected).length;
-    // لو نفس الطلب موجود بأكتر من فولدر أو بمفتاحين مختلفين، نكتب النسخة النظيفة على المسار الرسمي فقط.
-    // الأولوية: accepted ثم rejected ثم pending، وداخل نفس الحالة الأحدث يفوز.
-    if (rawTotal !== cleanTotal || options.force) {
-      var ok = await uPutJson(primaryBase + '.json', unified, 'PUT', 15000);
-      if (ok && !options.silent && typeof showSyncBadge === 'function') showSyncBadge('🧹 تم تنظيف تكرار طلبات التسجيل');
-    }
-    return { map: map, unified: unified, rawTotal: rawTotal, cleanTotal: cleanTotal };
-  }
   async function uShouldRunMigration(options){
     if (options && options.force) return true;
     var flag = await uFetchJson(migrationFlagUrl, 4000);
@@ -15294,10 +15269,8 @@ document.addEventListener('change', function(e){
     }
 
     try {
-      // قراءة وتنظيف من المسار الرسمي فقط. لا نعتمد على localStorage ولا على legacy.
-      var clean = await uCleanupOfficialDuplicates({ silent:true, force: !!options.forceCleanup });
-      var map = clean.map;
-      var unified = clean.unified;
+      var map = await uBuildUnifiedMap(false); // قراءة رسمية فقط بعد الترحيل
+      var unified = uMapToFirebaseObject(map);
       var rows = uRowsFromUnifiedObject(unified);
 
       // القرار محفوظ من المسار، ومفيش fallback محلي يغيّر الأرقام.
@@ -15648,6 +15621,200 @@ document.addEventListener('change', function(e){
 
 
 /* ============================================================
+   ✅ SMART MIGRATION 2026-05-02 — ربط Google Sheets بقرارات قاعدة البيانات
+   - Google Sheets مصدر طلبات جديدة فقط، وليس مصدر حالة نهائية.
+   - إذا الطلب موجود كطالب فعلي => accepted.
+   - إذا الطلب موجود بسلة المحذوفات فقط => rejected.
+   - الباقي pending.
+   - كل شيء يكتب على المسار الرسمي فقط: nursery_data/registrationRequests
+   ============================================================ */
+(function(){
+  if (window.__kpSmartRegistrationMigrationInstalled) return;
+  window.__kpSmartRegistrationMigrationInstalled = true;
+
+  function smTxt(v){ return String(v == null ? '' : v).trim(); }
+  function smDigits(v){ return smTxt(v).replace(/\D+/g, ''); }
+  function smNorm(v){
+    try { if (typeof normalizeArabicText === 'function') return normalizeArabicText(v); } catch(_e){}
+    return smTxt(v).toLowerCase()
+      .replace(/[\u064B-\u065F\u0670]/g, '')
+      .replace(/[أإآٱ]/g, 'ا').replace(/[ة]/g, 'ه').replace(/[ى]/g, 'ي')
+      .replace(/[^\u0600-\u06FFa-z0-9]+/gi, ' ')
+      .replace(/\s+/g, ' ').trim();
+  }
+  function smDate(v){ return smTxt(v).slice(0,10); }
+  function smNameTokens(r){
+    var out = [];
+    if (!r) return out;
+    [r.name, r.childName, r.childNameAr, r.nameAr, ((r.firstName||'') + ' ' + (r.familyName||''))].forEach(function(x){
+      x = smNorm(x); if (x && out.indexOf(x) < 0) out.push(x);
+    });
+    return out;
+  }
+  function smPhones(r){
+    var out=[];
+    if (!r) return out;
+    [r.dadMob, r.momMob, r.guardianMobile, r.phone, r.dph, r.mph, r.emergMob].forEach(function(x){
+      x = smDigits(x); if (x && x.length >= 7 && out.indexOf(x) < 0) out.push(x);
+    });
+    return out;
+  }
+  function smIds(r){
+    var out=[];
+    if (!r) return out;
+    [r.emiratesId, r.idNo, r.identityNo, r.passport].forEach(function(x){
+      x = smDigits(x) || smNorm(x); if (x && out.indexOf(x) < 0) out.push(x);
+    });
+    return out;
+  }
+  function smStudentId(s){ return smTxt(s && s.id); }
+  function smSamePerson(row, student){
+    if (!row || !student) return false;
+
+    // إذا الطلب يعرف رقم الطالب الذي أُنشئ/دُمج سابقاً
+    var knownIds = [row.approvedStudentId, row.createdStudentId, row.studentId, row.id].map(smTxt).filter(Boolean);
+    if (knownIds.length && smStudentId(student) && knownIds.indexOf(smStudentId(student)) >= 0) return true;
+
+    // رقم الهوية/الجواز أقوى مطابقة
+    var rid = smIds(row), sid = smIds(student);
+    if (rid.length && sid.length && rid.some(function(x){ return sid.indexOf(x) >= 0; })) return true;
+
+    var rn = smNameTokens(row), sn = smNameTokens(student);
+    if (!rn.length || !sn.length) return false;
+    var nameMatch = rn.some(function(a){ return sn.some(function(b){ return a === b || (a.length > 5 && b.indexOf(a) >= 0) || (b.length > 5 && a.indexOf(b) >= 0); }); });
+    if (!nameMatch) return false;
+
+    var rd = smDate(row.dob || row.birthDate), sd = smDate(student.dob || student.birthDate);
+    if (rd && sd && rd === sd) return true;
+
+    var rp = smPhones(row), sp = smPhones(student);
+    if (rp.length && sp.length && rp.some(function(x){ return sp.indexOf(x) >= 0; })) return true;
+
+    return false;
+  }
+  function smFindActiveStudent(row){
+    var arr = Array.isArray(students) ? students : [];
+    for (var i=0;i<arr.length;i++) if (smSamePerson(row, arr[i])) return arr[i];
+    return null;
+  }
+  function smFindDeletedStudent(row){
+    var arr = (typeof deletedStudents !== 'undefined' && Array.isArray(deletedStudents)) ? deletedStudents : [];
+    for (var i=0;i<arr.length;i++) if (smSamePerson(row, arr[i])) return arr[i];
+    return null;
+  }
+  function smApplyDatabaseDecision(row){
+    if (!row || typeof row !== 'object') return row;
+    var active = smFindActiveStudent(row);
+    var now = new Date().toISOString();
+    if (active) {
+      return Object.assign({}, row, {
+        status: 'approved',
+        approvedStudentId: active.id,
+        approvedAction: row.approvedAction || 'database_migration',
+        decisionAt: row.decisionAt || active.approvedAt || active.updatedAt || now,
+        rowUpdatedAt: row.rowUpdatedAt || active.updatedAt || active.approvedAt || now,
+        migrationReason: 'matched_existing_student'
+      });
+    }
+    var del = smFindDeletedStudent(row);
+    if (del) {
+      return Object.assign({}, row, {
+        status: 'rejected',
+        rejectedStudentId: del.id,
+        approvedStudentId: null,
+        approvedAction: row.approvedAction || 'database_migration_deleted_student',
+        decisionAt: row.decisionAt || del.deletedAt || del.updatedAt || now,
+        rowUpdatedAt: row.rowUpdatedAt || del.deletedAt || del.updatedAt || now,
+        migrationReason: 'matched_deleted_student'
+      });
+    }
+    return Object.assign({}, row, { status: row.status || 'pending' });
+  }
+  window.kpApplyDatabaseRegistrationDecision = smApplyDatabaseDecision;
+
+  async function smArchiveRows(rows, options){
+    options = options || {};
+    rows = (Array.isArray(rows) ? rows : []).filter(Boolean);
+    var changed = 0, archived = 0;
+    for (var i=0;i<rows.length;i++) {
+      var before = rows[i];
+      var after = smApplyDatabaseDecision(before);
+      var statusChanged = smTxt(before.status || 'pending') !== smTxt(after.status || 'pending');
+      rows[i] = after;
+      if (statusChanged || options.archivePending || after.status !== 'pending') {
+        changed += statusChanged ? 1 : 0;
+        try {
+          if (typeof window.archiveFirebaseRegistrationRequest === 'function') {
+            var ok = await window.archiveFirebaseRegistrationRequest(after, after.status || 'pending');
+            if (ok) archived++;
+          }
+        } catch(e){ console.warn('smart registration archive failed:', e && e.message); }
+        // تهدئة خفيفة حتى ما نضغط Firebase ونبطئ كل النظام
+        if ((i % 4) === 3) await new Promise(function(resolve){ setTimeout(resolve, 120); });
+      }
+    }
+    try { if (Array.isArray(syncedFormRows)) syncedFormRows = rows; } catch(_e){}
+    try { localStorage.removeItem('kp_form_rows'); } catch(_e){}
+    if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+    if (typeof renderFormRequests === 'function') renderFormRequests();
+    if (!options.silent && typeof showSyncBadge === 'function') {
+      showSyncBadge('✅ تنظيف طلبات التسجيل: ' + changed + ' حالة قديمة تم تصحيحها');
+    }
+    return {rows:rows.length, changed:changed, archived:archived};
+  }
+  window.kpSmartMigrateRegistrationRowsFromDatabase = function(options){
+    return smArchiveRows(Array.isArray(syncedFormRows) ? syncedFormRows.slice() : [], options || {});
+  };
+
+  // حفظ Google Sheets صار فردي على المسار الرسمي بدل kp_form_rows.
+  if (typeof saveFormRowsBatchRemoteAware === 'function') {
+    window.__kpOriginalSaveFormRowsBatchRemoteAware = saveFormRowsBatchRemoteAware;
+    saveFormRowsBatchRemoteAware = async function(formRows){
+      if (!Array.isArray(formRows) || !formRows.length) return true;
+      var rows = formRows.map(smApplyDatabaseDecision);
+      var okCount = 0;
+      for (var i=0;i<rows.length;i++) {
+        try {
+          if (typeof window.archiveFirebaseRegistrationRequest === 'function') {
+            var ok = await window.archiveFirebaseRegistrationRequest(rows[i], rows[i].status || 'pending');
+            if (ok) okCount++;
+          }
+        } catch(e){ console.warn('registration batch official save failed:', e && e.message); }
+        if ((i % 4) === 3) await new Promise(function(resolve){ setTimeout(resolve, 120); });
+      }
+      try { localStorage.removeItem('kp_form_rows'); } catch(_e){}
+      if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ ' + okCount + ' طلب على المسار الرسمي');
+      return okCount === rows.length;
+    };
+  }
+
+  // بعد أي مزامنة رسمية، صحّح الطلبات القديمة التي رجعت من Google Sheets كـ pending.
+  if (typeof window.syncRegistrationRequestsFromFirebase === 'function') {
+    var originalOfficialSync = window.syncRegistrationRequestsFromFirebase;
+    window.syncRegistrationRequestsFromFirebase = async function(options){
+      options = options || {};
+      var res = await originalOfficialSync(options);
+      try { await smArchiveRows(Array.isArray(syncedFormRows) ? syncedFormRows.slice() : [], {silent:true}); } catch(_e){}
+      return res;
+    };
+  }
+
+  if (typeof syncFromGoogleSheets === 'function') {
+    var originalSheetsSync = syncFromGoogleSheets;
+    syncFromGoogleSheets = async function(){
+      var res = await originalSheetsSync.apply(this, arguments);
+      try { await smArchiveRows(Array.isArray(syncedFormRows) ? syncedFormRows.slice() : [], {silent:true, archivePending:false}); } catch(_e){}
+      return res;
+    };
+  }
+
+  setTimeout(function(){
+    try { window.kpSmartMigrateRegistrationRowsFromDatabase({silent:true}); } catch(_e){}
+  }, 1800);
+})();
+
+
+/* ============================================================
    KP PATCH 2026-05-02: student delete/trash + registration undo
    - زر حذف الطالب يرجع ويحوّل الطالب إلى سلة المحذوفات
    - الحذف النهائي من السلة يمسح السجل من students و deletedStudents في Firebase
@@ -15786,28 +15953,6 @@ document.addEventListener('change', function(e){
     if (typeof showSyncBadge === 'function') showSyncBadge('↩️ تم التراجع: رجع الطلب للجديدة وتم حذف الطالب من Firebase');
   };
 })();
-/* ============================================================
-   ✅ HARD GUARD 2026-05-02 — منع روابط /undefined ومسارات registration legacy
-   هذا الحارس لا يغير البيانات، فقط يمنع الاتصالات الخاطئة التي كانت تظهر بالكونسول.
-   ============================================================ */
-(function(){
-  if (window.__kpHardRegistrationNetworkGuardInstalled) return;
-  window.__kpHardRegistrationNetworkGuardInstalled = true;
-  var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
-  if (nativeFetch) {
-    window.fetch = function(input, init){
-      try {
-        var url = (typeof input === 'string') ? input : (input && input.url ? input.url : '');
-        var s = String(url || '');
-        if (!s || s.indexOf('/undefined') >= 0 || /\/undefined(?:\?|$)/.test(s)) {
-          return Promise.reject(new Error('blocked-invalid-url'));
-        }
-      } catch(_e){}
-      return nativeFetch(input, init);
-    };
-  }
-})();
-
 </script>
 </body>
 </html>
