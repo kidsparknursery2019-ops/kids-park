@@ -15847,6 +15847,8 @@ document.addEventListener('change', function(e){
   }
   window.kpPurgeStudentFromFirebase = async function(id){
     var key = kpStudentEntityKey(id);
+    var base = String(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, '');
+    if (!base) return false;
     var savedAt = new Date().toISOString();
     if (!window.tombstones && typeof tombstones !== 'undefined') window.tombstones = tombstones;
     if (typeof tombstones !== 'undefined') {
@@ -15857,14 +15859,22 @@ document.addEventListener('change', function(e){
     if (typeof restoredKeys !== 'undefined' && restoredKeys && Array.isArray(restoredKeys.students)) {
       restoredKeys.students = restoredKeys.students.filter(function(x){ return !kpIdEq(x,id); });
     }
-    var updates = {};
-    updates['students/' + key] = null;
-    updates['deletedStudents/' + key] = null;
-    if (typeof tombstones !== 'undefined' && tombstones && Array.isArray(tombstones.students)) updates['tombstones/students'] = tombstones.students;
-    if (typeof restoredKeys !== 'undefined' && restoredKeys && Array.isArray(restoredKeys.students)) updates['restoredKeys/students'] = restoredKeys.students;
-    updates.savedAt = savedAt;
-    updates.version = 2;
-    await kpPatchFirebase(updates);
+    // حذف حقيقي بـ DELETE على كل مسار — PATCH+null لا يحذف في Firebase Realtime Database
+    var encodedKey = encodeURIComponent(key);
+    var mkTimeout = function(ms){ return new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, ms); }); };
+    // احذف من deletedStudents (الأهم — هاد اللي يظهر في الصفحة)
+    var delRes = await Promise.race([
+      fetch(base + '/deletedStudents/' + encodedKey + '.json', { method:'DELETE' }),
+      mkTimeout(10000)
+    ]);
+    if (!delRes.ok) throw new Error('HTTP ' + delRes.status);
+    // احذف من students أيضاً (لو موجود بالغلط)
+    fetch(base + '/students/' + encodedKey + '.json', { method:'DELETE' }).catch(function(){});
+    // حدّث tombstones + savedAt بـ PATCH منفصل (لا ينتظر)
+    var meta = { savedAt: savedAt, version: 2 };
+    if (typeof tombstones !== 'undefined' && tombstones && Array.isArray(tombstones.students)) meta['tombstones/students'] = tombstones.students;
+    if (typeof restoredKeys !== 'undefined' && restoredKeys && Array.isArray(restoredKeys.students)) meta['restoredKeys/students'] = restoredKeys.students;
+    fetch(base + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(meta) }).catch(function(){});
     try { localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); } catch(_e){}
     try { localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys)); } catch(_e){}
     return true;
