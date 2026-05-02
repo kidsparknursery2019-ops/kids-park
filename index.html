@@ -339,11 +339,17 @@ body{
 .ct2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
 
 /* 📊 الجداول */
-.tw{overflow-x:auto;overflow-y:visible;border-radius:14px;scrollbar-width:thin;scrollbar-color:var(--g2) var(--gp);-webkit-overflow-scrolling:touch}
-.tw::-webkit-scrollbar{height:7px;display:block}
+.tw{overflow:auto;border-radius:14px;scrollbar-width:thin;scrollbar-color:var(--g2) var(--gp);-webkit-overflow-scrolling:touch;max-height:calc(100vh - 260px);padding-bottom:6px}
+.tw::-webkit-scrollbar{height:10px;width:10px;display:block}
 .tw::-webkit-scrollbar-track{background:var(--gp);border-radius:8px}
 .tw::-webkit-scrollbar-thumb{background:linear-gradient(90deg,var(--g3),var(--g2));border-radius:8px;border:1px solid var(--gp);min-width:40px}
 .tw table{min-width:max-content}
+.tw thead th{position:sticky;top:0;z-index:3}
+.kp-table-xbar{overflow-x:auto;overflow-y:hidden;height:16px;margin:0 0 4px;border-radius:10px;scrollbar-width:thin;scrollbar-color:var(--g2) var(--gp);background:linear-gradient(180deg,#f8fdfa,#eef8f2)}
+.kp-table-xbar::-webkit-scrollbar{height:10px;display:block}
+.kp-table-xbar::-webkit-scrollbar-track{background:var(--gp);border-radius:8px}
+.kp-table-xbar::-webkit-scrollbar-thumb{background:linear-gradient(90deg,var(--g3),var(--g2));border-radius:8px;border:1px solid var(--gp);min-width:40px}
+.kp-table-xbar-inner{height:1px}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
 th{
   background:linear-gradient(180deg,#f4fbf7 0%,var(--gp) 100%);
@@ -1589,7 +1595,7 @@ html{max-width:100%;overflow-x:hidden}body{max-width:100%}
   .sg{grid-template-columns:1fr!important;gap:10px!important}
   .card{width:100%!important;max-width:100%!important;padding:15px!important;border-radius:18px!important;margin-bottom:12px!important;overflow:visible!important}
   table{font-size:12.5px!important}
-  .tw{max-width:100%!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important}
+  .tw{max-width:100%!important;max-height:calc(100vh - 230px)!important;overflow:auto!important;-webkit-overflow-scrolling:touch!important}
   input,select,textarea{font-size:13px!important;min-height:40px!important}
   .sbar{width:100%!important;display:flex!important;flex-direction:column!important;align-items:stretch!important}
   .sbar input,.sbar select,.sbar .btn{width:100%!important;max-width:100%!important}
@@ -3293,6 +3299,14 @@ function getStudentHealthSummary(student) {
 
 // يحمي الحالة الصحية من الاختلاف بين الأجهزة:
 // عند دمج بيانات الطلاب من Firebase، لا نسمح لنسخة محلية قديمة وفارغة أن تطمس حالة صحية أحدث محفوظة سحابياً.
+function isMedicalDuplicateStudentNote(noteText, healthSummary) {
+  noteText = String(noteText || '').trim();
+  healthSummary = String(healthSummary || '').trim();
+  if (!noteText) return false;
+  if (healthSummary && (noteText === healthSummary || healthSummary.indexOf(noteText) >= 0 || noteText.indexOf(healthSummary) >= 0)) return true;
+  return /الحالة الصحية|ملاحظات طبية|تفاصيل صحية|حساسية|أمراض معدية|مرض معد|دواء|أدوية|تمريض|ممرضة|طبي|صحي|medical|health|allergy|medicine|nurse/i.test(noteText);
+}
+
 function getStudentHealthChangedAt(student) {
   if (!student || typeof student !== 'object') return 0;
   const raw = student.healthUpdatedAt || student.healthChangedAt || student.updatedAt || student.modifiedAt || '';
@@ -5366,7 +5380,7 @@ function renderStudents(){
     const healthSummary = getStudentHealthSummary(s) || '—';
     // لا تعرض الملاحظة تحت الاسم إذا كانت هي نفسها الحالة الصحية
     const noteText = (s.note||s.notes||'').trim();
-    const showNote = noteText && noteText !== healthSummary && !String(healthSummary).includes(noteText);
+    const showNote = noteText && !isMedicalDuplicateStudentNote(noteText, healthSummary);
     return `
     <tr>
       <td><b>#${s.id}</b></td>
@@ -12103,7 +12117,7 @@ function buildStudentFromFormRow(r, studentIdOverride) {
     mom: r.momFull,
     mph: r.momMob,
     addr: r.addr,
-    note: [r.notes, healthText ? ('الحالة الصحية: ' + healthText) : ''].filter(Boolean).join(' | '),
+    note: r.notes || '',
     familyName: r.familyName,
     firstName: r.firstName,
     emiratesId: r.emiratesId,
@@ -17151,6 +17165,76 @@ document.addEventListener('change', function(e){
 </script>
 <script>
 /* ============================================================
+   KP TABLE UX PATCH 2026-05-02
+   Adds a synced top horizontal scrollbar for wide table panes.
+   ============================================================ */
+(function(){
+  'use strict';
+  if (window.__kpTableScrollbarPatchInstalled) return;
+  window.__kpTableScrollbarPatchInstalled = true;
+
+  function tableScrollSources(){
+    return Array.prototype.slice.call(document.querySelectorAll('.tw')).filter(function(el){
+      return el && el.querySelector && el.querySelector('table');
+    });
+  }
+  function ensureTopScrollbar(pane){
+    if (!pane || pane.__kpXbarReady) return;
+    var bar = document.createElement('div');
+    bar.className = 'kp-table-xbar';
+    bar.setAttribute('aria-hidden', 'true');
+    var inner = document.createElement('div');
+    inner.className = 'kp-table-xbar-inner';
+    bar.appendChild(inner);
+    pane.parentNode.insertBefore(bar, pane);
+    pane.__kpXbarReady = true;
+    pane.__kpXbar = bar;
+    pane.__kpXbarInner = inner;
+
+    var syncing = false;
+    bar.addEventListener('scroll', function(){
+      if (syncing) return;
+      syncing = true;
+      pane.scrollLeft = bar.scrollLeft;
+      syncing = false;
+    });
+    pane.addEventListener('scroll', function(){
+      if (syncing) return;
+      syncing = true;
+      bar.scrollLeft = pane.scrollLeft;
+      syncing = false;
+    });
+  }
+  function refreshTableScrollbars(){
+    tableScrollSources().forEach(function(pane){
+      ensureTopScrollbar(pane);
+      var table = pane.querySelector('table');
+      var width = Math.max(pane.scrollWidth, table ? table.scrollWidth : 0, pane.clientWidth);
+      if (pane.__kpXbarInner) pane.__kpXbarInner.style.width = width + 'px';
+      if (pane.__kpXbar) {
+        var needed = width > pane.clientWidth + 4;
+        pane.__kpXbar.style.display = needed ? 'block' : 'none';
+        pane.__kpXbar.scrollLeft = pane.scrollLeft;
+      }
+    });
+  }
+  window.kpRefreshTableScrollbars = refreshTableScrollbars;
+  var timer = null;
+  function schedule(){
+    clearTimeout(timer);
+    timer = setTimeout(refreshTableScrollbars, 120);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', schedule);
+  else schedule();
+  window.addEventListener('resize', schedule);
+  try {
+    new MutationObserver(schedule).observe(document.body, { childList:true, subtree:true });
+  } catch(_e){}
+})();
+</script>
+
+<script>
+/* ============================================================
    KP WHOLE-SYSTEM FIREBASE CLEANUP 2026-05-02
    Canonical entity paths:
    students/k_id, payments/k_id, expenses/k_id, renewals/k_id
@@ -17472,6 +17556,207 @@ document.addEventListener('change', function(e){
       }
     } catch(_e){}
   }, 7000);
+})();
+</script>
+<script>
+/* ============================================================
+   KP GOOGLE SHEETS OFFICIAL REGISTRATION SYNC 2026-05-02
+   Google Sheets is included in the same official request list.
+   Firebase remains the shared source of truth for all users.
+   ============================================================ */
+(function(){
+  'use strict';
+  if (window.__kpSheetsOfficialSyncInstalled) return;
+  window.__kpSheetsOfficialSyncInstalled = true;
+
+  var SYNC_INTERVAL_MS = 2 * 60 * 1000;
+  var sheetsSyncRunning = false;
+  var sheetsAutoTimer = null;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function digits(v){ return txt(v).replace(/\D+/g, ''); }
+  function simple(v){
+    return txt(v).toLowerCase()
+      .replace(/[\u064B-\u065F\u0670]/g,'')
+      .replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه')
+      .replace(/[^\u0600-\u06FFa-z0-9]+/g,' ')
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+  function statusFolder(s){
+    s = txt(s).toLowerCase();
+    if (s === 'approved' || s === 'accepted' || s === 'accept') return 'accepted';
+    if (s === 'rejected' || s === 'reject') return 'rejected';
+    return 'pending';
+  }
+  function rowFingerprint(r){
+    r = r || {};
+    var eid = digits(r.emiratesId || r.idNo || r.identity || r.nationalId);
+    if (eid) return 'eid:' + eid;
+    var pass = simple(r.passport || r.passportNo);
+    if (pass) return 'pass:' + pass;
+    var ts = txt(r.timestamp || r.formTimestamp || r.submittedAt || r.createdAt);
+    if (ts) return 'ts:' + simple(ts);
+    return 'fp:' + [simple(r.name || r.childName || ((r.firstName || '') + ' ' + (r.familyName || ''))), txt(r.dob || r.dateOfBirth), digits(r.dadMob || r.momMob || r.dph || r.mph || r.phone)].join('|');
+  }
+  function rowKey(r){
+    r = r || {};
+    var raw = txt(r.firebaseKey || r._fbKey || r.requestId || r.key || r.timestamp || rowFingerprint(r));
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(raw) : raw.replace(/[.#$\[\]\/\s]/g,'_'); }
+    catch(_e){ return raw.replace(/[.#$\[\]\/\s]/g,'_'); }
+  }
+  function officialRows(){
+    var rows = [];
+    try { if (Array.isArray(syncedFormRows)) rows = rows.concat(syncedFormRows); } catch(_e){}
+    try { if (Array.isArray(window.syncedFormRows)) rows = rows.concat(window.syncedFormRows); } catch(_e){}
+    var seen = {};
+    return rows.filter(function(r){
+      if (!r) return false;
+      var k = rowKey(r) + '|' + rowFingerprint(r);
+      if (seen[k]) return false;
+      seen[k] = true;
+      return true;
+    });
+  }
+  function findOfficialMatch(sheetRow, rows){
+    var fp = rowFingerprint(sheetRow);
+    var key = rowKey(sheetRow);
+    var ts = txt(sheetRow && sheetRow.timestamp);
+    var name = simple(sheetRow && sheetRow.name);
+    var dob = txt(sheetRow && sheetRow.dob);
+    var phone = digits(sheetRow && (sheetRow.dadMob || sheetRow.momMob || sheetRow.dph || sheetRow.mph || sheetRow.phone));
+    return (rows || []).find(function(r){
+      if (!r) return false;
+      if (rowKey(r) === key || rowFingerprint(r) === fp) return true;
+      if (ts && txt(r.timestamp) === ts) return true;
+      var rName = simple(r.name || r.childName || ((r.firstName || '') + ' ' + (r.familyName || '')));
+      var rDob = txt(r.dob || r.dateOfBirth);
+      var rPhone = digits(r.dadMob || r.momMob || r.dph || r.mph || r.phone);
+      return !!(name && dob && rName === name && rDob === dob && (!phone || !rPhone || phone === rPhone));
+    }) || null;
+  }
+  function prepareSheetRow(src){
+    var now = new Date().toISOString();
+    var key = rowKey(src);
+    var row = Object.assign({}, src || {});
+    row.firebaseKey = key;
+    row.requestId = row.requestId || key;
+    row._fbKey = key;
+    row.status = 'pending';
+    row.source = 'google_sheets';
+    row.sourcePath = 'Google Sheets -> nursery_data/registrationRequests/pending';
+    row.rowUpdatedAt = row.rowUpdatedAt || row.timestamp || now;
+    row.importedFromGoogleSheetsAt = now;
+    return row;
+  }
+  async function readSheetsRows(){
+    if (typeof window.__kpOriginalIsolatedSheetsSync !== 'function') return [];
+    var result = await window.__kpOriginalIsolatedSheetsSync();
+    var rows = Array.isArray(window.kpSheetFormRows) ? window.kpSheetFormRows : [];
+    return rows.filter(function(r){ return r && (r.name || r.timestamp); });
+  }
+  function updateSheetsUi(imported, skipped, total){
+    var btn = document.getElementById('sync-sheets-btn');
+    if (btn) {
+      btn.textContent = 'تحديث Google Sheets + Firebase';
+      btn.className = 'btn btn-g';
+      btn.disabled = false;
+      btn.onclick = function(){ window.syncGoogleSheetsIntoOfficialRequests({ silent:false, full:true }); };
+    }
+    var note = document.getElementById('forms-official-note');
+    if (note) {
+      note.style.background = '#eefaf3';
+      note.style.color = '#0e6b35';
+      note.innerHTML = 'هذه القائمة موحدة: Firebase هو المصدر المشترك، وGoogle Sheets يضاف تلقائياً كطلبات جديدة دون تغيير القرارات السابقة.';
+    }
+    var separate = document.getElementById('forms-sheets-separate-card');
+    if (separate) separate.style.display = 'none';
+    if (typeof showSyncBadge === 'function' && total != null) {
+      showSyncBadge('تمت مزامنة Google Sheets مع الطلبات: جديد ' + imported + ' / موجود ' + skipped);
+    }
+  }
+
+  window.__kpOriginalIsolatedSheetsSync = window.__kpOriginalIsolatedSheetsSync || window.syncFromGoogleSheets;
+
+  window.syncGoogleSheetsIntoOfficialRequests = async function(options){
+    options = options || {};
+    if (sheetsSyncRunning) return { skipped:'already_running' };
+    sheetsSyncRunning = true;
+    var imported = 0, skipped = 0, failed = 0;
+    try {
+      if (typeof window.syncRegistrationRequestsFromFirebase === 'function') {
+        try { await window.syncRegistrationRequestsFromFirebase({ silent:true, full:true }); } catch(_e){}
+      }
+      var rows = await readSheetsRows();
+      var current = officialRows();
+      for (var i = 0; i < rows.length; i++) {
+        var src = rows[i];
+        var existing = findOfficialMatch(src, current);
+        if (existing) {
+          skipped++;
+          continue;
+        }
+        try {
+          var pending = prepareSheetRow(src);
+          if (typeof window.archiveFirebaseRegistrationRequest === 'function') {
+            await window.archiveFirebaseRegistrationRequest(pending, 'pending');
+            imported++;
+            current.push(pending);
+          }
+        } catch(e) {
+          failed++;
+          console.warn('Google Sheets official import failed:', e && e.message);
+        }
+      }
+      if (typeof window.syncRegistrationRequestsFromFirebase === 'function') {
+        try { await window.syncRegistrationRequestsFromFirebase({ silent:true, full:true }); } catch(_e){}
+      }
+      updateSheetsUi(imported, skipped, rows.length);
+      return { ok:true, total:rows.length, imported:imported, skipped:skipped, failed:failed };
+    } finally {
+      sheetsSyncRunning = false;
+    }
+  };
+
+  window.syncFromGoogleSheets = function(){
+    return window.syncGoogleSheetsIntoOfficialRequests({ silent:false, full:true });
+  };
+
+  var originalStartAutoSync = window.startAutoSync;
+  window.startAutoSync = function(){
+    try { if (typeof originalStartAutoSync === 'function') originalStartAutoSync.apply(this, arguments); } catch(_e){}
+    try { clearInterval(sheetsAutoTimer); } catch(_e){}
+    setTimeout(function(){ window.syncGoogleSheetsIntoOfficialRequests({ silent:true, full:false }).catch(function(){}); }, 1800);
+    sheetsAutoTimer = setInterval(function(){
+      window.syncGoogleSheetsIntoOfficialRequests({ silent:true, full:false }).catch(function(){});
+    }, SYNC_INTERVAL_MS);
+    return true;
+  };
+  try { startAutoSync = window.startAutoSync; } catch(_e){}
+
+  function wire(){
+    updateSheetsUi(0, 0, null);
+    var btn = document.getElementById('sync-sheets-btn');
+    if (btn) btn.onclick = function(){ window.syncGoogleSheetsIntoOfficialRequests({ silent:false, full:true }); };
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
+  else wire();
+  setTimeout(function(){
+    wire();
+    try { if (typeof currentUser !== 'undefined' && currentUser) window.syncGoogleSheetsIntoOfficialRequests({ silent:true, full:false }).catch(function(){}); } catch(_e){}
+  }, 3500);
+
+  window.kpSheetsOfficialSyncStatus = function(){
+    return {
+      enabled:true,
+      intervalMs:SYNC_INTERVAL_MS,
+      source:'Google Sheets',
+      destination:'nursery_data/registrationRequests/pending',
+      preservesDecisions:true,
+      sameList:true,
+      running:sheetsSyncRunning
+    };
+  };
 })();
 </script>
 </body>
