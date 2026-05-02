@@ -2333,7 +2333,7 @@ body.kp-teacher .kp-sync-panel{
     </div>
 
     <div class="pg" id="pg-forms">
-      <div class="pt">📋 طلبات التسجيل من الفورم المباشر و Google Sheets</div>
+      <div class="pt">📋 طلبات التسجيل الرسمية - Firebase</div>
       <div class="sg" style="grid-template-columns:repeat(4,1fr)">
         <div class="sc y"><div class="sl">طلبات جديدة</div><div class="sv" id="forms-pending-count">—</div></div>
         <div class="sc"><div class="sl">تم القبول</div><div class="sv" id="forms-approved-count">—</div></div>
@@ -2351,7 +2351,8 @@ body.kp-teacher .kp-sync-panel{
             </select>
             <input type="text" id="forms-search" placeholder="🔍 ابحث..." oninput="renderFormRequests()" style="max-width:180px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
           </div>
-          <button class="btn btn-g" id="sync-sheets-btn" onclick="syncFromGoogleSheets()">🔄 مزامنة من المصدرين</button>
+          <button class="btn btn-g" id="sync-official-forms-btn" onclick="syncRegistrationRequestsFromFirebase({silent:false})">🔄 تحديث الطلبات الرسمية</button>
+            <button class="btn btn-y" id="sync-sheets-btn" onclick="syncFromGoogleSheets()">📄 قراءة Google Sheets منفصل</button>
             <button class="btn btn-b" onclick="diagnoseRegistrationSources()">🧪 فحص وصول الطلبات</button>
         </div>
         <div id="forms-list">
@@ -15952,6 +15953,313 @@ document.addEventListener('change', function(e){
     }
     if (typeof showSyncBadge === 'function') showSyncBadge('↩️ تم التراجع: رجع الطلب للجديدة وتم حذف الطالب من Firebase');
   };
+})();
+
+
+/* ============================================================
+   KP PATCH 2026-05-02C — عزل Google Sheets عن طلبات التسجيل الرسمية
+   - الطلبات الرسمية تقرأ فقط من nursery_data/registrationRequests
+   - Google Sheets صار قائمة منفصلة للعرض/الاستيراد اليدوي فقط
+   - لا مزامنة تلقائية من Google Sheets ولا migration تلقائي يغيّر الحالات
+   ============================================================ */
+(function(){
+  var OFFICIAL_STATUS_FOLDERS = ['pending','accepted','rejected'];
+  var SHEET_PREVIEW_KEY = 'kp_google_sheet_rows_preview';
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function officialBase(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, '') + '/registrationRequests'; }
+  function statusFromFolder(folder){ return folder === 'accepted' ? 'approved' : (folder === 'rejected' ? 'rejected' : 'pending'); }
+  function folderFromStatus(status){
+    status = txt(status || 'pending').toLowerCase();
+    return (status === 'approved' || status === 'accepted') ? 'accepted' : (status === 'rejected' ? 'rejected' : 'pending');
+  }
+  function sourceIsGoogleSheet(r){ return /google_sheets/i.test(txt(r && r.source)); }
+  function escape(v){ try { return (typeof escapeHtml === 'function') ? escapeHtml(v) : txt(v).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); } catch(_e){ return txt(v); } }
+  function safeFetch(url, opts, ms){
+    opts = opts || {};
+    if (!url || /\/undefined(?:\/|\?|$)|undefined\.json/i.test(url)) return Promise.reject(new Error('invalid_url'));
+    if (typeof window.kpFetchWithSoftTimeout === 'function') return window.kpFetchWithSoftTimeout(url, opts, ms || 9000);
+    var fetchPromise = fetch(url, opts);
+    var timeoutPromise = new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, ms || 9000); });
+    return Promise.race([fetchPromise, timeoutPromise]);
+  }
+  function rowTime(r){
+    try { if (typeof formRowUpdatedAtValue === 'function') return formRowUpdatedAtValue(r); } catch(_e){}
+    var candidates = [r && r.rowUpdatedAt, r && r.decisionAt, r && r.approvedAt, r && r.rejectedAt, r && r.createdAt, r && r.submittedAt, r && r.timestamp];
+    for (var i=0;i<candidates.length;i++){
+      var t = Date.parse(txt(candidates[i]));
+      if (!isNaN(t)) return t;
+    }
+    return 0;
+  }
+  function stableKey(r){
+    r = r || {};
+    var raw = txt(r.firebaseKey || r._fbKey || r.requestId || r.emiratesId || r.timestamp || [r.name,r.dob].join('_'));
+    if (typeof kpSafeFirebaseKey === 'function') {
+      try { return kpSafeFirebaseKey(raw); } catch(_e){}
+    }
+    return raw.replace(/[^A-Za-z0-9_\-\u0600-\u06FF]/g, '_').slice(0,140);
+  }
+  function putWinner(map, row){
+    var key = stableKey(row);
+    if (!key) return;
+    var old = map[key];
+    row.firebaseKey = row.firebaseKey || key;
+    row.requestId = row.requestId || key;
+    if (!old) { map[key] = row; return; }
+    var oldRank = old.status === 'pending' ? 1 : 2;
+    var newRank = row.status === 'pending' ? 1 : 2;
+    if (newRank > oldRank || (newRank === oldRank && rowTime(row) >= rowTime(old))) map[key] = Object.assign({}, old, row);
+  }
+  function storeOfficialRows(rows){
+    syncedFormRows = (Array.isArray(rows) ? rows : []).filter(function(r){ return !sourceIsGoogleSheet(r); });
+    try { if (typeof _saveFormRowsSlim === 'function') _saveFormRowsSlim(syncedFormRows); } catch(_e){}
+    try {
+      var slim = syncedFormRows.map(function(r){ return {firebaseKey:r.firebaseKey||'', requestId:r.requestId||'', timestamp:r.timestamp||'', status:r.status||'pending', name:r.name||'', dob:r.dob||'', rowUpdatedAt:r.rowUpdatedAt||'', decisionAt:r.decisionAt||''}; });
+      localStorage.setItem('kp_form_rows', JSON.stringify(slim));
+    } catch(_e){}
+  }
+
+  // أوقف migration الذكي القديم نهائياً حتى لا يحوّل طلبات جديدة إلى مرفوض/مقبول فجأة.
+  window.kpSmartMigrateRegistrationRowsFromDatabase = async function(){
+    return {disabled:true, reason:'Google Sheets isolated from official registration requests'};
+  };
+  window.kpApplyDatabaseRegistrationDecision = function(row){ return row; };
+
+  // فلتر فوري: أي صف Google Sheets عالق في القائمة الرسمية لا يظهر ولا يدخل العدادات.
+  try {
+    if (Array.isArray(syncedFormRows)) storeOfficialRows(syncedFormRows.filter(function(r){ return !sourceIsGoogleSheet(r); }));
+  } catch(_e){}
+
+  window.syncRegistrationRequestsFromFirebase = async function(options){
+    options = options || {};
+    var base = officialBase();
+    if (!base || base === '/registrationRequests') return {error:'missing_fb_url'};
+    var map = {};
+    var errors = [];
+    for (var i=0;i<OFFICIAL_STATUS_FOLDERS.length;i++){
+      var folder = OFFICIAL_STATUS_FOLDERS[i];
+      try {
+        var url = base + '/' + folder + '.json?ts=' + Date.now();
+        var res = await safeFetch(url, {cache:'no-store'}, 9000);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var obj = await res.json();
+        if (!obj || typeof obj !== 'object') continue;
+        Object.keys(obj).forEach(function(k){
+          var v = obj[k];
+          if (!v || typeof v !== 'object') return;
+          var r = (typeof normalizeParentRegistrationRow === 'function') ? normalizeParentRegistrationRow(v, k) : Object.assign({firebaseKey:k}, v);
+          r.firebaseKey = r.firebaseKey || k;
+          r.requestId = r.requestId || r.firebaseKey;
+          r._fbKey = k;
+          r.status = statusFromFolder(folder);
+          r.source = r.source && !sourceIsGoogleSheet(r) ? r.source : 'firebase_official';
+          r.sourcePath = 'nursery_data/registrationRequests/' + folder;
+          putWinner(map, r);
+        });
+      } catch(e) { errors.push(folder + ': ' + (e && e.message ? e.message : e)); }
+    }
+    var rows = Object.keys(map).map(function(k){ return map[k]; }).sort(function(a,b){ return rowTime(b) - rowTime(a); });
+    storeOfficialRows(rows);
+    try { if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge(); } catch(_e){}
+    try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+    var el = document.getElementById('forms-last-sync');
+    if (el) el.textContent = new Date().toLocaleTimeString('ar');
+    if (!options.silent && typeof showSyncBadge === 'function') {
+      showSyncBadge(errors.length ? ('⚠️ تمت قراءة الطلبات الرسمية مع تنبيهات: ' + errors.join(' | ')) : ('✅ تم تحديث الطلبات الرسمية من Firebase فقط: ' + rows.length + ' طلب'));
+    }
+    return {officialPath:'nursery_data/registrationRequests', total:rows.length, errors:errors};
+  };
+
+  window.startAutoSync = function(){
+    try { clearInterval(autoSyncTimer); } catch(_e){}
+    Promise.resolve().then(function(){ return window.syncRegistrationRequestsFromFirebase({silent:true}); });
+    try {
+      autoSyncTimer = setInterval(function(){
+        Promise.resolve().then(function(){ return window.syncRegistrationRequestsFromFirebase({silent:true}); });
+      }, 5 * 60 * 1000);
+    } catch(_e){}
+  };
+
+  // لا تحفظ Google Sheets داخل المسار الرسمي إلا إذا ضغطتِ استيراد يدوي.
+  window.saveFormRowsBatchRemoteAware = async function(formRows){
+    var rows = (Array.isArray(formRows) ? formRows : []).filter(function(r){ return r && !sourceIsGoogleSheet(r); });
+    if (!rows.length) return true;
+    var okCount = 0;
+    for (var i=0;i<rows.length;i++){
+      try { if (await window.archiveFirebaseRegistrationRequest(rows[i], rows[i].status || 'pending')) okCount++; } catch(e){ console.warn('official form save failed:', e && e.message); }
+    }
+    return okCount === rows.length;
+  };
+
+  function normLabel(s){
+    return txt(s).replace(/[\u064B-\u065F\u0670]/g, '').replace(/\u200f|\u200e/g, '').replace(/\s+/g,' ').replace(/\s*\|\s*/g,' | ').trim();
+  }
+  function parseSheetRows(table){
+    table = table || {};
+    var rows = table.rows || [];
+    var cols = table.cols || [];
+    var labels = cols.map(function(col){ return normLabel((col && (col.label || col.id)) || ''); });
+    function val(cells, names, fallbackIndex){
+      for (var n=0;n<names.length;n++){
+        var wanted = normLabel(names[n]);
+        var idx = labels.indexOf(wanted);
+        if (idx < 0) idx = labels.findIndex(function(lbl){ return !!lbl && (lbl === wanted || lbl.indexOf(wanted) >= 0 || wanted.indexOf(lbl) >= 0); });
+        if (idx >= 0) { var cell = cells[idx]; return (cell && cell.v != null) ? txt(cell.v) : ''; }
+      }
+      if (typeof fallbackIndex === 'number') { var fb = cells[fallbackIndex]; return (fb && fb.v != null) ? txt(fb.v) : ''; }
+      return '';
+    }
+    var out = [];
+    rows.forEach(function(row, rowIndex){
+      var c = row.c || [];
+      var ts = val(c, ['طابع زمني','Timestamp'], 0);
+      var firstName = val(c, ['إسم الطفل | Child Name','اسم الطفل | Child Name'], 1);
+      var lastName = val(c, ['إسم العائلة | Family Name','اسم العائلة | Family Name'], 2);
+      var name = txt(firstName + ' ' + lastName);
+      if (!ts && !name) return;
+      var gv = val(c, ['الجنس | Gender','Gender'], 4);
+      var gvNorm = gv.toLowerCase();
+      var parsedGen = (gv.indexOf('أنثى') >= 0 || gv.indexOf('انثى') >= 0 || gvNorm.indexOf('female') >= 0) ? 'انثى' : ((gv.indexOf('ذكر') >= 0 || gvNorm.indexOf('male') >= 0) ? 'ذكر' : '');
+      function nd(x){ try { return (typeof normalizeDate === 'function') ? normalizeDate(x) : x; } catch(_e){ return x; } }
+      var mapped = {
+        timestamp: ts || ('sheet_row_' + rowIndex), firebaseKey: 'sheet_' + stableKey({timestamp:ts || rowIndex, name:name}), requestId: 'sheet_' + stableKey({timestamp:ts || rowIndex, name:name}),
+        name: name, firstName:firstName, familyName:lastName,
+        dob: nd(val(c, ['تاريخ الميلاد | Date of Birth'], 3)), gen: parsedGen,
+        emiratesId: val(c, ['رقم الهوية | Emirates ID Number'], 5), nat: val(c, ['الجنسية | Nationality'], 6), passport: val(c, ['رقم جواز السفر | Passport No'], 7), religion: val(c, ['الديانة | Religion'], 8),
+        motherTongue: val(c, ['اللغة الأم | Mother Tongue'], 9), otherLanguages: val(c, ['لغات أخرى | Other Languages (إختياري | Optional)','لغات أخرى | Other Languages (اختياري | Optional)'], 10), addr: val(c, ['العنوان التفصيلي | Detailed Address'], 11),
+        momFull: val(c, ['الإسم الكامل (الأم) | Full Name','الاسم الكامل (الأم) | Full Name'], 12), momNat: val(c, ['الجنسية (الأم) | Nationality'], 13), momHome: val(c, ['هاتف المنزل  (الأم) | Home Tel  (إختياري | Optional)','هاتف المنزل (الأم) | Home Tel  (إختياري | Optional)'], 14), momMob: val(c, ['رقم الموبايل (الأم) | Mobile Number'], 15), momJob: val(c, ['المهنة (الأم) | Occupation'], 16), momWork: val(c, ['جهة العمل (الأم) | Work Location','المهنة | Occupation'], 17), momEmail: val(c, ['البريد الالكتروني (الأم) | E-mail Address  (إختياري | Optional)','البريد الإلكتروني (الأم) | E-mail Address  (إختياري | Optional)'], 18), momMotherTongue: val(c, ['اللغة الأم (الأم) | Mother Tongue'], 19), momOtherLanguages: val(c, ['لغات أخرى (الأم) | Other Languages (إختياري | Optional)','لغات أخرى (الأم) | Other Languages (اختياري | Optional)'], 20),
+        dadFull: val(c, ['الإسم الكامل (الأب) | Full Name','الاسم الكامل (الأب) | Full Name'], 21), dadNat: val(c, ['الجنسية (الأب) | Nationality'], 22), dadHome: val(c, ['هاتف المنزل (الأب) | Home Tel  (إختياري | Optional)','هاتف المنزل (الأب) | Home Tel (إختياري | Optional)'], 23), dadMob: val(c, ['رقم الموبايل (الأب) | Mobile Number'], 24), dadJob: val(c, ['المهنة (الأب) | Occupation'], 25), dadWork: val(c, ['جهة العمل (الأب) | Work Location'], 26), dadEmail: val(c, ['البريد الالكتروني (الأب) | E-mail Address','البريد الإلكتروني (الأب) | E-mail Address'], 27), dadMotherTongue: val(c, ['اللغة (الأب) | Mother Tongue'], 28), dadOtherLanguages: val(c, ['لغات أخرى (الأب) | Other Languages (إختياري | Optional)','لغات أخرى (الأب) | Other Languages (اختياري | Optional)'], 29),
+        emergName: val(c, ['الاسم الكامل (أقارب) | Full Name'], 30), emergRel: val(c, ['صلة القرابة | Relationship'], 31), emergMob: val(c, ['رقم الموبايل (القريب) | Mobile Number'], 32),
+        photoConsent: val(c, ['أوافق على تصوير طفلي لتوثيق أنشطة الحضانة المختلفة I Agree to Take Photos or Videos of my child to record nursery activities'], 33), socialConsent: val(c, ['أوافق على نشر صور أو فيديوهات طفلي على وسائل الإعلام أو مواقع التواصل الاجتماعي I Agree to to publish photos or videos of my child in the social media'], 34), notes: val(c, ['إذا كان لديكم ملاحظات فيرجى ذكرها في الخانة أدناه Do you have comments? Please use the box below'], 35), guardianUndertake: val(c, ['أتعهد أنا ولي الأمر بما يلي | I The guardian undertake the below'], 36),
+        contagious: val(c, ['هل يعاني طفلكم من أمراض معدية | Does your child suffer from a contagious disease','هل يعاني طفلكم من أمراض معدية |'], 37), surgical: val(c, ['يرجى التوضيح في حال تعرض طفلكم لأي حادث خطير أو خضع لعملية جراحية أو عانى من مشاكل صحية Has your child had any serious accident or underwent a surgical operation?'], 38), diseaseDetails: val(c, ['في حال الإجابة بنعم يرجى توضيح ذلك (أمراض) | if yes, please clarify'], 39), accidentDetails: val(c, ['في حال الإجابة بنعم يرجى توضيح ذلك (حادث) | if yes, please clarify'], 40), allergyMedicationFood: val(c, ['هل يعاني طفلكم من أي نوع من أنواع الحساسية من مأكولات أو أدوية معينة ؟ Does your child have any kind of allergies from food or certain medications?'], 41), allergyNote: val(c, ['في حال الإجابة بنعم يرجى توضيح ذلك (حساسية) | if yes, please clarify'], 42), allergy: val(c, ['هل يعاني طفلك من أي نوع من أنواع الحساسية؟ Does your child have any type of allergy? '], 43), allergyType: val(c, ['ما نوع الحساسية إن وجد؟ What is the allergy type if any?'], 44), nurseConsent: val(c, ['هل توافقون على تقديم الممرضة ما قد يحتاجه طفلكم من: Do you agree to let the nurse give your child what might be necessary such as:'], 45),
+        imgEmiratesId: val(c, ['الهوية الإماراتية | Emirates ID'], 46), imgVaccination: val(c, ['شهادة التطعيم | Vaccination card'], 47), imgChildPhoto: val(c, ['صورة شخصية للطفل | Child Photo'], 48), imgPassport: val(c, ['جواز سفر الطفل | Child passport'], 49), imgResidency: val(c, ['إقامة الطفل سارية المفعول | Child valid residents visa'], 50), imgGuardianId: val(c, ["صورة هوية ولي الأمر | Guardian's Emirates ID"], 51), imgGuardianPass: val(c, ["صورة جواز سفر ولي الأمر | Guardian's passport"], 52), imgBirthCert: val(c, ['شهادة الميلاد | Birth certificate'], 53),
+        cls:'', status:'pending', source:'google_sheets_preview', sourcePath:'Google Sheets منفصل', rowUpdatedAt: ts || new Date().toISOString()
+      };
+      if (typeof normalizeParentRegistrationRow === 'function') mapped = Object.assign(mapped, normalizeParentRegistrationRow(mapped, mapped.firebaseKey), {source:'google_sheets_preview', sourcePath:'Google Sheets منفصل'});
+      out.push(mapped);
+    });
+    return out;
+  }
+
+  function ensureSheetsPanel(){
+    var page = document.getElementById('pg-forms');
+    if (!page) return;
+    var title = page.querySelector('.pt');
+    if (title && title.textContent.indexOf('Firebase') < 0) title.innerHTML = '📋 طلبات التسجيل الرسمية - Firebase';
+    var syncBtn = document.getElementById('sync-sheets-btn');
+    if (syncBtn) { syncBtn.textContent = '📄 قراءة Google Sheets منفصل'; syncBtn.className = 'btn btn-y'; syncBtn.onclick = function(){ window.syncFromGoogleSheets(); }; }
+    if (!document.getElementById('sync-official-forms-btn') && syncBtn && syncBtn.parentNode) {
+      var b = document.createElement('button'); b.id = 'sync-official-forms-btn'; b.className = 'btn btn-g'; b.textContent = '🔄 تحديث الطلبات الرسمية'; b.onclick = function(){ window.syncRegistrationRequestsFromFirebase({silent:false}); };
+      syncBtn.parentNode.insertBefore(b, syncBtn);
+    }
+    var list = document.getElementById('forms-list');
+    if (list && !document.getElementById('forms-official-note')) {
+      list.insertAdjacentHTML('beforebegin','<div id="forms-official-note" style="background:#eefaf3;border:1.5px solid #bee5cd;border-radius:14px;padding:10px 12px;margin-bottom:12px;font-size:13px;color:#0e6b35;font-weight:800">✅ هذه القائمة الرسمية تقرأ من Firebase فقط: nursery_data/registrationRequests. Google Sheets لا يدخل هنا إلا باستيراد يدوي.</div>');
+    }
+    if (!document.getElementById('forms-sheets-separate-card') && list) {
+      var card = list.closest ? list.closest('.card') : null;
+      var html = '<div class="card" id="forms-sheets-separate-card" style="margin-top:18px;display:none">' +
+        '<div class="ct"><span>📄 قائمة Google Sheets المنفصلة</span><span class="b by" id="forms-sheets-count">0</span></div>' +
+        '<div style="background:#fff9df;border:1.5px solid #ffe49b;border-radius:14px;padding:10px 12px;margin-bottom:12px;font-size:13px;color:#7a5500;font-weight:800">هذه للعرض فقط ولا تؤثر على القبول/الرفض ولا على عداد طلبات التسجيل. استخدمي زر الاستيراد للطلب المطلوب فقط.</div>' +
+        '<div id="forms-sheets-list"><div style="text-align:center;padding:18px;color:var(--muted)">اضغطي قراءة Google Sheets منفصل لعرض الصفوف هنا.</div></div>' +
+      '</div>';
+      if (card && card.insertAdjacentHTML) card.insertAdjacentHTML('afterend', html); else list.insertAdjacentHTML('afterend', html);
+    }
+  }
+  window.kpEnsureSheetsPanel = ensureSheetsPanel;
+
+  window.renderGoogleSheetsSeparateList = function(){
+    ensureSheetsPanel();
+    var card = document.getElementById('forms-sheets-separate-card');
+    var list = document.getElementById('forms-sheets-list');
+    var count = document.getElementById('forms-sheets-count');
+    var rows = Array.isArray(window.kpSheetFormRows) ? window.kpSheetFormRows : [];
+    if (count) count.textContent = rows.length;
+    if (!card || !list) return;
+    card.style.display = 'block';
+    if (!rows.length) { list.innerHTML = '<div style="text-align:center;padding:18px;color:var(--muted)">لا توجد صفوف مقروءة من Google Sheets حالياً.</div>'; return; }
+    list.innerHTML = rows.map(function(r, idx){
+      var officialExists = (Array.isArray(syncedFormRows) ? syncedFormRows : []).some(function(x){ return stableKey(x) === stableKey(r) || (txt(x.timestamp) && txt(x.timestamp) === txt(r.timestamp)); });
+      return '<div class="form-req-card" style="border-color:#ffe49b;background:#fffdf3">' +
+        (r.imgChildPhoto ? '<img src="' + escape((typeof driveImgUrl === 'function') ? driveImgUrl(r.imgChildPhoto) : r.imgChildPhoto) + '" class="form-req-photo" onerror="this.style.display=\'none\'">' : '<div class="form-req-photo-empty">📄</div>') +
+        '<div class="form-req-info">' +
+          '<div class="form-req-name">' + escape(r.name || 'بدون اسم') + '</div>' +
+          '<div class="form-req-meta"><span>📅 ' + escape(r.dob || '—') + '</span><span>🌍 ' + escape(r.nat || '—') + '</span><span>👨 ' + escape(r.dadFull || '—') + '</span><span>📱 ' + escape(r.dadMob || r.momMob || '—') + '</span></div>' +
+          '<div class="form-req-meta"><span>مصدر منفصل: Google Sheets</span><span>' + escape(r.timestamp || '') + '</span></div>' +
+        '</div>' +
+        '<div class="form-req-actions">' +
+          (officialExists ? '<span class="b bg">موجود بالنظام</span>' : '<button class="btn btn-g btn-sm" onclick="kpImportSheetRowToOfficial(' + idx + ');event.stopPropagation()">⬇️ استيراد للنظام</button>') +
+        '</div>' +
+      '</div>';
+    }).join('');
+  };
+
+  window.syncFromGoogleSheets = async function(){
+    ensureSheetsPanel();
+    var btn = document.getElementById('sync-sheets-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ قراءة Google Sheets...'; }
+    try {
+      var url = (typeof SHEETS_URL !== 'undefined' ? SHEETS_URL : '') + '&headers=1&ts=' + Date.now();
+      var res = await safeFetch(url, {cache:'no-store'}, 12000);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var text = await res.text();
+      var raw = text.slice(text.indexOf('(') + 1, text.lastIndexOf(')'));
+      var json = JSON.parse(raw);
+      window.kpSheetFormRows = parseSheetRows((json || {}).table || {});
+      try { localStorage.setItem(SHEET_PREVIEW_KEY, JSON.stringify(window.kpSheetFormRows.map(function(r){ return {timestamp:r.timestamp,name:r.name,dob:r.dob,nat:r.nat,dadFull:r.dadFull,dadMob:r.dadMob,momMob:r.momMob,source:r.source}; }))); } catch(_e){}
+      window.renderGoogleSheetsSeparateList();
+      if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم قراءة ' + window.kpSheetFormRows.length + ' صف من Google Sheets في قائمة منفصلة فقط');
+      return {rows: window.kpSheetFormRows.length, isolated:true};
+    } catch(e) {
+      console.warn('isolated Google Sheets read failed:', e);
+      if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ تعذرت قراءة Google Sheets، ولم تتأثر الطلبات الرسمية');
+      return {rows:0, error:e && e.message, isolated:true};
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '📄 قراءة Google Sheets منفصل'; }
+    }
+  };
+
+  window.kpImportSheetRowToOfficial = async function(index){
+    var rows = Array.isArray(window.kpSheetFormRows) ? window.kpSheetFormRows : [];
+    var src = rows[index];
+    if (!src) return;
+    if (!confirm('استيراد هذا الصف من Google Sheets إلى طلبات النظام الرسمية كطلب جديد؟')) return;
+    var row = Object.assign({}, src, {
+      source: 'manual_import_from_google_sheets',
+      sourcePath: 'Google Sheets → nursery_data/registrationRequests/pending',
+      status: 'pending',
+      rowUpdatedAt: new Date().toISOString(),
+      firebaseKey: stableKey(src),
+      requestId: stableKey(src)
+    });
+    var ok = false;
+    try { ok = await window.archiveFirebaseRegistrationRequest(row, 'pending'); } catch(e){ console.error('manual sheet import failed:', e); }
+    if (ok) {
+      await window.syncRegistrationRequestsFromFirebase({silent:true});
+      window.renderGoogleSheetsSeparateList();
+      if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم استيراد الطلب إلى القائمة الرسمية');
+    } else {
+      alert('تعذر الاستيراد إلى Firebase. لم يتم تغيير القائمة الرسمية.');
+    }
+  };
+
+  var oldRenderForms = window.renderFormRequests;
+  if (typeof oldRenderForms === 'function') {
+    window.renderFormRequests = function(){
+      if (Array.isArray(syncedFormRows)) syncedFormRows = syncedFormRows.filter(function(r){ return !sourceIsGoogleSheet(r); });
+      var res = oldRenderForms.apply(this, arguments);
+      ensureSheetsPanel();
+      if (Array.isArray(window.kpSheetFormRows) && window.kpSheetFormRows.length) window.renderGoogleSheetsSeparateList();
+      return res;
+    };
+  }
+
+  try { clearInterval(autoSyncTimer); } catch(_e){}
+  setTimeout(function(){
+    ensureSheetsPanel();
+    try { window.syncRegistrationRequestsFromFirebase({silent:true}); } catch(_e){}
+  }, 600);
 })();
 </script>
 </body>
