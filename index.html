@@ -11263,6 +11263,17 @@ async function loadFromFirebase() {
     if (Array.isArray(data.renewals)) {
       renewals = mergeArrayById(renewals, data.renewals, tombstones.renewals || [], deletedRenewals);
       renewals = sanitizeEntityArray(renewals);
+    } else if (data.renewals && typeof data.renewals === 'object') {
+      const remoteRenewalsObjArr = Object.keys(data.renewals).map(function(k){
+        const v = data.renewals[k];
+        if (v && typeof v === 'object' && v.id == null) v.id = k;
+        return v;
+      }).filter(Boolean);
+      renewals = mergeArrayById(renewals, remoteRenewalsObjArr, tombstones.renewals || [], deletedRenewals);
+      renewals = sanitizeEntityArray(renewals);
+    }
+    if (typeof attachRenewalAttachmentsFromRemote === 'function') {
+      attachRenewalAttachmentsFromRemote(data);
     }
     sanitizeCoreData();
     if (data.attLog) { Object.keys(data.attLog).forEach(function(k){ attLog[k] = data.attLog[k]; }); }
@@ -12661,6 +12672,327 @@ function openEditRenewal(id) {
   document.getElementById('mo-renewal').classList.add('on');
 }
 
+function attachRenewalAttachmentsFromRemote(data) {
+  try {
+    if (!data || !data.renewalAttachments) return;
+    const src = data.renewalAttachments;
+    const map = {};
+    if (Array.isArray(src)) {
+      src.forEach(function(att, idx){ if (att && att.data) map[normKey(att.id || idx)] = att; });
+    } else if (src && typeof src === 'object') {
+      Object.keys(src).forEach(function(k){
+        const att = src[k];
+        if (att && att.data) map[normKey(k)] = att;
+      });
+    }
+    if (!Object.keys(map).length) return;
+    renewals = (renewals || []).map(function(r){
+      if (!r) return r;
+      const key = normKey(r.id);
+      if (map[key]) {
+        r.attachment = map[key];
+        r.attachmentRef = true;
+        r.attachmentName = map[key].name || r.attachmentName || '';
+        r.attachmentType = map[key].type || r.attachmentType || '';
+        r.attachmentSize = map[key].size || r.attachmentSize || 0;
+      }
+      return r;
+    });
+  } catch(e) {
+    console.warn('attachRenewalAttachmentsFromRemote failed:', e);
+  }
+}
+
+function stripRenewalInlineAttachment(r) {
+  const out = Object.assign({}, r || {});
+  delete out.attachment;
+  delete out.file;
+  delete out.fileName;
+  delete out.fileType;
+  delete out.fileSize;
+  return out;
+}
+
+async function saveRenewalRemoteAware(record, options) {
+  options = options || {};
+  try {
+    if (!record || record.id == null) throw new Error('missing renewal id');
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ التجديد...');
+
+    let remoteData = null;
+    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (fetchRes.ok) remoteData = await fetchRes.json();
+    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
+
+    const key = normKey(record.id);
+    const saveRecord = stripRenewalInlineAttachment(record);
+    saveRecord.updatedAt = new Date().toISOString();
+    saveRecord.updatedBy = (currentUser && (currentUser.username || currentUser.name)) ? (currentUser.username || currentUser.name) : 'system';
+    saveRecord.version = (parseInt(saveRecord.version || 0, 10) || 0) + 1;
+
+    const renewalsWasObject = remoteData.renewals && typeof remoteData.renewals === 'object' && !Array.isArray(remoteData.renewals);
+    const active = Array.isArray(remoteData.renewals) ? remoteData.renewals : (renewalsWasObject ? Object.keys(remoteData.renewals).map(function(k){
+      const v = remoteData.renewals[k];
+      if (v && typeof v === 'object' && v.id == null) v.id = k;
+      return v;
+    }).filter(Boolean) : []);
+    const updatedActive = active.filter(function(x){ return normKey(x && x.id) !== key; });
+    updatedActive.push(saveRecord);
+    const updatedRenewalsPayload = renewalsWasObject ? updatedActive.reduce(function(acc, item){
+      if (item && item.id != null) acc[normKey(item.id)] = item;
+      return acc;
+    }, {}) : updatedActive;
+
+    let renewalAttachments = {};
+    if (remoteData.renewalAttachments && typeof remoteData.renewalAttachments === 'object' && !Array.isArray(remoteData.renewalAttachments)) {
+      renewalAttachments = Object.assign({}, remoteData.renewalAttachments);
+    }
+
+    const att = options.removeAttachment ? null : (options.attachment || getRenAttachment(record));
+    if (options.removeAttachment) {
+      delete renewalAttachments[key];
+    } else if (att && att.data) {
+      renewalAttachments[key] = {
+        name: att.name || 'مرفق التجديد',
+        type: att.type || '',
+        size: att.size || 0,
+        data: att.data
+      };
+      saveRecord.attachmentRef = true;
+      saveRecord.attachmentName = renewalAttachments[key].name;
+      saveRecord.attachmentType = renewalAttachments[key].type;
+      saveRecord.attachmentSize = renewalAttachments[key].size;
+    }
+
+    if (remoteData.tombstones && Array.isArray(remoteData.tombstones.renewals)) {
+      remoteData.tombstones.renewals = remoteData.tombstones.renewals.filter(function(x){ return normKey(x) !== key; });
+    }
+    if (!remoteData.restoredKeys || typeof remoteData.restoredKeys !== 'object') remoteData.restoredKeys = {};
+    if (!Array.isArray(remoteData.restoredKeys.renewals)) remoteData.restoredKeys.renewals = [];
+    if (!hasKey(remoteData.restoredKeys.renewals, record.id)) remoteData.restoredKeys.renewals.push(record.id);
+
+    const savedAt = new Date().toISOString();
+    const patchPayload = {
+      renewals: updatedRenewalsPayload,
+      renewalAttachments: renewalAttachments,
+      savedAt: savedAt,
+      version: remoteData.version || 2
+    };
+    if (remoteData.tombstones) patchPayload.tombstones = remoteData.tombstones;
+    if (remoteData.restoredKeys) patchPayload.restoredKeys = remoteData.restoredKeys;
+    if (Array.isArray(remoteData.deletedRenewals)) {
+      patchPayload.deletedRenewals = remoteData.deletedRenewals.filter(function(x){ return normKey(x && x.id) !== key; });
+    }
+
+    const putRes = await fetch(FB_URL + '.json', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(patchPayload)
+    });
+    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ التجديد مع المرفق');
+    hasUnsavedChanges = false;
+    lastSavedAt = savedAt;
+    localStorage.setItem('kp_last_synced_at', savedAt);
+    return true;
+  } catch(e) {
+    console.error('saveRenewalRemoteAware failed:', e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط — لم يصل التجديد/المرفق إلى Firebase');
+    try { autoSave(); } catch(_e) {}
+    return false;
+  }
+}
+
+function formatFileSize(bytes) {
+  bytes = Number(bytes || 0);
+  if (!bytes) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function resetRenewalFileUI(existingAttachment) {
+  const input = document.getElementById('ren-file');
+  const preview = document.getElementById('ren-file-preview');
+  const current = document.getElementById('ren-file-current');
+  if (input) input.value = '';
+  if (preview) preview.innerHTML = '';
+  if (current) {
+    if (existingAttachment && existingAttachment.data) {
+      current.innerHTML = '📎 المرفق الحالي: <b>' + (existingAttachment.name || 'ملف') + '</b> ' + (existingAttachment.size ? '(' + formatFileSize(existingAttachment.size) + ')' : '') +
+        ' <button type="button" class="btn btn-out btn-sm" onclick="openRenAttachmentFromModal()">عرض</button>' +
+        ' <button type="button" class="btn btn-r btn-sm" onclick="removeRenewalAttachment()">حذف المرفق</button>';
+      current.dataset.remove = '0';
+    } else {
+      current.innerHTML = 'لا يوجد مرفق حالي';
+      current.dataset.remove = '0';
+    }
+  }
+}
+
+function previewRenewalFile() {
+  const input = document.getElementById('ren-file');
+  const preview = document.getElementById('ren-file-preview');
+  const file = input && input.files && input.files[0];
+  if (!preview) return;
+  if (!file) { preview.innerHTML = ''; return; }
+  const maxBytes = 2 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    alert('حجم الملف كبير. الرجاء رفع ملف لا يتجاوز 2MB حتى لا يثقل قاعدة البيانات.');
+    input.value = '';
+    preview.innerHTML = '';
+    return;
+  }
+  preview.innerHTML = 'سيتم رفع: <b>' + file.name + '</b> (' + formatFileSize(file.size) + ')';
+  const current = document.getElementById('ren-file-current');
+  if (current) current.dataset.remove = '0';
+}
+
+function removeRenewalAttachment() {
+  const current = document.getElementById('ren-file-current');
+  const input = document.getElementById('ren-file');
+  if (input) input.value = '';
+  if (current) {
+    current.dataset.remove = '1';
+    current.innerHTML = 'سيتم حذف المرفق عند الضغط على حفظ.';
+  }
+  const preview = document.getElementById('ren-file-preview');
+  if (preview) preview.innerHTML = '';
+}
+
+function readRenewalFileInput() {
+  return new Promise(function(resolve, reject) {
+    const input = document.getElementById('ren-file');
+    const file = input && input.files && input.files[0];
+    if (!file) return resolve(null);
+    const maxBytes = 2 * 1024 * 1024;
+    if (file.size > maxBytes) return reject(new Error('حجم الملف كبير. الرجاء رفع ملف لا يتجاوز 2MB.'));
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      resolve({ name: file.name, type: file.type || '', size: file.size || 0, data: e.target.result });
+    };
+    reader.onerror = function() { reject(new Error('تعذر قراءة الملف.')); };
+    reader.readAsDataURL(file);
+  });
+}
+
+function openRenAttachmentFromModal() {
+  if (!editingRenId) return;
+  openRenAttachmentById(editingRenId);
+}
+
+function openRenAttachmentById(id) {
+  const r = renewals.find(function(x){ return normKey(x && x.id) === normKey(id); });
+  const att = getRenAttachment(r);
+  if (!att || !att.data) { alert('لا يوجد مرفق لهذا التجديد'); return; }
+  const w = window.open('', '_blank');
+  if (!w) { alert('المتصفح منع فتح الملف. اسمحي بالنوافذ المنبثقة ثم جربي مرة ثانية.'); return; }
+  const safeTitle = (att.name || 'مرفق التجديد').replace(/[<>&"]/g, '');
+  if ((att.type || '').indexOf('pdf') !== -1 || String(att.data).indexOf('application/pdf') === 5) {
+    w.document.write('<!doctype html><html><head><title>'+safeTitle+'</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0"><iframe src="'+att.data+'" style="border:0;width:100vw;height:100vh"></iframe></body></html>');
+  } else {
+    w.document.write('<!doctype html><html><head><title>'+safeTitle+'</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;text-align:center;background:#f7fbf9"><img src="'+att.data+'" style="max-width:100%;height:auto"></body></html>');
+  }
+  w.document.close();
+}
+
+function renderRenewals() {
+  const filterCat    = (document.getElementById('ren-filter-cat')    || {}).value || '';
+  const filterStatus = (document.getElementById('ren-filter-status') || {}).value || '';
+  const search       = ((document.getElementById('ren-search')       || {}).value || '').toLowerCase();
+
+  let filtered = renewals.map(r => ({ ...r, days: getRenDays(r.date) }));
+  if (filterCat)    filtered = filtered.filter(r => r.cat === filterCat);
+  if (filterStatus) filtered = filtered.filter(r => getRenStatus(r.days) === filterStatus);
+  if (search)       filtered = filtered.filter(r => r.name.toLowerCase().includes(search));
+
+  // Sort: expired first, then by days ascending
+  filtered.sort((a,b) => {
+    const da = a.days === null ? 9999 : a.days;
+    const db = b.days === null ? 9999 : b.days;
+    return da - db;
+  });
+
+  // Stats
+  const all = renewals.map(r => ({ ...r, days: getRenDays(r.date) }));
+  const expired = all.filter(r => r.days !== null && r.days < 0).length;
+  const within30 = all.filter(r => r.days !== null && r.days >= 0 && r.days <= 30).length;
+  const within60 = all.filter(r => r.days !== null && r.days > 30 && r.days <= 60).length;
+  document.getElementById('ren-expired-count').textContent = expired;
+  document.getElementById('ren-30-count').textContent = within30;
+  document.getElementById('ren-60-count').textContent = within60;
+  document.getElementById('ren-total-count').textContent = renewals.length;
+
+  const list = document.getElementById('ren-list');
+  if (!list) return;
+
+  if (!filtered.length) {
+    list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)">لا توجد نتائج</div>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(r => {
+    const status = getRenStatus(r.days);
+    const emoji  = CAT_EMOJI[r.cat] || '📌';
+    const daysLabel = r.days === null ? '—' : (r.days < 0 ? 'منتهية' : r.days + ' يوم');
+    const daysColor = status === 'expired' ? '#e74c3c' : status === 'urgent' ? '#e67e22' : status === 'warning' ? '#f39c12' : 'var(--g2)';
+
+    return '<div class="ren-row ' + status + '" onclick="openEditRenewal(' + r.id + ')">' +
+      '<div class="ren-badge" style="background:' + (status==='expired'?'#fde8e8':status==='urgent'?'#fef0e7':status==='warning'?'#fefce7':'var(--gp)') + '">' + emoji + '</div>' +
+      '<div class="ren-info">' +
+        '<div class="ren-name">' + r.name + '</div>' +
+        '<div class="ren-meta">' +
+          '<span>📅 ' + (r.date || '—') + '</span>' +
+          '<span style="background:var(--gp);padding:1px 7px;border-radius:8px">' + r.cat + '</span>' +
+          (r.cost ? '<span>💰 ' + r.cost + ' د.إ</span>' : '') +
+          (r.notes ? '<span>📝 ' + r.notes + '</span>' : '') +
+          (getRenAttachment(r) ? '<span>📎 مرفق رسمي</span>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="ren-days">' +
+        '<div class="ren-days-num" style="color:' + daysColor + '">' + daysLabel + '</div>' +
+        '<div class="ren-days-lbl">' + (r.days !== null && r.days >= 0 ? 'متبقي' : '') + '</div>' +
+      '</div>' +
+      '<div class="ren-actions" onclick="event.stopPropagation()">' +
+        (getRenAttachment(r) ? '<button class="btn btn-b btn-sm" onclick="openRenAttachmentById(' + r.id + ')">📎 عرض</button>' : '') +
+        '<button class="btn btn-out btn-sm" onclick="openEditRenewal(' + r.id + ')">✏️</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  // Update notifications
+  updateNotifications();
+}
+
+function openAddRenewal() {
+  editingRenId = null;
+  document.getElementById('mo-renewal-title').textContent = 'إضافة تجديد جديد';
+  document.getElementById('ren-nm').value = '';
+  document.getElementById('ren-dt').value = '';
+  document.getElementById('ren-cost').value = '';
+  document.getElementById('ren-notes-txt').value = '';
+  document.getElementById('ren-cat-sel').value = 'تراخيص';
+  resetRenewalFileUI(null);
+  document.getElementById('ren-del-btn').style.display = 'none';
+  document.getElementById('mo-renewal').classList.add('on');
+}
+
+function openEditRenewal(id) {
+  const r = renewals.find(x => x.id === id);
+  if (!r) return;
+  editingRenId = id;
+  document.getElementById('mo-renewal-title').textContent = 'تعديل: ' + r.name;
+  document.getElementById('ren-nm').value = r.name;
+  document.getElementById('ren-dt').value = r.date || '';
+  document.getElementById('ren-cost').value = r.cost || '';
+  document.getElementById('ren-cat-sel').value = r.cat || 'أخرى';
+  document.getElementById('ren-notes-txt').value = r.notes || '';
+  resetRenewalFileUI(getRenAttachment(r));
+  document.getElementById('ren-del-btn').style.display = 'inline-flex';
+  document.getElementById('mo-renewal').classList.add('on');
+}
+
 async function saveRenewal() {
   const name  = document.getElementById('ren-nm').value.trim();
   const date  = document.getElementById('ren-dt').value;
@@ -12703,9 +13035,9 @@ async function saveRenewal() {
   persistCoreDataToLocalStorage();
   closeAll();
   renderRenewals();
-  // ✅ حفظ فردي
+  // ✅ حفظ فردي للتجديدات + حفظ المرفقات بمسار مستقل حتى تظهر عند كل الموظفين
   if (savedRenewal) {
-    await saveRecordRemoteAware({type:'renewals', activeArrayName:'renewals', record:savedRenewal, keyField:'id', label:'التجديد'});
+    await saveRenewalRemoteAware(savedRenewal, { attachment: newAttachment || getRenAttachment(savedRenewal), removeAttachment: !!removeAtt });
   }
 }
 
