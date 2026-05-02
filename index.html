@@ -4201,17 +4201,9 @@ async function permanentDeleteRemoteAware(config) {
     updates['savedAt'] = savedAt;
     updates['version'] = 2;
 
-    const _ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const _timer = _ctrl ? setTimeout(()=>_ctrl.abort(), 8000) : null;
-    let res;
-    try {
-      res = await fetch(FB_URL + '.json', {
-        method: 'PATCH',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(updates),
-        signal: _ctrl ? _ctrl.signal : undefined
-      });
-    } finally { if (_timer) clearTimeout(_timer); }
+    const _fetchP = fetch(FB_URL + '.json', { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(updates) });
+    const _timeoutP = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000));
+    const res = await Promise.race([_fetchP, _timeoutP]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
 
     try { localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys)); } catch(_e){}
@@ -15658,14 +15650,11 @@ document.addEventListener('change', function(e){
   async function kpPatchFirebase(updates){
     var base = String(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, '');
     if (!base) return false;
-    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    var timer = controller ? setTimeout(function(){ controller.abort(); }, 8000) : null;
-    try {
-      var res = await fetch(base + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates), signal: controller ? controller.signal : undefined });
-      if (timer) clearTimeout(timer);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return true;
-    } catch(e) { if (timer) clearTimeout(timer); throw e; }
+    var fetchPromise = fetch(base + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) });
+    var timeoutPromise = new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, 10000); });
+    var res = await Promise.race([fetchPromise, timeoutPromise]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return true;
   }
   window.kpPurgeStudentFromFirebase = async function(id){
     var key = kpStudentEntityKey(id);
