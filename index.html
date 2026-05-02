@@ -17759,5 +17759,72 @@ document.addEventListener('change', function(e){
   };
 })();
 </script>
+<script>
+/* ============================================================
+   KP REVERT GOOGLE SHEETS OFFICIAL SYNC 2026-05-02
+   Restores Google Sheets as a separate preview/manual import source.
+   ============================================================ */
+(function(){
+  'use strict';
+  window.__kpSheetsOfficialSyncInstalled = false;
+  window.syncGoogleSheetsIntoOfficialRequests = async function(){
+    return { disabled:true, reverted:true, reason:'google_sheets_separate_manual_import' };
+  };
+  if (typeof window.__kpOriginalIsolatedSheetsSync === 'function') {
+    window.syncFromGoogleSheets = window.__kpOriginalIsolatedSheetsSync;
+    try { syncFromGoogleSheets = window.syncFromGoogleSheets; } catch(_e){}
+  }
+
+  var officialSyncOnly = function(){
+    try { clearInterval(autoSyncTimer); } catch(_e){}
+    try {
+      Promise.resolve().then(function(){
+        if (typeof window.syncRegistrationRequestsFromFirebase === 'function') {
+          return window.syncRegistrationRequestsFromFirebase({ silent:true, full:false });
+        }
+      });
+      autoSyncTimer = setInterval(function(){
+        Promise.resolve().then(function(){
+          if (typeof window.syncRegistrationRequestsFromFirebase === 'function') {
+            return window.syncRegistrationRequestsFromFirebase({ silent:true, full:false });
+          }
+        }).catch(function(){});
+      }, 5 * 60 * 1000);
+    } catch(_e){}
+    return true;
+  };
+  window.startAutoSync = officialSyncOnly;
+  try { startAutoSync = window.startAutoSync; } catch(_e){}
+
+  function restoreSheetsUi(){
+    var btn = document.getElementById('sync-sheets-btn');
+    if (btn) {
+      btn.textContent = 'قراءة Google Sheets منفصل';
+      btn.className = 'btn btn-y';
+      btn.disabled = false;
+      btn.onclick = function(){ window.syncFromGoogleSheets(); };
+    }
+    var note = document.getElementById('forms-official-note');
+    if (note) {
+      note.style.background = '#eefaf3';
+      note.style.color = '#0e6b35';
+      note.innerHTML = 'هذه القائمة الرسمية تقرأ من Firebase فقط: nursery_data/registrationRequests. Google Sheets لا يدخل هنا إلا باستيراد يدوي.';
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', restoreSheetsUi);
+  else restoreSheetsUi();
+  setTimeout(restoreSheetsUi, 1000);
+
+  window.kpSheetsOfficialSyncStatus = function(){
+    return {
+      enabled:false,
+      reverted:true,
+      mode:'separate_preview_manual_import',
+      officialPath:'nursery_data/registrationRequests',
+      sameList:false
+    };
+  };
+})();
+</script>
 </body>
 </html>
