@@ -4194,17 +4194,19 @@ async function permanentDeleteRemoteAware(config) {
       restoredKeys[type] = restoredKeys[type].filter(function(x){ return normKey(x) !== normKey(key); });
     }
 
+    // الخطوة 1: احذف السجل بـ DELETE مباشرة على مساره (PATCH+null لا يحذف في Firebase)
+    const _delP = fetch(FB_URL + '/' + deletedArrayName + '/' + encodeURIComponent(entityKey) + '.json', { method: 'DELETE' });
+    const _delTimeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000));
+    const delRes = await Promise.race([_delP, _delTimeout]);
+    if (!delRes.ok) throw new Error('HTTP ' + delRes.status);
+
+    // الخطوة 2: حدّث tombstones + restoredKeys + savedAt بـ PATCH منفصل
     const updates = {};
-    updates[deletedArrayName + '/' + entityKey] = null;
     updates['tombstones/' + type] = tombstones[type];
     if (restoredKeys && Array.isArray(restoredKeys[type])) updates['restoredKeys/' + type] = restoredKeys[type];
     updates['savedAt'] = savedAt;
     updates['version'] = 2;
-
-    const _fetchP = fetch(FB_URL + '.json', { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(updates) });
-    const _timeoutP = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000));
-    const res = await Promise.race([_fetchP, _timeoutP]);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    fetch(FB_URL + '.json', { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(updates) }).catch(function(){});
 
     try { localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys)); } catch(_e){}
     if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم الحذف النهائي لـ ' + label);
