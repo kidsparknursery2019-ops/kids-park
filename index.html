@@ -73,6 +73,45 @@ document.addEventListener('click', function(e) {
   else window.ensureMsalLoaded().catch(function(){});
 })();
 </script>
+
+<script>
+// ============================================================
+// ✅ FIX 2026-05-02 — تعطيل التخزين المحلي لطلبات التسجيل فقط
+// السبب: kp_form_rows كان يمتلئ بسبب حجم طلبات/مرفقات التسجيل ويسبب quota exceeded
+// النتيجة: طلبات التسجيل تعتمد على Firebase فقط، بدون كاش محلي لهذا القسم.
+// ملاحظة: لا يؤثر على localStorage لباقي أقسام النظام.
+// ============================================================
+(function(){
+  if (window.__KP_DISABLE_REGISTRATION_LOCAL_CACHE__) return;
+  window.__KP_DISABLE_REGISTRATION_LOCAL_CACHE__ = true;
+  window.KP_REGISTRATION_FIREBASE_ONLY = true;
+
+  var BLOCKED_KEYS = { kp_form_rows: true };
+  function isBlockedKey(key){ return !!BLOCKED_KEYS[String(key || '')]; }
+
+  try { window.localStorage.removeItem('kp_form_rows'); } catch(_e) {}
+
+  try {
+    var nativeGetItem = Storage.prototype.getItem;
+    var nativeSetItem = Storage.prototype.setItem;
+    var nativeRemoveItem = Storage.prototype.removeItem;
+
+    Storage.prototype.getItem = function(key){
+      if (isBlockedKey(key)) return null;
+      return nativeGetItem.apply(this, arguments);
+    };
+    Storage.prototype.setItem = function(key, value){
+      if (isBlockedKey(key)) return undefined;
+      return nativeSetItem.apply(this, arguments);
+    };
+    Storage.prototype.removeItem = function(key){
+      if (isBlockedKey(key)) return undefined;
+      return nativeRemoveItem.apply(this, arguments);
+    };
+  } catch(_e) {}
+})();
+</script>
+
 <script>
 // Independent receipt verification URL (Netlify) - QR will not point to the system URL
 window.KP_VERIFY_BASE_URL = 'https://kids-park-nursery-receipt-verificatio.netlify.app/';
@@ -15108,18 +15147,9 @@ document.addEventListener('change', function(e){
     return rows;
   }
   function uSafeStoreRows(rows){
-    try { localStorage.setItem('kp_form_rows', JSON.stringify(rows || [])); return; } catch(e) {}
-    // إذا امتلأ localStorage بسبب صور base64، خزّن نسخة خفيفة محلياً فقط، والنسخة الكاملة تبقى على Firebase.
-    try {
-      var light = (rows || []).map(function(r){
-        var x = Object.assign({}, r);
-        Object.keys(x).forEach(function(k){
-          if (/^img|image|photo|file|attachment/i.test(k) && String(x[k] || '').length > 800) x[k] = '';
-        });
-        return x;
-      });
-      localStorage.setItem('kp_form_rows', JSON.stringify(light));
-    } catch(_e) {}
+    // Firebase-only mode for registration requests: do not store kp_form_rows locally.
+    // This prevents quota exceeded and keeps registrationRequests as the single source of truth.
+    return;
   }
 
   window.kpMigrateRegistrationRequestsToNurseryData = async function(options){
@@ -15157,8 +15187,11 @@ document.addEventListener('change', function(e){
   async function uOfficialSync(options){
     options = options || {};
     try {
-      // يسحب أي طلبات قديمة/جديدة كتبتها فورمات أقدم على root ثم ينقلها للرسمي.
-      await window.kpMigrateRegistrationRequestsToNurseryData({ silent:true, force: !!options.forceMigration });
+      // لا نشغل migration تلقائياً بكل مزامنة حتى لا يسبب بطء أو رسائل متكررة.
+      // شغليه يدوياً فقط عند الحاجة عبر: kpForceFullSync() أو kpMigrateRegistrationRequestsToNurseryData({force:true})
+      if (options.forceMigration) {
+        await window.kpMigrateRegistrationRequestsToNurseryData({ silent:true, force:true });
+      }
     } catch(e) { console.warn('registration migration skipped:', e && e.message); }
 
     try {
