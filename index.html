@@ -8133,7 +8133,7 @@ function restoreBackup(event) {
       if (backup.CLASSES) Object.assign(CLASSES, backup.CLASSES);
       if (backup.nurserySettings) Object.assign(nurserySettings, backup.nurserySettings);
       if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(backup.kp_users));
-      if (backup.kp_form_rows) { localStorage.setItem('kp_form_rows', JSON.stringify(backup.kp_form_rows)); syncedFormRows = backup.kp_form_rows; }
+      if (backup.kp_form_rows) { syncedFormRows = backup.kp_form_rows; _saveFormRowsSlim(syncedFormRows); }
       refreshNextIds();
       // امسح أي كاش محلي قديم قبل الاستبدال الكامل حتى لا يرجع الطلاب الزائدون.
       ['kp_students_data','kp_payments_data','kp_expenses_data','kp_renewals_data','kp_attlog_data','kp_classes','kp_deleted_students','kp_deleted_payments','kp_deleted_expenses','kp_deleted_renewals','kp_deleted_classes','kp_students_backup_before_health_action'].forEach(function(k){
@@ -9896,7 +9896,7 @@ async function syncRegistrationRequestsFromFirebase() {
       if (typeof applyLocalDecisionsToFormRows === 'function') {
         try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e){}
       }
-      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      _saveFormRowsSlim(syncedFormRows);
       // ✅ حفظ فردي للطلبات الواردة بدفعة واحدة (الجديدة فقط)
       var trulyNew = incoming.filter(function(r){
         var existsDecided = syncedFormRows.some(function(x){
@@ -10080,7 +10080,7 @@ async function archiveFirebaseRegistrationRequest(r, status) {
       if (typeof applyLocalDecisionsToFormRows === 'function') {
         try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e){}
       }
-      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      _saveFormRowsSlim(syncedFormRows);
 
       // احفظ فقط الطلبات الجديدة القادمة من صفحة الأهالي داخل kp_form_rows كي تظهر لباقي الأجهزة حتى لو مسار pending لم يُقرأ لاحقاً
       if (incoming.length && typeof saveFormRowsBatchRemoteAware === 'function') {
@@ -10183,7 +10183,7 @@ async function archiveFirebaseRegistrationRequest(r, status) {
     if (typeof applyLocalDecisionsToFormRows === 'function') {
       try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e){}
     }
-    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
+    try { _saveFormRowsSlim(syncedFormRows); } catch(_e){}
     if (filtered.length && typeof saveFormRowsBatchRemoteAware === 'function') {
       try { await saveFormRowsBatchRemoteAware(filtered); } catch(_e){}
     }
@@ -11416,7 +11416,7 @@ async function loadFromFirebase() {
         try { incomingFormRows = applyLocalDecisionsToFormRows(incomingFormRows); } catch(_e){}
       }
       syncedFormRows = incomingFormRows;
-      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+      _saveFormRowsSlim(syncedFormRows);
     }
     await loadLogoFromFirebase();
     if (!logoDataUrl && nurserySettings.logoDataUrl) {
@@ -11660,6 +11660,38 @@ else setTimeout(kpRenderSyncUI, 0);
 const SHEET_ID = '1ZAdT4ohpxxhjnwi8Zwmc7sjeFvRcK12WZ1a1-KvE86Y';
 const SHEETS_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:json';
 let syncedFormRows = JSON.parse(localStorage.getItem('kp_form_rows') || '[]');
+
+// ── حفظ خفيف للـ localStorage: نخزن بس الحقول الضرورية لتجنب امتلاء الكوتا ──
+function _saveFormRowsSlim(rows) {
+  try {
+    var slim = (rows || []).map(function(r) {
+      if (!r) return null;
+      return {
+        firebaseKey:  r.firebaseKey  || r._fbKey || '',
+        requestId:    r.requestId    || '',
+        timestamp:    r.timestamp    || '',
+        status:       r.status       || 'pending',
+        decisionAt:   r.decisionAt   || '',
+        rowUpdatedAt: r.rowUpdatedAt || '',
+        childName:    r.childName    || r.name || '',
+        parentName:   r.parentName   || '',
+        phone:        r.phone        || '',
+        submittedAt:  r.submittedAt  || r.createdAt || ''
+      };
+    }).filter(Boolean);
+    localStorage.setItem('kp_form_rows', JSON.stringify(slim));
+  } catch(_e) {
+    try {
+      localStorage.removeItem('kp_form_rows');
+      var keys = (rows || []).map(function(r) {
+        if (!r) return null;
+        return { firebaseKey: r.firebaseKey || '', status: r.status || 'pending', decisionAt: r.decisionAt || '' };
+      }).filter(Boolean);
+      localStorage.setItem('kp_form_rows', JSON.stringify(keys));
+    } catch(_e2) { /* فشل تماماً، تجاهل */ }
+  }
+}
+
 setTimeout(updateFormsNavBadge, 0);
 let autoSyncTimer = null;
 
@@ -11848,7 +11880,7 @@ async function syncFromGoogleSheets() {
       }
     });
 
-    localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+    _saveFormRowsSlim(syncedFormRows);
     // ✅ حفظ فردي للطلبات الجديدة/المعدلة بدفعة واحدة (بدل autoSave كامل)
     if (changedRows.length) {
       await saveFormRowsBatchRemoteAware(changedRows);
@@ -12091,7 +12123,7 @@ function findPotentialStudentMatches(r) {
 async function persistFormRowsAndSync(formRow) {
   // ✅ حفظ فردي — إذا تم تمرير formRow بنحفظه فردياً
   // إذا ما تم تمرير شي بنحفظ كل المصفوفة (للتراجع عن قرارات قديمة)
-  localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+  _saveFormRowsSlim(syncedFormRows);
   if (formRow) {
     await saveFormRowRemoteAware(formRow);
   } else {
@@ -14062,7 +14094,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   };
 
   window.persistFormRowsAndSync = async function(formRow) {
-    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e) {}
+    try { _saveFormRowsSlim(syncedFormRows); } catch(_e) {}
     if (formRow && typeof saveFormRowRemoteAware === 'function') {
       return await saveFormRowRemoteAware(formRow);
     }
@@ -14088,7 +14120,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       } catch(_e) {}
     }
 
-    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e) {}
+    try { _saveFormRowsSlim(syncedFormRows); } catch(_e) {}
     updateFormsNavBadge();
     renderFormRequests();
 
@@ -14170,7 +14202,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     if (typeof applyLocalDecisionsToFormRows === 'function') {
       try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e) {}
     }
-    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e) {}
+    try { _saveFormRowsSlim(syncedFormRows); } catch(_e) {}
     if (filtered.length && typeof saveFormRowsBatchRemoteAware === 'function') {
       try { await saveFormRowsBatchRemoteAware(filtered); } catch(_e) {}
     }
@@ -14538,7 +14570,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
 
       // ── 6. Commit ───────────────────────────────────────────────────────
       syncedFormRows = Object.values(resultMap);
-      try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e) {}
+      try { _saveFormRowsSlim(syncedFormRows); } catch(_e) {}
 
       if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
       if (typeof renderFormRequests   === 'function') renderFormRequests();
@@ -14678,7 +14710,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       if (!Array.isArray(syncedFormRows)) syncedFormRows = [];
       syncedFormRows.push(r);
     }
-    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
+    try { _saveFormRowsSlim(syncedFormRows); } catch(_e){}
 
     if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
     if (typeof renderFormRequests === 'function') renderFormRequests();
@@ -14740,7 +14772,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   //    إلا للصفوف pending (للتوافق مع Google Sheets sync)
   // ============================================================
   window.persistFormRowsAndSync = async function(formRow){
-    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
+    try { _saveFormRowsSlim(syncedFormRows); } catch(_e){}
     try { localStorage.setItem('kp_students', JSON.stringify(students)); } catch(_e){}
 
     // إذا الصف عنده قرار، استعمل العملية الفردية فقط
