@@ -2331,9 +2331,10 @@ body.kp-teacher .kp-sync-panel{
 
     <div class="pg" id="pg-forms">
       <div class="pt">📋 طلبات التسجيل من الفورم المباشر و Google Sheets</div>
-      <div class="sg" style="grid-template-columns:repeat(3,1fr)">
+      <div class="sg" style="grid-template-columns:repeat(4,1fr)">
         <div class="sc y"><div class="sl">طلبات جديدة</div><div class="sv" id="forms-pending-count">—</div></div>
         <div class="sc"><div class="sl">تم القبول</div><div class="sv" id="forms-approved-count">—</div></div>
+        <div class="sc r"><div class="sl">تم الرفض</div><div class="sv" id="forms-rejected-count">—</div></div>
         <div class="sc b"><div class="sl">آخر مزامنة</div><div class="sv" style="font-size:13px" id="forms-last-sync">—</div></div>
       </div>
       <div class="card">
@@ -12122,13 +12123,21 @@ function updateFormsNavBadge() {
 function renderFormRequests() {
   updateFormsNavBadge();
   if (!document.getElementById('pg-forms')) return;
-  var pending  = syncedFormRows.filter(function(r){ return r.status === 'pending'; });
-  var approved = syncedFormRows.filter(function(r){ return r.status === 'approved'; });
-  var rejected = syncedFormRows.filter(function(r){ return r.status === 'rejected'; });
+  function formStatusOf(r){
+    var st = String((r && (r.status || r.decision || r.state)) || 'pending').trim().toLowerCase();
+    if (st === 'accepted' || st === 'accept' || st === 'approved' || st === 'approve' || st === 'قبول' || st === 'مقبول' || st === 'تم القبول') return 'approved';
+    if (st === 'rejected' || st === 'reject' || st === 'رفض' || st === 'مرفوض' || st === 'تم الرفض') return 'rejected';
+    return 'pending';
+  }
+  var pending  = syncedFormRows.filter(function(r){ return formStatusOf(r) === 'pending'; });
+  var approved = syncedFormRows.filter(function(r){ return formStatusOf(r) === 'approved'; });
+  var rejected = syncedFormRows.filter(function(r){ return formStatusOf(r) === 'rejected'; });
   var pc = document.getElementById('forms-pending-count');
   var ac = document.getElementById('forms-approved-count');
+  var rc = document.getElementById('forms-rejected-count');
   if (pc) pc.textContent = pending.length;
   if (ac) ac.textContent = approved.length;
+  if (rc) rc.textContent = rejected.length;
 
   var filter = (document.getElementById('forms-filter') || {}).value || 'pending';
   var search = ((document.getElementById('forms-search') || {}).value || '').toLowerCase();
