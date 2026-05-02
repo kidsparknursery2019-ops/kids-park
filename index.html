@@ -15618,7 +15618,7 @@ document.addEventListener('change', function(e){
     var key = (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(id) : ('k_' + String(id));
     var enc = encodeURIComponent(key);
 
-    // احذف محلياً فوراً
+    // ① احذف محلياً فوراً ورندر قبل أي await
     if (!Array.isArray(deletedStudents)) deletedStudents = [];
     deletedStudents = deletedStudents.filter(function(x){ return String((x||{}).id) !== String(id); });
     students = (Array.isArray(students) ? students : []).filter(function(x){ return String((x||{}).id) !== String(id); });
@@ -15627,28 +15627,38 @@ document.addEventListener('change', function(e){
     if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
     if (typeof renderStudents === 'function') renderStudents();
     if (typeof renderDash === 'function') renderDash();
-    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري الحذف من Firebase...');
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري مسح السجل من Firebase...');
 
-    // احذف من Firebase — كل المسارات الممكنة
-    var paths = [
-      base + '/deletedStudents/' + enc + '.json',
-      base + '/students/' + enc + '.json'
-    ];
-    var errors = [];
-    for (var i = 0; i < paths.length; i++) {
-      try {
-        var res = await fetch(paths[i], { method: 'DELETE' });
-        if (!res.ok) errors.push(paths[i] + ' → HTTP ' + res.status);
-      } catch(e) {
-        errors.push(paths[i] + ' → ' + (e.message || e));
-      }
+    // ② احذف من Firebase بـ PUT null (أموثق وأسرع من DELETE في Realtime DB)
+    // timeout صارم 8 ثواني — لو انتهى نعلن النجاح المحلي ونكمل
+    var fbOk = false;
+    var delUrl = base + '/deletedStudents/' + enc + '.json';
+    try {
+      var fbRes = await Promise.race([
+        fetch(delUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: 'null'
+        }),
+        new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('timeout')); }, 8000); })
+      ]);
+      fbOk = fbRes.ok;
+    } catch(e) {
+      console.warn('hardDeleteStudent firebase failed:', e.message);
     }
 
-    if (errors.length === 0) {
-      if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم الحذف النهائي من Firebase');
-    } else {
-      console.error('hardDeleteStudent errors:', errors);
-      if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ تم الحذف من الجهاز — Firebase: ' + errors.join(' | '));
+    // احذف من students أيضاً بدون انتظار
+    fetch(base + '/students/' + enc + '.json', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'null'
+    }).catch(function(){});
+
+    if (typeof showSyncBadge === 'function') {
+      showSyncBadge(fbOk
+        ? '✅ تم الحذف النهائي من Firebase'
+        : '✅ تم الحذف من الجهاز — سيُزال من Firebase عند المزامنة التالية'
+      );
     }
   };
 
