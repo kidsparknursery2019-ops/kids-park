@@ -17530,7 +17530,7 @@ document.addEventListener('change', function(e){
     if (typeof cleanupDeletedBuckets === 'function') cleanupDeletedBuckets();
     if (originalPushToFirebase) {
       var result = await originalPushToFirebase.apply(this, arguments);
-      try { await window.kpRepairFirebaseSystemShape({ silent:true, includeLocal:true }); } catch(e){ console.warn('post-push system repair failed:', e && e.message); }
+      try { if (typeof window.kpScheduleFirebaseShapeRepair === 'function') window.kpScheduleFirebaseShapeRepair({ silent:true, includeLocal:false, delay:12000 }); } catch(e){ console.warn('post-push system repair schedule failed:', e && e.message); }
       return result;
     }
     return window.kpRepairFirebaseSystemShape({ silent:true, includeLocal:true });
@@ -17556,6 +17556,95 @@ document.addEventListener('change', function(e){
       }
     } catch(_e){}
   }, 7000);
+})();
+</script>
+<script>
+/* ============================================================
+   KP SPEED PATCH 2026-05-02
+   Keeps UI actions immediate and moves expensive cleanup to
+   delayed/background maintenance.
+   ============================================================ */
+(function(){
+  'use strict';
+  if (window.__kpSpeedPatchInstalled) return;
+  window.__kpSpeedPatchInstalled = true;
+
+  var repairTimer = null;
+  window.kpScheduleFirebaseShapeRepair = function(options){
+    options = options || {};
+    clearTimeout(repairTimer);
+    repairTimer = setTimeout(function(){
+      if (document.hidden || navigator.onLine === false) return;
+      if (typeof isSyncing !== 'undefined' && isSyncing) return window.kpScheduleFirebaseShapeRepair(Object.assign({}, options, { delay:5000 }));
+      if (typeof window.kpRepairFirebaseSystemShape === 'function') {
+        window.kpRepairFirebaseSystemShape({
+          silent: options.silent !== false,
+          includeLocal: options.includeLocal === true
+        }).catch(function(e){ console.warn('background Firebase shape repair failed:', e && e.message); });
+      }
+    }, options.delay || 15000);
+  };
+
+  var oldRefreshBars = window.kpRefreshTableScrollbars;
+  var barTimer = null;
+  window.kpRefreshTableScrollbars = function(){
+    clearTimeout(barTimer);
+    barTimer = setTimeout(function(){
+      try { if (typeof oldRefreshBars === 'function') oldRefreshBars(); } catch(e){ console.warn('table scrollbar refresh failed:', e && e.message); }
+    }, 220);
+  };
+
+  function quickStatus(msg){
+    try { if (typeof showSyncBadge === 'function') showSyncBadge(msg); } catch(_e){}
+  }
+
+  var oldSaveRecord = window.saveRecordRemoteAware;
+  window.saveRecordRemoteAware = async function(config){
+    quickStatus('جاري الحفظ...');
+    var result = oldSaveRecord ? await oldSaveRecord(config) : false;
+    if (result) quickStatus('تم الحفظ');
+    return result;
+  };
+  try { saveRecordRemoteAware = window.saveRecordRemoteAware; } catch(_e){}
+
+  var oldMoveToTrash = window.moveRecordToTrashRemoteAware;
+  window.moveRecordToTrashRemoteAware = async function(config){
+    quickStatus('جاري النقل لسلة المحذوفات...');
+    var result = oldMoveToTrash ? await oldMoveToTrash(config) : false;
+    if (result) quickStatus('تم النقل لسلة المحذوفات');
+    return result;
+  };
+  try { moveRecordToTrashRemoteAware = window.moveRecordToTrashRemoteAware; } catch(_e){}
+
+  var oldPermanentDelete = window.permanentDeleteRemoteAware;
+  window.permanentDeleteRemoteAware = async function(config){
+    quickStatus('جاري الحذف النهائي...');
+    var result = oldPermanentDelete ? await oldPermanentDelete(config) : false;
+    if (result) quickStatus('تم الحذف النهائي');
+    return result;
+  };
+  try { permanentDeleteRemoteAware = window.permanentDeleteRemoteAware; } catch(_e){}
+
+  var oldStartAutoSync = window.startAutoSync;
+  window.startAutoSync = function(){
+    try { clearInterval(window.__KP_REG_AUTO_TIMER__); } catch(_e){}
+    try { clearInterval(window.__KP_REG_FAST_PENDING_TIMER__); } catch(_e){}
+    var result = oldStartAutoSync ? oldStartAutoSync.apply(this, arguments) : true;
+    try {
+      clearInterval(window.__KP_REG_AUTO_TIMER__);
+      window.__KP_REG_AUTO_TIMER__ = setInterval(function(){
+        if (!document.hidden && typeof window.syncRegistrationRequestsFromFirebase === 'function') {
+          window.syncRegistrationRequestsFromFirebase({ silent:true, full:false }).catch(function(){});
+        }
+      }, 30000);
+    } catch(_e){}
+    return result;
+  };
+  try { startAutoSync = window.startAutoSync; } catch(_e){}
+
+  setTimeout(function(){
+    try { if (typeof window.startAutoSync === 'function') window.startAutoSync(); } catch(_e){}
+  }, 500);
 })();
 </script>
 <script>
@@ -17824,6 +17913,48 @@ document.addEventListener('change', function(e){
       sameList:false
     };
   };
+})();
+</script>
+<script>
+/* Final speed override: keep the last word in this single-file app. */
+(function(){
+  'use strict';
+  if (window.__kpFinalSpeedOverrideInstalled) return;
+  window.__kpFinalSpeedOverrideInstalled = true;
+
+  window.startAutoSync = function(){
+    try { clearInterval(autoSyncTimer); } catch(_e){}
+    try { clearInterval(window.__KP_REG_AUTO_TIMER__); } catch(_e){}
+    try { clearInterval(window.__KP_REG_FAST_PENDING_TIMER__); } catch(_e){}
+    setTimeout(function(){
+      if (!document.hidden && typeof window.syncRegistrationRequestsFromFirebase === 'function') {
+        window.syncRegistrationRequestsFromFirebase({ silent:true, full:false }).catch(function(){});
+      }
+    }, 250);
+    try {
+      autoSyncTimer = setInterval(function(){
+        if (!document.hidden && typeof window.syncRegistrationRequestsFromFirebase === 'function') {
+          window.syncRegistrationRequestsFromFirebase({ silent:true, full:false }).catch(function(){});
+        }
+      }, 30000);
+      window.__KP_REG_AUTO_TIMER__ = autoSyncTimer;
+    } catch(_e){}
+    return true;
+  };
+  try { startAutoSync = window.startAutoSync; } catch(_e){}
+
+  var finalBarTimer = null;
+  var directBarRefresh = window.kpRefreshTableScrollbars;
+  window.kpRefreshTableScrollbars = function(){
+    clearTimeout(finalBarTimer);
+    finalBarTimer = setTimeout(function(){
+      try { if (typeof directBarRefresh === 'function') directBarRefresh(); } catch(_e){}
+    }, 250);
+  };
+
+  setTimeout(function(){
+    try { window.startAutoSync(); } catch(_e){}
+  }, 700);
 })();
 </script>
 </body>
