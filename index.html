@@ -1310,6 +1310,25 @@ body.kp-admin .email-hint.admin-only-mistral{display:block!important}
 .email-history-title{font-weight:900;color:var(--g1);margin-bottom:3px}
 .email-history-meta{color:var(--muted);font-size:11.5px;display:flex;gap:8px;flex-wrap:wrap}
 
+
+
+/* ✉️ ألوان أزرار البريد — مرتبة وواضحة */
+.email-btn-open{background:linear-gradient(135deg,#5ba1f5,#3b7dd8)!important;color:#fff!important;border-color:#3b7dd8!important}
+.email-btn-reply{background:linear-gradient(135deg,#3eb377,#2a8b54)!important;color:#fff!important;border-color:#2a8b54!important}
+.email-btn-replyall{background:linear-gradient(135deg,#a888e8,#7a4ec1)!important;color:#fff!important;border-color:#7a4ec1!important}
+.email-btn-forward{background:linear-gradient(135deg,#ff9947,#e07a1f)!important;color:#fff!important;border-color:#e07a1f!important}
+.email-btn-copy{background:#fff!important;color:#2a8b54!important;border:2px solid #3eb377!important}
+.email-btn-close{background:linear-gradient(135deg,#ff6b6b,#d63a3a)!important;color:#fff!important;border-color:#d63a3a!important}
+.email-toolbar .btn{box-shadow:0 2px 0 rgba(0,0,0,.10)}
+.email-toolbar .btn:hover{filter:saturate(1.08);transform:translateY(-1px)}
+
+/* 📅 خيارات فترة تصدير الحضور */
+.export-attendance-range{display:none;margin:14px 0 4px;padding:14px;border:2px dashed var(--border);border-radius:16px;background:#fbfdfb}
+.export-attendance-range.on{display:block}
+.export-attendance-range .fg{grid-template-columns:1fr 1fr}
+.export-attendance-hint{grid-column:1/-1;font-size:12px;color:var(--muted);line-height:1.6}
+@media(max-width:560px){.export-attendance-range .fg{grid-template-columns:1fr}}
+
 /* responsive */
 @media(max-width:980px){
   .email-main-layout{grid-template-columns:1fr;direction:rtl}
@@ -1802,8 +1821,7 @@ body.kp-teacher .kp-sync-panel{
     <div class="nav" id="nav-forms" onclick="go('forms')">      <span class="ni">📋</span><span>طلبات التسجيل</span><span id="forms-nav-badge" class="nav-badge" style="display:none">0</span></div>
     <div class="nav" id="nav-renewals" onclick="go('renewals')">   <span class="ni">🔔</span><span>التجديدات</span><span id="renewals-nav-badge" class="nav-badge" style="display:none">0</span></div>
     <div class="nav"     onclick="go('finreport')"> <span class="ni">📈</span><span>التقارير المالية</span></div>
-    <div class="nav" id="nav-deleted" onclick="go('deleted')">    <span class="ni">👶</span><span>الطلاب المحذوفون</span></div>
-    <div class="nav" id="nav-other-deleted" onclick="go('otherdeleted')">    <span class="ni">🗂️</span><span>باقي المحذوفات</span></div>
+    <div class="nav" id="nav-other-deleted" onclick="go('otherdeleted')">    <span class="ni">🗂️</span><span>سلة المحذوفات</span></div>
     <div class="side-sep"></div>
     <div class="nav" id="nav-email" onclick="go('email')"> <span class="ni">✉️</span><span>البريد</span></div>
     <div class="nav" id="nav-admin" onclick="go('admin')" style="display:none"><span class="ni">⚙️</span><span>الإعدادات</span></div>
@@ -1941,11 +1959,11 @@ body.kp-teacher .kp-sync-panel{
         <div class="email-panel email-preview-panel">
           <div class="ct">📨 معاينة الرسالة</div>
           <div id="email-preview-actions" class="email-toolbar" style="display:none">
-            <button class="btn btn-y btn-sm" onclick="openSelectedEmailFull()">⛶ فتح كامل</button>
-            <button class="btn btn-g btn-sm" onclick="replyToSelectedEmail()">↩️ رد</button>
-            <button class="btn btn-b btn-sm" onclick="replyAllToSelectedEmail()">↪️ رد للجميع</button>
-            <button class="btn btn-y btn-sm" onclick="forwardSelectedEmail()">➡️ تمرير</button>
-            <button class="btn btn-out btn-sm" onclick="copySelectedEmailText()">📋 نسخ النص</button>
+            <button class="btn email-btn-open btn-sm" onclick="openSelectedEmailFull()">⛶ فتح كامل</button>
+            <button class="btn email-btn-reply btn-sm" onclick="replyToSelectedEmail()">↩️ رد</button>
+            <button class="btn email-btn-replyall btn-sm" onclick="replyAllToSelectedEmail()">↪️ رد للجميع</button>
+            <button class="btn email-btn-forward btn-sm" onclick="forwardSelectedEmail()">➡️ إعادة توجيه</button>
+            <button class="btn email-btn-copy btn-sm" onclick="copySelectedEmailText()">📋 نسخ النص</button>
           </div>
           <div id="email-preview" class="email-preview" ondblclick="openSelectedEmailFull()"><div style="padding:40px 20px;text-align:center;color:var(--muted);font-size:13px;line-height:1.8">📭<br>لا توجد رسالة محددة<br><span style="font-size:11.5px">اختاري رسالة من القائمة لعرضها هنا</span></div></div>
           <div id="email-attachments-view" class="email-attachments-view"></div>
@@ -2181,7 +2199,7 @@ body.kp-teacher .kp-sync-panel{
 
     <!-- OTHER DELETED ITEMS PAGE -->
     <div class="pg" id="pg-otherdeleted">
-      <div class="pt">🗂️ باقي المحذوفات</div>
+      <div class="pt">🗂️ سلة المحذوفات</div>
       <div class="sg" style="grid-template-columns:repeat(4,1fr)">
         <div class="sc r"><div class="sl">إجمالي العناصر</div><div class="sv" id="other-del-count">—</div></div>
         <div class="sc"><div class="sl">السندات / المدفوعات</div><div class="sv" id="other-del-payments-count">—</div></div>
@@ -2692,6 +2710,14 @@ body.kp-teacher .kp-sync-panel{
         <div class="eo-icon">🖨</div>
         <div class="eo-label">طباعة / PDF</div>
         <div class="eo-sub">عبر المتصفح</div>
+      </div>
+    </div>
+    <div id="export-attendance-range" class="export-attendance-range">
+      <div class="ct" style="margin-bottom:10px;font-size:15px">📅 فترة تصدير الحضور</div>
+      <div class="fg">
+        <div class="fl"><label>من تاريخ</label><input id="export-att-from" type="date"></div>
+        <div class="fl"><label>إلى تاريخ</label><input id="export-att-to" type="date"></div>
+        <div class="export-attendance-hint">اتركي التاريخين فارغين لتصدير كامل سجل الحضور. إذا اخترتِ فترة، سيتم تصدير الحضور ضمنها فقط.</div>
       </div>
     </div>
     <div class="mof">
@@ -5333,7 +5359,6 @@ function renderStudents(){
       <td>
         <button class="btn btn-out btn-sm" onclick="viewStudentProfile(${s.id})" title="عرض الملف الكامل">👁</button><button class="btn btn-out btn-sm" onclick="editStudent(${s.id})" title="تعديل">✏️</button><button class="btn btn-y btn-sm" onclick="quickEditStudentHealth(${s.id})" title="تعديل الحالة الصحية">⚕️</button>
         ${isActiveStudent(s) ? `<button class="btn btn-b btn-sm" onclick="setStudentOperationalStatus(${s.id},'left')" title="وضع الطالب ترك بدون حذف بياناته">🚪 ترك</button>` : `<button class="btn btn-g btn-sm" onclick="setStudentOperationalStatus(${s.id},'active')" title="إرجاع الطالب لقائمة الموجودين">↩️ إرجاع</button>`}
-        <button class="btn btn-r btn-sm" onclick="delStudent(${s.id})">🗑</button>
       </td>
     </tr>`}).join('');
 }
@@ -8303,6 +8328,17 @@ function openExport(target){
   exportTarget=target; exportFmt='xlsx';
   document.querySelectorAll('.export-opt').forEach(o=>o.classList.remove('on'));
   document.getElementById('exp-opt-xlsx').classList.add('on');
+  const rangeBox = document.getElementById('export-attendance-range');
+  if(rangeBox){
+    rangeBox.classList.toggle('on', target === 'attendance');
+    if(target === 'attendance'){
+      const dates = Object.keys(attLog || {}).map(function(k){ return String(k).split('_')[0]; }).filter(Boolean).sort();
+      const from = document.getElementById('export-att-from');
+      const to = document.getElementById('export-att-to');
+      if(from && !from.value && dates.length) from.value = dates[0];
+      if(to && !to.value && dates.length) to.value = dates[dates.length - 1];
+    }
+  }
   document.getElementById('mo-export').classList.add('on');
 }
 
@@ -8310,6 +8346,38 @@ function selectExportFmt(fmt){
   exportFmt=fmt;
   document.querySelectorAll('.export-opt').forEach(o=>o.classList.remove('on'));
   document.getElementById('exp-opt-'+fmt).classList.add('on');
+}
+
+
+function getAttendanceExportRange(){
+  const from = (document.getElementById('export-att-from')?.value || '').trim();
+  const to = (document.getElementById('export-att-to')?.value || '').trim();
+  return {from: from, to: to};
+}
+
+function buildAttendanceExportRows(){
+  const range = getAttendanceExportRange();
+  return Object.entries(attLog || {}).filter(function(e){
+    if(!e[1]) return false;
+    const date = String(e[0]).split('_')[0] || '';
+    if(range.from && date < range.from) return false;
+    if(range.to && date > range.to) return false;
+    return true;
+  }).map(function(e){
+    const k=e[0], v=e[1];
+    const parts = k.split('_');
+    const date = parts[0], idStr = parts[1];
+    const s = students.find(function(x){return x.id === +idStr;});
+    return s ? [date, s.cls||'', s.name||'', v==='present'?'حاضر':v==='absent'?'غائب':'متأخر'] : null;
+  }).filter(Boolean);
+}
+
+function getAttendanceExportLabel(){
+  const range = getAttendanceExportRange();
+  if(range.from && range.to) return 'الحضور من ' + range.from + ' إلى ' + range.to;
+  if(range.from) return 'الحضور من ' + range.from;
+  if(range.to) return 'الحضور حتى ' + range.to;
+  return 'الحضور';
 }
 
 function doExport(){
@@ -8357,13 +8425,7 @@ function doExport(){
     },
     attendance: {
       cols: ['التاريخ','الفصل','الطالب','الحالة'],
-      rows: Object.entries(attLog).filter(function(e){return e[1];}).map(function(e){
-        const k=e[0], v=e[1];
-        const parts = k.split('_');
-        const date = parts[0], idStr = parts[1];
-        const s = students.find(function(x){return x.id === +idStr;});
-        return s ? [date, s.cls||'', s.name||'', v==='present'?'حاضر':v==='absent'?'غائب':'متأخر'] : null;
-      }).filter(Boolean)
+      rows: buildAttendanceExportRows()
     },
     renewals: {
       cols: ['#','الاسم / الجهة','تاريخ الانتهاء','الفئة','التكلفة','الأيام المتبقية','ملاحظات'],
@@ -8381,15 +8443,17 @@ function doExport(){
   };
   const d=dataMap[exportTarget];
   if(!d)return;
+  if(exportTarget === 'attendance' && (!d.rows || !d.rows.length)){ alert('لا توجد سجلات حضور ضمن الفترة المختارة.'); return; }
   const names={students:'الطلاب',payments:'المدفوعات',expenses:'المصاريف',receipts:'سندات_القبض',finance:'الإيرادات',attendance:'الحضور',renewals:'التجديدات',deleted:'سلة_المحذوفات'};
-  const fname=`حضانة_حديقة_الأطفال_${names[exportTarget]||exportTarget}`;
+  const exportTitle = exportTarget === 'attendance' ? getAttendanceExportLabel() : (names[exportTarget]||exportTarget);
+  const fname=`حضانة_حديقة_الأطفال_${exportTitle}`;
   if(exportFmt==='xlsx'){
     const ws=XLSX.utils.aoa_to_sheet([d.cols,...d.rows]);
     const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,names[exportTarget]||'data');
+    XLSX.utils.book_append_sheet(wb,ws,exportTitle||'data');
     XLSX.writeFile(wb,fname+'.xlsx');
   } else if(exportFmt==='pdf'){
-    exportDatasetToProfessionalPDF(d, names[exportTarget]||exportTarget, fname);
+    exportDatasetToProfessionalPDF(d, exportTitle, fname);
   } else {
     const csv='\uFEFF'+[d.cols,...d.rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
     const a=document.createElement('a');
@@ -8440,9 +8504,9 @@ async function exportDatasetToProfessionalPDF(dataset, title, filename){
 function doPrintExport(){
   const names={students:'الطلاب',payments:'المدفوعات',expenses:'المصاريف',receipts:'سندات القبض',finance:'الإيرادات',attendance:'الحضور'};
   let html=`<html dir="rtl"><head><meta charset="UTF-8"><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet"><style>body{font-family:'Tajawal',sans-serif;font-size:12px}table{width:100%;border-collapse:collapse}th{background:#eaf6ef;color:#1e6b3f;padding:7px;border:1px solid #d2e5d2}td{padding:6px;border:1px solid #eee}.title{font-size:18px;font-weight:900;margin-bottom:10px;color:#1e6b3f}</style></head><body>
-  <div class="title">حضانة حديقة الأطفال — ${names[exportTarget]||exportTarget}</div>
+  <div class="title">حضانة حديقة الأطفال — ${exportTarget==='attendance'?getAttendanceExportLabel():(names[exportTarget]||exportTarget)}</div>
   <div style="font-size:11px;color:#666;margin-bottom:10px">تاريخ التصدير: ${new Date().toLocaleDateString('ar-AE')}</div><table>`;
-  const dataMap={students:{cols:['رقم الطالب','الاسم العربي','الاسم الإنجليزي','تاريخ الميلاد','الجنس','رقم الهوية','الجنسية','الفصل','الحالة الصحية','اسم الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان'],rows:students.map((s)=>[s.id,s.name||'',getStudentEnglishDisplayName(s)||'',formatDate(s.dob),s.gen||'',getStudentIdentity(s)||'',s.nat||'',s.cls||'',getStudentHealthSummary(s)||'',s.dad||'',s.dph||'',s.mom||'',s.mph||'',s.addr||''])},payments:{cols:['#','ولي الأمر','المبلغ','البيان','النوع','الطريقة','التاريخ','المستلم'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.type,p.method,p.date,p.rcvr])},expenses:{cols:['#','البيان','المبلغ','الفئة','التاريخ'],rows:expenses.map(e=>[e.id,e.desc,e.amt+' د.إ',e.cat,e.date])},finance:{cols:['الشهر','الإيرادات','المصاريف','الصافي'],rows:finData.map(d=>[d.month,d.inc.toLocaleString(),d.exp.toLocaleString(),(d.inc-d.exp).toLocaleString()])},attendance:{cols:['التاريخ','الفصل','الطالب','الحالة'],rows:Object.entries(attLog).filter(([,v])=>v).map(([k,v])=>{const[date,idStr]=k.split('_');const s=students.find(x=>x.id===+idStr);return s?[date,s.cls,s.name,v==='present'?'حاضر':v==='absent'?'غائب':'متأخر']:null;}).filter(Boolean)},receipts:{cols:['#','ولي الأمر','المبلغ','البيان','التاريخ'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.date])}};
+  const dataMap={students:{cols:['رقم الطالب','الاسم العربي','الاسم الإنجليزي','تاريخ الميلاد','الجنس','رقم الهوية','الجنسية','الفصل','الحالة الصحية','اسم الأب','هاتف الأب','اسم الأم','هاتف الأم','العنوان'],rows:students.map((s)=>[s.id,s.name||'',getStudentEnglishDisplayName(s)||'',formatDate(s.dob),s.gen||'',getStudentIdentity(s)||'',s.nat||'',s.cls||'',getStudentHealthSummary(s)||'',s.dad||'',s.dph||'',s.mom||'',s.mph||'',s.addr||''])},payments:{cols:['#','ولي الأمر','المبلغ','البيان','النوع','الطريقة','التاريخ','المستلم'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.type,p.method,p.date,p.rcvr])},expenses:{cols:['#','البيان','المبلغ','الفئة','التاريخ'],rows:expenses.map(e=>[e.id,e.desc,e.amt+' د.إ',e.cat,e.date])},finance:{cols:['الشهر','الإيرادات','المصاريف','الصافي'],rows:finData.map(d=>[d.month,d.inc.toLocaleString(),d.exp.toLocaleString(),(d.inc-d.exp).toLocaleString()])},attendance:{cols:['التاريخ','الفصل','الطالب','الحالة'],rows:buildAttendanceExportRows()},receipts:{cols:['#','ولي الأمر','المبلغ','البيان','التاريخ'],rows:payments.map(p=>[p.id,p.who,p.amt+' د.إ',p.desc,p.date])}};
   const d=dataMap[exportTarget];
   if(d){
     html+=`<thead><tr>${d.cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
@@ -13315,7 +13379,7 @@ function ensureEmailFullReader(){
   ov=document.createElement('div');
   ov.id='email-full-reader-overlay';
   ov.className='email-full-reader-overlay';
-  ov.innerHTML='<div class="email-full-reader-modal"><div class="email-full-reader-head"><div id="email-full-reader-title" class="email-full-reader-title">عرض الرسالة كاملة</div><div class="email-full-reader-actions"><button class="btn btn-g btn-sm" onclick="replyToSelectedEmail()">↩️ رد</button><button class="btn btn-b btn-sm" onclick="replyAllToSelectedEmail()">↪️ رد للجميع</button><button class="btn btn-y btn-sm" onclick="forwardSelectedEmail()">➡️ Forward</button><button class="btn btn-out btn-sm" onclick="copySelectedEmailText()">📋 نسخ</button><button class="btn btn-r btn-sm" onclick="closeEmailFullReader()">✕ إغلاق</button></div></div><div id="email-full-reader-body" class="email-full-reader-body"></div></div>';
+  ov.innerHTML='<div class="email-full-reader-modal"><div class="email-full-reader-head"><div id="email-full-reader-title" class="email-full-reader-title">عرض الرسالة كاملة</div><div class="email-full-reader-actions"><button class="btn email-btn-reply btn-sm" onclick="replyToSelectedEmail()">↩️ رد</button><button class="btn email-btn-replyall btn-sm" onclick="replyAllToSelectedEmail()">↪️ رد للجميع</button><button class="btn email-btn-forward btn-sm" onclick="forwardSelectedEmail()">➡️ إعادة توجيه</button><button class="btn email-btn-copy btn-sm" onclick="copySelectedEmailText()">📋 نسخ</button><button class="btn email-btn-close btn-sm" onclick="closeEmailFullReader()">✕ إغلاق</button></div></div><div id="email-full-reader-body" class="email-full-reader-body"></div></div>';
   ov.addEventListener('click',function(e){ if(e.target===ov) closeEmailFullReader(); });
   document.body.appendChild(ov);
   document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeEmailFullReader(); });
@@ -13388,13 +13452,13 @@ function forwardSelectedEmail(){
   document.getElementById('email-cc').value='';
   document.getElementById('email-bcc').value='';
   document.getElementById('email-subject').value=/^fw:|^fwd:/i.test(m.subject||'')?(m.subject||''):'Fwd: '+(m.subject||'');
-  document.getElementById('email-body').value='\n\n---------- Forwarded message ----------\nمن: '+from+'\nالتاريخ: '+date+'\nالموضوع: '+(m.subject||'')+'\n\n'+originalText;
+  document.getElementById('email-body').value='\n\n---------- رسالة معاد توجيهها ----------\nمن: '+from+'\nالتاريخ: '+date+'\nالموضوع: '+(m.subject||'')+'\n\n'+originalText;
   renderSelectedAttachments();
   setEmailStatus('تم تجهيز إعادة التوجيه. المرفقات الأصلية ظاهرة للتحميل بالمعاينة؛ أضيفيها من زر المرفقات إذا رغبتِ بإرسالها.','ok');
 }
 function openEmailComposeModal(mode){setTimeout(setupEmailAutocomplete,0);
   const ov=document.getElementById('email-compose-ov');if(ov)ov.classList.add('on');
-  const t=document.getElementById('email-compose-title');if(t)t.textContent=mode==='reply'?'رد على الرسالة':(mode==='replyAll'?'رد للجميع':'إنشاء رسالة بريد');
+  const t=document.getElementById('email-compose-title');if(t)t.textContent=mode==='reply'?'رد على الرسالة':(mode==='replyAll'?'رد للجميع':(mode==='forward'?'إعادة توجيه الرسالة':'إنشاء رسالة بريد'));
   const pv=document.getElementById('email-send-preview');if(pv){pv.style.display='none';pv.textContent=''}
   setEmailStatus('', '');
 }
