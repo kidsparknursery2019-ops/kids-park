@@ -17957,5 +17957,163 @@ document.addEventListener('change', function(e){
   }, 700);
 })();
 </script>
+<script>
+/* ============================================================
+   KP FAST REGISTRATION DECISIONS 2026-05-02
+   Approve/reject reacts immediately; Firebase save continues
+   in the background with visible failure warning if needed.
+   ============================================================ */
+(function(){
+  'use strict';
+  if (window.__kpFastRegistrationDecisionsInstalled) return;
+  window.__kpFastRegistrationDecisionsInstalled = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function sameToken(r, token){
+    token = txt(token);
+    if (!r || !token) return false;
+    try {
+      if (typeof formRowActionToken === 'function' && txt(formRowActionToken(r)) === token) return true;
+      if (typeof kpKey === 'function' && txt(kpKey(r)) === token) return true;
+    } catch(_e){}
+    return txt(r.timestamp) === token || txt(r.firebaseKey) === token || txt(r.requestId) === token || txt(r._fbKey) === token;
+  }
+  function findRow(token){
+    try {
+      if (typeof findRegistrationRowByToken === 'function') {
+        var r = findRegistrationRowByToken(token);
+        if (r) return r;
+      }
+    } catch(_e){}
+    try {
+      var rows = Array.isArray(syncedFormRows) ? syncedFormRows : [];
+      return rows.find(function(r){ return sameToken(r, token); }) || null;
+    } catch(_e){ return null; }
+  }
+  function upsertLocalRow(row){
+    try {
+      if (!Array.isArray(syncedFormRows)) syncedFormRows = [];
+      var idx = syncedFormRows.findIndex(function(x){ return sameToken(x, row.timestamp) || sameToken(x, row.firebaseKey) || sameToken(x, row.requestId); });
+      if (idx >= 0) syncedFormRows[idx] = row;
+      else syncedFormRows.unshift(row);
+      window.syncedFormRows = syncedFormRows;
+    } catch(_e){}
+  }
+  function refreshDecisionUi(){
+    try { if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge(); } catch(_e){}
+    try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+    try { if (typeof renderStudents === 'function') renderStudents(); } catch(_e){}
+    try { if (typeof renderDash === 'function') renderDash(); } catch(_e){}
+    try { if (typeof kpRefreshTableScrollbars === 'function') kpRefreshTableScrollbars(); } catch(_e){}
+  }
+  function backgroundSave(label, tasks){
+    if (typeof showSyncBadge === 'function') showSyncBadge(label + ' - جاري الحفظ في الخلفية');
+    Promise.all(tasks.map(function(task){
+      return Promise.resolve().then(task);
+    })).then(function(){
+      if (typeof showSyncBadge === 'function') showSyncBadge(label + ' - تم الحفظ');
+      setTimeout(function(){
+        try {
+          if (typeof window.syncRegistrationRequestsFromFirebase === 'function') {
+            window.syncRegistrationRequestsFromFirebase({ silent:true, full:true }).catch(function(){});
+          }
+        } catch(_e){}
+      }, 800);
+    }).catch(function(e){
+      console.error('fast registration background save failed:', e);
+      if (typeof showSyncBadge === 'function') showSyncBadge('لم يكتمل حفظ القرار في Firebase - راجعي الاتصال');
+    });
+  }
+  function markRow(row, status, meta){
+    var now = new Date().toISOString();
+    Object.assign(row, meta || {});
+    row.status = status;
+    row.decisionAt = status === 'pending' ? '' : now;
+    row.rowUpdatedAt = now;
+    if (status === 'approved') row.approvedAt = row.approvedAt || now;
+    if (status === 'rejected') row.rejectedAt = row.rejectedAt || now;
+    upsertLocalRow(row);
+  }
+
+  window.performApproveNew = function(r){
+    if (!r || r.status !== 'pending') return;
+    try {
+      var newStudent = buildStudentFromFormRow(r, getSafeNextStudentId());
+      students.push(newStudent);
+      try { nextStuId = getSafeNextStudentId(); } catch(_e){}
+      markRow(r, 'approved', {
+        approvedStudentId:newStudent.id,
+        approvedAction:'new',
+        undoData:{ createdStudentId:newStudent.id }
+      });
+      refreshDecisionUi();
+      if (typeof showSyncBadge === 'function') showSyncBadge('تم قبول الطلب - يتم الحفظ الآن');
+      backgroundSave('قبول الطلب', [
+        function(){ return (typeof saveRecordRemoteAware === 'function') ? saveRecordRemoteAware({type:'students', activeArrayName:'students', record:newStudent, keyField:'id', label:'الطالب الجديد'}) : true; },
+        function(){ return window.archiveFirebaseRegistrationRequest(r, 'approved'); }
+      ]);
+    } catch(e) {
+      console.error('fast performApproveNew failed:', e);
+      alert('تعذر القبول: ' + (e && e.message ? e.message : e));
+    }
+  };
+  try { performApproveNew = window.performApproveNew; } catch(_e){}
+
+  window.performApproveMerge = function(r, studentId){
+    if (!r || r.status !== 'pending') return;
+    try {
+      var idx = (Array.isArray(students) ? students : []).findIndex(function(s){ return String(s && s.id) === String(studentId); });
+      if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+      var before = JSON.parse(JSON.stringify(students[idx]));
+      students[idx] = mergeStudentWithFormData(students[idx], r);
+      var merged = students[idx];
+      markRow(r, 'approved', {
+        approvedStudentId:studentId,
+        approvedAction:'merge',
+        undoData:{ mergedStudentId:studentId, previousStudent:before }
+      });
+      refreshDecisionUi();
+      if (typeof showSyncBadge === 'function') showSyncBadge('تم دمج الطلب - يتم الحفظ الآن');
+      backgroundSave('دمج الطلب', [
+        function(){ return (typeof saveRecordRemoteAware === 'function') ? saveRecordRemoteAware({type:'students', activeArrayName:'students', record:merged, keyField:'id', label:'الطالب'}) : true; },
+        function(){ return window.archiveFirebaseRegistrationRequest(r, 'approved'); }
+      ]);
+    } catch(e) {
+      console.error('fast performApproveMerge failed:', e);
+      alert('تعذر الدمج: ' + (e && e.message ? e.message : e));
+    }
+  };
+  try { performApproveMerge = window.performApproveMerge; } catch(_e){}
+
+  window.rejectFormRow = function(token){
+    var r = findRow(token);
+    if (!r) return;
+    if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+    markRow(r, 'rejected', {
+      approvedStudentId:null,
+      approvedAction:'reject',
+      undoData:{ revertTo:'pending' }
+    });
+    refreshDecisionUi();
+    if (typeof showSyncBadge === 'function') showSyncBadge('تم رفض الطلب - يتم الحفظ الآن');
+    backgroundSave('رفض الطلب', [
+      function(){ return window.archiveFirebaseRegistrationRequest(r, 'rejected'); }
+    ]);
+  };
+  try { rejectFormRow = window.rejectFormRow; } catch(_e){}
+
+  window.setFormRowDecision = function(r, status, meta){
+    if (!r) return false;
+    status = status || r.status || 'pending';
+    markRow(r, status, meta || {});
+    refreshDecisionUi();
+    backgroundSave('حفظ القرار', [
+      function(){ return window.archiveFirebaseRegistrationRequest(r, status); }
+    ]);
+    return true;
+  };
+  try { setFormRowDecision = window.setFormRowDecision; } catch(_e){}
+})();
+</script>
 </body>
 </html>
