@@ -16274,5 +16274,467 @@ document.addEventListener('change', function(e){
   }, 600);
 })();
 </script>
+
+<script>
+/* ============================================================
+   KP FINAL REGISTRATION HARD RESET 2026-05-02E
+   الهدف: حل معضلة طلبات التسجيل نهائياً بدون تغيير نظام الحفظ الفردي.
+   - مصدر رسمي واحد فقط: nursery_data/registrationRequests/{pending,accepted,rejected}
+   - لا قراءة تلقائية من Google Sheets ولا kp_form_rows كقرار نهائي.
+   - القبول/الرفض/التراجع عمليات فردية على سجل واحد، مع حذف نسخ نفس الطلب من الحالتين الأخريين.
+   - تنظيف تلقائي لتكرارات نفس الطلب داخل المسار الرسمي فقط.
+   ============================================================ */
+(function(){
+  var KP_REG_FINAL_VERSION = '2026-05-02E-official-single-source';
+  var FOLDERS = ['pending','accepted','rejected'];
+
+  function baseUrl(){
+    return String(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, '') + '/registrationRequests';
+  }
+  function txt(v){ return (v === undefined || v === null) ? '' : String(v).trim(); }
+  function digits(v){ return txt(v).replace(/\D+/g, ''); }
+  function simpleName(v){
+    return txt(v).toLowerCase()
+      .replace(/[\u064B-\u065F\u0670]/g,'')
+      .replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه')
+      .replace(/[^\u0600-\u06FFa-z0-9]+/g,' ')
+      .replace(/\s+/g,' ').trim();
+  }
+  function djb2(str){
+    str = txt(str);
+    var h = 5381;
+    for (var i=0;i<str.length;i++) h = ((h << 5) + h) ^ str.charCodeAt(i);
+    return (h >>> 0).toString(36);
+  }
+  function safeKey(k){
+    k = txt(k);
+    if (!k) return '';
+    return k.replace(/[.#$\[\]\/]/g, '_').replace(/\s+/g, '_').slice(0,180);
+  }
+  function folderToStatus(folder){
+    folder = txt(folder).toLowerCase();
+    if (folder === 'accepted') return 'approved';
+    if (folder === 'rejected') return 'rejected';
+    return 'pending';
+  }
+  function statusToFolder(status){
+    status = txt(status).toLowerCase();
+    if (status === 'accepted' || status === 'accept' || status === 'approved' || status === 'approve' || status === 'مقبول' || status === 'تم القبول') return 'accepted';
+    if (status === 'rejected' || status === 'reject' || status === 'مرفوض' || status === 'تم الرفض') return 'rejected';
+    return 'pending';
+  }
+  function canonicalStatus(status){ return folderToStatus(statusToFolder(status)); }
+  function timeVal(r){
+    r = r || {};
+    var candidates = [r.rowUpdatedAt, r.decisionAt, r.updatedAt, r.approvedAt, r.rejectedAt, r.createdAt, r.submittedAt, r.timestamp, r.formTimestamp];
+    for (var i=0;i<candidates.length;i++) {
+      var raw = candidates[i];
+      if (!raw) continue;
+      var d = Date.parse(raw);
+      if (!isNaN(d)) return d;
+      var n = Number(raw);
+      if (!isNaN(n) && n > 1000000000) return n;
+    }
+    return 0;
+  }
+  function statusRank(status){
+    var f = statusToFolder(status);
+    if (f === 'accepted') return 3;
+    if (f === 'rejected') return 3;
+    return 1;
+  }
+  function identityKey(r){
+    r = r || {};
+    var id = digits(r.emiratesId || r.idNo || r.identity || r.nationalId);
+    if (id) return 'eid:' + id;
+    var pass = txt(r.passport || r.passportNo);
+    if (pass) return 'pass:' + simpleName(pass);
+    var ts = txt(r.timestamp || r.formTimestamp || r.submittedAt);
+    var nm = simpleName(r.name || ((r.firstName || '') + ' ' + (r.familyName || '')));
+    var dob = txt(r.dob || r.dateOfBirth);
+    var phone = digits(r.dadMob || r.momMob || r.dph || r.mph || r.phone);
+    if (ts) return 'ts:' + djb2(ts + '|' + nm + '|' + dob);
+    return 'fp:' + djb2(nm + '|' + dob + '|' + phone);
+  }
+  function requestKey(r){
+    r = r || {};
+    var k = safeKey(r._fbKey || r.firebaseKey || r.requestId || r.key);
+    if (!k || /^sheet_/i.test(k)) k = 'req_' + djb2(identityKey(r));
+    return k;
+  }
+  function fetchTimeout(url, options, ms){
+    ms = ms || 15000;
+    return Promise.race([
+      fetch(url, options || {}),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, ms); })
+    ]);
+  }
+  async function getJson(url, ms){
+    var res = await fetchTimeout(url + (url.indexOf('?') >= 0 ? '&' : '?') + 'ts=' + Date.now(), {cache:'no-store'}, ms || 15000);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  }
+  async function putJson(url, obj, ms){
+    var res = await fetchTimeout(url, {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(obj || {})
+    }, ms || 15000);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return true;
+  }
+  async function delJson(url, ms){
+    var res = await fetchTimeout(url, {method:'DELETE'}, ms || 15000);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return true;
+  }
+  function normalizeOfficialRow(raw, key, folder){
+    var r = raw && typeof raw === 'object' ? Object.assign({}, raw) : {};
+    try {
+      if (typeof normalizeParentRegistrationRow === 'function') {
+        r = Object.assign(r, normalizeParentRegistrationRow(r, key));
+      }
+    } catch(_e) {}
+    r.firebaseKey = key || r.firebaseKey || r.requestId || requestKey(r);
+    r.requestId = r.requestId || r.firebaseKey;
+    r._fbKey = key || r.firebaseKey;
+    r.status = folderToStatus(folder || r.status || 'pending');
+    r.source = (r.source && !/google_sheets_preview/i.test(String(r.source))) ? r.source : (r.source || 'firebase_official');
+    r.sourcePath = 'nursery_data/registrationRequests/' + statusToFolder(r.status);
+    return r;
+  }
+  function betterRow(a,b){
+    if (!a) return b;
+    if (!b) return a;
+    var ta = timeVal(a), tb = timeVal(b);
+    if (Math.abs(ta - tb) > 1000) return tb > ta ? b : a;
+    var ra = statusRank(a.status), rb = statusRank(b.status);
+    if (ra !== rb) return rb > ra ? b : a;
+    return b;
+  }
+  function replaceLocalOfficialRows(rows){
+    rows = Array.isArray(rows) ? rows : [];
+    rows = rows.filter(function(r){ return r && !/^google_sheets/i.test(txt(r.source)); });
+    try { syncedFormRows = rows; } catch(_e) { window.syncedFormRows = rows; }
+    try { localStorage.removeItem('kp_form_rows'); } catch(_e) {}
+  }
+  function upsertLocal(row){
+    var id = identityKey(row);
+    var key = requestKey(row);
+    var arr;
+    try { arr = Array.isArray(syncedFormRows) ? syncedFormRows : []; } catch(_e) { arr = []; }
+    arr = arr.filter(function(x){ return identityKey(x) !== id && requestKey(x) !== key; });
+    arr.push(row);
+    arr.sort(function(a,b){ return timeVal(b) - timeVal(a); });
+    replaceLocalOfficialRows(arr);
+  }
+  async function cleanupDuplicateLosers(losers){
+    if (!Array.isArray(losers) || !losers.length) return 0;
+    var base = baseUrl();
+    var done = 0;
+    for (var i=0;i<losers.length;i++) {
+      var l = losers[i];
+      if (!l || !l._folder || !l._key) continue;
+      try { await delJson(base + '/' + l._folder + '/' + encodeURIComponent(l._key) + '.json', 10000); done++; }
+      catch(e){ console.warn('registration duplicate cleanup failed:', l, e && e.message); }
+    }
+    return done;
+  }
+
+  // منع kp_form_rows نهائياً كمصدر قرار.
+  try { localStorage.removeItem('kp_form_rows'); } catch(_e) {}
+  try {
+    if (!window.__KP_BLOCK_KP_FORM_ROWS_SETITEM__) {
+      window.__KP_BLOCK_KP_FORM_ROWS_SETITEM__ = true;
+      var _kpOrigSetItem = localStorage.setItem.bind(localStorage);
+      localStorage.setItem = function(k,v){ if (String(k) === 'kp_form_rows') return; return _kpOrigSetItem(k,v); };
+    }
+  } catch(_e) {}
+
+  window.archiveFirebaseRegistrationRequest = async function(row, targetStatus){
+    row = row || {};
+    var folder = statusToFolder(targetStatus || row.status || 'pending');
+    var status = folderToStatus(folder);
+    var key = requestKey(row);
+    var now = new Date().toISOString();
+    var payload = Object.assign({}, row, {
+      firebaseKey:key,
+      requestId: row.requestId || key,
+      _fbKey:key,
+      status:status,
+      rowUpdatedAt: now,
+      source: row.source && !/^google_sheets_preview/i.test(String(row.source)) ? row.source : (row.source === 'manual_import_from_google_sheets' ? row.source : 'firebase_official'),
+      sourcePath:'nursery_data/registrationRequests/' + folder
+    });
+    if (folder === 'accepted' && !payload.approvedAt) payload.approvedAt = payload.decisionAt || now;
+    if (folder === 'rejected' && !payload.rejectedAt) payload.rejectedAt = payload.decisionAt || now;
+    var base = baseUrl();
+    if (!base || base === '/registrationRequests') throw new Error('Firebase URL غير جاهز');
+    await putJson(base + '/' + folder + '/' + encodeURIComponent(key) + '.json', payload, 15000);
+    var others = FOLDERS.filter(function(f){ return f !== folder; });
+    for (var i=0;i<others.length;i++) {
+      try { await delJson(base + '/' + others[i] + '/' + encodeURIComponent(key) + '.json', 10000); } catch(_e) {}
+    }
+    upsertLocal(payload);
+    try { if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge(); } catch(_e) {}
+    try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e) {}
+    return true;
+  };
+
+  window.syncRegistrationRequestsFromFirebase = async function(options){
+    options = options || {};
+    var base = baseUrl();
+    var byIdentity = {};
+    var losers = [];
+    var errors = [];
+    if (!base || base === '/registrationRequests') return {error:'missing_fb_url', total:0};
+    for (var i=0;i<FOLDERS.length;i++) {
+      var folder = FOLDERS[i];
+      try {
+        var obj = await getJson(base + '/' + folder + '.json', 20000);
+        if (!obj || typeof obj !== 'object') continue;
+        Object.keys(obj).forEach(function(k){
+          var raw = obj[k];
+          if (!raw || typeof raw !== 'object') return;
+          var row = normalizeOfficialRow(raw, k, folder);
+          var id = identityKey(row);
+          var current = byIdentity[id];
+          var winner = betterRow(current && current.row, row);
+          if (!current) {
+            byIdentity[id] = {row:row, seen:[{_folder:folder,_key:k,row:row}]};
+          } else {
+            current.seen.push({_folder:folder,_key:k,row:row});
+            current.row = winner;
+          }
+        });
+      } catch(e) {
+        errors.push(folder + ': ' + (e && e.message ? e.message : e));
+      }
+    }
+    Object.keys(byIdentity).forEach(function(id){
+      var item = byIdentity[id];
+      var wKey = requestKey(item.row);
+      var wFolder = statusToFolder(item.row.status);
+      item.seen.forEach(function(s){
+        if (s._key !== wKey || s._folder !== wFolder) losers.push(s);
+      });
+    });
+    var rows = Object.keys(byIdentity).map(function(id){ return byIdentity[id].row; }).sort(function(a,b){ return timeVal(b)-timeVal(a); });
+    var previous = [];
+    try { previous = (Array.isArray(syncedFormRows) ? syncedFormRows : []).filter(function(r){ return r && !/^google_sheets/i.test(txt(r.source)); }); } catch(_e) {}
+    if (errors.length && rows.length === 0 && previous.length) {
+      rows = previous;
+      errors.push('تم الحفاظ على آخر قائمة رسمية ولم يتم تصفير الطلبات');
+    } else {
+      replaceLocalOfficialRows(rows);
+      if (!errors.length && losers.length) cleanupDuplicateLosers(losers);
+    }
+    try { if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge(); } catch(_e) {}
+    try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e) {}
+    var last = document.getElementById('forms-last-sync');
+    if (last) last.textContent = new Date().toLocaleTimeString('ar');
+    if (!options.silent && typeof showSyncBadge === 'function') {
+      showSyncBadge(errors.length ? ('⚠️ تمت قراءة الطلبات الرسمية مع تنبيه: ' + errors.join(' | ')) : ('✅ تم تحديث الطلبات الرسمية من المسار الواحد: ' + rows.length + ' طلب'));
+    }
+    return {version:KP_REG_FINAL_VERSION, officialPath:'nursery_data/registrationRequests', total:rows.length, cleaned:losers.length, errors:errors};
+  };
+
+  window.persistFormRowsAndSync = async function(formRow){
+    if (!formRow) return true;
+    return window.archiveFirebaseRegistrationRequest(formRow, formRow.status || 'pending');
+  };
+  try { persistFormRowsAndSync = window.persistFormRowsAndSync; } catch(_e) {}
+
+  window.saveFormRowRemoteAware = async function(formRow){
+    if (!formRow) return true;
+    return window.archiveFirebaseRegistrationRequest(formRow, formRow.status || 'pending');
+  };
+  try { saveFormRowRemoteAware = window.saveFormRowRemoteAware; } catch(_e) {}
+
+  window.saveFormRowsBatchRemoteAware = async function(formRows){
+    var rows = Array.isArray(formRows) ? formRows : [];
+    for (var i=0;i<rows.length;i++) {
+      var r = rows[i];
+      if (!r || /^google_sheets_preview/i.test(txt(r.source))) continue;
+      await window.archiveFirebaseRegistrationRequest(r, r.status || 'pending');
+    }
+    return true;
+  };
+  try { saveFormRowsBatchRemoteAware = window.saveFormRowsBatchRemoteAware; } catch(_e) {}
+
+  window.setFormRowDecision = function(r, status, meta){
+    if (!r) return;
+    meta = meta || {};
+    var now = new Date().toISOString();
+    Object.keys(meta).forEach(function(k){ r[k] = meta[k]; });
+    r.status = canonicalStatus(status || r.status || 'pending');
+    r.decisionAt = now;
+    r.rowUpdatedAt = now;
+    upsertLocal(r);
+    window.archiveFirebaseRegistrationRequest(r, r.status).catch(function(e){
+      console.error('official decision save failed:', e);
+      if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ لم يكتمل حفظ قرار طلب التسجيل على Firebase');
+    });
+    try { if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge(); } catch(_e) {}
+    try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e) {}
+  };
+  try { setFormRowDecision = window.setFormRowDecision; } catch(_e) {}
+
+  window.updateFormsNavBadge = function(){
+    var badge = document.getElementById('forms-nav-badge');
+    if (!badge) return;
+    var arr = [];
+    try { arr = Array.isArray(syncedFormRows) ? syncedFormRows : []; } catch(_e) {}
+    var count = arr.filter(function(r){ return r && canonicalStatus(r.status || 'pending') === 'pending' && !/^google_sheets/i.test(txt(r.source)); }).length;
+    badge.textContent = count;
+    badge.style.display = count > 0 ? 'inline-block' : 'none';
+  };
+  try { updateFormsNavBadge = window.updateFormsNavBadge; } catch(_e) {}
+
+  window.performApproveNew = async function(r){
+    if (!r) return;
+    if (r.status !== 'pending' && canonicalStatus(r.status) !== 'pending') return;
+    try {
+      var newStudent = buildStudentFromFormRow(r, getSafeNextStudentId());
+      students.push(newStudent);
+      nextStuId = getSafeNextStudentId();
+      var now = new Date().toISOString();
+      Object.assign(r, {
+        status:'approved', decisionAt:now, rowUpdatedAt:now,
+        approvedAt:now, approvedStudentId:newStudent.id,
+        approvedAction:'new', undoData:{createdStudentId:newStudent.id}
+      });
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:newStudent, keyField:'id', label:'الطالب الجديد'});
+      }
+      await window.archiveFirebaseRegistrationRequest(r, 'approved');
+      if (typeof refreshAllAfterFormDecision === 'function') refreshAllAfterFormDecision();
+      if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم قبول الطالب وحفظ الطلب فردياً');
+    } catch(e) {
+      console.error('approve new official failed:', e);
+      alert('تعذر قبول الطلب: ' + (e && e.message ? e.message : e));
+    }
+  };
+  try { performApproveNew = window.performApproveNew; } catch(_e) {}
+
+  window.performApproveMerge = async function(r, studentId){
+    if (!r) return;
+    var idx = students.findIndex(function(s){ return s.id === studentId; });
+    if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
+    try {
+      var before = JSON.parse(JSON.stringify(students[idx]));
+      students[idx] = mergeStudentWithFormData(students[idx], r);
+      var mergedStudent = students[idx];
+      var now = new Date().toISOString();
+      Object.assign(r, {
+        status:'approved', decisionAt:now, rowUpdatedAt:now,
+        approvedAt:now, approvedStudentId:studentId,
+        approvedAction:'merge', undoData:{mergedStudentId:studentId, previousStudent:before}
+      });
+      if (typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:mergedStudent, keyField:'id', label:'الطالب (دمج)'});
+      }
+      await window.archiveFirebaseRegistrationRequest(r, 'approved');
+      if (typeof refreshAllAfterFormDecision === 'function') refreshAllAfterFormDecision();
+      if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم قبول الطلب ودمجه وحفظه فردياً');
+    } catch(e) {
+      console.error('approve merge official failed:', e);
+      alert('تعذر دمج الطلب: ' + (e && e.message ? e.message : e));
+    }
+  };
+  try { performApproveMerge = window.performApproveMerge; } catch(_e) {}
+
+  window.rejectFormRow = async function(token){
+    var r = (typeof findRegistrationRowByToken === 'function') ? findRegistrationRowByToken(token) : null;
+    if (!r) {
+      try { r = (Array.isArray(syncedFormRows) ? syncedFormRows : []).find(function(x){ return x && (txt(x.timestamp) === txt(token) || txt(x.firebaseKey) === txt(token) || txt(x.requestId) === txt(token)); }); } catch(_e) {}
+    }
+    if (!r) return;
+    if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+    try {
+      var now = new Date().toISOString();
+      Object.assign(r, {status:'rejected', decisionAt:now, rowUpdatedAt:now, rejectedAt:now, approvedStudentId:null, approvedAction:'reject', undoData:{revertTo:'pending'}});
+      await window.archiveFirebaseRegistrationRequest(r, 'rejected');
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم رفض الطلب وحفظ القرار فردياً');
+    } catch(e) {
+      console.error('reject official failed:', e);
+      alert('تعذر رفض الطلب: ' + (e && e.message ? e.message : e));
+    }
+  };
+  try { rejectFormRow = window.rejectFormRow; } catch(_e) {}
+
+  window.undoFormDecision = async function(token){
+    var r = (typeof findRegistrationRowByToken === 'function') ? findRegistrationRowByToken(token) : null;
+    if (!r) {
+      try { r = (Array.isArray(syncedFormRows) ? syncedFormRows : []).find(function(x){ return x && (txt(x.timestamp) === txt(token) || txt(x.firebaseKey) === txt(token) || txt(x.requestId) === txt(token)); }); } catch(_e) {}
+    }
+    if (!r || canonicalStatus(r.status) === 'pending') return;
+    if (!confirm('هل تريدين التراجع عن هذا القرار وإعادة الطلب إلى قائمة الجديدة؟')) return;
+    try {
+      var studentToDelete = null, studentToRestore = null;
+      if (canonicalStatus(r.status) === 'approved' && r.undoData) {
+        if (r.approvedAction === 'new' && r.undoData.createdStudentId != null) {
+          studentToDelete = r.undoData.createdStudentId;
+          students = students.filter(function(s){ return s.id !== studentToDelete; });
+        } else if (r.approvedAction === 'merge' && r.undoData.mergedStudentId != null && r.undoData.previousStudent) {
+          var idx = students.findIndex(function(s){ return s.id === r.undoData.mergedStudentId; });
+          if (idx >= 0) { students[idx] = r.undoData.previousStudent; studentToRestore = r.undoData.previousStudent; }
+        }
+      }
+      var now = new Date().toISOString();
+      Object.assign(r, {status:'pending', decisionAt:'', rowUpdatedAt:now, approvedStudentId:null, approvedAction:'', undoData:null, rejectedAt:'', approvedAt:''});
+      if (studentToDelete != null && typeof moveRecordToTrashRemoteAware === 'function') {
+        var deletedEntry = {id:studentToDelete, deletedAt:now, deletedBy:(currentUser && currentUser.name) || 'undo', deletionReason:'undo_approval'};
+        await moveRecordToTrashRemoteAware({type:'students', id:studentToDelete, deletedItem:deletedEntry, activeArrayName:'students', deletedArrayName:'deletedStudents', keyField:'id', label:'الطالب (تراجع قبول)'});
+      } else if (studentToRestore && typeof saveRecordRemoteAware === 'function') {
+        await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:studentToRestore, keyField:'id', label:'الطالب (تراجع دمج)'});
+      }
+      await window.archiveFirebaseRegistrationRequest(r, 'pending');
+      if (typeof refreshAllAfterFormDecision === 'function') refreshAllAfterFormDecision();
+      if (typeof showSyncBadge === 'function') showSyncBadge('↩️ تم التراجع وإرجاع الطلب لقائمة الجديدة');
+    } catch(e) {
+      console.error('undo official failed:', e);
+      alert('تعذر التراجع: ' + (e && e.message ? e.message : e));
+    }
+  };
+  try { undoFormDecision = window.undoFormDecision; } catch(_e) {}
+
+  // Google Sheets يبقى يدوي فقط: لا ضمن التشغيل التلقائي، ولا ضمن العداد الرسمي.
+  window.startAutoSync = function(){
+    try { clearInterval(autoSyncTimer); } catch(_e) {}
+    Promise.resolve().then(function(){ return window.syncRegistrationRequestsFromFirebase({silent:true}); });
+    try {
+      autoSyncTimer = setInterval(function(){
+        Promise.resolve().then(function(){ return window.syncRegistrationRequestsFromFirebase({silent:true}); });
+      }, 5 * 60 * 1000);
+    } catch(_e) {}
+  };
+  try { startAutoSync = window.startAutoSync; } catch(_e) {}
+
+  // تشخيص يدوي من الكونسول عند الحاجة.
+  window.kpRegistrationFinalStatus = function(){
+    var arr = [];
+    try { arr = Array.isArray(syncedFormRows) ? syncedFormRows : []; } catch(_e) {}
+    return {
+      version: KP_REG_FINAL_VERSION,
+      officialPath: 'nursery_data/registrationRequests',
+      total: arr.length,
+      pending: arr.filter(function(r){ return canonicalStatus(r.status) === 'pending'; }).length,
+      approved: arr.filter(function(r){ return canonicalStatus(r.status) === 'approved'; }).length,
+      rejected: arr.filter(function(r){ return canonicalStatus(r.status) === 'rejected'; }).length,
+      sheetsAutoSync: false,
+      kp_form_rows_decision_source: false
+    };
+  };
+
+  // تشغيل قراءة رسمية بعد تحميل الصفحة، بدون تصفير الطلبات عند timeout.
+  try { clearInterval(autoSyncTimer); } catch(_e) {}
+  setTimeout(function(){
+    try { window.startAutoSync(); } catch(_e) {}
+    try { if (typeof window.kpEnsureSheetsPanel === 'function') window.kpEnsureSheetsPanel(); } catch(_e) {}
+  }, 900);
+})();
+</script>
 </body>
 </html>
