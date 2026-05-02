@@ -14960,6 +14960,7 @@ document.addEventListener('change', function(e){
   var lastMigrationStartedAt = 0;
   var migrationPromise = null;
   var primaryBase = String(FB_URL || '').replace(/\/$/, '') + '/registrationRequests';
+  var migrationFlagUrl = migrationFlagUrl;
   var rootBase = String(FB_URL || '').replace(/\/nursery_data\/?$/, '').replace(/\/$/, '');
   var legacyBases = [
     rootBase + '/registrationRequests',
@@ -15108,18 +15109,34 @@ document.addEventListener('change', function(e){
     return rows;
   }
   function uSafeStoreRows(rows){
-    try { localStorage.setItem('kp_form_rows', JSON.stringify(rows || [])); return; } catch(e) {}
-    // إذا امتلأ localStorage بسبب صور base64، خزّن نسخة خفيفة محلياً فقط، والنسخة الكاملة تبقى على Firebase.
-    try {
-      var light = (rows || []).map(function(r){
-        var x = Object.assign({}, r);
-        Object.keys(x).forEach(function(k){
-          if (/^img|image|photo|file|attachment/i.test(k) && String(x[k] || '').length > 800) x[k] = '';
-        });
-        return x;
-      });
-      localStorage.setItem('kp_form_rows', JSON.stringify(light));
-    } catch(_e) {}
+    // طلبات التسجيل صارت Firebase-only: لا نخزن kp_form_rows محلياً حتى لا يرجع خطأ quota.
+    try { localStorage.removeItem('kp_form_rows'); } catch(_e) {}
+  }
+
+  async function uHasLegacyData(){
+    var folders = ['pending','accepted','rejected'];
+    for (var b=0; b<legacyBases.length; b++) {
+      for (var f=0; f<folders.length; f++) {
+        var obj = await uFetchJson(legacyBases[b] + '/' + folders[f] + '.json', 4000);
+        if (obj && typeof obj === 'object' && Object.keys(obj).length) return true;
+      }
+    }
+    return false;
+  }
+  async function uShouldRunMigration(options){
+    if (options && options.force) return true;
+    var flag = await uFetchJson(migrationFlagUrl, 4000);
+    if (flag && flag.doneAt) {
+      // لا نعيد الترحيل كل مرة. نفحص فقط هل ظهر مسار قديم جديد.
+      return await uHasLegacyData();
+    }
+    // أول مرة: إذا ما في مسارات قديمة، علّمها كمنجزة بدون ترحيل مزعج.
+    var hasLegacy = await uHasLegacyData();
+    if (!hasLegacy) {
+      try { await uPutJson(migrationFlagUrl, {doneAt:new Date().toISOString(), skippedBecauseNoLegacy:true}, 'PUT', 5000); } catch(_e){}
+      return false;
+    }
+    return true;
   }
 
   window.kpMigrateRegistrationRequestsToNurseryData = async function(options){
@@ -15129,10 +15146,17 @@ document.addEventListener('change', function(e){
     if (!options.force && (now - lastMigrationStartedAt) < REG_MIGRATION_THROTTLE_MS) return { skipped:true, reason:'throttled' };
     lastMigrationStartedAt = now;
     migrationPromise = (async function(){
+      var shouldRun = await uShouldRunMigration(options);
+      if (!shouldRun) return { skipped:true, reason:'already_unified' };
+
       var map = await uBuildUnifiedMap(true);
       var unified = uMapToFirebaseObject(map);
       var ok = await uPutJson(primaryBase + '.json', unified, 'PUT', 15000);
-      if (!ok) throw new Error('تعذر حفظ المسار الرسمي registrationRequests');
+      if (!ok) {
+        // بالوضع الصامت لا نرمي Error ولا نلوّث الـ Console.
+        if (options.silent) return { skipped:true, reason:'save_failed' };
+        throw new Error('تعذر حفظ المسار الرسمي registrationRequests');
+      }
 
       // بعد نجاح الحفظ الرسمي، احذف المسارات القديمة حتى لا يرجع الاختلاف بين الأجهزة.
       var deleted = [];
@@ -15157,9 +15181,11 @@ document.addEventListener('change', function(e){
   async function uOfficialSync(options){
     options = options || {};
     try {
-      // يسحب أي طلبات قديمة/جديدة كتبتها فورمات أقدم على root ثم ينقلها للرسمي.
+      // ترحيل ذكي: لا يعمل كل مرة، ولا يكتب على الـ Console في الوضع الصامت.
       await window.kpMigrateRegistrationRequestsToNurseryData({ silent:true, force: !!options.forceMigration });
-    } catch(e) { console.warn('registration migration skipped:', e && e.message); }
+    } catch(e) {
+      if (!options.silent) console.warn('registration migration skipped:', e && e.message);
+    }
 
     try {
       var map = await uBuildUnifiedMap(false); // قراءة رسمية فقط بعد الترحيل
@@ -15183,7 +15209,7 @@ document.addEventListener('change', function(e){
         total: syncedFormRows.length
       };
     } catch(e) {
-      console.warn('official registration sync failed:', e);
+      if (!options.silent) console.warn('official registration sync failed:', e);
       if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('⚠️ تعذرت مزامنة طلبات التسجيل');
       return { error: e && e.message };
     }
@@ -15259,8 +15285,7 @@ document.addEventListener('change', function(e){
   }
   window.kpOfficialRegStreamRestart = function(){ try { if (officialStream) officialStream.close(); } catch(_e){} officialStream = null; startOfficialRegStream(); };
   setTimeout(function(){
-    try { window.kpMigrateRegistrationRequestsToNurseryData({ silent:true }); } catch(_e){}
-    try { window.syncRegistrationRequestsFromFirebase({ silent:true, forceMigration:true }); } catch(_e){}
+    try { window.syncRegistrationRequestsFromFirebase({ silent:true }); } catch(_e){}
     startOfficialRegStream();
   }, 1200);
 })();
