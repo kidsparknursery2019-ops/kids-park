@@ -19168,6 +19168,10 @@ document.addEventListener('change', function(e){
     try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(value) : ('k_' + txt(value).replace(/[.#$\[\]\/\s]/g, '_')); }
     catch(_e){ return 'k_' + txt(value).replace(/[.#$\[\]\/\s]/g, '_'); }
   }
+  function classPathKey(value){
+    var raw = txt(value).replace(/[.#$\[\]\/]/g, '_');
+    return raw || safeKey(value);
+  }
   function recordKey(record, keyField){
     try { return (typeof kpRecordKey === 'function') ? kpRecordKey(record, keyField || 'id') : safeKey(record && record[keyField || 'id']); }
     catch(_e){ return safeKey(record && record[keyField || 'id']); }
@@ -19600,6 +19604,1050 @@ document.addEventListener('change', function(e){
       systemSnapshotCommit:true,
       pending:!!commitTimer || pendingCommit,
       committing:committing
+    };
+  };
+})();
+</script>
+<script>
+/*
+ KP STABLE REGISTRATION LIST AFTER DECISION 2026-05-02
+ Prevents a partial post-reject sync from blanking the registration list.
+*/
+(function(){
+  if (window.__kpStableRegistrationListAfterDecisionInstalled) return;
+  window.__kpStableRegistrationListAfterDecisionInstalled = true;
+
+  var HOLD_MS = 60000;
+  var stable = {
+    until:0,
+    rows:[],
+    decisions:{}
+  };
+  var repairing = false;
+
+  function txt(value){ return String(value == null ? '' : value).trim(); }
+  function statusOf(row){
+    var s = txt(row && row.status || 'pending').toLowerCase();
+    if (s === 'accepted' || s === 'approved' || s === 'accept') return 'approved';
+    if (s === 'rejected' || s === 'reject') return 'rejected';
+    return 'pending';
+  }
+  function safeKey(raw){
+    raw = txt(raw);
+    if (!raw) return '';
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(raw) : raw.replace(/[.#$\[\]\/\s]/g, '_'); }
+    catch(_e){ return raw.replace(/[.#$\[\]\/\s]/g, '_'); }
+  }
+  function keysOf(row){
+    if (!row) return [];
+    var keys = [
+      row._fbKey,
+      row.firebaseKey,
+      row.requestId,
+      row.key,
+      row.timestamp,
+      row.submittedAt,
+      row.createdAt,
+      txt(row.emiratesId) ? 'eid_' + txt(row.emiratesId) : '',
+      txt(row.passport) ? 'pass_' + txt(row.passport) : '',
+      (txt(row.name) && txt(row.dob)) ? 'child_' + txt(row.name) + '_' + txt(row.dob) : '',
+      (txt(row.name) && txt(row.dob) && txt(row.dadMob || row.momMob)) ? 'family_' + txt(row.name) + '_' + txt(row.dob) + '_' + txt(row.dadMob || row.momMob) : ''
+    ].map(safeKey).filter(Boolean);
+    return keys.filter(function(key, index){ return keys.indexOf(key) === index; });
+  }
+  function cloneRows(rows){
+    try { return JSON.parse(JSON.stringify(rows || [])); }
+    catch(_e){ return (rows || []).map(function(r){ return Object.assign({}, r); }); }
+  }
+  function currentRows(){
+    try { return Array.isArray(syncedFormRows) ? syncedFormRows : []; } catch(_e){ return []; }
+  }
+  function rememberList(){
+    var rows = currentRows();
+    if (!rows.length) return;
+    stable.until = Date.now() + HOLD_MS;
+    stable.rows = cloneRows(rows);
+  }
+  function findRow(token){
+    token = txt(token);
+    try {
+      if (typeof findRegistrationRowByToken === 'function') {
+        var found = findRegistrationRowByToken(token);
+        if (found) return found;
+      }
+    } catch(_e){}
+    var tokenKey = safeKey(token);
+    return currentRows().find(function(row){
+      return keysOf(row).indexOf(tokenKey) >= 0 || txt(row && row.timestamp) === token;
+    }) || null;
+  }
+  function rememberDecision(row, status){
+    if (!row) return;
+    status = statusOf({ status:status || row.status });
+    if (status === 'pending') return;
+    var copy;
+    try { copy = JSON.parse(JSON.stringify(row)); }
+    catch(_e){ copy = Object.assign({}, row); }
+    copy.status = status;
+    copy.rowUpdatedAt = copy.rowUpdatedAt || new Date().toISOString();
+    if (status === 'rejected') copy.rejectedAt = copy.rejectedAt || copy.rowUpdatedAt;
+    if (status === 'approved') copy.approvedAt = copy.approvedAt || copy.rowUpdatedAt;
+    keysOf(copy).forEach(function(key){ stable.decisions[key] = copy; });
+    stable.until = Date.now() + HOLD_MS;
+  }
+  function mergeStableRows(baseRows){
+    if (!stable.rows.length || Date.now() > stable.until) return baseRows;
+    var map = {};
+    function put(row){
+      if (!row) return;
+      var keys = keysOf(row);
+      var decision = null;
+      keys.some(function(key){ if (stable.decisions[key]) { decision = stable.decisions[key]; return true; } return false; });
+      var finalRow = decision ? Object.assign({}, row, decision, { status:statusOf(decision) }) : row;
+      var key = keysOf(finalRow)[0] || safeKey(finalRow.timestamp || finalRow.name || Math.random());
+      map[key] = finalRow;
+    }
+    (stable.rows || []).forEach(put);
+    (baseRows || []).forEach(put);
+    Object.keys(stable.decisions).forEach(function(key){ put(stable.decisions[key]); });
+    return Object.keys(map).map(function(key){ return map[key]; });
+  }
+  function repairIfBlank(reason){
+    if (repairing) return false;
+    if (Date.now() > stable.until || !stable.rows.length) return false;
+    var rows = currentRows();
+    var pendingNow = rows.filter(function(r){ return statusOf(r) === 'pending'; }).length;
+    var pendingStable = mergeStableRows([]).filter(function(r){ return statusOf(r) === 'pending'; }).length;
+    if (rows.length === 0 || (pendingNow === 0 && pendingStable > 0)) {
+      try {
+        repairing = true;
+        syncedFormRows = mergeStableRows(rows);
+        window.syncedFormRows = syncedFormRows;
+        if (typeof _saveFormRowsSlim === 'function') _saveFormRowsSlim(syncedFormRows);
+        if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+        if (typeof renderFormRequests === 'function') renderFormRequests();
+      } catch(_e){} finally {
+        repairing = false;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  var oldReject = window.rejectFormRow;
+  if (typeof oldReject === 'function') {
+    window.rejectFormRow = function(token){
+      rememberList();
+      var row = findRow(token);
+      var result = oldReject.apply(this, arguments);
+      Promise.resolve(result).finally(function(){
+        try {
+          if (row && statusOf(row) === 'rejected') rememberDecision(row, 'rejected');
+          repairIfBlank('reject-finally');
+        } catch(_e){}
+      });
+      return result;
+    };
+    try { rejectFormRow = window.rejectFormRow; } catch(_e){}
+  }
+
+  var oldApproveNew = window.performApproveNew;
+  if (typeof oldApproveNew === 'function') {
+    window.performApproveNew = function(row){
+      rememberList();
+      var result = oldApproveNew.apply(this, arguments);
+      Promise.resolve(result).finally(function(){
+        try { if (row && statusOf(row) === 'approved') rememberDecision(row, 'approved'); repairIfBlank('approve-new'); } catch(_e){}
+      });
+      return result;
+    };
+    try { performApproveNew = window.performApproveNew; } catch(_e){}
+  }
+
+  var oldApproveMerge = window.performApproveMerge;
+  if (typeof oldApproveMerge === 'function') {
+    window.performApproveMerge = function(row){
+      rememberList();
+      var result = oldApproveMerge.apply(this, arguments);
+      Promise.resolve(result).finally(function(){
+        try { if (row && statusOf(row) === 'approved') rememberDecision(row, 'approved'); repairIfBlank('approve-merge'); } catch(_e){}
+      });
+      return result;
+    };
+    try { performApproveMerge = window.performApproveMerge; } catch(_e){}
+  }
+
+  var oldSync = window.syncRegistrationRequestsFromFirebase;
+  if (typeof oldSync === 'function') {
+    window.syncRegistrationRequestsFromFirebase = async function(options){
+      options = options || {};
+      var before = cloneRows(currentRows());
+      var result = await oldSync.apply(this, arguments);
+      if (options.silent !== false && Date.now() <= stable.until) {
+        var nowRows = currentRows();
+        if ((!nowRows.length || !nowRows.some(function(r){ return statusOf(r) === 'pending'; })) && before.length) {
+          stable.rows = mergeStableRows(before);
+          repairIfBlank('sync');
+        }
+      }
+      return result;
+    };
+    try { syncRegistrationRequestsFromFirebase = window.syncRegistrationRequestsFromFirebase; } catch(_e){}
+  }
+
+  var oldRender = window.renderFormRequests;
+  if (typeof oldRender === 'function') {
+    window.renderFormRequests = function(){
+      if (repairing) return oldRender.apply(this, arguments);
+      repairIfBlank('before-render');
+      return oldRender.apply(this, arguments);
+    };
+    try { renderFormRequests = window.renderFormRequests; } catch(_e){}
+  }
+
+  window.kpStableRegistrationListStatus = function(){
+    return {
+      enabled:true,
+      active:Date.now() <= stable.until,
+      stableRows:stable.rows.length,
+      decisions:Object.keys(stable.decisions).length
+    };
+  };
+})();
+</script>
+<script>
+/*
+ KP PAYMENT PERSISTENCE GUARANTEE 2026-05-02
+ Payments get an immediate Firebase write and a post-refresh reconcile so
+ receipt edits cannot vanish when Firebase still has mixed old/new shapes.
+*/
+(function(){
+  if (window.__kpPaymentPersistenceGuaranteeInstalled) return;
+  window.__kpPaymentPersistenceGuaranteeInstalled = true;
+
+  var recentPayments = {};
+
+  function txt(value){ return String(value == null ? '' : value).trim(); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, ''); }
+  function norm(value){
+    try { return (typeof normKey === 'function') ? normKey(value) : txt(value); }
+    catch(_e){ return txt(value); }
+  }
+  function safeKey(value){
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(value) : ('k_' + txt(value).replace(/[.#$\[\]\/\s]/g, '_')); }
+    catch(_e){ return 'k_' + txt(value).replace(/[.#$\[\]\/\s]/g, '_'); }
+  }
+  function paymentKey(record){
+    try { return (typeof kpRecordKey === 'function') ? kpRecordKey(record, 'id') : safeKey(record && record.id); }
+    catch(_e){ return safeKey(record && record.id); }
+  }
+  function clone(record){ return Object.assign({}, record || {}); }
+  function toPaymentArray(section){
+    try {
+      if (typeof kpArrayFromFirebaseSection === 'function') return kpArrayFromFirebaseSection(section);
+    } catch(_e){}
+    if (!section) return [];
+    if (Array.isArray(section)) return section.filter(function(item){ return item && typeof item === 'object'; });
+    if (typeof section === 'object') {
+      return Object.keys(section).map(function(key){
+        var item = section[key];
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        return Object.assign({}, item, { firebaseKey:item.firebaseKey || key });
+      }).filter(Boolean);
+    }
+    return [];
+  }
+  function candidateKeys(recordOrId){
+    var out = {};
+    var id = (recordOrId && typeof recordOrId === 'object') ? recordOrId.id : recordOrId;
+    var oldKey = (recordOrId && typeof recordOrId === 'object') ? recordOrId.firebaseKey : '';
+    [oldKey, safeKey(id), txt(id), 'k_' + txt(id), txt(id).replace(/[.#$\[\]\/\s]/g, '_')].forEach(function(key){
+      if (key) out[key] = true;
+    });
+    return Object.keys(out);
+  }
+  function newer(a, b){
+    if (!a) return b;
+    if (!b) return a;
+    var at = Date.parse(a.updatedAt || a.savedAt || a.createdAt || a.date || '') || 0;
+    var bt = Date.parse(b.updatedAt || b.savedAt || b.createdAt || b.date || '') || 0;
+    if (bt > at) return b;
+    return a;
+  }
+  function upsertLocalPayment(record){
+    var saved = clone(record);
+    var found = false;
+    if (!Array.isArray(payments)) payments = [];
+    payments = payments.map(function(item){
+      if (item && norm(item.id) === norm(saved.id)) {
+        found = true;
+        return Object.assign({}, item, saved);
+      }
+      return item;
+    });
+    if (!found) payments.push(saved);
+    if (Array.isArray(deletedPayments)) {
+      deletedPayments = deletedPayments.filter(function(item){ return !(item && norm(item.id) === norm(saved.id)); });
+      try { _safeSetSlim('kp_deleted_payments', deletedPayments); } catch(_e){}
+    }
+    try { if (typeof clearRestored === 'function') clearRestored('payments', saved.id); } catch(_e){}
+    try {
+      if (typeof tombstones !== 'undefined' && tombstones && Array.isArray(tombstones.payments)) {
+        tombstones.payments = tombstones.payments.filter(function(id){ return norm(id) !== norm(saved.id); });
+        localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+      }
+    } catch(_e){}
+    try { persistCoreDataToLocalStorage(); } catch(_e){}
+  }
+  function rememberPayment(record){
+    if (!record || record.id == null) return;
+    recentPayments[norm(record.id)] = {
+      until: Date.now() + 90000,
+      record: clone(record)
+    };
+  }
+  function activeRecentPayments(){
+    var out = [];
+    Object.keys(recentPayments).forEach(function(id){
+      var entry = recentPayments[id];
+      if (!entry || Date.now() > entry.until) {
+        delete recentPayments[id];
+        return;
+      }
+      out.push(clone(entry.record));
+    });
+    return out;
+  }
+  async function patchFirebase(updates, timeoutMs){
+    var base = baseUrl();
+    if (!base) throw new Error('missing Firebase URL');
+    var res = await Promise.race([
+      fetch(base + '.json', {
+        method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(updates)
+      }),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, timeoutMs || 16000); })
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return true;
+  }
+  function showFailure(action, error, record){
+    if (typeof window.kpShowFirebaseFailure === 'function') {
+      window.kpShowFirebaseFailure(action, error, { alert:true, record:record });
+    } else {
+      alert('Could not save payment to Firebase: ' + (error && error.message ? error.message : error));
+    }
+  }
+  function redrawPayments(){
+    try { if (typeof sanitizeCoreData === 'function') sanitizeCoreData(); } catch(_e){}
+    try { if (typeof resetPaymentMatchCache === 'function') resetPaymentMatchCache(); } catch(_e){}
+    try { if (typeof renderPayments === 'function') renderPayments(); } catch(_e){}
+    try { if (typeof renderReceipts === 'function') renderReceipts(); } catch(_e){}
+    try { if (typeof renderDash === 'function') renderDash(); } catch(_e){}
+    try { if (typeof renderOtherDeletedItems === 'function') renderOtherDeletedItems(); } catch(_e){}
+  }
+  function reconcilePaymentArrays(remotePayments, remoteDeleted, remoteTombstones){
+    var deletedIds = {};
+    toPaymentArray(remoteDeleted).forEach(function(item){
+      if (item && item.id != null) deletedIds[norm(item.id)] = true;
+    });
+    (Array.isArray(deletedPayments) ? deletedPayments : []).forEach(function(item){
+      if (item && item.id != null) deletedIds[norm(item.id)] = true;
+    });
+    (Array.isArray(remoteTombstones) ? remoteTombstones : []).forEach(function(id){ deletedIds[norm(id)] = true; });
+    try {
+      if (typeof tombstones !== 'undefined' && tombstones && Array.isArray(tombstones.payments)) {
+        tombstones.payments.forEach(function(id){ deletedIds[norm(id)] = true; });
+      }
+    } catch(_e){}
+
+    var map = {};
+    function add(list, protect){
+      (Array.isArray(list) ? list : []).forEach(function(item){
+        if (!item || item.id == null) return;
+        var id = norm(item.id);
+        if (deletedIds[id] && !protect) return;
+        map[id] = newer(map[id], item);
+      });
+    }
+    add(toPaymentArray(remotePayments), false);
+    add(Array.isArray(payments) ? payments : [], false);
+    add(activeRecentPayments(), true);
+    payments = Object.keys(map).map(function(id){ return map[id]; });
+    payments.sort(function(a,b){ return (+a.id || 0) - (+b.id || 0); });
+    deletedPayments = toPaymentArray(remoteDeleted).concat(Array.isArray(deletedPayments) ? deletedPayments : []).filter(function(item, idx, list){
+      if (!item || item.id == null) return false;
+      return list.findIndex(function(other){ return other && norm(other.id) === norm(item.id); }) === idx;
+    });
+    try { _safeSetSlim('kp_deleted_payments', deletedPayments); } catch(_e){}
+    try { persistCoreDataToLocalStorage(); } catch(_e){}
+  }
+  async function reconcilePaymentsFromFirebase(){
+    if (typeof currentUser === 'undefined' || !currentUser) return false;
+    var base = baseUrl();
+    if (!base) return false;
+    var res = await Promise.race([
+      fetch(base + '.json?ts=' + Date.now(), { cache:'no-store' }),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, 9000); })
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var data = await res.json() || {};
+    if (typeof kpNormalizeFirebaseObjectSections === 'function') {
+      try { kpNormalizeFirebaseObjectSections(data); } catch(_e){}
+    }
+    reconcilePaymentArrays(data.payments, data.deletedPayments, data.tombstones && data.tombstones.payments);
+    redrawPayments();
+    return true;
+  }
+
+  var oldSaveRecordRemoteAware = window.saveRecordRemoteAware;
+  window.saveRecordRemoteAware = async function(config){
+    if (!config || config.type !== 'payments') {
+      return oldSaveRecordRemoteAware ? oldSaveRecordRemoteAware.apply(this, arguments) : false;
+    }
+    var original = config.record || {};
+    var savedAt = new Date().toISOString();
+    var oldKey = txt(original.firebaseKey || original.key);
+    var record = Object.assign({}, original, {
+      firebaseKey: paymentKey(original),
+      updatedAt: savedAt,
+      savedAt: savedAt,
+      version: (parseInt(original.version || 0, 10) || 0) + 1
+    });
+    var key = record.firebaseKey;
+    var updates = {
+      version: 2,
+      savedAt: savedAt
+    };
+    updates['payments/' + key] = record;
+    candidateKeys(original).forEach(function(candidate){
+      updates['deletedPayments/' + candidate] = null;
+    });
+    if (oldKey && oldKey !== key) updates['payments/' + oldKey] = null;
+    try {
+      var tList = (typeof tombstones !== 'undefined' && tombstones && Array.isArray(tombstones.payments)) ? tombstones.payments : [];
+      updates['tombstones/payments'] = tList.filter(function(id){ return norm(id) !== norm(record.id); });
+      var rList = (typeof restoredKeys !== 'undefined' && restoredKeys && Array.isArray(restoredKeys.payments)) ? restoredKeys.payments.slice() : [];
+      if (!rList.some(function(id){ return norm(id) === norm(record.id); })) rList.push(record.id);
+      updates['restoredKeys/payments'] = rList;
+    } catch(_e){}
+    try {
+      await patchFirebase(updates);
+      Object.assign(original, record);
+      upsertLocalPayment(record);
+      rememberPayment(record);
+      redrawPayments();
+      try { if (typeof showSyncBadge === 'function') showSyncBadge('Saved to Firebase'); } catch(_e){}
+      return true;
+    } catch(e) {
+      showFailure(config.label || 'payment record', e, record);
+      throw e;
+    }
+  };
+  try { saveRecordRemoteAware = window.saveRecordRemoteAware; } catch(_e){}
+
+  var oldMoveRecordToTrashRemoteAware = window.moveRecordToTrashRemoteAware;
+  window.moveRecordToTrashRemoteAware = async function(config){
+    if (!config || config.type !== 'payments') {
+      return oldMoveRecordToTrashRemoteAware ? oldMoveRecordToTrashRemoteAware.apply(this, arguments) : false;
+    }
+    var deletedItem = clone(config.deletedItem || {});
+    var id = deletedItem.id != null ? deletedItem.id : config.id;
+    if (id == null || id === '') {
+      return oldMoveRecordToTrashRemoteAware ? oldMoveRecordToTrashRemoteAware.apply(this, arguments) : false;
+    }
+    var savedAt = new Date().toISOString();
+    deletedItem.id = id;
+    deletedItem.firebaseKey = paymentKey(deletedItem);
+    deletedItem.deletedAt = deletedItem.deletedAt || savedAt;
+    var updates = {
+      version: 2,
+      savedAt: savedAt
+    };
+    candidateKeys(deletedItem).forEach(function(candidate){
+      updates['payments/' + candidate] = null;
+    });
+    updates['deletedPayments/' + deletedItem.firebaseKey] = deletedItem;
+    try {
+      var tList = (typeof tombstones !== 'undefined' && tombstones && Array.isArray(tombstones.payments)) ? tombstones.payments.slice() : [];
+      if (!tList.some(function(existing){ return norm(existing) === norm(id); })) tList.push(id);
+      updates['tombstones/payments'] = tList;
+      var rList = (typeof restoredKeys !== 'undefined' && restoredKeys && Array.isArray(restoredKeys.payments)) ? restoredKeys.payments : [];
+      updates['restoredKeys/payments'] = rList.filter(function(existing){ return norm(existing) !== norm(id); });
+    } catch(_e){}
+    try {
+      await patchFirebase(updates);
+      delete recentPayments[norm(id)];
+      try { if (typeof addTombstone === 'function') addTombstone('payments', id); } catch(_e){}
+      try { if (typeof clearRestored === 'function') clearRestored('payments', id); } catch(_e){}
+      payments = (Array.isArray(payments) ? payments : []).filter(function(item){ return !(item && norm(item.id) === norm(id)); });
+      deletedPayments = (Array.isArray(deletedPayments) ? deletedPayments : []).filter(function(item){ return !(item && norm(item.id) === norm(id)); });
+      deletedPayments.unshift(deletedItem);
+      try { _safeSetSlim('kp_deleted_payments', deletedPayments); } catch(_e){}
+      try { persistCoreDataToLocalStorage(); } catch(_e){}
+      redrawPayments();
+      try { if (typeof showSyncBadge === 'function') showSyncBadge('Saved to Firebase'); } catch(_e){}
+      return true;
+    } catch(e) {
+      showFailure(config.label || 'payment record', e, deletedItem);
+      return false;
+    }
+  };
+  try { moveRecordToTrashRemoteAware = window.moveRecordToTrashRemoteAware; } catch(_e){}
+
+  var oldLoadFromFirebase = window.loadFromFirebase;
+  if (typeof oldLoadFromFirebase === 'function') {
+    window.loadFromFirebase = async function(){
+      var result = await oldLoadFromFirebase.apply(this, arguments);
+      if (typeof currentUser === 'undefined' || !currentUser) return result;
+      try { await reconcilePaymentsFromFirebase(); } catch(e) { console.warn('[payments] reconcile skipped:', e); }
+      return result;
+    };
+    try { loadFromFirebase = window.loadFromFirebase; } catch(_e){}
+  }
+
+  window.kpPaymentPersistenceStatus = function(){
+    return {
+      enabled:true,
+      payments:Array.isArray(payments) ? payments.length : 0,
+      recent:Object.keys(recentPayments).length
+    };
+  };
+})();
+</script>
+<script>
+/*
+ KP WHOLE-SYSTEM PERSISTENCE AUDIT FIX 2026-05-02
+ Final pass over the full app: normal records, classes, settings, logo,
+ users, worksheets, attendance and refresh reconciliation.
+*/
+(function(){
+  if (window.__kpWholeSystemPersistenceAuditFixInstalled) return;
+  window.__kpWholeSystemPersistenceAuditFixInstalled = true;
+
+  var ENTITY = {
+    students: { active:'students', deleted:'deletedStudents', keyField:'id', local:'students', deletedLocal:'deletedStudents' },
+    payments: { active:'payments', deleted:'deletedPayments', keyField:'id', local:'payments', deletedLocal:'deletedPayments' },
+    expenses: { active:'expenses', deleted:'deletedExpenses', keyField:'id', local:'expenses', deletedLocal:'deletedExpenses' },
+    renewals: { active:'renewals', deleted:'deletedRenewals', keyField:'id', local:'renewals', deletedLocal:'deletedRenewals' }
+  };
+  var recent = {};
+  var worksheetTimer = null;
+
+  function txt(value){ return String(value == null ? '' : value).trim(); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, ''); }
+  function norm(value){
+    try { return (typeof normKey === 'function') ? normKey(value) : txt(value); }
+    catch(_e){ return txt(value); }
+  }
+  function same(a,b){ return norm(a) === norm(b); }
+  function safeKey(value){
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(value) : ('k_' + txt(value).replace(/[.#$\[\]\/\s]/g, '_')); }
+    catch(_e){ return 'k_' + txt(value).replace(/[.#$\[\]\/\s]/g, '_'); }
+  }
+  function classPathKey(value){
+    var raw = txt(value).replace(/[.#$\[\]\/]/g, '_');
+    return raw || safeKey(value);
+  }
+  function recordKey(record, keyField){
+    try { return (typeof kpRecordKey === 'function') ? kpRecordKey(record, keyField || 'id') : safeKey(record && record[keyField || 'id']); }
+    catch(_e){ return safeKey(record && record[keyField || 'id']); }
+  }
+  function copy(record){ return Object.assign({}, record || {}); }
+  function showFail(action, error, record){
+    if (typeof window.kpShowFirebaseFailure === 'function') {
+      window.kpShowFirebaseFailure(action, error, { alert:true, record:record });
+    } else {
+      alert('Could not save to Firebase: ' + (error && error.message ? error.message : error));
+    }
+  }
+  function showOk(message){
+    try { if (typeof showSyncBadge === 'function') showSyncBadge(message); } catch(_e){}
+  }
+  async function patch(updates, timeoutMs){
+    var base = baseUrl();
+    if (!base) throw new Error('missing Firebase URL');
+    var res = await Promise.race([
+      fetch(base + '.json', {
+        method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(updates)
+      }),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, timeoutMs || 16000); })
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return true;
+  }
+  async function readRoot(timeoutMs){
+    var base = baseUrl();
+    if (!base) throw new Error('missing Firebase URL');
+    var res = await Promise.race([
+      fetch(base + '.json?ts=' + Date.now(), { cache:'no-store' }),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, timeoutMs || 9000); })
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json() || {};
+  }
+  function candidateKeys(recordOrId, keyField){
+    var out = {};
+    var id = (recordOrId && typeof recordOrId === 'object') ? recordOrId[keyField || 'id'] : recordOrId;
+    var oldKey = (recordOrId && typeof recordOrId === 'object') ? recordOrId.firebaseKey : '';
+    [oldKey, safeKey(id), txt(id), 'k_' + txt(id), txt(id).replace(/[.#$\[\]\/\s]/g, '_')].forEach(function(key){
+      if (key) out[key] = true;
+    });
+    return Object.keys(out);
+  }
+  function toArray(section){
+    try {
+      if (typeof kpArrayFromFirebaseSection === 'function') return kpArrayFromFirebaseSection(section);
+    } catch(_e){}
+    if (!section) return [];
+    if (Array.isArray(section)) return section.filter(function(item){ return item && typeof item === 'object'; });
+    if (typeof section === 'object') {
+      return Object.keys(section).map(function(key){
+        var item = section[key];
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        return Object.assign({}, item, { firebaseKey:item.firebaseKey || key });
+      }).filter(Boolean);
+    }
+    return [];
+  }
+  function newer(a,b){
+    if (!a) return b;
+    if (!b) return a;
+    var at = Date.parse(a.updatedAt || a.savedAt || a.createdAt || a.date || '') || 0;
+    var bt = Date.parse(b.updatedAt || b.savedAt || b.createdAt || b.date || '') || 0;
+    return bt > at ? b : a;
+  }
+  function localArray(type){
+    try {
+      if (type === 'students') return Array.isArray(students) ? students : [];
+      if (type === 'payments') return Array.isArray(payments) ? payments : [];
+      if (type === 'expenses') return Array.isArray(expenses) ? expenses : [];
+      if (type === 'renewals') return Array.isArray(renewals) ? renewals : [];
+    } catch(_e){}
+    return [];
+  }
+  function setLocalArray(type, list){
+    if (type === 'students') students = list;
+    else if (type === 'payments') payments = list;
+    else if (type === 'expenses') expenses = list;
+    else if (type === 'renewals') renewals = list;
+  }
+  function deletedArray(type){
+    try {
+      if (type === 'students') return Array.isArray(deletedStudents) ? deletedStudents : [];
+      if (type === 'payments') return Array.isArray(deletedPayments) ? deletedPayments : [];
+      if (type === 'expenses') return Array.isArray(deletedExpenses) ? deletedExpenses : [];
+      if (type === 'renewals') return Array.isArray(deletedRenewals) ? deletedRenewals : [];
+    } catch(_e){}
+    return [];
+  }
+  function setDeletedArray(type, list){
+    if (type === 'students') { deletedStudents = list; try { _safeSetSlim('kp_deleted_students', list); } catch(_e){} }
+    else if (type === 'payments') { deletedPayments = list; try { _safeSetSlim('kp_deleted_payments', list); } catch(_e){} }
+    else if (type === 'expenses') { deletedExpenses = list; try { _safeSetSlim('kp_deleted_expenses', list); } catch(_e){} }
+    else if (type === 'renewals') { deletedRenewals = list; try { _safeSetSlim('kp_deleted_renewals', list); } catch(_e){} }
+  }
+  function localUpsert(type, record){
+    var cfg = ENTITY[type];
+    var saved = copy(record);
+    var found = false;
+    var list = localArray(type).map(function(item){
+      if (item && same(item[cfg.keyField], saved[cfg.keyField])) {
+        found = true;
+        return Object.assign({}, item, saved);
+      }
+      return item;
+    });
+    if (!found) list.push(saved);
+    setLocalArray(type, list);
+    setDeletedArray(type, deletedArray(type).filter(function(item){ return !(item && same(item[cfg.keyField], saved[cfg.keyField])); }));
+    try { persistCoreDataToLocalStorage(); } catch(_e){}
+  }
+  function remember(type, record){
+    var cfg = ENTITY[type];
+    if (!record || record[cfg.keyField] == null) return;
+    if (!recent[type]) recent[type] = {};
+    recent[type][norm(record[cfg.keyField])] = { until:Date.now() + 90000, record:copy(record) };
+  }
+  function recentList(type){
+    var out = [];
+    var bucket = recent[type] || {};
+    Object.keys(bucket).forEach(function(id){
+      var entry = bucket[id];
+      if (!entry || Date.now() > entry.until) {
+        delete bucket[id];
+        return;
+      }
+      out.push(copy(entry.record));
+    });
+    return out;
+  }
+  function saveMetaIntoUpdates(updates, type, id, restored){
+    try {
+      var ts = (typeof tombstones !== 'undefined' && tombstones && Array.isArray(tombstones[type])) ? tombstones[type].slice() : [];
+      var rk = (typeof restoredKeys !== 'undefined' && restoredKeys && Array.isArray(restoredKeys[type])) ? restoredKeys[type].slice() : [];
+      if (restored) {
+        ts = ts.filter(function(x){ return !same(x,id); });
+        if (!rk.some(function(x){ return same(x,id); })) rk.push(id);
+      } else {
+        if (!ts.some(function(x){ return same(x,id); })) ts.push(id);
+        rk = rk.filter(function(x){ return !same(x,id); });
+      }
+      updates['tombstones/' + type] = ts;
+      updates['restoredKeys/' + type] = rk;
+      if (typeof tombstones !== 'undefined' && tombstones) tombstones[type] = ts;
+      if (typeof restoredKeys !== 'undefined' && restoredKeys) restoredKeys[type] = rk;
+      try { localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); } catch(_e){}
+      try { localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys)); } catch(_e){}
+    } catch(_e){}
+  }
+  function redrawAll(){
+    try { if (typeof sanitizeCoreData === 'function') sanitizeCoreData(); } catch(_e){}
+    try { if (typeof resetPaymentMatchCache === 'function') resetPaymentMatchCache(); } catch(_e){}
+    try { if (typeof refreshNextIds === 'function') refreshNextIds(); } catch(_e){}
+    try { if (typeof populateClassDropdowns === 'function') populateClassDropdowns(); } catch(_e){}
+    try { if (typeof renderStudents === 'function') renderStudents(); } catch(_e){}
+    try { if (typeof renderPayments === 'function') renderPayments(); } catch(_e){}
+    try { if (typeof renderReceipts === 'function') renderReceipts(); } catch(_e){}
+    try { if (typeof renderExpenses === 'function') renderExpenses(); } catch(_e){}
+    try { if (typeof renderRenewals === 'function') renderRenewals(); } catch(_e){}
+    try { if (typeof renderDash === 'function') renderDash(); } catch(_e){}
+    try { if (typeof renderAdminClasses === 'function') renderAdminClasses(); } catch(_e){}
+    try { if (typeof renderWorksheets === 'function') renderWorksheets(); } catch(_e){}
+    try { if (typeof renderDeletedStudents === 'function') renderDeletedStudents(); } catch(_e){}
+    try { if (typeof renderOtherDeletedItems === 'function') renderOtherDeletedItems(); } catch(_e){}
+    try { if (typeof updateNotifications === 'function') updateNotifications(); } catch(_e){}
+    try { if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications(); } catch(_e){}
+  }
+  function reconcileType(type, data){
+    var cfg = ENTITY[type];
+    var restored = {};
+    ((data.restoredKeys && Array.isArray(data.restoredKeys[type])) ? data.restoredKeys[type] : []).forEach(function(id){ restored[norm(id)] = true; });
+    var blocked = {};
+    toArray(data[cfg.deleted]).forEach(function(item){
+      if (item && item[cfg.keyField] != null && !restored[norm(item[cfg.keyField])]) blocked[norm(item[cfg.keyField])] = true;
+    });
+    ((data.tombstones && Array.isArray(data.tombstones[type])) ? data.tombstones[type] : []).forEach(function(id){
+      if (!restored[norm(id)]) blocked[norm(id)] = true;
+    });
+    deletedArray(type).forEach(function(item){
+      if (item && item[cfg.keyField] != null && !restored[norm(item[cfg.keyField])]) blocked[norm(item[cfg.keyField])] = true;
+    });
+
+    var map = {};
+    function add(list, protect){
+      (Array.isArray(list) ? list : []).forEach(function(item){
+        if (!item || item[cfg.keyField] == null) return;
+        var id = norm(item[cfg.keyField]);
+        if (blocked[id] && !protect) return;
+        map[id] = newer(map[id], item);
+      });
+    }
+    add(toArray(data[cfg.active]), false);
+    add(localArray(type), false);
+    add(recentList(type), true);
+    setLocalArray(type, Object.keys(map).map(function(id){ return map[id]; }).sort(function(a,b){ return (+a[cfg.keyField] || 0) - (+b[cfg.keyField] || 0); }));
+    var deleted = toArray(data[cfg.deleted]).concat(deletedArray(type)).filter(function(item, index, list){
+      if (!item || item[cfg.keyField] == null) return false;
+      if (restored[norm(item[cfg.keyField])]) return false;
+      return list.findIndex(function(other){ return other && same(other[cfg.keyField], item[cfg.keyField]); }) === index;
+    });
+    setDeletedArray(type, deleted);
+  }
+  async function reconcileFromFirebase(){
+    if (typeof currentUser === 'undefined' || !currentUser) return false;
+    var data = await readRoot(10000);
+    try { if (typeof kpNormalizeFirebaseObjectSections === 'function') kpNormalizeFirebaseObjectSections(data); } catch(_e){}
+    Object.keys(ENTITY).forEach(function(type){ reconcileType(type, data); });
+    if (data.CLASSES && typeof data.CLASSES === 'object' && !Array.isArray(data.CLASSES)) {
+      CLASSES = Object.assign({}, data.CLASSES);
+      CLASSES_DATA = CLASSES;
+      try { localStorage.setItem('kp_classes', JSON.stringify(CLASSES)); } catch(_e){}
+    }
+    if (Array.isArray(data.deletedClasses)) {
+      deletedClasses = data.deletedClasses;
+      try { _safeSetSlim('kp_deleted_classes', deletedClasses, 'key'); } catch(_e){}
+    }
+    if (data.nurserySettings && typeof data.nurserySettings === 'object') {
+      Object.assign(nurserySettings, data.nurserySettings);
+      try { var settings = Object.assign({}, nurserySettings); delete settings.logoDataUrl; localStorage.setItem('kp_settings', JSON.stringify(settings)); } catch(_e){}
+    }
+    if (data.worksheetImages && typeof data.worksheetImages === 'object' && !Array.isArray(data.worksheetImages)) {
+      worksheetImages = Object.assign({}, data.worksheetImages);
+      try { localStorage.setItem('ws_images', JSON.stringify(worksheetImages)); } catch(_e){}
+    }
+    try { persistCoreDataToLocalStorage(); } catch(_e){}
+    redrawAll();
+    return true;
+  }
+
+  var previousSaveRecord = window.saveRecordRemoteAware;
+  window.saveRecordRemoteAware = async function(config){
+    config = config || {};
+    var type = config.type || config.activeArrayName;
+    var cfg = ENTITY[type];
+    if (!cfg || !config.record) {
+      var fallback = previousSaveRecord ? await previousSaveRecord.apply(this, arguments) : false;
+      if (fallback === false) throw new Error('Firebase save failed');
+      return fallback;
+    }
+    var original = config.record;
+    var savedAt = new Date().toISOString();
+    var record = Object.assign({}, original);
+    var id = record[cfg.keyField];
+    if (id == null || id === '') {
+      var fallback2 = previousSaveRecord ? await previousSaveRecord.apply(this, arguments) : false;
+      if (fallback2 === false) throw new Error('Firebase save failed');
+      return fallback2;
+    }
+    var key = recordKey(record, cfg.keyField);
+    record.firebaseKey = key;
+    record.updatedAt = savedAt;
+    record.savedAt = savedAt;
+    record.updatedBy = (typeof currentUser !== 'undefined' && currentUser && (currentUser.username || currentUser.name)) ? (currentUser.username || currentUser.name) : 'system';
+    record.version = (parseInt(record.version || 0, 10) || 0) + 1;
+    var updates = { version:2, savedAt:savedAt };
+    updates[cfg.active + '/' + key] = record;
+    candidateKeys(original, cfg.keyField).forEach(function(candidate){
+      if (candidate !== key) updates[cfg.active + '/' + candidate] = null;
+      updates[cfg.deleted + '/' + candidate] = null;
+    });
+    saveMetaIntoUpdates(updates, type, id, true);
+    try {
+      await patch(updates, 17000);
+      Object.assign(original, record);
+      localUpsert(type, record);
+      remember(type, record);
+      showOk('Saved to Firebase');
+      return true;
+    } catch(e) {
+      showFail(config.label || 'record', e, record);
+      throw e;
+    }
+  };
+  try { saveRecordRemoteAware = window.saveRecordRemoteAware; } catch(_e){}
+
+  var previousMoveRecord = window.moveRecordToTrashRemoteAware;
+  window.moveRecordToTrashRemoteAware = async function(config){
+    config = config || {};
+    var type = config.type;
+    var cfg = ENTITY[type];
+    if (!cfg) {
+      var fallback = previousMoveRecord ? await previousMoveRecord.apply(this, arguments) : false;
+      if (fallback === false) throw new Error('Firebase delete failed');
+      return fallback;
+    }
+    var id = config.id;
+    var deletedItem = Object.assign({}, config.deletedItem || {});
+    if (id == null || id === '') id = deletedItem[cfg.keyField];
+    var savedAt = new Date().toISOString();
+    var key = safeKey(id);
+    deletedItem[cfg.keyField] = id;
+    deletedItem.firebaseKey = key;
+    deletedItem.updatedAt = savedAt;
+    deletedItem.deletedAt = deletedItem.deletedAt || savedAt;
+    var updates = { version:2, savedAt:savedAt };
+    candidateKeys(deletedItem, cfg.keyField).forEach(function(candidate){ updates[cfg.active + '/' + candidate] = null; });
+    updates[cfg.deleted + '/' + key] = deletedItem;
+    saveMetaIntoUpdates(updates, type, id, false);
+    try {
+      await patch(updates, 17000);
+      delete (recent[type] || {})[norm(id)];
+      setLocalArray(type, localArray(type).filter(function(item){ return !(item && same(item[cfg.keyField], id)); }));
+      setDeletedArray(type, [deletedItem].concat(deletedArray(type).filter(function(item){ return !(item && same(item[cfg.keyField], id)); })));
+      try { persistCoreDataToLocalStorage(); } catch(_e){}
+      showOk('Saved to Firebase');
+      return true;
+    } catch(e) {
+      showFail(config.label || 'record', e, deletedItem);
+      throw e;
+    }
+  };
+  try { moveRecordToTrashRemoteAware = window.moveRecordToTrashRemoteAware; } catch(_e){}
+
+  var previousPermanentDelete = window.permanentDeleteRemoteAware;
+  window.permanentDeleteRemoteAware = async function(config){
+    config = config || {};
+    var type = config.type;
+    var cfg = ENTITY[type];
+    if (!cfg) {
+      var fallback = previousPermanentDelete ? await previousPermanentDelete.apply(this, arguments) : false;
+      if (fallback === false) throw new Error('Firebase permanent delete failed');
+      return fallback;
+    }
+    var id = config.key;
+    var savedAt = new Date().toISOString();
+    var updates = { version:2, savedAt:savedAt };
+    candidateKeys(id, cfg.keyField).forEach(function(candidate){
+      updates[cfg.active + '/' + candidate] = null;
+      updates[cfg.deleted + '/' + candidate] = null;
+    });
+    saveMetaIntoUpdates(updates, type, id, false);
+    try {
+      await patch(updates, 17000);
+      delete (recent[type] || {})[norm(id)];
+      setLocalArray(type, localArray(type).filter(function(item){ return !(item && same(item[cfg.keyField], id)); }));
+      setDeletedArray(type, deletedArray(type).filter(function(item){ return !(item && same(item[cfg.keyField], id)); }));
+      showOk('Saved to Firebase');
+      return true;
+    } catch(e) {
+      showFail(config.label || 'record', e, { id:id, type:type });
+      throw e;
+    }
+  };
+  try { permanentDeleteRemoteAware = window.permanentDeleteRemoteAware; } catch(_e){}
+
+  window.saveClassRemoteAware = async function(name, classData){
+    var savedAt = new Date().toISOString();
+    var updates = { version:2, savedAt:savedAt };
+    updates['CLASSES/' + classPathKey(name)] = classData || {};
+    saveMetaIntoUpdates(updates, 'classes', name, true);
+    try {
+      await patch(updates, 15000);
+      showOk('Saved to Firebase');
+      return true;
+    } catch(e) {
+      showFail('class', e, { name:name, data:classData });
+      throw e;
+    }
+  };
+  try { saveClassRemoteAware = window.saveClassRemoteAware; } catch(_e){}
+
+  window.renameClassRemoteAware = async function(oldName, newName, classData){
+    var savedAt = new Date().toISOString();
+    var updates = { version:2, savedAt:savedAt };
+    updates['CLASSES/' + classPathKey(oldName)] = null;
+    updates['CLASSES/' + classPathKey(newName)] = classData || {};
+    saveMetaIntoUpdates(updates, 'classes', oldName, false);
+    saveMetaIntoUpdates(updates, 'classes', newName, true);
+    try {
+      await patch(updates, 15000);
+      showOk('Saved to Firebase');
+      return true;
+    } catch(e) {
+      showFail('class', e, { oldName:oldName, newName:newName, data:classData });
+      throw e;
+    }
+  };
+  try { renameClassRemoteAware = window.renameClassRemoteAware; } catch(_e){}
+
+  window.moveClassToTrashRemoteAware = async function(className, deletedItem){
+    var savedAt = new Date().toISOString();
+    var key = classPathKey(className);
+    var item = Object.assign({}, deletedItem || {}, { key:className, name:className, firebaseKey:key, updatedAt:savedAt, deletedAt:(deletedItem && deletedItem.deletedAt) || savedAt });
+    var list = (Array.isArray(deletedClasses) ? deletedClasses : []).filter(function(x){ return !(x && same(x.key, className)); });
+    list.unshift(item);
+    var updates = { version:2, savedAt:savedAt };
+    updates['CLASSES/' + key] = null;
+    updates.deletedClasses = list;
+    saveMetaIntoUpdates(updates, 'classes', className, false);
+    try {
+      await patch(updates, 15000);
+      deletedClasses = list;
+      try { _safeSetSlim('kp_deleted_classes', deletedClasses, 'key'); } catch(_e){}
+      showOk('Saved to Firebase');
+      return true;
+    } catch(e) {
+      showFail('class', e, item);
+      throw e;
+    }
+  };
+  try { moveClassToTrashRemoteAware = window.moveClassToTrashRemoteAware; } catch(_e){}
+
+  window.saveSettingsRemoteAware = async function(){
+    var savedAt = new Date().toISOString();
+    var settings = Object.assign({}, nurserySettings || {});
+    delete settings.logoDataUrl;
+    try {
+      await patch({ nurserySettings:settings, savedAt:savedAt, version:2 }, 14000);
+      showOk('Saved to Firebase');
+      return true;
+    } catch(e) {
+      showFail('settings', e, settings);
+      throw e;
+    }
+  };
+  try { saveSettingsRemoteAware = window.saveSettingsRemoteAware; } catch(_e){}
+
+  window.saveLogoToFirebase = async function(){
+    try {
+      await patch({ branding:{ logoDataUrl:logoDataUrl || '' }, savedAt:new Date().toISOString(), version:2 }, 18000);
+      showOk('Saved to Firebase');
+      return true;
+    } catch(e) {
+      showFail('logo', e, { hasLogo:!!logoDataUrl });
+      throw e;
+    }
+  };
+  try { saveLogoToFirebase = window.saveLogoToFirebase; } catch(_e){}
+
+  var previousUsersSave = window.saveUsersToFirebase;
+  window.saveUsersToFirebase = async function(users){
+    if (!Array.isArray(users)) return false;
+    try {
+      await patch({ kp_users:users, savedAt:new Date().toISOString(), version:2 }, 16000);
+      showOk('Saved to Firebase');
+      return true;
+    } catch(e) {
+      showFail('users', e, { count:users.length });
+      return previousUsersSave ? previousUsersSave.apply(this, arguments) : false;
+    }
+  };
+  try { saveUsersToFirebase = window.saveUsersToFirebase; } catch(_e){}
+
+  async function saveWorksheetImagesRemoteAware(){
+    try {
+      var images = (worksheetImages && typeof worksheetImages === 'object' && !Array.isArray(worksheetImages)) ? worksheetImages : {};
+      await patch({ worksheetImages:images, savedAt:new Date().toISOString(), version:2 }, 22000);
+      showOk('Saved to Firebase');
+      return true;
+    } catch(e) {
+      showFail('worksheets', e, { classes:Object.keys(worksheetImages || {}).length });
+      return false;
+    }
+  }
+  window.saveWorksheetImagesRemoteAware = saveWorksheetImagesRemoteAware;
+  try {
+    var originalSetItem = Storage.prototype.setItem;
+    if (!Storage.prototype.__kpWorksheetSyncWrapped) {
+      Storage.prototype.setItem = function(key, value){
+        var result = originalSetItem.apply(this, arguments);
+        if (key === 'ws_images') {
+          clearTimeout(worksheetTimer);
+          worksheetTimer = setTimeout(function(){
+            try { worksheetImages = JSON.parse(value || '{}') || {}; } catch(_e){}
+            saveWorksheetImagesRemoteAware().catch(function(){});
+          }, 250);
+        }
+        return result;
+      };
+      Storage.prototype.__kpWorksheetSyncWrapped = true;
+    }
+  } catch(_e){}
+
+  var previousLoadFromFirebase = window.loadFromFirebase;
+  if (typeof previousLoadFromFirebase === 'function') {
+    window.loadFromFirebase = async function(){
+      var result = await previousLoadFromFirebase.apply(this, arguments);
+      try { await reconcileFromFirebase(); } catch(e) { console.warn('[system] reconcile skipped:', e && e.message); }
+      return result;
+    };
+    try { loadFromFirebase = window.loadFromFirebase; } catch(_e){}
+  }
+
+  window.kpWholeSystemPersistenceStatus = function(){
+    return {
+      enabled:true,
+      directRecordWrites:true,
+      classes:true,
+      settings:true,
+      logo:true,
+      users:true,
+      worksheets:true,
+      refreshReconcile:true
     };
   };
 })();
