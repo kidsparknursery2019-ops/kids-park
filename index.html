@@ -3523,8 +3523,9 @@ async function getSafeNextRenewalIdRemoteAware() {
     const res = await fetch(FB_URL + '.json', { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
-      addUsedFromArray(data && data.renewals);
-      addUsedFromArray(data && data.deletedRenewals);
+      // ✅ يدعم البنية القديمة Array والجديدة Object مثل renewals/k_51
+      addUsedFromArray(kpArrayFromFirebaseSection(data && data.renewals));
+      addUsedFromArray(kpArrayFromFirebaseSection(data && data.deletedRenewals));
       addUsedFromArray(data && data.tombstones && data.tombstones.renewals);
     }
   } catch(_) {}
@@ -4981,19 +4982,12 @@ function normalizeDate(d) {
   if (!d) return '';
   const s = String(d).trim();
 
-  // Google Sheets / gviz date format: Date(2023,5,20) or Date(2023,5,20,14,30,0)
-  let m = s.match(/^Date\((\d{4}),(\d{1,2}),(\d{1,2})(?:,(\d{1,2}),(\d{1,2}),(\d{1,2}))?\)$/i);
+  // Google Sheets / gviz date format: Date(2023,5,20)
+  let m = s.match(/^Date\((\d{4}),(\d{1,2}),(\d{1,2})\)$/i);
   if (m) {
     const y = m[1];
     const mon = String(parseInt(m[2], 10) + 1).padStart(2,'0'); // JS months are 0-based
     const day = String(parseInt(m[3], 10)).padStart(2,'0');
-    if (m[4] !== undefined) {
-      // has time component → return full ISO string
-      const hh = String(parseInt(m[4], 10)).padStart(2,'0');
-      const mm = String(parseInt(m[5], 10)).padStart(2,'0');
-      const ss = String(parseInt(m[6], 10)).padStart(2,'0');
-      return y + '-' + mon + '-' + day + 'T' + hh + ':' + mm + ':' + ss;
-    }
     return y + '-' + mon + '-' + day;
   }
 
@@ -8140,7 +8134,7 @@ function restoreBackup(event) {
       if (backup.CLASSES) Object.assign(CLASSES, backup.CLASSES);
       if (backup.nurserySettings) Object.assign(nurserySettings, backup.nurserySettings);
       if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(backup.kp_users));
-      if (backup.kp_form_rows) { syncedFormRows = backup.kp_form_rows; _saveFormRowsSlim(syncedFormRows); }
+      if (backup.kp_form_rows) { localStorage.setItem('kp_form_rows', JSON.stringify(backup.kp_form_rows)); syncedFormRows = backup.kp_form_rows; }
       refreshNextIds();
       // امسح أي كاش محلي قديم قبل الاستبدال الكامل حتى لا يرجع الطلاب الزائدون.
       ['kp_students_data','kp_payments_data','kp_expenses_data','kp_renewals_data','kp_attlog_data','kp_classes','kp_deleted_students','kp_deleted_payments','kp_deleted_expenses','kp_deleted_renewals','kp_deleted_classes','kp_students_backup_before_health_action'].forEach(function(k){
@@ -9903,7 +9897,7 @@ async function syncRegistrationRequestsFromFirebase() {
       if (typeof applyLocalDecisionsToFormRows === 'function') {
         try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e){}
       }
-      _saveFormRowsSlim(syncedFormRows);
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
       // ✅ حفظ فردي للطلبات الواردة بدفعة واحدة (الجديدة فقط)
       var trulyNew = incoming.filter(function(r){
         var existsDecided = syncedFormRows.some(function(x){
@@ -10087,7 +10081,7 @@ async function archiveFirebaseRegistrationRequest(r, status) {
       if (typeof applyLocalDecisionsToFormRows === 'function') {
         try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e){}
       }
-      _saveFormRowsSlim(syncedFormRows);
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
 
       // احفظ فقط الطلبات الجديدة القادمة من صفحة الأهالي داخل kp_form_rows كي تظهر لباقي الأجهزة حتى لو مسار pending لم يُقرأ لاحقاً
       if (incoming.length && typeof saveFormRowsBatchRemoteAware === 'function') {
@@ -10190,7 +10184,7 @@ async function archiveFirebaseRegistrationRequest(r, status) {
     if (typeof applyLocalDecisionsToFormRows === 'function') {
       try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e){}
     }
-    try { _saveFormRowsSlim(syncedFormRows); } catch(_e){}
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
     if (filtered.length && typeof saveFormRowsBatchRemoteAware === 'function') {
       try { await saveFormRowsBatchRemoteAware(filtered); } catch(_e){}
     }
@@ -11423,7 +11417,7 @@ async function loadFromFirebase() {
         try { incomingFormRows = applyLocalDecisionsToFormRows(incomingFormRows); } catch(_e){}
       }
       syncedFormRows = incomingFormRows;
-      _saveFormRowsSlim(syncedFormRows);
+      localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
     }
     await loadLogoFromFirebase();
     if (!logoDataUrl && nurserySettings.logoDataUrl) {
@@ -11667,38 +11661,6 @@ else setTimeout(kpRenderSyncUI, 0);
 const SHEET_ID = '1ZAdT4ohpxxhjnwi8Zwmc7sjeFvRcK12WZ1a1-KvE86Y';
 const SHEETS_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:json';
 let syncedFormRows = JSON.parse(localStorage.getItem('kp_form_rows') || '[]');
-
-// ── حفظ خفيف للـ localStorage: نخزن بس الحقول الضرورية لتجنب امتلاء الكوتا ──
-function _saveFormRowsSlim(rows) {
-  try {
-    var slim = (rows || []).map(function(r) {
-      if (!r) return null;
-      return {
-        firebaseKey:  r.firebaseKey  || r._fbKey || '',
-        requestId:    r.requestId    || '',
-        timestamp:    r.timestamp    || '',
-        status:       r.status       || 'pending',
-        decisionAt:   r.decisionAt   || '',
-        rowUpdatedAt: r.rowUpdatedAt || '',
-        childName:    r.childName    || r.name || '',
-        parentName:   r.parentName   || '',
-        phone:        r.phone        || '',
-        submittedAt:  r.submittedAt  || r.createdAt || ''
-      };
-    }).filter(Boolean);
-    localStorage.setItem('kp_form_rows', JSON.stringify(slim));
-  } catch(_e) {
-    try {
-      localStorage.removeItem('kp_form_rows');
-      var keys = (rows || []).map(function(r) {
-        if (!r) return null;
-        return { firebaseKey: r.firebaseKey || '', status: r.status || 'pending', decisionAt: r.decisionAt || '' };
-      }).filter(Boolean);
-      localStorage.setItem('kp_form_rows', JSON.stringify(keys));
-    } catch(_e2) { /* فشل تماماً، تجاهل */ }
-  }
-}
-
 setTimeout(updateFormsNavBadge, 0);
 let autoSyncTimer = null;
 
@@ -11844,24 +11806,7 @@ async function syncFromGoogleSheets() {
         cls: '', status: 'pending', source: 'google_sheets'
       };
 
-      // ── تطبيع الـ timestamp قبل المطابقة لأن Sheets يرجع Date(Y,M,D,H,Min,S)
-      //    بينما Firebase يحفظ ISO string — نحوّل الاثنين لمقارنة موحدة
-      var tsNorm = normalizeDate(ts);
-      var existingIndex = syncedFormRows.findIndex(function(r) {
-        if (!r) return false;
-        // مطابقة مباشرة أو بعد تطبيع
-        if (r.timestamp === ts) return true;
-        if (r.timestamp && normalizeDate(r.timestamp) === tsNorm) return true;
-        // مطابقة احتياطية: نفس الاسم + نفس تاريخ الميلاد (للطلبات القديمة بدون timestamp موحد)
-        var rName = _txt(r.name || r.childName || (r.firstName + ' ' + r.familyName));
-        var mName = _txt(name);
-        if (rName && mName && rName === mName) {
-          var rDob = normalizeDate(r.dob || '');
-          var mDob = normalizeDate(mappedRow.dob || '');
-          if (rDob && mDob && rDob === mDob) return true;
-        }
-        return false;
-      });
+      var existingIndex = syncedFormRows.findIndex(function(r){ return r.timestamp === ts; });
       if (existingIndex >= 0) {
         var prev = syncedFormRows[existingIndex] || {};
         // ✅ احترم القرار المحلي إن وجد ضد إعادة الكتابة
@@ -11898,26 +11843,13 @@ async function syncFromGoogleSheets() {
           if (changedFields) changedRows.push(syncedFormRows[existingIndex]);
         }
       } else {
-        // ── توليد firebaseKey للطلب الجديد القادم من Sheets إذا ما عنده مفتاح ──
-        if (!mappedRow.firebaseKey) {
-          // استخدم _stableKey إذا كانت الدوال متاحة، وإلا ولّد مفتاح بسيط
-          if (typeof _stableKey === 'function') {
-            mappedRow.firebaseKey = _stableKey(mappedRow);
-          } else {
-            var seed = (mappedRow.timestamp || '') + '|' + (mappedRow.name || '');
-            var h = 0;
-            for (var si = 0; si < seed.length; si++) { h = ((h << 5) - h) + seed.charCodeAt(si); h |= 0; }
-            mappedRow.firebaseKey = 'req_' + Math.abs(h).toString(36) + '_' + Date.now().toString(36);
-          }
-          mappedRow.requestId = mappedRow.requestId || mappedRow.firebaseKey;
-        }
         syncedFormRows.push(mappedRow);
         changedRows.push(mappedRow);
         added++;
       }
     });
 
-    _saveFormRowsSlim(syncedFormRows);
+    localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
     // ✅ حفظ فردي للطلبات الجديدة/المعدلة بدفعة واحدة (بدل autoSave كامل)
     if (changedRows.length) {
       await saveFormRowsBatchRemoteAware(changedRows);
@@ -12160,7 +12092,7 @@ function findPotentialStudentMatches(r) {
 async function persistFormRowsAndSync(formRow) {
   // ✅ حفظ فردي — إذا تم تمرير formRow بنحفظه فردياً
   // إذا ما تم تمرير شي بنحفظ كل المصفوفة (للتراجع عن قرارات قديمة)
-  _saveFormRowsSlim(syncedFormRows);
+  localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
   if (formRow) {
     await saveFormRowRemoteAware(formRow);
   } else {
@@ -12741,29 +12673,39 @@ function openEditRenewal(id) {
   document.getElementById('mo-renewal').classList.add('on');
 }
 
+function kpRenewalAttachmentKeys(id) {
+  const raw = String(id == null ? '' : id).trim();
+  const safe = kpSafeFirebaseKey(raw);
+  const plain = normKey(raw).replace(/^k_/, '');
+  return [normKey(raw), normKey(safe), plain].filter(Boolean);
+}
+
 function attachRenewalAttachmentsFromRemote(data) {
   try {
     if (!data || !data.renewalAttachments) return;
     const src = data.renewalAttachments;
     const map = {};
+    function addAttachmentKey(k, att) {
+      if (!att || !att.data) return;
+      kpRenewalAttachmentKeys(k).forEach(function(key){ map[key] = att; });
+      if (att.id != null) kpRenewalAttachmentKeys(att.id).forEach(function(key){ map[key] = att; });
+    }
     if (Array.isArray(src)) {
-      src.forEach(function(att, idx){ if (att && att.data) map[normKey(att.id || idx)] = att; });
+      src.forEach(function(att, idx){ addAttachmentKey(att && att.id != null ? att.id : idx, att); });
     } else if (src && typeof src === 'object') {
-      Object.keys(src).forEach(function(k){
-        const att = src[k];
-        if (att && att.data) map[normKey(k)] = att;
-      });
+      Object.keys(src).forEach(function(k){ addAttachmentKey(k, src[k]); });
     }
     if (!Object.keys(map).length) return;
     renewals = (renewals || []).map(function(r){
       if (!r) return r;
-      const key = normKey(r.id);
-      if (map[key]) {
-        r.attachment = map[key];
+      let found = null;
+      kpRenewalAttachmentKeys(r.id).some(function(key){ if (map[key]) { found = map[key]; return true; } return false; });
+      if (found) {
+        r.attachment = found;
         r.attachmentRef = true;
-        r.attachmentName = map[key].name || r.attachmentName || '';
-        r.attachmentType = map[key].type || r.attachmentType || '';
-        r.attachmentSize = map[key].size || r.attachmentSize || 0;
+        r.attachmentName = found.name || r.attachmentName || '';
+        r.attachmentType = found.type || r.attachmentType || '';
+        r.attachmentSize = found.size || r.attachmentSize || 0;
       }
       return r;
     });
@@ -12786,81 +12728,76 @@ async function saveRenewalRemoteAware(record, options) {
   options = options || {};
   try {
     if (!record || record.id == null) throw new Error('missing renewal id');
-    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ التجديد...');
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ التجديد إلى Firebase...');
 
-    let remoteData = null;
-    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
-    if (fetchRes.ok) remoteData = await fetchRes.json();
-    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
-
-    const key = normKey(record.id);
+    const entityKey = kpRecordKey(record, 'id'); // مثال: k_51 — نفس بنية Firebase الجديدة
     const saveRecord = stripRenewalInlineAttachment(record);
+    saveRecord.firebaseKey = entityKey;
     saveRecord.updatedAt = new Date().toISOString();
     saveRecord.updatedBy = (currentUser && (currentUser.username || currentUser.name)) ? (currentUser.username || currentUser.name) : 'system';
     saveRecord.version = (parseInt(saveRecord.version || 0, 10) || 0) + 1;
 
-    const renewalsWasObject = remoteData.renewals && typeof remoteData.renewals === 'object' && !Array.isArray(remoteData.renewals);
-    const active = Array.isArray(remoteData.renewals) ? remoteData.renewals : (renewalsWasObject ? Object.keys(remoteData.renewals).map(function(k){
-      const v = remoteData.renewals[k];
-      if (v && typeof v === 'object' && v.id == null) v.id = k;
-      return v;
-    }).filter(Boolean) : []);
-    const updatedActive = active.filter(function(x){ return normKey(x && x.id) !== key; });
-    updatedActive.push(saveRecord);
-    const updatedRenewalsPayload = renewalsWasObject ? updatedActive.reduce(function(acc, item){
-      if (item && item.id != null) acc[normKey(item.id)] = item;
-      return acc;
-    }, {}) : updatedActive;
+    const savedAt = new Date().toISOString();
+    const updates = {};
 
-    let renewalAttachments = {};
-    if (remoteData.renewalAttachments && typeof remoteData.renewalAttachments === 'object' && !Array.isArray(remoteData.renewalAttachments)) {
-      renewalAttachments = Object.assign({}, remoteData.renewalAttachments);
-    }
+    // ✅ حفظ فردي حقيقي: لا نعيد رفع كل renewals ولا نكسر شغل جهاز ثاني.
+    updates['renewals/' + entityKey] = saveRecord;
+    updates['deletedRenewals/' + entityKey] = null;
+    updates['savedAt'] = savedAt;
+    updates['version'] = 2;
 
+    // ✅ المرفقات بمسار مستقل لكل تجديد حتى تظهر عند كل الموظفين.
     const att = options.removeAttachment ? null : (options.attachment || getRenAttachment(record));
     if (options.removeAttachment) {
-      delete renewalAttachments[key];
+      updates['renewalAttachments/' + entityKey] = null;
+      saveRecord.attachmentRef = false;
+      saveRecord.attachmentName = '';
+      saveRecord.attachmentType = '';
+      saveRecord.attachmentSize = 0;
+      updates['renewals/' + entityKey] = saveRecord;
     } else if (att && att.data) {
-      renewalAttachments[key] = {
+      updates['renewalAttachments/' + entityKey] = {
+        id: record.id,
         name: att.name || 'مرفق التجديد',
         type: att.type || '',
         size: att.size || 0,
-        data: att.data
+        data: att.data,
+        updatedAt: savedAt
       };
       saveRecord.attachmentRef = true;
-      saveRecord.attachmentName = renewalAttachments[key].name;
-      saveRecord.attachmentType = renewalAttachments[key].type;
-      saveRecord.attachmentSize = renewalAttachments[key].size;
+      saveRecord.attachmentName = updates['renewalAttachments/' + entityKey].name;
+      saveRecord.attachmentType = updates['renewalAttachments/' + entityKey].type;
+      saveRecord.attachmentSize = updates['renewalAttachments/' + entityKey].size;
+      updates['renewals/' + entityKey] = saveRecord;
     }
 
-    if (remoteData.tombstones && Array.isArray(remoteData.tombstones.renewals)) {
-      remoteData.tombstones.renewals = remoteData.tombstones.renewals.filter(function(x){ return normKey(x) !== key; });
-    }
-    if (!remoteData.restoredKeys || typeof remoteData.restoredKeys !== 'object') remoteData.restoredKeys = {};
-    if (!Array.isArray(remoteData.restoredKeys.renewals)) remoteData.restoredKeys.renewals = [];
-    if (!hasKey(remoteData.restoredKeys.renewals, record.id)) remoteData.restoredKeys.renewals.push(record.id);
+    // ✅ إزالة أثر الحذف/التومبستون محلياً وسحابياً لهذا السجل فقط.
+    if (!tombstones || typeof tombstones !== 'object') tombstones = {};
+    if (!Array.isArray(tombstones.renewals)) tombstones.renewals = [];
+    tombstones.renewals = tombstones.renewals.filter(function(x){ return normKey(x) !== normKey(record.id); });
 
-    const savedAt = new Date().toISOString();
-    const patchPayload = {
-      renewals: updatedRenewalsPayload,
-      renewalAttachments: renewalAttachments,
-      savedAt: savedAt,
-      version: remoteData.version || 2
-    };
-    if (remoteData.tombstones) patchPayload.tombstones = remoteData.tombstones;
-    if (remoteData.restoredKeys) patchPayload.restoredKeys = remoteData.restoredKeys;
-    if (Array.isArray(remoteData.deletedRenewals)) {
-      patchPayload.deletedRenewals = remoteData.deletedRenewals.filter(function(x){ return normKey(x && x.id) !== key; });
-    }
+    if (!restoredKeys || typeof restoredKeys !== 'object') restoredKeys = {};
+    if (!Array.isArray(restoredKeys.renewals)) restoredKeys.renewals = [];
+    if (!hasKey(restoredKeys.renewals, record.id)) restoredKeys.renewals.push(record.id);
 
-    const putRes = await fetch(FB_URL + '.json', {
+    updates['tombstones/renewals'] = tombstones.renewals;
+    updates['restoredKeys/renewals'] = restoredKeys.renewals;
+
+    const res = await fetch(FB_URL + '.json', {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(patchPayload)
+      body: JSON.stringify(updates)
     });
-    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+    if (!res.ok) {
+      const errText = await res.text().catch(function(){ return ''; });
+      throw new Error('HTTP ' + res.status + ' ' + errText.slice(0,80));
+    }
 
-    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ التجديد مع المرفق');
+    try {
+      localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+      localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
+    } catch(_e) {}
+    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ التجديد على Firebase');
     hasUnsavedChanges = false;
     lastSavedAt = savedAt;
     localStorage.setItem('kp_last_synced_at', savedAt);
@@ -14131,7 +14068,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   };
 
   window.persistFormRowsAndSync = async function(formRow) {
-    try { _saveFormRowsSlim(syncedFormRows); } catch(_e) {}
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e) {}
     if (formRow && typeof saveFormRowRemoteAware === 'function') {
       return await saveFormRowRemoteAware(formRow);
     }
@@ -14157,7 +14094,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       } catch(_e) {}
     }
 
-    try { _saveFormRowsSlim(syncedFormRows); } catch(_e) {}
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e) {}
     updateFormsNavBadge();
     renderFormRequests();
 
@@ -14239,7 +14176,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     if (typeof applyLocalDecisionsToFormRows === 'function') {
       try { syncedFormRows = applyLocalDecisionsToFormRows(syncedFormRows); } catch(_e) {}
     }
-    try { _saveFormRowsSlim(syncedFormRows); } catch(_e) {}
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e) {}
     if (filtered.length && typeof saveFormRowsBatchRemoteAware === 'function') {
       try { await saveFormRowsBatchRemoteAware(filtered); } catch(_e) {}
     }
@@ -14489,225 +14426,103 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   // ============================================================
   window.syncRegistrationRequestsFromFirebase = async function(options){
     options = options || {};
-
-    // ─── helper: compare two ISO timestamps, return the more recent one ────
-    function _newerTs(a, b) {
-      var ta = a ? new Date(a).getTime() : 0;
-      var tb = b ? new Date(b).getTime() : 0;
-      return ta >= tb ? a : b;
-    }
-
-    // ─── helper: pick the winning row when the same key exists in multiple folders
-    //     Priority: (1) most-recent decisionAt/rowUpdatedAt timestamp
-    //               (2) approved > rejected > pending  (tie-breaker)
-    function _resolveConflict(existing, incoming) {
-      var existingTs = existing.decisionAt || existing.rowUpdatedAt || '';
-      var incomingTs = incoming.decisionAt || incoming.rowUpdatedAt || '';
-      if (existingTs || incomingTs) {
-        var winner = _newerTs(incomingTs, existingTs) === incomingTs ? incoming : existing;
-        if (existingTs !== incomingTs) {
-          console.info('[SyncFix] Conflict on key ' + (existing.firebaseKey || existing.requestId) +
-            ': keeping status=' + winner.status +
-            ' (ts=' + (winner.decisionAt || winner.rowUpdatedAt) + ')');
-        }
-        return winner;
-      }
-      // No timestamps available → use status priority
-      var rank = { approved: 3, rejected: 2, pending: 1 };
-      return (rank[incoming.status] || 0) >= (rank[existing.status] || 0) ? incoming : existing;
-    }
-
     try {
-      // ── 1. Fetch all three folders in parallel ──────────────────────────
+      // ✅ تنفيذ الـ ٣ طلبات بالموازي (Promise.all) بدل المتسلسل
       var fetchResults = await Promise.all([
         _fetchFolder('pending'),
         _fetchFolder('accepted'),
         _fetchFolder('rejected')
       ]);
-      var pendingRows  = fetchResults[0];
+      var pendingRows = fetchResults[0];
       var acceptedRows = fetchResults[1];
       var rejectedRows = fetchResults[2];
 
-      // ── 2. Tag each row with its folder status ──────────────────────────
-      pendingRows.forEach(function(r)  { r.status = 'pending';  });
-      acceptedRows.forEach(function(r) { r.status = 'approved'; });
-      rejectedRows.forEach(function(r) { r.status = 'rejected'; });
+      // وسم كل صف بحالته من مكانه
+      pendingRows.forEach(function(r){ r.status = 'pending'; });
+      acceptedRows.forEach(function(r){ r.status = 'approved'; });
+      rejectedRows.forEach(function(r){ r.status = 'rejected'; });
 
-      function _key(r) {
-        return _sanitizeFbKey(_txt(r.firebaseKey || r._fbKey || r.requestId || r.timestamp));
-      }
-
-      // ── 3. Build conflict-resolved map (timestamp wins, not folder order) ─
+      // بناء خريطة بالمفتاح: القرارات بتربح على pending
       var byKey = {};
-      var conflictsDetected = 0;
+      function _key(r){ return _sanitizeFbKey(_txt(r.firebaseKey || r._fbKey || r.requestId || r.timestamp)); }
+      pendingRows.forEach(function(r){ var k = _key(r); if (k) byKey[k] = r; });
+      acceptedRows.forEach(function(r){ var k = _key(r); if (k) byKey[k] = r; }); // override pending
+      rejectedRows.forEach(function(r){ var k = _key(r); if (k) byKey[k] = r; }); // override accepted
 
-      // Process all rows; _resolveConflict picks the correct one when the
-      // same key appears in more than one folder (the bug described in the guide).
-      var allFolderRows = pendingRows.concat(acceptedRows, rejectedRows);
-      allFolderRows.forEach(function(r) {
-        var k = _key(r);
-        if (!k) return;
-        if (byKey[k]) {
-          conflictsDetected++;
-          byKey[k] = _resolveConflict(byKey[k], r);
-        } else {
-          byKey[k] = r;
-        }
-      });
-
-      if (conflictsDetected > 0) {
-        console.warn('[SyncFix] Sync conflicts detected: ' + conflictsDetected +
-          ' record(s) appeared in multiple folders. Resolved by timestamp.');
-      }
-
-      // ── 4. Merge with current syncedFormRows (preserves Google-Sheets data) ─
+      // دمج مع syncedFormRows الحالية (للحفاظ على بيانات Google Sheets اللي ممكن ما تكون بمسار)
       var current = Array.isArray(syncedFormRows) ? syncedFormRows : [];
       var currentByKey = {};
-      current.forEach(function(r) {
+      current.forEach(function(r){
         if (!r) return;
         var k = _stableKey(r) || _sanitizeFbKey(_txt(r.firebaseKey || r.requestId || r.timestamp));
         if (k) currentByKey[k] = r;
       });
 
       var resultMap = {};
-
-      // Rows that exist in Firebase: merge extra local data, keep Firebase status/timestamps
-      Object.keys(byKey).forEach(function(k) {
+      // أول شي: كل صف موجود بمسار، نأخذ بياناته مع دمج البيانات الإضافية من syncedFormRows
+      Object.keys(byKey).forEach(function(k){
         var folderRow = byKey[k];
-        var existing  = currentByKey[k];
+        var existing = currentByKey[k];
         if (existing) {
+          // دمج: بيانات من existing، الحالة والقرار من folder
           resultMap[k] = Object.assign({}, existing, folderRow, {
-            status:       folderRow.status,
-            decisionAt:   folderRow.decisionAt   || existing.decisionAt,
-            rowUpdatedAt: folderRow.rowUpdatedAt  || folderRow.decisionAt || existing.rowUpdatedAt
+            status: folderRow.status,
+            decisionAt: folderRow.decisionAt || existing.decisionAt,
+            rowUpdatedAt: folderRow.rowUpdatedAt || folderRow.decisionAt || existing.rowUpdatedAt
           });
         } else {
           resultMap[k] = folderRow;
         }
       });
 
-      // ── 5. Handle local-only rows (Google Sheets data not yet in Firebase) ─
+      // ثاني شي: الصفوف الموجودة محلياً ومش بأي مسار (بيانات Google Sheets جديدة)
       var orphans = [];
-      Object.keys(currentByKey).forEach(function(k) {
+      Object.keys(currentByKey).forEach(function(k){
         if (resultMap[k]) return;
         var r = currentByKey[k];
+        // طبّق قرار محلي محفوظ إذا في
         var d = _findPersistedDecision(r);
         if (d) {
           resultMap[k] = Object.assign({}, r, {
-            status:       d.status,
-            decisionAt:   d.decisionAt || r.decisionAt,
+            status: d.status,
+            decisionAt: d.decisionAt || r.decisionAt,
             rowUpdatedAt: d.decisionAt || d.savedAt || r.rowUpdatedAt
           });
-          orphans.push(resultMap[k]);
+          orphans.push(resultMap[k]); // محتاج ترحيل لـ Firebase
         } else {
+          // صف pending موجود محلياً بس مش بـ /pending → محتاج رفع
           resultMap[k] = r;
           if ((r.status || 'pending') === 'pending') orphans.push(r);
         }
       });
 
-      // ── 6. Commit ───────────────────────────────────────────────────────
       syncedFormRows = Object.values(resultMap);
-      try { _saveFormRowsSlim(syncedFormRows); } catch(_e) {}
+      try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
 
       if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
-      if (typeof renderFormRequests   === 'function') renderFormRequests();
+      if (typeof renderFormRequests === 'function') renderFormRequests();
 
-      // Manual migration only — automatic orphan push was removed to avoid
-      // hammering Firebase with sequential requests. Use kpMigrateAllRows()
-      // from the console if a manual push is needed.
+      // ❌ أُلغي الترحيل التلقائي للـ orphans لأنه كان يضرب Firebase بطلبات
+      //    متتالية ويخلي loadFromFirebase يفشل ويطلع "بدون إنترنت".
+      //    الصفوف القديمة بتظل تعرض من syncedFormRows المحلية.
+      //    القرارات الجديدة تشتغل فردياً عبر setFormRowDecision.
+      //    لو بدك ترحيل يدوي، استعمل kpMigrateAllRows() من الـ Console.
 
       if (!options.silent && typeof showSyncBadge === 'function') {
-        showSyncBadge('✅ المزامنة: ' + pendingRows.length + ' جديد، ' +
-          acceptedRows.length + ' مقبول، ' + rejectedRows.length + ' مرفوض' +
-          (conflictsDetected ? ' ⚠️ ' + conflictsDetected + ' تعارض' : ''));
+        showSyncBadge('✅ المزامنة: ' + pendingRows.length + ' جديد، ' + acceptedRows.length + ' مقبول، ' + rejectedRows.length + ' مرفوض');
       }
-
       return {
-        pending:   pendingRows.length,
-        accepted:  acceptedRows.length,
-        rejected:  rejectedRows.length,
-        total:     syncedFormRows.length,
-        migrated:  orphans.length,
-        conflicts: conflictsDetected
+        pending: pendingRows.length,
+        accepted: acceptedRows.length,
+        rejected: rejectedRows.length,
+        total: syncedFormRows.length,
+        migrated: orphans.length
       };
-    } catch(e) {
+    } catch(e){
       console.warn('per-record sync failed:', e);
       if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('⚠️ تعذرت المزامنة');
       return { error: e && e.message };
     }
-  };
-
-  // ── kpDetectConflicts: report records that exist in more than one folder ─
-  window.kpDetectConflicts = async function() {
-    try {
-      var fetchResults = await Promise.all([
-        _fetchFolder('pending'),
-        _fetchFolder('accepted'),
-        _fetchFolder('rejected')
-      ]);
-      var allRows = [].concat(
-        fetchResults[0].map(function(r){ return Object.assign({}, r, {_folder:'pending'});  }),
-        fetchResults[1].map(function(r){ return Object.assign({}, r, {_folder:'accepted'}); }),
-        fetchResults[2].map(function(r){ return Object.assign({}, r, {_folder:'rejected'}); })
-      );
-      var seen = {};
-      var conflicts = [];
-      allRows.forEach(function(r) {
-        var k = (r.firebaseKey || r.requestId || r.timestamp || '').toString().trim();
-        if (!k) return;
-        if (!seen[k]) { seen[k] = []; }
-        seen[k].push({ folder: r._folder, decisionAt: r.decisionAt, rowUpdatedAt: r.rowUpdatedAt });
-        if (seen[k].length === 2) conflicts.push(k); // only push once when first dupe found
-      });
-      if (conflicts.length === 0) {
-        console.log('[kpDetectConflicts] ✅ No conflicts found.');
-      } else {
-        console.warn('[kpDetectConflicts] ⚠️ ' + conflicts.length + ' conflicting record(s):');
-        conflicts.forEach(function(k) { console.warn('  Key:', k, '→', seen[k]); });
-      }
-      return { conflicts: conflicts, detail: seen };
-    } catch(e) {
-      console.error('[kpDetectConflicts] Error:', e);
-      return { error: e && e.message };
-    }
-  };
-
-  // ── cleanupOrphanRegistrationRequests: delete stale copies from wrong folders ─
-  window.cleanupOrphanRegistrationRequests = async function() {
-    var result = await window.kpDetectConflicts();
-    if (!result.conflicts || result.conflicts.length === 0) {
-      console.log('[cleanupOrphans] Nothing to clean.');
-      return { cleaned: 0 };
-    }
-    var statusRank = { approved: 3, rejected: 2, pending: 1 };
-    var cleaned = 0;
-    for (var i = 0; i < result.conflicts.length; i++) {
-      var k = result.conflicts[i];
-      var copies = result.detail[k];
-      // Pick the winner by timestamp, then by status rank
-      var winner = copies.reduce(function(best, c) {
-        var bt = best.decisionAt || best.rowUpdatedAt || '';
-        var ct = c.decisionAt   || c.rowUpdatedAt   || '';
-        if (ct > bt) return c;
-        if (bt > ct) return best;
-        return (statusRank[c.folder] || 0) > (statusRank[best.folder] || 0) ? c : best;
-      });
-      // Delete all non-winning copies from Firebase
-      for (var j = 0; j < copies.length; j++) {
-        var copy = copies[j];
-        if (copy.folder === winner.folder) continue;
-        try {
-          var delUrl = FB_URL + '/registrationRequests/' + copy.folder + '/' + k + '.json';
-          await fetch(delUrl, { method: 'DELETE' });
-          console.log('[cleanupOrphans] Deleted stale copy: /' + copy.folder + '/' + k);
-          cleaned++;
-        } catch(e) {
-          console.warn('[cleanupOrphans] Failed to delete /' + copy.folder + '/' + k, e);
-        }
-      }
-    }
-    console.log('[cleanupOrphans] ✅ Cleaned ' + cleaned + ' stale record(s).');
-    return { cleaned: cleaned };
   };
 
   // ============================================================
@@ -14747,7 +14562,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       if (!Array.isArray(syncedFormRows)) syncedFormRows = [];
       syncedFormRows.push(r);
     }
-    try { _saveFormRowsSlim(syncedFormRows); } catch(_e){}
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
 
     if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
     if (typeof renderFormRequests === 'function') renderFormRequests();
@@ -14809,7 +14624,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   //    إلا للصفوف pending (للتوافق مع Google Sheets sync)
   // ============================================================
   window.persistFormRowsAndSync = async function(formRow){
-    try { _saveFormRowsSlim(syncedFormRows); } catch(_e){}
+    try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
     try { localStorage.setItem('kp_students', JSON.stringify(students)); } catch(_e){}
 
     // إذا الصف عنده قرار، استعمل العملية الفردية فقط
