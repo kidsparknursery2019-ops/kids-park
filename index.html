@@ -10270,17 +10270,14 @@ function getAllData() {
 }
 
 function persistCoreDataToLocalStorage() {
+  // ✅ SAFE FIX 2026-05-02:
+  // لا نحفظ بيانات النظام الكبيرة محلياً حتى لا تمتلئ localStorage ويظهر خطأ quota.
+  // Firebase هو المصدر الأساسي. نحتفظ فقط بالأشياء الصغيرة/المسموحة خارج هذه الدالة.
   try {
-    localStorage.setItem('kp_students_data', JSON.stringify(sanitizeEntityArray(students)));
-    localStorage.setItem('kp_payments_data', JSON.stringify(sanitizeEntityArray(payments)));
-    localStorage.setItem('kp_expenses_data', JSON.stringify(sanitizeEntityArray(expenses)));
-    localStorage.setItem('kp_renewals_data', JSON.stringify(sanitizeEntityArray(renewals)));
-    localStorage.setItem('kp_attlog_data', JSON.stringify(attLog || {}));
-    localStorage.setItem('kp_attendance_locks', JSON.stringify(attendanceLocks || {}));
-    localStorage.setItem('kp_classes', JSON.stringify(CLASSES || {}));
-  } catch (e) {
-    console.warn('persistCoreDataToLocalStorage failed:', e);
-  }
+    ['kp_students_data','kp_payments_data','kp_expenses_data','kp_renewals_data','kp_form_rows'].forEach(function(k){
+      try { localStorage.removeItem(k); } catch(_e){}
+    });
+  } catch (_e) {}
 }
 
 function loadCoreDataFromLocalStorage() {
@@ -12144,18 +12141,19 @@ function findPotentialStudentMatches(r) {
 }
 
 async function persistFormRowsAndSync(formRow) {
-  // ✅ حفظ فردي — إذا تم تمرير formRow بنحفظه فردياً
-  // إذا ما تم تمرير شي بنحفظ كل المصفوفة (للتراجع عن قرارات قديمة)
-  localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows));
+  // ✅ طلبات التسجيل لا تُخزن محلياً نهائياً؛ Firebase فقط.
+  try { localStorage.removeItem('kp_form_rows'); } catch(_e) {}
   if (formRow) {
     await saveFormRowRemoteAware(formRow);
   } else {
-    // حالة fallback — نادرة جداً
-    autoSave();
+    // fallback نادر: لا نرفع قاعدة كاملة بسبب طلبات التسجيل
+    if (typeof syncRegistrationRequestsFromFirebase === 'function') {
+      try { await syncRegistrationRequestsFromFirebase({ silent: true }); } catch(_e) {}
+    }
   }
 }
 
-function setFormRowDecision(r, status, meta) {
+async function setFormRowDecision(r, status, meta) {
   meta = meta || {};
   r.status = status;
   r.decisionAt = new Date().toISOString();
@@ -12165,10 +12163,10 @@ function setFormRowDecision(r, status, meta) {
   if (typeof rememberLocalFormDecision === 'function') {
     try { rememberLocalFormDecision(r, r.decisionAt); } catch(_e){}
   }
-  persistFormRowsAndSync(r);
+  await persistFormRowsAndSync(r);
   updateFormsNavBadge();
   if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
-    archiveFirebaseRegistrationRequest(r, status);
+    await archiveFirebaseRegistrationRequest(r, status);
   }
 }
 
@@ -12380,12 +12378,74 @@ function openDuplicateDecisionModal(r, matches) {
   document.getElementById('mo-form-duplicates').classList.add('on');
 }
 
-function performApproveNew(r) {
-  // ✅ FIX: استخدم رقم آمن لا يتعارض مع المحذوفين
+async function kpSaveStudentFromRegistrationRemote(student) {
+  // حفظ/تحديث طالب واحد فقط على Firebase بدل رفع القاعدة كاملة.
+  if (!student || student.id == null) return false;
+  try {
+    var clean = (typeof sanitizeEntityArray === 'function') ? sanitizeEntityArray([student])[0] : student;
+    var res = await fetch(FB_URL + '/students/' + encodeURIComponent(String(student.id)) + '.json', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(clean)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    await fetch(FB_URL + '.json', {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ savedAt: new Date().toISOString(), version: 2 })
+    }).catch(function(){});
+    return true;
+  } catch(e) {
+    console.warn('kpSaveStudentFromRegistrationRemote failed:', e.message || e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ تعذر حفظ الطالب سحابياً، أعيدي المحاولة');
+    return false;
+  }
+}
+
+async function kpDeleteStudentFromRegistrationRemote(studentId) {
+  if (studentId == null || studentId === '') return false;
+  try {
+    var res = await fetch(FB_URL + '/students/' + encodeURIComponent(String(studentId)) + '.json', { method:'DELETE' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    await fetch(FB_URL + '.json', {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ savedAt: new Date().toISOString(), version: 2 })
+    }).catch(function(){});
+    return true;
+  } catch(e) {
+    console.warn('kpDeleteStudentFromRegistrationRemote failed:', e.message || e);
+    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ تعذر حذف الطالب من Firebase، أعيدي المحاولة');
+    return false;
+  }
+}
+
+async function kpRestoreRegistrationRequestToPending(r) {
+  // عند التراجع عن القبول/الرفض: يرجع الطلب إلى pending ويُزال من accepted/rejected.
+  try {
+    if (r && r.firebaseKey) {
+      var key = encodeURIComponent(String(r.firebaseKey));
+      var payload = Object.assign({}, r, { status:'pending', decisionAt:'', approvedStudentId:null, approvedAction:'', undoData:null, rowUpdatedAt:new Date().toISOString() });
+      await fetch(REGISTRATION_PENDING_URL + '/' + key + '.json', {
+        method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      await fetch(REGISTRATION_ACCEPTED_URL + '/' + key + '.json', { method:'DELETE' }).catch(function(){});
+      await fetch(REGISTRATION_REJECTED_URL + '/' + key + '.json', { method:'DELETE' }).catch(function(){});
+      return true;
+    }
+  } catch(e) {
+    console.warn('kpRestoreRegistrationRequestToPending failed:', e.message || e);
+  }
+  return false;
+}
+
+async function performApproveNew(r) {
+  // ✅ قبول كطالب جديد: إنشاء الطالب + حفظه فردياً على Firebase فوراً.
   var newStudent = buildStudentFromFormRow(r, getSafeNextStudentId());
   students.push(newStudent);
   nextStuId = getSafeNextStudentId();
-  setFormRowDecision(r, 'approved', {
+  await kpSaveStudentFromRegistrationRemote(newStudent);
+  await setFormRowDecision(r, 'approved', {
     approvedStudentId: newStudent.id,
     approvedAction: 'new',
     undoData: { createdStudentId: newStudent.id }
@@ -12394,12 +12454,13 @@ function performApproveNew(r) {
   showSyncBadge('✅ تم قبول الطالب وإضافته');
 }
 
-function performApproveMerge(r, studentId) {
+async function performApproveMerge(r, studentId) {
   var idx = students.findIndex(function(s){ return s.id === studentId; });
   if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
   var before = JSON.parse(JSON.stringify(students[idx]));
   students[idx] = mergeStudentWithFormData(students[idx], r);
-  setFormRowDecision(r, 'approved', {
+  await kpSaveStudentFromRegistrationRemote(students[idx]);
+  await setFormRowDecision(r, 'approved', {
     approvedStudentId: studentId,
     approvedAction: 'merge',
     undoData: { mergedStudentId: studentId, previousStudent: before }
@@ -12408,11 +12469,11 @@ function performApproveMerge(r, studentId) {
   showSyncBadge('✅ تم قبول الطلب ودمج البيانات');
 }
 
-function rejectFormRow(ts) {
-  var r = (typeof findRegistrationRowByToken === 'function' ? findRegistrationRowByToken(ts) : syncedFormRows.find(function(x){ return x.timestamp === ts; }))
+async function rejectFormRow(ts) {
+  var r = (typeof findRegistrationRowByToken === 'function' ? findRegistrationRowByToken(ts) : syncedFormRows.find(function(x){ return x.timestamp === ts; }));
   if (!r) return;
   if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
-  setFormRowDecision(r, 'rejected', {
+  await setFormRowDecision(r, 'rejected', {
     approvedStudentId: null,
     approvedAction: 'reject',
     undoData: { revertTo: 'pending' }
@@ -12421,17 +12482,26 @@ function rejectFormRow(ts) {
   showSyncBadge('✅ تم رفض الطلب');
 }
 
-function undoFormDecision(ts) {
-  var r = (typeof findRegistrationRowByToken === 'function' ? findRegistrationRowByToken(ts) : syncedFormRows.find(function(x){ return x.timestamp === ts; }))
+async function undoFormDecision(ts) {
+  var r = (typeof findRegistrationRowByToken === 'function' ? findRegistrationRowByToken(ts) : syncedFormRows.find(function(x){ return x.timestamp === ts; }));
   if (!r || r.status === 'pending') return;
   if (!confirm('هل تريدين التراجع عن هذا القرار وإعادة الطلب إلى قائمة الجديدة؟')) return;
 
-  if (r.status === 'approved' && r.undoData) {
-    if (r.approvedAction === 'new' && r.undoData.createdStudentId != null) {
-      students = students.filter(function(s){ return s.id !== r.undoData.createdStudentId; });
-    } else if (r.approvedAction === 'merge' && r.undoData.mergedStudentId != null && r.undoData.previousStudent) {
-      var idx = students.findIndex(function(s){ return s.id === r.undoData.mergedStudentId; });
+  if (r.status === 'approved') {
+    // الحالة 1: الطلب كان مقبول كطالب جديد => احذف الطالب من المصفوفة ومن Firebase.
+    var createdId = r.undoData && r.undoData.createdStudentId != null ? r.undoData.createdStudentId : null;
+    if (createdId == null && (r.approvedAction === 'new' || !r.approvedAction) && r.approvedStudentId != null) createdId = r.approvedStudentId;
+    if (createdId != null) {
+      students = students.filter(function(s){ return String(s.id) !== String(createdId); });
+      await kpDeleteStudentFromRegistrationRemote(createdId);
+    }
+
+    // الحالة 2: الطلب كان دمج مع طالب قديم => رجّع نسخة الطالب السابقة واحفظها على Firebase.
+    if (r.approvedAction === 'merge' && r.undoData && r.undoData.mergedStudentId != null && r.undoData.previousStudent) {
+      var idx = students.findIndex(function(s){ return String(s.id) === String(r.undoData.mergedStudentId); });
       if (idx >= 0) students[idx] = r.undoData.previousStudent;
+      else students.push(r.undoData.previousStudent);
+      await kpSaveStudentFromRegistrationRemote(r.undoData.previousStudent);
     }
   }
 
@@ -12441,10 +12511,13 @@ function undoFormDecision(ts) {
   r.approvedStudentId = null;
   r.approvedAction = '';
   r.undoData = null;
-  persistFormRowsAndSync(r);
+
+  await kpRestoreRegistrationRequestToPending(r);
+  await persistFormRowsAndSync(r);
   updateFormsNavBadge();
+  refreshNextIds();
   refreshAllAfterFormDecision();
-  showSyncBadge('↩️ تم التراجع عن القرار');
+  showSyncBadge('↩️ تم التراجع: رجع الطلب للجديدة وتم تحديث قائمة الطلاب');
 }
 // ============================================================
 // RENEWALS — التجديدات والوثائق الرسمية
@@ -15030,6 +15103,10 @@ document.addEventListener('change', function(e){
     } catch(_e){ if (tid) clearTimeout(tid); return null; }
   }
   async function uPutJson(url, data, method, timeoutMs){
+    if (!url || String(url).indexOf('/undefined') >= 0 || (/github\.io/i.test(String(url)) && method !== 'GET')) {
+      console.warn('Blocked invalid write URL:', url);
+      return false;
+    }
     var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     var tid = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, timeoutMs || 12000) : null;
     try {
@@ -15305,7 +15382,8 @@ document.addEventListener('change', function(e){
     localStorage.removeItem('kp_form_rows');
     if (!Storage.prototype.__kpOriginalSetItem) Storage.prototype.__kpOriginalSetItem = Storage.prototype.setItem;
     Storage.prototype.setItem = function(key, value){
-      if (String(key) === 'kp_form_rows') return;
+      var k = String(key);
+      if (k === 'kp_form_rows' || k === 'kp_students_data' || k === 'kp_payments_data' || k === 'kp_expenses_data' || k === 'kp_renewals_data') return;
       return Storage.prototype.__kpOriginalSetItem.call(this, key, value);
     };
   } catch(_e) {}
