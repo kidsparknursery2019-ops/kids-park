@@ -4059,39 +4059,44 @@ async function moveRecordToTrashRemoteAware(config) {
 async function moveClassToTrashRemoteAware(className, deletedItem) {
   try {
     if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري نقل الفصل إلى سلة المحذوفات...');
-    const safeKey = kpSafeFirebaseKey(className);
+    let remoteData = null;
+    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (fetchRes.ok) remoteData = await fetchRes.json();
+    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
+
+    const classesObj = (remoteData.CLASSES && typeof remoteData.CLASSES === 'object' && !Array.isArray(remoteData.CLASSES)) ? remoteData.CLASSES : {};
+    if (Object.prototype.hasOwnProperty.call(classesObj, className)) delete classesObj[className];
+    remoteData.CLASSES = classesObj;
+
+    const deleted = Array.isArray(remoteData.deletedClasses) ? remoteData.deletedClasses : [];
+    remoteData.deletedClasses = [deletedItem].concat(deleted.filter(function(x){ return normKey(x && x.key) !== normKey(className); }));
+
+    const remoteTombstones = (remoteData.tombstones && typeof remoteData.tombstones === 'object') ? remoteData.tombstones : {};
+    if (!Array.isArray(remoteTombstones.classes)) remoteTombstones.classes = [];
+    remoteTombstones.classes = remoteTombstones.classes.filter(function(x){ return normKey(x) !== normKey(className); });
+    remoteTombstones.classes.push(className);
+    remoteData.tombstones = remoteTombstones;
+
+    const remoteRestored = (remoteData.restoredKeys && typeof remoteData.restoredKeys === 'object') ? remoteData.restoredKeys : {};
+    if (!Array.isArray(remoteRestored.classes)) remoteRestored.classes = [];
+    remoteRestored.classes = remoteRestored.classes.filter(function(x){ return normKey(x) !== normKey(className); });
+    remoteData.restoredKeys = remoteRestored;
+
     const savedAt = new Date().toISOString();
-
-    // Update tombstones/restoredKeys locally
-    if (!tombstones || typeof tombstones !== 'object') tombstones = {};
-    if (!Array.isArray(tombstones.classes)) tombstones.classes = [];
-    tombstones.classes = tombstones.classes.filter(function(x){ return normKey(x) !== normKey(className); });
-    tombstones.classes.push(className);
-    if (!restoredKeys || typeof restoredKeys !== 'object') restoredKeys = {};
-    if (!Array.isArray(restoredKeys.classes)) restoredKeys.classes = [];
-    restoredKeys.classes = restoredKeys.classes.filter(function(x){ return normKey(x) !== normKey(className); });
-    try { localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); } catch(_e){}
-    try { localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys)); } catch(_e){}
-
-    // Targeted PATCH — no full DB load needed
-    const updates = {};
-    updates['CLASSES/' + safeKey] = null;
-    updates['deletedClasses/' + safeKey] = Object.assign({}, deletedItem, { firebaseKey: safeKey });
-    updates['tombstones/classes'] = tombstones.classes;
-    updates['restoredKeys/classes'] = restoredKeys.classes;
-    updates['savedAt'] = savedAt;
-    updates['version'] = 2;
-
-    const res = await fetch(FB_URL + '.json', {
-      method: 'PATCH',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(updates)
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const patchPayload = {
+      CLASSES: remoteData.CLASSES,
+      deletedClasses: remoteData.deletedClasses || [],
+      tombstones: remoteData.tombstones,
+      restoredKeys: remoteData.restoredKeys,
+      savedAt: savedAt,
+      version: remoteData.version || 2
+    };
+    const putRes = await fetch(FB_URL + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(patchPayload) });
+    if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
     if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم نقل الفصل إلى سلة المحذوفات');
     hasUnsavedChanges = false;
     lastSavedAt = savedAt;
-    try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
+    localStorage.setItem('kp_last_synced_at', savedAt);
     return true;
   } catch(e) {
     console.error('moveClassToTrashRemoteAware failed:', className, e);
@@ -4313,32 +4318,27 @@ function pruneOldLocalDecisions() {
 async function saveFormRowRemoteAware(formRow) {
   try {
     if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ طلب التسجيل...');
-    if (!formRow) throw new Error('formRow is null');
-
-    // ── حفظ فردي مباشر على مساره في registrationRequests ─────────────
-    const key = formRow.firebaseKey || formRow.requestId || kpKey(formRow);
-    if (!key) throw new Error('formRow has no key');
-
-    const status = formRow.status || 'pending';
-    const folder = status === 'approved' ? 'accepted' : (status === 'rejected' ? 'rejected' : 'pending');
+    let remoteData = null;
+    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (fetchRes.ok) remoteData = await fetchRes.json();
+    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
+    const arr = Array.isArray(remoteData.kp_form_rows) ? remoteData.kp_form_rows : [];
+    const ts = formRow && formRow.timestamp;
+    const updated = arr.filter(function(r){ return !(r && r.timestamp === ts); });
+    updated.push(formRow);
     const newSavedAt = new Date().toISOString();
-    const payload = Object.assign({}, formRow, { rowUpdatedAt: newSavedAt });
-
-    const res = await fetch(FB_URL + '/registrationRequests/' + folder + '/' + encodeURIComponent(key) + '.json', {
-      method: 'PUT',
+    const res = await fetch(FB_URL + '.json', {
+      method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        kp_form_rows: updated,
+        savedAt: newSavedAt
+      })
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
-
-    // تحديث savedAt على الجذر لإعلام باقي الأجهزة
-    await fetch(FB_URL + '/savedAt.json', {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(newSavedAt)
-    }).catch(function(){});
-
+    // ✅ حفظ savedAt محلياً حتى لا يتسبب stream event الخاص بكتابتنا في إعادة تحميل كامل
     try { lastSavedAt = newSavedAt; localStorage.setItem('kp_last_synced_at', lastSavedAt); } catch(_e) {}
+    // ✅ تذكّر القرار محلياً للحماية من race conditions مع syncFromGoogleSheets أو loadFromFirebase
     rememberLocalFormDecision(formRow, newSavedAt);
     pruneOldLocalDecisions();
     if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ الطلب');
@@ -4356,28 +4356,26 @@ async function saveFormRowsBatchRemoteAware(formRows) {
   if (!Array.isArray(formRows) || !formRows.length) return true;
   try {
     if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ ' + formRows.length + ' طلب...');
+    let remoteData = null;
+    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
+    if (fetchRes.ok) remoteData = await fetchRes.json();
+    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
+    const arr = Array.isArray(remoteData.kp_form_rows) ? remoteData.kp_form_rows : [];
+    const incomingTs = new Set(formRows.map(function(r){ return r && r.timestamp; }).filter(Boolean));
+    const merged = arr.filter(function(r){ return !(r && incomingTs.has(r.timestamp)); }).concat(formRows);
     const newSavedAt = new Date().toISOString();
-
-    // ── حفظ فردي لكل طلب على مساره المستقل في registrationRequests ──
-    var updates = {};
-    formRows.forEach(function(formRow) {
-      if (!formRow) return;
-      var key = formRow.firebaseKey || formRow.requestId || kpKey(formRow);
-      if (!key) return;
-      var status = formRow.status || 'pending';
-      var folder = status === 'approved' ? 'accepted' : (status === 'rejected' ? 'rejected' : 'pending');
-      updates['registrationRequests/' + folder + '/' + encodeURIComponent(key)] = Object.assign({}, formRow, { rowUpdatedAt: newSavedAt });
-    });
-    updates['savedAt'] = newSavedAt;
-
     const res = await fetch(FB_URL + '.json', {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(updates)
+      body: JSON.stringify({
+        kp_form_rows: merged,
+        savedAt: newSavedAt
+      })
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
-
+    // ✅ حفظ savedAt محلياً حتى لا يعيد التحميل الكامل
     try { lastSavedAt = newSavedAt; localStorage.setItem('kp_last_synced_at', lastSavedAt); } catch(_e) {}
+    // ✅ تذكّر القرارات (المعتمدة/المرفوضة فقط) محلياً
     formRows.forEach(function(r){
       if (r && r.status && r.status !== 'pending') rememberLocalFormDecision(r, newSavedAt);
     });
@@ -6265,8 +6263,8 @@ function viewStudentProfile(id) {
 
 function backupStudentsSnapshot(reason){
   try {
-    // (backup skipped — too large for localStorage)
-    if (false) localStorage.setItem('kp_students_backup_before_health_action', JSON.stringify({
+    // backup skipped
+if (false) localStorage.setItem('kp_students_backup_before_health_action', JSON.stringify({
       reason: reason || '',
       at: new Date().toISOString(),
       students: Array.isArray(students) ? students : []
@@ -6902,7 +6900,7 @@ async function setAtt(date,id,status){
   }
   const key = date+'_'+id;
   attLog[key]=status;
-  // kp_attlog_data: skipped — too large, loaded from Firebase
+  // kp_attlog_data: skipped — load from Firebase
   renderAttGrid();renderAttLog();renderDash();
   // ✅ حفظ فردي — PATCH على /attLog مباشرة
   const entries = {}; entries[key] = status;
@@ -6921,7 +6919,7 @@ async function markAll(status){
     attLog[key] = status;
     entries[key] = status;
   });
-  // kp_attlog_data: skipped — too large, loaded from Firebase
+  // kp_attlog_data: skipped — load from Firebase
   renderAttGrid();renderAttLog();renderDash();
   // ✅ حفظ فردي بدفعة واحدة لكل الطلاب بنفس اليوم
   await saveAttendanceEntriesRemoteAware(entries);
@@ -8138,7 +8136,7 @@ function restoreBackup(event) {
       if (backup.CLASSES) Object.assign(CLASSES, backup.CLASSES);
       if (backup.nurserySettings) Object.assign(nurserySettings, backup.nurserySettings);
       if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(backup.kp_users));
-      if (backup.kp_form_rows) { localStorage.setItem('kp_form_rows', JSON.stringify(backup.kp_form_rows)); syncedFormRows = backup.kp_form_rows; }
+      if (backup.kp_form_rows) { syncedFormRows = backup.kp_form_rows; _saveFormRowsSlim(syncedFormRows); }
       refreshNextIds();
       // امسح أي كاش محلي قديم قبل الاستبدال الكامل حتى لا يرجع الطلاب الزائدون.
       ['kp_students_data','kp_payments_data','kp_expenses_data','kp_renewals_data','kp_attlog_data','kp_classes','kp_deleted_students','kp_deleted_payments','kp_deleted_expenses','kp_deleted_renewals','kp_deleted_classes','kp_students_backup_before_health_action'].forEach(function(k){
@@ -8297,7 +8295,7 @@ async function doImport() {
       attEntries[key] = status;
       added++;
     });
-    // kp_attlog_data: skipped — too large, loaded from Firebase
+    // kp_attlog_data: skipped — load from Firebase
     if (Object.keys(attEntries).length) {
       // ✅ حفظ فردي للحضور المستورد
       await saveAttendanceEntriesRemoteAware(attEntries);
@@ -8812,12 +8810,7 @@ async function saveNurseryInfo() {
   nurserySettings.phone = document.getElementById('set-phone').value;
   nurserySettings.email = document.getElementById('set-email').value;
   nurserySettings.logoDataUrl = logoDataUrl || '';
-  // حفظ الإعدادات بدون الشعار (مخزن منفصلاً بـ kp_logo لتجنب ضخامة kp_settings)
-  try {
-    var _settingsToSave = Object.assign({}, nurserySettings);
-    delete _settingsToSave.logoDataUrl;
-    localStorage.setItem('kp_settings', JSON.stringify(_settingsToSave));
-  } catch(_e) {}
+  try { var _s = Object.assign({}, nurserySettings); delete _s.logoDataUrl; localStorage.setItem('kp_settings', JSON.stringify(_s)); } catch(_e){}
   // ✅ حفظ فردي للإعدادات بس
   await saveSettingsRemoteAware();
   alert('✅ تم حفظ معلومات الحضانة');
@@ -8827,12 +8820,7 @@ async function saveRefundPolicy() {
   nurserySettings.refund_ar = document.getElementById('set-refund-ar').value;
   nurserySettings.refund_en = document.getElementById('set-refund-en').value;
   nurserySettings.logoDataUrl = logoDataUrl || '';
-  // حفظ الإعدادات بدون الشعار (مخزن منفصلاً بـ kp_logo لتجنب ضخامة kp_settings)
-  try {
-    var _settingsToSave = Object.assign({}, nurserySettings);
-    delete _settingsToSave.logoDataUrl;
-    localStorage.setItem('kp_settings', JSON.stringify(_settingsToSave));
-  } catch(_e) {}
+  try { var _s = Object.assign({}, nurserySettings); delete _s.logoDataUrl; localStorage.setItem('kp_settings', JSON.stringify(_s)); } catch(_e){}
   // ✅ حفظ فردي
   await saveSettingsRemoteAware();
   alert('✅ تم حفظ السياسة');
@@ -8845,12 +8833,7 @@ function uploadLogo(input) {
     logoDataUrl = e.target.result;
     nurserySettings.logoDataUrl = logoDataUrl;
     localStorage.setItem('kp_logo', logoDataUrl);
-    // حفظ الإعدادات بدون الشعار (مخزن منفصلاً بـ kp_logo لتجنب ضخامة kp_settings)
-  try {
-    var _settingsToSave = Object.assign({}, nurserySettings);
-    delete _settingsToSave.logoDataUrl;
-    localStorage.setItem('kp_settings', JSON.stringify(_settingsToSave));
-  } catch(_e) {}
+    try { var _s = Object.assign({}, nurserySettings); delete _s.logoDataUrl; localStorage.setItem('kp_settings', JSON.stringify(_s)); } catch(_e){}
     updateLogoDisplay();
     await saveLogoToFirebase();
     // ✅ حفظ الإعدادات فردياً (الشعار له endpoint منفصل أصلاً)
@@ -8864,12 +8847,7 @@ async function removeLogo() {
   logoDataUrl = '';
   nurserySettings.logoDataUrl = '';
   localStorage.removeItem('kp_logo');
-  // حفظ الإعدادات بدون الشعار (مخزن منفصلاً بـ kp_logo لتجنب ضخامة kp_settings)
-  try {
-    var _settingsToSave = Object.assign({}, nurserySettings);
-    delete _settingsToSave.logoDataUrl;
-    localStorage.setItem('kp_settings', JSON.stringify(_settingsToSave));
-  } catch(_e) {}
+  try { var _s = Object.assign({}, nurserySettings); delete _s.logoDataUrl; localStorage.setItem('kp_settings', JSON.stringify(_s)); } catch(_e){}
   updateLogoDisplay();
   await saveLogoToFirebase();
   // ✅ حفظ فردي
@@ -9939,16 +9917,30 @@ async function syncRegistrationRequestsFromFirebase() {
 }
 
 async function archiveFirebaseRegistrationRequest(r, status) {
+  // ✅ delegate to the full version that handles all 3 folders including pending revert
+  if (typeof window.archiveFirebaseRegistrationRequest === 'function' && window.archiveFirebaseRegistrationRequest !== archiveFirebaseRegistrationRequest) {
+    return window.archiveFirebaseRegistrationRequest(r, status);
+  }
   try {
-    if (!r || !r.firebaseKey) return;
-    const targetUrl = (status === 'approved' ? REGISTRATION_ACCEPTED_URL : REGISTRATION_REJECTED_URL) + '/' + encodeURIComponent(r.firebaseKey);
-    const payload = Object.assign({}, r, { status: status, decisionAt: r.decisionAt || new Date().toISOString() });
-    await fetch(targetUrl + '.json', {
-      method: 'PUT',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
+    if (!r) return;
+    var key = r.firebaseKey || r.requestId;
+    if (!key) return;
+    var folder = status === 'approved' ? 'accepted' : (status === 'rejected' ? 'rejected' : 'pending');
+    var now = new Date().toISOString();
+    var payload = Object.assign({}, r, {
+      status: status,
+      decisionAt: status === 'pending' ? '' : (r.decisionAt || now),
+      rowUpdatedAt: now
     });
-    await fetch(REGISTRATION_PENDING_URL + '/' + encodeURIComponent(r.firebaseKey) + '.json', { method: 'DELETE' });
+    // Write to target folder
+    await fetch(FB_URL + '/registrationRequests/' + folder + '/' + encodeURIComponent(key) + '.json', {
+      method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+    // Delete from other folders
+    var others = ['pending','accepted','rejected'].filter(function(f){ return f !== folder; });
+    for (var i = 0; i < others.length; i++) {
+      try { await fetch(FB_URL + '/registrationRequests/' + others[i] + '/' + encodeURIComponent(key) + '.json', { method: 'DELETE' }); } catch(_e){}
+    }
   } catch(e) {
     console.log('archiveFirebaseRegistrationRequest failed:', e.message);
   }
@@ -10294,18 +10286,32 @@ function getAllData() {
 }
 
 
-// ── حفظ خفيف لسلال المحذوفات: نحفظ بس المفتاح + الاسم + تاريخ الحذف ──────
+// ── حفظ خفيف لـ kp_form_rows ──────────────────────────────────────────────────
+function _saveFormRowsSlim(rows) {
+  try {
+    var slim = (rows || []).map(function(r) {
+      if (!r) return null;
+      return { firebaseKey: r.firebaseKey || r._fbKey || '', requestId: r.requestId || '',
+        timestamp: r.timestamp || '', status: r.status || 'pending',
+        decisionAt: r.decisionAt || '', rowUpdatedAt: r.rowUpdatedAt || '',
+        childName: r.childName || r.name || '', parentName: r.parentName || '',
+        phone: r.phone || '', submittedAt: r.submittedAt || r.createdAt || '' };
+    }).filter(Boolean);
+    localStorage.setItem('kp_form_rows', JSON.stringify(slim));
+  } catch(_e) {
+    try { localStorage.removeItem('kp_form_rows');
+      localStorage.setItem('kp_form_rows', JSON.stringify((rows||[]).map(function(r){ return r ? { firebaseKey: r.firebaseKey || '', status: r.status || 'pending' } : null; }).filter(Boolean)));
+    } catch(_e2) {}
+  }
+}
+// ── حفظ خفيف لسلال المحذوفات ───────────────────────────────────────────────────
 function _slimDeletedArray(arr, keyField) {
   keyField = keyField || 'id';
   return (arr || []).map(function(r) {
     if (!r) return null;
-    return {
-      id: r[keyField] != null ? r[keyField] : (r.id != null ? r.id : ''),
+    return { id: r[keyField] != null ? r[keyField] : (r.id != null ? r.id : ''),
       name: r.name || r.childName || r.studentName || r.className || '',
-      deletedAt: r.deletedAt || '',
-      deletedBy: r.deletedBy || '',
-      firebaseKey: r.firebaseKey || ''
-    };
+      deletedAt: r.deletedAt || '', deletedBy: r.deletedBy || '', firebaseKey: r.firebaseKey || '' };
   }).filter(Boolean);
 }
 function _safeSetSlim(key, arr, keyField) {
@@ -10314,13 +10320,9 @@ function _safeSetSlim(key, arr, keyField) {
   }
 }
 function persistCoreDataToLocalStorage() {
-  // ── حفظ خفيف فقط — البيانات الضخمة (students/payments/expenses/renewals/attlog)
-  //    لا تُحفظ بـ localStorage لأنها تتجاوز الكوتا (5MB).
-  //    المصدر الحقيقي هو Firebase؛ localStorage فقط للحالة الخفيفة.
   try { localStorage.setItem('kp_classes', JSON.stringify(CLASSES || {})); } catch(_e){}
   try { localStorage.setItem('kp_attendance_locks', JSON.stringify(attendanceLocks || {})); } catch(_e){}
-  // kp_students_data / kp_payments_data / kp_expenses_data / kp_renewals_data / kp_attlog_data
-  // محذوفة عمداً — راجع saveRecordRemoteAware للحفظ الفردي على Firebase مباشرة
+  // Heavy arrays (students/payments/expenses/renewals/attlog) intentionally skipped — stored in Firebase, not localStorage
 }
 
 function loadCoreDataFromLocalStorage() {
@@ -10402,12 +10404,7 @@ async function loadLogoFromFirebase() {
       logoDataUrl = remoteLogo;
       nurserySettings.logoDataUrl = remoteLogo;
       localStorage.setItem('kp_logo', remoteLogo);
-      // حفظ الإعدادات بدون الشعار (مخزن منفصلاً بـ kp_logo لتجنب ضخامة kp_settings)
-  try {
-    var _settingsToSave = Object.assign({}, nurserySettings);
-    delete _settingsToSave.logoDataUrl;
-    localStorage.setItem('kp_settings', JSON.stringify(_settingsToSave));
-  } catch(_e) {}
+      try { var _s = Object.assign({}, nurserySettings); delete _s.logoDataUrl; localStorage.setItem('kp_settings', JSON.stringify(_s)); } catch(_e){}
       updateLogoDisplay();
     }
   } catch (e) {
@@ -11523,12 +11520,7 @@ async function loadFromFirebase() {
       logoDataUrl = nurserySettings.logoDataUrl;
       localStorage.setItem('kp_logo', logoDataUrl);
     }
-    // حفظ الإعدادات بدون الشعار (مخزن منفصلاً بـ kp_logo لتجنب ضخامة kp_settings)
-  try {
-    var _settingsToSave = Object.assign({}, nurserySettings);
-    delete _settingsToSave.logoDataUrl;
-    localStorage.setItem('kp_settings', JSON.stringify(_settingsToSave));
-  } catch(_e) {}
+    try { var _s = Object.assign({}, nurserySettings); delete _s.logoDataUrl; localStorage.setItem('kp_settings', JSON.stringify(_s)); } catch(_e){}
     persistCoreDataToLocalStorage();
     populateClassDropdowns();
     if (typeof renderAdminClasses === 'function') renderAdminClasses();
@@ -12217,7 +12209,8 @@ function setFormRowDecision(r, status, meta) {
   }
   persistFormRowsAndSync(r);
   updateFormsNavBadge();
-  if ((status === 'approved' || status === 'rejected') && typeof archiveFirebaseRegistrationRequest === 'function') {
+  // ✅ أرشف فوراً لكل حالة (approved/rejected/pending) — بما في ذلك التراجع
+  if (typeof archiveFirebaseRegistrationRequest === 'function') {
     archiveFirebaseRegistrationRequest(r, status);
   }
 }
@@ -12430,7 +12423,7 @@ function openDuplicateDecisionModal(r, matches) {
   document.getElementById('mo-form-duplicates').classList.add('on');
 }
 
-function performApproveNew(r) {
+async function performApproveNew(r) {
   // ✅ FIX: استخدم رقم آمن لا يتعارض مع المحذوفين
   var newStudent = buildStudentFromFormRow(r, getSafeNextStudentId());
   students.push(newStudent);
@@ -12441,20 +12434,25 @@ function performApproveNew(r) {
     undoData: { createdStudentId: newStudent.id }
   });
   refreshAllAfterFormDecision();
+  // ✅ حفظ الطالب الجديد على Firebase فوراً
+  await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:newStudent, keyField:'id', label:'الطالب الجديد'});
   showSyncBadge('✅ تم قبول الطالب وإضافته');
 }
 
-function performApproveMerge(r, studentId) {
+async function performApproveMerge(r, studentId) {
   var idx = students.findIndex(function(s){ return s.id === studentId; });
   if (idx < 0) { alert('تعذر العثور على الطالب المحدد'); return; }
   var before = JSON.parse(JSON.stringify(students[idx]));
   students[idx] = mergeStudentWithFormData(students[idx], r);
+  var mergedStudent = students[idx];
   setFormRowDecision(r, 'approved', {
     approvedStudentId: studentId,
     approvedAction: 'merge',
     undoData: { mergedStudentId: studentId, previousStudent: before }
   });
   refreshAllAfterFormDecision();
+  // ✅ حفظ الطالب المدمج على Firebase فوراً
+  await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:mergedStudent, keyField:'id', label:'الطالب (دمج)'});
   showSyncBadge('✅ تم قبول الطلب ودمج البيانات');
 }
 
@@ -12471,17 +12469,25 @@ function rejectFormRow(ts) {
   showSyncBadge('✅ تم رفض الطلب');
 }
 
-function undoFormDecision(ts) {
+async function undoFormDecision(ts) {
   var r = (typeof findRegistrationRowByToken === 'function' ? findRegistrationRowByToken(ts) : syncedFormRows.find(function(x){ return x.timestamp === ts; }))
   if (!r || r.status === 'pending') return;
   if (!confirm('هل تريدين التراجع عن هذا القرار وإعادة الطلب إلى قائمة الجديدة؟')) return;
 
+  var studentToDelete = null;
+  var studentToRestore = null;
+
   if (r.status === 'approved' && r.undoData) {
     if (r.approvedAction === 'new' && r.undoData.createdStudentId != null) {
+      // ✅ سنحذف هذا الطالب من Firebase
+      studentToDelete = r.undoData.createdStudentId;
       students = students.filter(function(s){ return s.id !== r.undoData.createdStudentId; });
     } else if (r.approvedAction === 'merge' && r.undoData.mergedStudentId != null && r.undoData.previousStudent) {
       var idx = students.findIndex(function(s){ return s.id === r.undoData.mergedStudentId; });
-      if (idx >= 0) students[idx] = r.undoData.previousStudent;
+      if (idx >= 0) {
+        students[idx] = r.undoData.previousStudent;
+        studentToRestore = r.undoData.previousStudent;
+      }
     }
   }
 
@@ -12494,6 +12500,22 @@ function undoFormDecision(ts) {
   persistFormRowsAndSync(r);
   updateFormsNavBadge();
   refreshAllAfterFormDecision();
+
+  // ✅ انعكاس فوري على Firebase
+  if (studentToDelete != null) {
+    // احذف الطالب المُنشأ من Firebase (نقله لسلة المحذوفات)
+    var deletedEntry = { id: studentToDelete, deletedAt: new Date().toISOString(), deletedBy: (currentUser && currentUser.name) || 'undo', deletionReason: 'undo_approval' };
+    await moveRecordToTrashRemoteAware({ type:'students', id:studentToDelete, deletedItem:deletedEntry, activeArrayName:'students', deletedArrayName:'deletedStudents', keyField:'id', label:'الطالب (تراجع)' });
+  } else if (studentToRestore != null) {
+    // استعد الطالب السابق على Firebase
+    await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:studentToRestore, keyField:'id', label:'الطالب (تراجع دمج)'});
+  }
+
+  // ✅ أعد الطلب لـ pending في registrationRequests
+  if (typeof archiveFirebaseRegistrationRequest === 'function') {
+    await archiveFirebaseRegistrationRequest(r, 'pending');
+  }
+
   showSyncBadge('↩️ تم التراجع عن القرار');
 }
 // ============================================================
@@ -13556,12 +13578,7 @@ async function saveEmailSettingsRemoteAware(publicSettings){
   try{
     if(!publicSettings) publicSettings=getPublicEmailSettings();
     nurserySettings.emailSettings=Object.assign({}, nurserySettings.emailSettings||{}, publicSettings);
-    // حفظ الإعدادات بدون الشعار (مخزن منفصلاً بـ kp_logo لتجنب ضخامة kp_settings)
-  try {
-    var _settingsToSave = Object.assign({}, nurserySettings);
-    delete _settingsToSave.logoDataUrl;
-    localStorage.setItem('kp_settings', JSON.stringify(_settingsToSave));
-  } catch(_e) {}
+    try { var _s = Object.assign({}, nurserySettings); delete _s.logoDataUrl; localStorage.setItem('kp_settings', JSON.stringify(_s)); } catch(_e){}
     const res=await fetch(FB_URL + '/nurserySettings/emailSettings.json',{
       method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(publicSettings)
     });
@@ -14760,7 +14777,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
         // ⚡ حدّث lastSavedAt قبل PATCH عشان stream الأصلي يتجاهل الـ event ولا يعيد تحميل كل البيانات
         if (typeof lastSavedAt !== 'undefined') lastSavedAt = savedAt;
         try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
-        // kp_students: skipped — too large, load from Firebase
+        // kp_students: skipped — load from Firebase
 
         var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
         var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 12000) : null;
@@ -14802,7 +14819,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   // ============================================================
   window.persistFormRowsAndSync = async function(formRow){
     try { _saveFormRowsSlim(syncedFormRows); } catch(_e){}
-    // kp_students: skipped — too large, load from Firebase
+    // kp_students: skipped — load from Firebase
 
     // إذا الصف عنده قرار، استعمل العملية الفردية فقط
     if (formRow && formRow.status && formRow.status !== 'pending') {
@@ -14819,7 +14836,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
           // ⚡ حدّث lastSavedAt قبل PATCH عشان نمنع reload غير ضروري
           if (typeof lastSavedAt !== 'undefined') lastSavedAt = savedAt;
           try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
-          // kp_students: skipped — too large, load from Firebase
+          // kp_students: skipped — load from Firebase
 
           var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
           var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(_e){} }, 12000) : null;
@@ -15315,7 +15332,7 @@ document.addEventListener('change', function(e){
 
   window.persistFormRowsAndSync = async function(formRow){
     uSafeStoreRows(Array.isArray(syncedFormRows) ? syncedFormRows : []);
-    // kp_students: skipped — too large, load from Firebase
+    // kp_students: skipped — load from Firebase
     if (formRow && formRow.status) return await window.archiveFirebaseRegistrationRequest(formRow, formRow.status);
     return false;
   };
@@ -15527,7 +15544,7 @@ document.addEventListener('change', function(e){
       var savedAt = new Date().toISOString();
       if (typeof lastSavedAt !== 'undefined') lastSavedAt = savedAt;
       try { localStorage.setItem('kp_last_synced_at', savedAt); } catch(_e){}
-      // kp_students: skipped — too large, load from Firebase
+      // kp_students: skipped — load from Firebase
       var payload = { students: Array.isArray(students) ? students : [], savedAt: savedAt };
       if (typeof deletedStudents !== 'undefined' && Array.isArray(deletedStudents)) payload.deletedStudents = deletedStudents;
       await rfWrite(String(FB_URL || '').replace(/\/$/, '') + '.json', payload, 'PATCH', 12000);
