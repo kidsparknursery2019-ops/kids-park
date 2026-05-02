@@ -340,7 +340,10 @@ body{
 .ct2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
 
 /* 📊 الجداول */
-.tw{overflow-x:auto;border-radius:14px}
+.tw{overflow-x:auto;overflow-y:visible;border-radius:14px;scrollbar-width:thin;scrollbar-color:var(--g2) var(--gp)}
+.tw::-webkit-scrollbar{height:8px}
+.tw::-webkit-scrollbar-track{background:var(--gp);border-radius:8px}
+.tw::-webkit-scrollbar-thumb{background:linear-gradient(90deg,var(--g3),var(--g2));border-radius:8px;border:1px solid var(--gp)}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
 th{
   background:linear-gradient(180deg,#f4fbf7 0%,var(--gp) 100%);
@@ -1821,6 +1824,7 @@ body.kp-teacher .kp-sync-panel{
     <div class="nav" id="nav-forms" onclick="go('forms')">      <span class="ni">📋</span><span>طلبات التسجيل</span><span id="forms-nav-badge" class="nav-badge" style="display:none">0</span></div>
     <div class="nav" id="nav-renewals" onclick="go('renewals')">   <span class="ni">🔔</span><span>التجديدات</span><span id="renewals-nav-badge" class="nav-badge" style="display:none">0</span></div>
     <div class="nav"     onclick="go('finreport')"> <span class="ni">📈</span><span>التقارير المالية</span></div>
+    <div class="nav" id="nav-deleted" onclick="go('deleted')"><span class="ni">👶</span><span>الطلاب المحذوفون</span><span id="del-students-nav-badge" class="nav-badge" style="display:none">0</span></div>
     <div class="nav" id="nav-other-deleted" onclick="go('otherdeleted')">    <span class="ni">🗂️</span><span>سلة المحذوفات</span></div>
     <div class="side-sep"></div>
     <div class="nav" id="nav-email" onclick="go('email')"> <span class="ni">✉️</span><span>البريد</span></div>
@@ -5343,10 +5347,13 @@ function renderStudents(){
   document.getElementById('stu-count').textContent=statusTitle + ` (${f.length})`;
   document.getElementById('stu-tbody').innerHTML=f.map((s,i)=>{
     const healthSummary = getStudentHealthSummary(s) || '—';
+    // لا تعرض الملاحظة تحت الاسم إذا كانت هي نفسها الحالة الصحية
+    const noteText = (s.note||s.notes||'').trim();
+    const showNote = noteText && noteText !== healthSummary && !String(healthSummary).includes(noteText);
     return `
     <tr>
       <td><b>#${s.id}</b></td>
-      <td><b>${s.name}</b>${(s.note||s.notes) ? `<div style="font-size:11px;color:#e67e22;margin-top:2px;font-weight:600">📝 ${s.note||s.notes}</div>` : ''}</td>
+      <td><b>${s.name}</b>${showNote ? `<div style="font-size:11px;color:#e67e22;margin-top:2px;font-weight:600">📝 ${noteText}</div>` : ''}</td>
       <td dir="ltr" style="font-size:12px">${escapeHtml(getStudentEnglishDisplayName(s)||'—')}</td>
       <td dir="ltr">${escapeHtml(getStudentIdentity(s)||'—')}</td>
       <td style="font-size:12px">${escapeHtml(s.internalNote||'—')}</td>
@@ -6644,6 +6651,12 @@ function renderDeletedStudents() {
   const totalStudents = deletedStudents.length;
   document.getElementById('del-count').textContent = totalStudents;
   const sEl = document.getElementById('del-students-count'); if (sEl) sEl.textContent = totalStudents;
+  // تحديث badge الشريط الجانبي
+  const navBadge = document.getElementById('del-students-nav-badge');
+  if (navBadge) {
+    navBadge.textContent = totalStudents;
+    navBadge.style.display = totalStudents > 0 ? 'inline-flex' : 'none';
+  }
   if (!totalStudents) {
     el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">🗑 لا يوجد طلاب محذوفون</div>';
     return;
