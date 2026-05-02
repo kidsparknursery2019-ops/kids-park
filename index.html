@@ -4196,14 +4196,25 @@ async function permanentDeleteRemoteAware(config) {
 
     // الخطوة 1: احذف السجل — DELETE أولاً، ثم PUT null كـ fallback
     const _delUrl = FB_URL + '/' + deletedArrayName + '/' + encodeURIComponent(entityKey) + '.json';
-    const _delTimeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000));
-    const delRes = await Promise.race([fetch(_delUrl, { method: 'DELETE' }), _delTimeout]);
-    if (!delRes.ok) {
-      // بعض Firebase Rules تسمح PUT null لكن لا تسمح DELETE
-      const _putTimeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000));
-      const putRes = await Promise.race([fetch(_delUrl, { method:'PUT', headers:{'Content-Type':'application/json'}, body:'null' }), _putTimeout]);
-      if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+    // retry تلقائي 3 مرات مع timeout 20 ثانية
+    let _delOk = false;
+    for (let _att = 0; _att < 3 && !_delOk; _att++) {
+      try {
+        const _dRes = await Promise.race([
+          fetch(_delUrl, { method: 'DELETE' }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000))
+        ]);
+        if (_dRes.ok) { _delOk = true; break; }
+        const _pRes = await Promise.race([
+          fetch(_delUrl, { method:'PUT', headers:{'Content-Type':'application/json'}, body:'null' }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000))
+        ]);
+        if (_pRes.ok) { _delOk = true; break; }
+      } catch(_e2) {
+        if (_att < 2) await new Promise(r => setTimeout(r, 2000));
+      }
     }
+    if (!_delOk) throw new Error('timeout after 3 attempts');
 
     // الخطوة 2: حدّث tombstones + restoredKeys + savedAt بـ PATCH منفصل
     const updates = {};
@@ -6678,8 +6689,7 @@ function renderDeletedStudents() {
       (s.deletedBy ? '<br>👤 بواسطة: ' + s.deletedBy : ''),
       '<button class="btn btn-out btn-sm" onclick="viewDeletedStudent(' + s.id + ')">👁 عرض</button>' +
       '<button class="btn btn-g btn-sm" onclick="restoreStudent(' + s.id + ')">♻️ استعادة</button>' +
-      '<button class="btn btn-r btn-sm" onclick="permanentDeleteStudent(' + s.id + ')">🗑 حذف نهائي</button>' +
-      '<button class="btn btn-sm" style="background:#fff0e0;color:#b35900;border:1.5px solid #ffbb77" onclick="forceLocalDeleteStudent(' + s.id + ')" title="احذف من الجهاز فقط إذا فشل الحذف النهائي">⚡ محلي فقط</button>'
+      '<button class="btn btn-r btn-sm" onclick="hardDeleteStudent(' + s.id + ', \''+  (s.name||'') + '\')">🗑 حذف نهائي</button>'
     );
   }).join('');
   el.innerHTML = html;
@@ -15600,6 +15610,48 @@ document.addEventListener('change', function(e){
     await window.setFormRowDecision(r, 'rejected', { approvedStudentId:null, approvedAction:'reject', undoData:{revertTo:'pending'} });
   };
 
+  // حذف نهائي حقيقي من Firebase — يمسح السجل تماماً من كل المسارات
+  window.hardDeleteStudent = async function(id, name) {
+    if (!confirm('⚠️ حذف نهائي للطالب "' + (name || id) + '"؟\nسيُمسح من Firebase ولا يمكن التراجع.')) return;
+    var base = String(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, '');
+    if (!base) { alert('خطأ: Firebase URL غير موجود'); return; }
+    var key = (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(id) : ('k_' + String(id));
+    var enc = encodeURIComponent(key);
+
+    // احذف محلياً فوراً
+    if (!Array.isArray(deletedStudents)) deletedStudents = [];
+    deletedStudents = deletedStudents.filter(function(x){ return String((x||{}).id) !== String(id); });
+    students = (Array.isArray(students) ? students : []).filter(function(x){ return String((x||{}).id) !== String(id); });
+    try { _safeSetSlim('kp_deleted_students', deletedStudents); } catch(_e){}
+    try { if (typeof addTombstone === 'function') addTombstone('students', id); } catch(_e){}
+    if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
+    if (typeof renderStudents === 'function') renderStudents();
+    if (typeof renderDash === 'function') renderDash();
+    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري الحذف من Firebase...');
+
+    // احذف من Firebase — كل المسارات الممكنة
+    var paths = [
+      base + '/deletedStudents/' + enc + '.json',
+      base + '/students/' + enc + '.json'
+    ];
+    var errors = [];
+    for (var i = 0; i < paths.length; i++) {
+      try {
+        var res = await fetch(paths[i], { method: 'DELETE' });
+        if (!res.ok) errors.push(paths[i] + ' → HTTP ' + res.status);
+      } catch(e) {
+        errors.push(paths[i] + ' → ' + (e.message || e));
+      }
+    }
+
+    if (errors.length === 0) {
+      if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم الحذف النهائي من Firebase');
+    } else {
+      console.error('hardDeleteStudent errors:', errors);
+      if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ تم الحذف من الجهاز — Firebase: ' + errors.join(' | '));
+    }
+  };
+
   window.undoFormDecision = async function(token){
     var r = window.findRegistrationRowByToken(token);
     if (!r || (r.status || 'pending') === 'pending') return;
@@ -15868,20 +15920,24 @@ document.addEventListener('change', function(e){
     // حذف حقيقي بـ DELETE على كل مسار — PATCH+null لا يحذف في Firebase Realtime Database
     var encodedKey = encodeURIComponent(key);
     var mkTimeout = function(ms){ return new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, ms); }); };
-    // احذف من deletedStudents بـ DELETE أولاً، ثم PUT null كـ fallback
+    // احذف من deletedStudents — retry تلقائي 3 مرات مع timeout 20 ثانية
     var delUrl = base + '/deletedStudents/' + encodedKey + '.json';
-    var delRes = await Promise.race([
-      fetch(delUrl, { method:'DELETE' }),
-      mkTimeout(10000)
-    ]);
-    // بعض Firebase Rules لا تسمح DELETE لكن تسمح PUT null — نجرب الاثنين
-    if (!delRes.ok) {
-      var putRes = await Promise.race([
-        fetch(delUrl, { method:'PUT', headers:{'Content-Type':'application/json'}, body:'null' }),
-        mkTimeout(10000)
-      ]);
-      if (!putRes.ok) throw new Error('HTTP ' + putRes.status);
+    var delOk = false;
+    for (var _attempt = 0; _attempt < 3 && !delOk; _attempt++) {
+      try {
+        var delRes = await Promise.race([fetch(delUrl, { method:'DELETE' }), mkTimeout(20000)]);
+        if (delRes.ok) { delOk = true; break; }
+        // جرب PUT null كـ fallback
+        var putRes = await Promise.race([
+          fetch(delUrl, { method:'PUT', headers:{'Content-Type':'application/json'}, body:'null' }),
+          mkTimeout(20000)
+        ]);
+        if (putRes.ok) { delOk = true; break; }
+      } catch(_retryErr) {
+        if (_attempt < 2) await new Promise(function(r){ setTimeout(r, 2000); });
+      }
     }
+    if (!delOk) throw new Error('timeout after 3 attempts');
     // احذف من students أيضاً (لو موجود بالغلط)
     fetch(base + '/students/' + encodedKey + '.json', { method:'DELETE' }).catch(function(){});
     // حدّث tombstones + savedAt بـ PATCH منفصل (لا ينتظر)
