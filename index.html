@@ -14420,103 +14420,225 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   // ============================================================
   window.syncRegistrationRequestsFromFirebase = async function(options){
     options = options || {};
+
+    // ─── helper: compare two ISO timestamps, return the more recent one ────
+    function _newerTs(a, b) {
+      var ta = a ? new Date(a).getTime() : 0;
+      var tb = b ? new Date(b).getTime() : 0;
+      return ta >= tb ? a : b;
+    }
+
+    // ─── helper: pick the winning row when the same key exists in multiple folders
+    //     Priority: (1) most-recent decisionAt/rowUpdatedAt timestamp
+    //               (2) approved > rejected > pending  (tie-breaker)
+    function _resolveConflict(existing, incoming) {
+      var existingTs = existing.decisionAt || existing.rowUpdatedAt || '';
+      var incomingTs = incoming.decisionAt || incoming.rowUpdatedAt || '';
+      if (existingTs || incomingTs) {
+        var winner = _newerTs(incomingTs, existingTs) === incomingTs ? incoming : existing;
+        if (existingTs !== incomingTs) {
+          console.info('[SyncFix] Conflict on key ' + (existing.firebaseKey || existing.requestId) +
+            ': keeping status=' + winner.status +
+            ' (ts=' + (winner.decisionAt || winner.rowUpdatedAt) + ')');
+        }
+        return winner;
+      }
+      // No timestamps available → use status priority
+      var rank = { approved: 3, rejected: 2, pending: 1 };
+      return (rank[incoming.status] || 0) >= (rank[existing.status] || 0) ? incoming : existing;
+    }
+
     try {
-      // ✅ تنفيذ الـ ٣ طلبات بالموازي (Promise.all) بدل المتسلسل
+      // ── 1. Fetch all three folders in parallel ──────────────────────────
       var fetchResults = await Promise.all([
         _fetchFolder('pending'),
         _fetchFolder('accepted'),
         _fetchFolder('rejected')
       ]);
-      var pendingRows = fetchResults[0];
+      var pendingRows  = fetchResults[0];
       var acceptedRows = fetchResults[1];
       var rejectedRows = fetchResults[2];
 
-      // وسم كل صف بحالته من مكانه
-      pendingRows.forEach(function(r){ r.status = 'pending'; });
-      acceptedRows.forEach(function(r){ r.status = 'approved'; });
-      rejectedRows.forEach(function(r){ r.status = 'rejected'; });
+      // ── 2. Tag each row with its folder status ──────────────────────────
+      pendingRows.forEach(function(r)  { r.status = 'pending';  });
+      acceptedRows.forEach(function(r) { r.status = 'approved'; });
+      rejectedRows.forEach(function(r) { r.status = 'rejected'; });
 
-      // بناء خريطة بالمفتاح: القرارات بتربح على pending
+      function _key(r) {
+        return _sanitizeFbKey(_txt(r.firebaseKey || r._fbKey || r.requestId || r.timestamp));
+      }
+
+      // ── 3. Build conflict-resolved map (timestamp wins, not folder order) ─
       var byKey = {};
-      function _key(r){ return _sanitizeFbKey(_txt(r.firebaseKey || r._fbKey || r.requestId || r.timestamp)); }
-      pendingRows.forEach(function(r){ var k = _key(r); if (k) byKey[k] = r; });
-      acceptedRows.forEach(function(r){ var k = _key(r); if (k) byKey[k] = r; }); // override pending
-      rejectedRows.forEach(function(r){ var k = _key(r); if (k) byKey[k] = r; }); // override accepted
+      var conflictsDetected = 0;
 
-      // دمج مع syncedFormRows الحالية (للحفاظ على بيانات Google Sheets اللي ممكن ما تكون بمسار)
+      // Process all rows; _resolveConflict picks the correct one when the
+      // same key appears in more than one folder (the bug described in the guide).
+      var allFolderRows = pendingRows.concat(acceptedRows, rejectedRows);
+      allFolderRows.forEach(function(r) {
+        var k = _key(r);
+        if (!k) return;
+        if (byKey[k]) {
+          conflictsDetected++;
+          byKey[k] = _resolveConflict(byKey[k], r);
+        } else {
+          byKey[k] = r;
+        }
+      });
+
+      if (conflictsDetected > 0) {
+        console.warn('[SyncFix] Sync conflicts detected: ' + conflictsDetected +
+          ' record(s) appeared in multiple folders. Resolved by timestamp.');
+      }
+
+      // ── 4. Merge with current syncedFormRows (preserves Google-Sheets data) ─
       var current = Array.isArray(syncedFormRows) ? syncedFormRows : [];
       var currentByKey = {};
-      current.forEach(function(r){
+      current.forEach(function(r) {
         if (!r) return;
         var k = _stableKey(r) || _sanitizeFbKey(_txt(r.firebaseKey || r.requestId || r.timestamp));
         if (k) currentByKey[k] = r;
       });
 
       var resultMap = {};
-      // أول شي: كل صف موجود بمسار، نأخذ بياناته مع دمج البيانات الإضافية من syncedFormRows
-      Object.keys(byKey).forEach(function(k){
+
+      // Rows that exist in Firebase: merge extra local data, keep Firebase status/timestamps
+      Object.keys(byKey).forEach(function(k) {
         var folderRow = byKey[k];
-        var existing = currentByKey[k];
+        var existing  = currentByKey[k];
         if (existing) {
-          // دمج: بيانات من existing، الحالة والقرار من folder
           resultMap[k] = Object.assign({}, existing, folderRow, {
-            status: folderRow.status,
-            decisionAt: folderRow.decisionAt || existing.decisionAt,
-            rowUpdatedAt: folderRow.rowUpdatedAt || folderRow.decisionAt || existing.rowUpdatedAt
+            status:       folderRow.status,
+            decisionAt:   folderRow.decisionAt   || existing.decisionAt,
+            rowUpdatedAt: folderRow.rowUpdatedAt  || folderRow.decisionAt || existing.rowUpdatedAt
           });
         } else {
           resultMap[k] = folderRow;
         }
       });
 
-      // ثاني شي: الصفوف الموجودة محلياً ومش بأي مسار (بيانات Google Sheets جديدة)
+      // ── 5. Handle local-only rows (Google Sheets data not yet in Firebase) ─
       var orphans = [];
-      Object.keys(currentByKey).forEach(function(k){
+      Object.keys(currentByKey).forEach(function(k) {
         if (resultMap[k]) return;
         var r = currentByKey[k];
-        // طبّق قرار محلي محفوظ إذا في
         var d = _findPersistedDecision(r);
         if (d) {
           resultMap[k] = Object.assign({}, r, {
-            status: d.status,
-            decisionAt: d.decisionAt || r.decisionAt,
+            status:       d.status,
+            decisionAt:   d.decisionAt || r.decisionAt,
             rowUpdatedAt: d.decisionAt || d.savedAt || r.rowUpdatedAt
           });
-          orphans.push(resultMap[k]); // محتاج ترحيل لـ Firebase
+          orphans.push(resultMap[k]);
         } else {
-          // صف pending موجود محلياً بس مش بـ /pending → محتاج رفع
           resultMap[k] = r;
           if ((r.status || 'pending') === 'pending') orphans.push(r);
         }
       });
 
+      // ── 6. Commit ───────────────────────────────────────────────────────
       syncedFormRows = Object.values(resultMap);
-      try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e){}
+      try { localStorage.setItem('kp_form_rows', JSON.stringify(syncedFormRows)); } catch(_e) {}
 
       if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
-      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof renderFormRequests   === 'function') renderFormRequests();
 
-      // ❌ أُلغي الترحيل التلقائي للـ orphans لأنه كان يضرب Firebase بطلبات
-      //    متتالية ويخلي loadFromFirebase يفشل ويطلع "بدون إنترنت".
-      //    الصفوف القديمة بتظل تعرض من syncedFormRows المحلية.
-      //    القرارات الجديدة تشتغل فردياً عبر setFormRowDecision.
-      //    لو بدك ترحيل يدوي، استعمل kpMigrateAllRows() من الـ Console.
+      // Manual migration only — automatic orphan push was removed to avoid
+      // hammering Firebase with sequential requests. Use kpMigrateAllRows()
+      // from the console if a manual push is needed.
 
       if (!options.silent && typeof showSyncBadge === 'function') {
-        showSyncBadge('✅ المزامنة: ' + pendingRows.length + ' جديد، ' + acceptedRows.length + ' مقبول، ' + rejectedRows.length + ' مرفوض');
+        showSyncBadge('✅ المزامنة: ' + pendingRows.length + ' جديد، ' +
+          acceptedRows.length + ' مقبول، ' + rejectedRows.length + ' مرفوض' +
+          (conflictsDetected ? ' ⚠️ ' + conflictsDetected + ' تعارض' : ''));
       }
+
       return {
-        pending: pendingRows.length,
-        accepted: acceptedRows.length,
-        rejected: rejectedRows.length,
-        total: syncedFormRows.length,
-        migrated: orphans.length
+        pending:   pendingRows.length,
+        accepted:  acceptedRows.length,
+        rejected:  rejectedRows.length,
+        total:     syncedFormRows.length,
+        migrated:  orphans.length,
+        conflicts: conflictsDetected
       };
-    } catch(e){
+    } catch(e) {
       console.warn('per-record sync failed:', e);
       if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('⚠️ تعذرت المزامنة');
       return { error: e && e.message };
     }
+  };
+
+  // ── kpDetectConflicts: report records that exist in more than one folder ─
+  window.kpDetectConflicts = async function() {
+    try {
+      var fetchResults = await Promise.all([
+        _fetchFolder('pending'),
+        _fetchFolder('accepted'),
+        _fetchFolder('rejected')
+      ]);
+      var allRows = [].concat(
+        fetchResults[0].map(function(r){ return Object.assign({}, r, {_folder:'pending'});  }),
+        fetchResults[1].map(function(r){ return Object.assign({}, r, {_folder:'accepted'}); }),
+        fetchResults[2].map(function(r){ return Object.assign({}, r, {_folder:'rejected'}); })
+      );
+      var seen = {};
+      var conflicts = [];
+      allRows.forEach(function(r) {
+        var k = (r.firebaseKey || r.requestId || r.timestamp || '').toString().trim();
+        if (!k) return;
+        if (!seen[k]) { seen[k] = []; }
+        seen[k].push({ folder: r._folder, decisionAt: r.decisionAt, rowUpdatedAt: r.rowUpdatedAt });
+        if (seen[k].length === 2) conflicts.push(k); // only push once when first dupe found
+      });
+      if (conflicts.length === 0) {
+        console.log('[kpDetectConflicts] ✅ No conflicts found.');
+      } else {
+        console.warn('[kpDetectConflicts] ⚠️ ' + conflicts.length + ' conflicting record(s):');
+        conflicts.forEach(function(k) { console.warn('  Key:', k, '→', seen[k]); });
+      }
+      return { conflicts: conflicts, detail: seen };
+    } catch(e) {
+      console.error('[kpDetectConflicts] Error:', e);
+      return { error: e && e.message };
+    }
+  };
+
+  // ── cleanupOrphanRegistrationRequests: delete stale copies from wrong folders ─
+  window.cleanupOrphanRegistrationRequests = async function() {
+    var result = await window.kpDetectConflicts();
+    if (!result.conflicts || result.conflicts.length === 0) {
+      console.log('[cleanupOrphans] Nothing to clean.');
+      return { cleaned: 0 };
+    }
+    var statusRank = { approved: 3, rejected: 2, pending: 1 };
+    var cleaned = 0;
+    for (var i = 0; i < result.conflicts.length; i++) {
+      var k = result.conflicts[i];
+      var copies = result.detail[k];
+      // Pick the winner by timestamp, then by status rank
+      var winner = copies.reduce(function(best, c) {
+        var bt = best.decisionAt || best.rowUpdatedAt || '';
+        var ct = c.decisionAt   || c.rowUpdatedAt   || '';
+        if (ct > bt) return c;
+        if (bt > ct) return best;
+        return (statusRank[c.folder] || 0) > (statusRank[best.folder] || 0) ? c : best;
+      });
+      // Delete all non-winning copies from Firebase
+      for (var j = 0; j < copies.length; j++) {
+        var copy = copies[j];
+        if (copy.folder === winner.folder) continue;
+        try {
+          var delUrl = FB_URL + '/registrationRequests/' + copy.folder + '/' + k + '.json';
+          await fetch(delUrl, { method: 'DELETE' });
+          console.log('[cleanupOrphans] Deleted stale copy: /' + copy.folder + '/' + k);
+          cleaned++;
+        } catch(e) {
+          console.warn('[cleanupOrphans] Failed to delete /' + copy.folder + '/' + k, e);
+        }
+      }
+    }
+    console.log('[cleanupOrphans] ✅ Cleaned ' + cleaned + ' stale record(s).');
+    return { cleaned: cleaned };
   };
 
   // ============================================================
