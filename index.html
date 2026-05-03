@@ -1985,6 +1985,8 @@ body.kp-teacher .kp-sync-panel{
         </select>
         <input type="date" id="stu-print-date" title="التاريخ الظاهر في الطباعة">
         <button class="btn btn-b btn-sm" onclick="printStudentsSelectedReport()">🖨️ طباعة</button>
+        <button class="btn btn-out btn-sm" onclick="exportStudentsSelectedReport('xlsx')">Excel</button>
+        <button class="btn btn-out btn-sm" onclick="exportStudentsSelectedReport('doc')">Word</button>
       </div>
       <div class="card">
         <div class="ct"><span id="stu-count">الطلاب</span></div>
@@ -2006,6 +2008,7 @@ body.kp-teacher .kp-sync-panel{
           <button class="btn btn-y btn-sm" onclick="openEmailComposeModal()">➕ إنشاء رسالة</button>
           <button class="btn btn-out btn-sm" onclick="importOutlookSentContacts()">👥 تحديث اقتراحات الإيميلات</button>
           <button class="btn btn-out btn-sm" onclick="saveEmailSettings()">💾 حفظ الإعدادات</button>
+          <button class="btn btn-out btn-sm" id="renewal-email-toggle-btn" onclick="toggleDailyRenewalEmailNotifications()">?? Daily renewal email</button>
         </div>
       </div>
 
@@ -2184,7 +2187,7 @@ body.kp-teacher .kp-sync-panel{
           <option value="amt-desc">الأعلى قيمة</option>
           <option value="amt-asc">الأقل قيمة</option>
         </select>
-        <button class="btn btn-out btn-sm" onclick="openExport('payments')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('payments')" title="استيراد من Excel">⬆ استيراد</button><button class="btn btn-b btn-sm" onclick="approveAllSuggestedPaymentMatches()" title="اعتماد كل الروابط المقترحة الحالية">🔗 اعتماد ربط السندات دفعة واحدة</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('payments')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openFinanceDateReview()">Review dates</button><button class="btn btn-out btn-sm" onclick="openImport('payments')" title="استيراد من Excel">⬆ استيراد</button><button class="btn btn-b btn-sm" onclick="approveAllSuggestedPaymentMatches()" title="اعتماد كل الروابط المقترحة الحالية">🔗 اعتماد ربط السندات دفعة واحدة</button>
       </div>
       <div class="sg" style="grid-template-columns:repeat(3,1fr)">
         <div class="sc"><div class="sl">إجمالي المحصّل</div><div class="sv fin-pos" id="pay-total">0</div><div class="ss">درهم</div></div>
@@ -2210,7 +2213,7 @@ body.kp-teacher .kp-sync-panel{
           <option value="">كل الفئات</option>
           <option>رواتب</option><option>كهرباء وإنترنت</option><option>قرطاسية ومستلزمات</option><option>صيانة</option><option>مواصلات</option><option>فعاليات</option><option>أخرى</option>
         </select>
-        <button class="btn btn-out btn-sm" onclick="openExport('expenses')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('expenses')" title="استيراد من Excel">⬆ استيراد</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('expenses')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openFinanceDateReview()">Review dates</button><button class="btn btn-out btn-sm" onclick="openImport('expenses')" title="استيراد من Excel">⬆ استيراد</button>
       </div>
       <div class="sg" style="grid-template-columns:repeat(3,1fr)">
         <div class="sc r"><div class="sl">إجمالي المصاريف</div><div class="sv fin-neg" id="exp-total">0</div><div class="ss">درهم</div></div>
@@ -5732,22 +5735,22 @@ function printStudentsSelectedReport(){
   if(!w){ alert('تعذر فتح نافذة الطباعة'); return; }
   w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>طباعة القوائم</title>
   <style>
-    @page { size: A4 landscape; margin: 10mm; }
+    @page { size: A4 landscape; margin: 6mm; }
     body{font-family:Tajawal,Arial,sans-serif;color:#111;margin:0;background:#fff;direction:rtl}
-    .print-page{page-break-after:always;break-after:page;padding:0 4mm 0 4mm}
+    .print-page{page-break-after:always;break-after:page;padding:0;overflow:hidden}
     .print-page:last-child{page-break-after:auto;break-after:auto}
-    .print-head{text-align:center;margin-bottom:8px}
-    .print-logo-wrap{height:56px;display:flex;align-items:center;justify-content:center;margin-bottom:4px}
-    .print-logo{max-height:52px;max-width:140px;object-fit:contain}
-    .print-title{font-size:22px;font-weight:900}
-    .print-subtitle{font-size:16px;font-weight:700;margin-top:2px}
-    .print-meta{display:flex;justify-content:space-between;gap:8px;border:1px solid #333;padding:6px 10px;margin-top:8px;font-size:13px}
-    table.print-grid{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
-    .print-grid th,.print-grid td{border:1px solid #333;padding:7px 6px;text-align:center;vertical-align:middle}
+    .print-head{text-align:center;margin-bottom:4px}
+    .print-logo-wrap{height:34px;display:flex;align-items:center;justify-content:center;margin-bottom:2px}
+    .print-logo{max-height:32px;max-width:110px;object-fit:contain}
+    .print-title{font-size:16px;font-weight:900}
+    .print-subtitle{font-size:12px;font-weight:700;margin-top:1px}
+    .print-meta{display:flex;justify-content:space-between;gap:6px;border:1px solid #333;padding:3px 6px;margin-top:4px;font-size:10.5px}
+    table.print-grid{width:100%;border-collapse:collapse;font-size:9.3px;margin-top:4px;table-layout:fixed}
+    .print-grid th,.print-grid td{border:1px solid #333;padding:3px;text-align:center;vertical-align:middle;line-height:1.08;word-break:break-word}
     .print-grid th{background:#f3f3f3;font-weight:800}
     .print-grid td.name-cell{text-align:right;font-weight:700}
-    .attendance-grid td{height:34px}
-    .meals-grid td.blank-cell{height:30px;width:70px}
+    .attendance-grid td{height:20px}
+    .meals-grid td.blank-cell{height:18px;width:auto}
   </style>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
   <script>window.onload=()=>{setTimeout(()=>window.print(),250)}<\/script></body></html>`);
@@ -9232,7 +9235,7 @@ async function submitAddUser(){
     users = JSON.parse(localStorage.getItem('kp_users') || '[]');
   }
   if (users.find(function(u){ return u.username === user; })) return alert('اسم المستخدم موجود مسبقاً');
-  var record = { username: user, password: pass, role: role, name: name, disabled: false };
+  var record = { username: user, password: pass, role: role, name: name, disabled: false, mustChangePassword: true };
   if (role === 'teacher') record.classes = classes;
   users.push(record);
   localStorage.setItem('kp_users', JSON.stringify(users));
@@ -12410,11 +12413,11 @@ function quickApprove(ts) {
   startApproveFlow(r);
 }
 
-function startApproveFlow(r) {
+async function startApproveFlow(r) {
   if (!r || r.status !== 'pending') return;
   var matches = findPotentialStudentMatches(r);
   if (!matches.length) {
-    performApproveNew(r);
+    await performApproveNew(r);
     closeAll();
     return;
   }
@@ -12450,12 +12453,12 @@ function openDuplicateDecisionModal(r, matches) {
     var target = students.find(function(s){ return s.id === sid; });
     if (!target) { alert('تعذر العثور على الطالب المحدد'); return; }
     if (!(await window.kpConfirmAsync(null, null, 'سيتم دمج بيانات الطلب مع سجل الطالب الحالي: ' + (target.name || '') + '. هل تريدين المتابعة؟'))) return;
-    performApproveMerge(r, sid);
+    await performApproveMerge(r, sid, {skipConfirm:true});
     closeAll();
   };
   newBtn.onclick = async function() {
     if (!(await window.kpConfirmAsync(null, null, 'سيتم تسجيل هذا الطلب كطالب جديد. هل تريدين المتابعة؟'))) return;
-    performApproveNew(r);
+    await performApproveNew(r, {skipConfirm:true});
     closeAll();
   };
   document.getElementById('mo-form-duplicates').classList.add('on');
@@ -17992,5 +17995,749 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   setTimeout(function(){ syncAll({ silent:true }).catch(function(){}); }, 800);
 })();
 </script>
+
+<script>
+/* KP SYSTEM UX DATA FINISHING PASS 2026-05-03 */
+(function(){
+  if (window.__kpSystemUxDataFinishing20260503) return;
+  window.__kpSystemUxDataFinishing20260503 = true;
+
+  function txt(v){ return String(v == null ? '' : v); }
+  function esc(v){ return txt(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function recordName(record){
+    if (!record) return '';
+    return txt(record.name || record.childName || record.studentName || record.who || record.desc || record.title || record.email || record.username || record.id || '').trim();
+  }
+  function ensureToastStyle(){
+    if (document.getElementById('kp-message-style')) return;
+    var st=document.createElement('style'); st.id='kp-message-style';
+    st.textContent = '.kp-message-overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(17,24,39,.38);z-index:999999;padding:18px}.kp-message-overlay.on{display:flex}.kp-message-box{width:min(520px,96vw);background:#fff;border-radius:16px;box-shadow:0 24px 70px rgba(15,23,42,.22);border:1px solid rgba(30,107,63,.18);overflow:hidden;direction:rtl;font-family:Tajawal,Arial,sans-serif}.kp-message-head{display:flex;gap:12px;align-items:flex-start;padding:16px 18px 12px;background:linear-gradient(135deg,#f0faf3,#fff)}.kp-message-icon{width:42px;height:42px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#e8f6ee;color:#1e6b3f;font-weight:900;font-size:22px;flex:0 0 auto}.kp-message-box.err .kp-message-icon{background:#ffe9e9;color:#b42318}.kp-message-box.warn .kp-message-icon{background:#fff4d8;color:#9a6700}.kp-message-title{font-weight:900;font-size:18px;color:#123524}.kp-message-sub{margin-top:3px;font-size:12px;color:#64748b}.kp-message-body{padding:14px 18px 4px;font-size:14px;line-height:1.7;color:#26352d;white-space:pre-wrap}.kp-message-rec{margin:10px 18px 0;padding:9px 11px;border-radius:10px;background:#f8fafc;border:1px solid #e5e7eb;font-size:13px;color:#334155}.kp-message-actions{display:flex;justify-content:flex-start;gap:8px;padding:14px 18px 16px}.kp-message-ok{border:0;border-radius:10px;background:#1e6b3f;color:white;font-weight:900;padding:9px 18px;cursor:pointer;font-family:inherit}.kp-user-password-btn{margin-inline-start:8px;white-space:nowrap}.kp-password-grid{display:grid;gap:10px;padding:14px 18px}.kp-password-grid label{font-size:12px;font-weight:900;color:#475569}.kp-password-grid input{width:100%;box-sizing:border-box;padding:10px;border:1.5px solid #d9e5dc;border-radius:10px;font-family:inherit}';
+    document.head.appendChild(st);
+  }
+  function classifyMessage(message, options){
+    var m = txt(message).toLowerCase();
+    if (options && options.type) return options.type;
+    if (/failed|failure|error|not saved/.test(m) || m.indexOf('not saved')>=0) return 'err';
+    if (/warning|warn|later|local only/.test(m)) return 'warn';
+    return 'ok';
+  }
+  function showMessage(action, record, message, options){
+    ensureToastStyle(); options = options || {};
+    var overlay=document.getElementById('kp-message-overlay');
+    if(!overlay){ overlay=document.createElement('div'); overlay.id='kp-message-overlay'; overlay.className='kp-message-overlay'; document.body.appendChild(overlay); }
+    var type=classifyMessage(message, options);
+    var title=options.title || action || (type==='err'?'Action failed':(type==='warn'?'Attention':'Action completed'));
+    var sub=options.sub || 'System message';
+    var icon=type==='err'?'!':(type==='warn'?'!':'OK');
+    var rn=recordName(record);
+    overlay.innerHTML='<div class="kp-message-box '+type+'"><div class="kp-message-head"><div class="kp-message-icon">'+icon+'</div><div><div class="kp-message-title">'+esc(title)+'</div><div class="kp-message-sub">'+esc(sub)+'</div></div></div>'+(rn?'<div class="kp-message-rec"><b>Record:</b> '+esc(rn)+'</div>':'')+'<div class="kp-message-body">'+esc(message || title)+'</div><div class="kp-message-actions"><button class="kp-message-ok" type="button">OK</button></div></div>';
+    overlay.classList.add('on');
+    return new Promise(function(resolve){
+      function done(){ overlay.classList.remove('on'); resolve(true); }
+      overlay.querySelector('.kp-message-ok').onclick=done;
+      overlay.onclick=function(e){ if(e.target===overlay) done(); };
+    });
+  }
+  var nativeAlert = window.alert ? window.alert.bind(window) : null;
+  window.kpMessage = showMessage;
+  window.alert = function(message){ try { showMessage(null, null, message); } catch(e){ if(nativeAlert) nativeAlert(message); } };
+
+  function isPendingRegistration(row){
+    try { return !row || (typeof folderFromStatus === 'function' ? folderFromStatus(row.status || 'pending') : txt(row.status || 'pending')) === 'pending'; }
+    catch(e){ return !row || txt(row.status || 'pending') === 'pending'; }
+  }
+  if (typeof window.performApproveNew === 'function' && !window.performApproveNew.__kpConfirmWrapped) {
+    var prevApproveNew = window.performApproveNew;
+    window.performApproveNew = async function(row, options){
+      options = options || {};
+      if (isPendingRegistration(row) && !options.skipConfirm && window.kpConfirmAsync) {
+        var ok = await window.kpConfirmAsync('Approve registration request', row, 'Do you want to approve this request and add the student to the system?', { okText:'Approve request' });
+        if (!ok) return false;
+      }
+      var result = await prevApproveNew.call(this, row);
+      try {
+        if (row && txt(row.status).toLowerCase().indexOf('approved') >= 0) window.kpMessage('Approve registration request', row, 'The request was approved and saved to Firebase.', { type:'ok' });
+      } catch(_e){}
+      return result;
+    };
+    window.performApproveNew.__kpConfirmWrapped = true;
+    try { performApproveNew = window.performApproveNew; } catch(_e){}
+  }
+  if (typeof window.performApproveMerge === 'function' && !window.performApproveMerge.__kpConfirmWrapped) {
+    var prevApproveMerge = window.performApproveMerge;
+    window.performApproveMerge = async function(row, studentId, options){
+      options = options || {};
+      if (isPendingRegistration(row) && !options.skipConfirm && window.kpConfirmAsync) {
+        var ok = await window.kpConfirmAsync('Approve and merge registration request', row, 'Do you want to approve this request and merge it with the existing student profile?', { okText:'Approve and merge' });
+        if (!ok) return false;
+      }
+      var result = await prevApproveMerge.call(this, row, studentId);
+      try {
+        if (row && txt(row.status).toLowerCase().indexOf('approved') >= 0) window.kpMessage('Approve registration request', row, 'The request was approved and the student profile was updated on Firebase.', { type:'ok' });
+      } catch(_e){}
+      return result;
+    };
+    window.performApproveMerge.__kpConfirmWrapped = true;
+    try { performApproveMerge = window.performApproveMerge; } catch(_e){}
+  }
+
+  function parseYear(y){
+    y = txt(y).trim();
+    if (/^\d{4}$/.test(y)) return +y;
+    if (/^\d{3}$/.test(y) && y.charAt(0)==='2') return +(y.charAt(0)+'0'+y.slice(1));
+    if (/^\d{2}$/.test(y)) return +y < 50 ? 2000 + (+y) : 1900 + (+y);
+    return 0;
+  }
+  function validDate(y,m,d){
+    if (y < 2000 || y > 2035 || m < 1 || m > 12 || d < 1 || d > 31) return false;
+    var dt = new Date(y, m-1, d);
+    return dt.getFullYear()===y && dt.getMonth()===(m-1) && dt.getDate()===d;
+  }
+  function iso(y,m,d){ return String(y).padStart(4,'0')+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0'); }
+  window.kpSmartNormalizeDate = function(value){
+    var s = txt(value).trim();
+    if (!s) return { value:'', changed:false, ambiguous:false };
+    var m = s.match(/^Date\((\d{4}),(\d{1,2}),(\d{1,2})\)$/i);
+    if (m) { var yy=+m[1], mm=+m[2]+1, dd=+m[3]; return validDate(yy,mm,dd) ? {value:iso(yy,mm,dd), changed:iso(yy,mm,dd)!==s, ambiguous:false, reason:'google-date'} : {value:s, changed:false, ambiguous:true}; }
+    m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
+    if (m) { var y1=+m[1], mo1=+m[2], da1=+m[3]; return validDate(y1,mo1,da1) ? {value:iso(y1,mo1,da1), changed:iso(y1,mo1,da1)!==s, ambiguous:false, reason:'ymd'} : {value:s, changed:false, ambiguous:true}; }
+    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/);
+    if (m) {
+      var a=+m[1], b=+m[2], y=parseYear(m[3]);
+      if (!y) return {value:s, changed:false, ambiguous:true};
+      if (a > 12 && validDate(y,b,a)) return {value:iso(y,b,a), changed:iso(y,b,a)!==s, ambiguous:false, reason:'clear-dmy'};
+      if (b > 12 && validDate(y,a,b)) return {value:iso(y,a,b), changed:iso(y,a,b)!==s, ambiguous:false, reason:'clear-mdy'};
+      if (a > 12 || b > 12) return {value:s, changed:false, ambiguous:true};
+      return {value:s, changed:false, ambiguous:true, reason:'ambiguous-day-month'};
+    }
+    m = s.match(/(20\d{2})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if (m && validDate(+m[1],+m[2],+m[3])) return {value:iso(+m[1],+m[2],+m[3]), changed:iso(+m[1],+m[2],+m[3])!==s, ambiguous:false, reason:'embedded-ymd'};
+    return { value:s, changed:false, ambiguous:false };
+  };
+  try {
+    var oldNormalizeDate = window.normalizeDate;
+    window.normalizeDate = function(d){
+      var r = window.kpSmartNormalizeDate(d);
+      if (r && r.value && !r.ambiguous) return r.value;
+      return oldNormalizeDate ? oldNormalizeDate(d) : txt(d).slice(0,10);
+    };
+    normalizeDate = window.normalizeDate;
+  } catch(_e){}
+  async function persistFinancialDate(type, rec){
+    if (typeof saveRecordRemoteAware !== 'function') return false;
+    if (type === 'payments') return await saveRecordRemoteAware({type:'payments', activeArrayName:'payments', record:rec, keyField:'id', label:'payment date'});
+    return await saveRecordRemoteAware({type:'expenses', activeArrayName:'expenses', record:rec, keyField:'id', label:'expense date'});
+  }
+  window.kpNormalizeFinancialDates = async function(options){
+    options = options || {};
+    if (window.__kpNormalizingFinancialDates) return;
+    window.__kpNormalizingFinancialDates = true;
+    var changed=[], ambiguous=[];
+    try {
+      [['payments', window.payments || payments], ['expenses', window.expenses || expenses]].forEach(function(pair){
+        var type=pair[0], arr=Array.isArray(pair[1]) ? pair[1] : [];
+        arr.forEach(function(rec){
+          ['date','exp_date'].forEach(function(field){
+            if (!rec || !rec[field]) return;
+            var r = window.kpSmartNormalizeDate(rec[field]);
+            if (r.ambiguous) { ambiguous.push({type:type, id:rec.id, value:rec[field]}); return; }
+            if (r.changed) { rec[field+'Original'] = rec[field+'Original'] || rec[field]; rec[field]=r.value; rec.dateNormalizedAt=new Date().toISOString(); rec.dateNormalizeReason=r.reason || 'clear'; changed.push({type:type, rec:rec}); }
+          });
+        });
+      });
+      if (changed.length) {
+        try { if (typeof _safeSetSlim === 'function') { _safeSetSlim('kp_payments_data', payments); _safeSetSlim('kp_expenses_data', expenses); } else { localStorage.setItem('kp_payments_data', JSON.stringify(payments)); localStorage.setItem('kp_expenses_data', JSON.stringify(expenses)); } } catch(_e){}
+        if (options.persist !== false) {
+          for (var i=0;i<changed.length;i++) await persistFinancialDate(changed[i].type, changed[i].rec);
+        }
+        try { if (typeof renderPayments === 'function') renderPayments(); if (typeof renderExpenses === 'function') renderExpenses(); if (typeof renderDash === 'function') renderDash(); } catch(_e){}
+        if (!options.silent) window.kpMessage('Financial date cleanup', null, 'Cleaned ' + changed.length + ' clear payment/expense date(s). Left ' + ambiguous.length + ' unclear date(s) unchanged.', { type: ambiguous.length ? 'warn' : 'ok' });
+      }
+    } finally { window.__kpNormalizingFinancialDates = false; }
+  };
+
+  function htmlTableForStudentReport(){
+    var type = document.getElementById('stu-print-type') && document.getElementById('stu-print-type').value || 'list';
+    var filtered = typeof getStudentsFilteredForPrint === 'function' ? getStudentsFilteredForPrint() : (students || []);
+    var classesToPrint = typeof getPrintSelectedClasses === 'function' ? getPrintSelectedClasses(filtered) : [];
+    if (!classesToPrint.length) return '';
+    function rowCells(cells){ return '<tr>'+cells.map(function(c){ return '<td>'+esc(c)+'</td>'; }).join('')+'</tr>'; }
+    return classesToPrint.map(function(clsName){
+      var items = filtered.filter(function(s){ return s.cls === clsName; }).sort(function(a,b){ return txt(a.name).localeCompare(txt(b.name),'ar'); });
+      var headers;
+      if (type === 'attendance') headers = ['#','Student','English','Monday','Tuesday','Wednesday','Thursday'];
+      else if (type === 'meals') headers = ['#','Student','English','Monday meals','Monday changing','Tuesday meals','Tuesday changing','Wednesday meals','Wednesday changing','Thursday meals','Thursday changing'];
+      else headers = ['#','Student','English','Class','DOB','Nationality','Medical status'];
+      var body = items.map(function(st, i){
+        if (type === 'attendance') return [i+1, st.name || '', (typeof getStudentEnglishDisplayName==='function'?getStudentEnglishDisplayName(st):st.name_en) || '', '', '', '', ''];
+        if (type === 'meals') return [i+1, st.name || '', (typeof getStudentEnglishDisplayName==='function'?getStudentEnglishDisplayName(st):st.name_en) || '', '', '', '', '', '', '', '', ''];
+        return [i+1, st.name || '', (typeof getStudentEnglishDisplayName==='function'?getStudentEnglishDisplayName(st):st.name_en) || '', st.cls || '', st.dob || '', st.nat || '', (typeof getStudentHealthSummary==='function'?getStudentHealthSummary(st):(st.medicalStatus || ''))];
+      });
+      return '<h2>'+esc(clsName)+'</h2><table border="1"><thead>'+rowCells(headers).replace(/td/g,'th')+'</thead><tbody>'+body.map(rowCells).join('')+'</tbody></table>';
+    }).join('<br style="page-break-after:always">');
+  }
+  window.exportStudentsSelectedReport = function(format){
+    var html = htmlTableForStudentReport();
+    if (!html) return alert('No rows are available for export with the current filter.');
+    var full = '<html dir="rtl"><head><meta charset="UTF-8"><style>body{font-family:Tajawal,Arial,sans-serif}table{border-collapse:collapse;width:100%;margin-bottom:18px}th,td{border:1px solid #888;padding:6px;text-align:center}th{background:#eaf6ef}h2{color:#1e6b3f}</style></head><body>'+html+'</body></html>';
+    var ext = format === 'doc' ? 'doc' : 'xls';
+    var type = format === 'doc' ? 'application/msword;charset=utf-8' : 'application/vnd.ms-excel;charset=utf-8';
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob(['\ufeff', full], {type:type}));
+    a.download='students-list-'+new Date().toISOString().slice(0,10)+'.'+ext;
+    document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 300);
+  };
+
+  function expenseCategoryIndex(desc){
+    var s=txt(desc).toLowerCase();
+    if (/salary|salar|wage/.test(s)) return 0;
+    if (/dewa|electric|water|internet|wifi|du|etisalat/.test(s)) return 1;
+    if (/station|paper|book|print|ink|supply/.test(s)) return 2;
+    if (/maint|repair|fix|ac|a\/c/.test(s)) return 3;
+    if (/transport|bus|taxi|fuel|petrol|salik/.test(s)) return 4;
+    if (/activity|event|trip|party/.test(s)) return 5;
+    return -1;
+  }
+  window.kpSuggestExpenseCategory = function(){
+    var desc=document.getElementById('ne-desc'), cat=document.getElementById('ne-cat'); if(!desc||!cat) return;
+    if (cat.dataset.manual === '1' && cat.dataset.autoSuggested !== '1') return;
+    var idx=expenseCategoryIndex(desc.value);
+    if (idx >= 0 && cat.options[idx]) { cat.selectedIndex=idx; cat.dataset.autoSuggested='1'; }
+  };
+  function attachExpenseCategorySmartness(){
+    var desc=document.getElementById('ne-desc'), cat=document.getElementById('ne-cat'); if(!desc||!cat||desc.dataset.kpSmartCat) return;
+    desc.dataset.kpSmartCat='1'; desc.addEventListener('input', window.kpSuggestExpenseCategory);
+    cat.addEventListener('change', function(){ cat.dataset.manual='1'; cat.dataset.autoSuggested='0'; });
+    var oldOpenAddExp = window.openAddExp;
+    if (typeof oldOpenAddExp === 'function' && !oldOpenAddExp.__kpSmartCatWrapped) {
+      window.openAddExp = function(){ var r=oldOpenAddExp.apply(this, arguments); var c=document.getElementById('ne-cat'); if(c){ c.dataset.manual='0'; c.dataset.autoSuggested='0'; } return r; };
+      window.openAddExp.__kpSmartCatWrapped = true;
+      try { openAddExp = window.openAddExp; } catch(_e){}
+    }
+  }
+
+  function getRenewalEmailEnabled(){
+    try { var st = (typeof getEmailSettings === 'function') ? getEmailSettings() : JSON.parse(localStorage.getItem('kp_email_settings')||'{}'); return st.dailyRenewalEmailsEnabled === true || localStorage.getItem('kp_daily_renewal_email_enabled') === '1'; } catch(e){ return false; }
+  }
+  function updateRenewalEmailButton(){
+    var b=document.getElementById('renewal-email-toggle-btn'); if(!b) return;
+    b.textContent = getRenewalEmailEnabled() ? 'Disable daily renewal email' : 'Enable daily renewal email';
+  }
+  window.toggleDailyRenewalEmailNotifications = async function(){
+    var next=!getRenewalEmailEnabled();
+    var st={}; try { st = (typeof getEmailSettings === 'function') ? getEmailSettings() : JSON.parse(localStorage.getItem('kp_email_settings')||'{}'); } catch(_e){}
+    st.dailyRenewalEmailsEnabled = next;
+    localStorage.setItem('kp_email_settings', JSON.stringify(st));
+    localStorage.setItem('kp_daily_renewal_email_enabled', next ? '1' : '0');
+    var remote=false;
+    try { if (currentUser && currentUser.role === 'admin' && typeof saveEmailSettingsRemoteAware === 'function') remote = await saveEmailSettingsRemoteAware({from:st.from,msClientId:st.msClientId,msTenant:st.msTenant,model:st.model,dailyRenewalEmailsEnabled:next,updatedAt:new Date().toISOString()}); } catch(_e){}
+    updateRenewalEmailButton();
+    window.kpMessage('Daily renewal email', null, (next ? 'Daily renewal email notifications are enabled.' : 'Daily renewal email notifications are disabled.') + (remote ? ' Saved to Firebase.' : ' Saved on this device.'), { type: remote || !currentUser || currentUser.role !== 'admin' ? 'ok' : 'warn' });
+  };
+
+  function ensurePasswordModal(){
+    ensureToastStyle();
+    var ov=document.getElementById('kp-password-overlay'); if(ov) return ov;
+    ov=document.createElement('div'); ov.id='kp-password-overlay'; ov.className='kp-message-overlay';
+    ov.innerHTML='<div class="kp-message-box"><div class="kp-message-head"><div class="kp-message-icon">PW</div><div><div class="kp-message-title">Change password</div><div class="kp-message-sub">Available for every user inside the system</div></div></div><div class="kp-password-grid"><label>Current password</label><input id="kp-cp-old" type="password" autocomplete="current-password"><label>New password</label><input id="kp-cp-new" type="password" autocomplete="new-password"><label>Confirm new password</label><input id="kp-cp-confirm" type="password" autocomplete="new-password"></div><div class="kp-message-actions"><button class="kp-message-ok" type="button" id="kp-cp-save">Save</button><button class="kp-message-ok" type="button" id="kp-cp-cancel" style="background:#64748b">Cancel</button></div></div>';
+    document.body.appendChild(ov);
+    ov.querySelector('#kp-cp-save').onclick=saveCurrentUserPassword;
+    ov.querySelector('#kp-cp-cancel').onclick=function(){ if(ov.dataset.force==='1') return; ov.classList.remove('on'); };
+    return ov;
+  }
+  window.openChangePasswordModal = function(force){
+    var ov=ensurePasswordModal(); ov.dataset.force=force?'1':'0';
+    ['kp-cp-old','kp-cp-new','kp-cp-confirm'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+    ov.classList.add('on'); setTimeout(function(){ var el=document.getElementById('kp-cp-old'); if(el) el.focus(); },80);
+  };
+  async function saveCurrentUserPassword(){
+    if(!currentUser) return;
+    var oldP=document.getElementById('kp-cp-old').value, newP=document.getElementById('kp-cp-new').value, conf=document.getElementById('kp-cp-confirm').value;
+    var users=JSON.parse(localStorage.getItem('kp_users')||'[]'); var me=users.find(function(u){ return u.username===currentUser.username; });
+    if(!me || me.password !== oldP) return window.kpMessage('Change password', currentUser, 'Please check the password details.', {type:'err'});
+    if(!newP || newP.length < 4) return window.kpMessage('Change password', currentUser, 'Please check the password details.', {type:'warn'});
+    if(newP !== conf) return window.kpMessage('Change password', currentUser, 'Please check the password details.', {type:'warn'});
+    me.password=newP; me.mustChangePassword=false; me.forcePasswordChange=false; me.passwordChangedAt=new Date().toISOString();
+    currentUser.password=newP; currentUser.mustChangePassword=false; currentUser.forcePasswordChange=false; currentUser.passwordChangedAt=me.passwordChangedAt;
+    localStorage.setItem('kp_users', JSON.stringify(users)); sessionStorage.setItem('kp_session', JSON.stringify(currentUser));
+    var ok=false; try { if (typeof saveUsersToFirebase === 'function') ok=await saveUsersToFirebase(users); } catch(_e){}
+    var ov=document.getElementById('kp-password-overlay'); if(ov) ov.classList.remove('on');
+    window.kpMessage('Change password', currentUser, ok ? 'Password changed and saved to Firebase.' : 'Password changed locally, but could not be saved to Firebase right now.', { type: ok ? 'ok' : 'warn' });
+  }
+  window.changePassword = function(){ window.openChangePasswordModal(false); };
+  try { changePassword = window.changePassword; } catch(_e){}
+  function ensureUserPasswordButton(){
+    if(!currentUser) return;
+    var ub=document.getElementById('user-badge'); if(!ub || document.getElementById('btn-change-password-user')) return;
+    var b=document.createElement('button'); b.id='btn-change-password-user'; b.className='btn btn-out btn-sm kp-user-password-btn'; b.type='button'; b.textContent='Password'; b.onclick=function(){ window.openChangePasswordModal(false); };
+    ub.insertAdjacentElement('afterend', b);
+  }
+
+  var oldApplyLogin = window.applyLogin;
+  if (typeof oldApplyLogin === 'function' && !oldApplyLogin.__kpUxWrapped) {
+    window.applyLogin = function(){
+      var r=oldApplyLogin.apply(this, arguments);
+      setTimeout(function(){ ensureUserPasswordButton(); attachExpenseCategorySmartness(); updateRenewalEmailButton(); if(currentUser && (currentUser.mustChangePassword || currentUser.forcePasswordChange)) window.openChangePasswordModal(true); }, 250);
+      setTimeout(function(){ if (typeof window.kpNormalizeFinancialDates === 'function') window.kpNormalizeFinancialDates({silent:true, persist:true}); }, 2500);
+      return r;
+    };
+    window.applyLogin.__kpUxWrapped = true;
+    try { applyLogin = window.applyLogin; } catch(_e){}
+  }
+  var oldRenderEmailCenter = window.renderEmailCenter;
+  if (typeof oldRenderEmailCenter === 'function' && !oldRenderEmailCenter.__kpRenewalButtonWrapped) {
+    window.renderEmailCenter = function(){ var r=oldRenderEmailCenter.apply(this, arguments); setTimeout(updateRenewalEmailButton,50); return r; };
+    window.renderEmailCenter.__kpRenewalButtonWrapped = true;
+    try { renderEmailCenter = window.renderEmailCenter; } catch(_e){}
+  }
+  var oldLoadFromFirebase = window.loadFromFirebase;
+  if (typeof oldLoadFromFirebase === 'function' && !oldLoadFromFirebase.__kpDatesWrapped) {
+    window.loadFromFirebase = async function(){ var r=await oldLoadFromFirebase.apply(this, arguments); setTimeout(function(){ window.kpNormalizeFinancialDates({silent:true, persist:true}); }, 600); return r; };
+    window.loadFromFirebase.__kpDatesWrapped = true;
+    try { loadFromFirebase = window.loadFromFirebase; } catch(_e){}
+  }
+  document.addEventListener('DOMContentLoaded', function(){ ensureToastStyle(); attachExpenseCategorySmartness(); updateRenewalEmailButton(); });
+  setTimeout(function(){ ensureToastStyle(); attachExpenseCategorySmartness(); updateRenewalEmailButton(); if(currentUser) ensureUserPasswordButton(); }, 800);
+})();
+</script>
+
+
+<script>
+/* KP FINANCE DATE REVIEW TABLE SCROLL PRINT DATES 2026-05-03 */
+(function(){
+  if (window.__kpFinanceDateReviewScrollPrintDates20260503) return;
+  window.__kpFinanceDateReviewScrollPrintDates20260503 = true;
+  function txt(v){ return String(v == null ? '' : v); }
+  function esc(v){ return txt(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function norm(v){ return txt(v).trim(); }
+  function ensureStyle(){
+    if (document.getElementById('kp-finance-date-review-style')) return;
+    var st=document.createElement('style'); st.id='kp-finance-date-review-style';
+    st.textContent = '.kp-date-review-overlay{position:fixed;inset:0;background:rgba(15,35,25,.42);z-index:999998;display:none;align-items:center;justify-content:center;padding:18px}.kp-date-review-overlay.on{display:flex}.kp-date-review-modal{width:min(980px,96vw);max-height:88vh;background:#fff;border-radius:16px;box-shadow:0 24px 70px rgba(15,23,42,.24);border:1px solid #dceee2;display:flex;flex-direction:column;overflow:hidden;direction:rtl;font-family:Tajawal,Arial,sans-serif}.kp-date-review-head{padding:16px 18px;background:linear-gradient(135deg,#f0faf3,#fff);border-bottom:1px solid #e6f2ea}.kp-date-review-title{font-size:18px;font-weight:900;color:#1e6b3f}.kp-date-review-sub{font-size:12px;color:#64748b;margin-top:4px}.kp-date-review-body{overflow:auto;padding:12px 16px}.kp-date-review-table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}.kp-date-review-table th,.kp-date-review-table td{border-bottom:1px solid #e5e7eb;padding:9px 8px;text-align:right;vertical-align:middle}.kp-date-review-table th{position:sticky;top:0;background:#f8fbf9;color:#1e6b3f;font-weight:900}.kp-date-review-table input{padding:8px;border:1.5px solid #d9e5dc;border-radius:9px;font-family:inherit}.kp-date-review-actions{padding:12px 16px;display:flex;gap:8px;justify-content:flex-start;border-top:1px solid #e6f2ea;flex-wrap:wrap}.kp-date-review-note{background:#fff9df;border:1px solid #ffe49b;color:#7a5600;border-radius:10px;padding:9px 11px;margin-bottom:10px;font-size:12px;line-height:1.55}.kp-table-pan-hint{position:absolute;inset-inline-end:10px;top:8px;background:rgba(30,107,63,.9);color:#fff;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:900;pointer-events:none;opacity:0;transform:translateY(-4px);transition:.18s}.tw.kp-wide-table{position:relative;cursor:grab;scrollbar-gutter:stable both-edges}.tw.kp-wide-table:active{cursor:grabbing}.tw.kp-wide-table:hover .kp-table-pan-hint,.tw.kp-wide-table.kp-scroll-nudge .kp-table-pan-hint{opacity:1;transform:translateY(0)}.kp-table-xbar{height:8px!important;margin:0!important;background:transparent!important;opacity:.35;transition:opacity .18s}.kp-table-xbar:hover{opacity:1}.kp-table-xbar::-webkit-scrollbar{height:8px!important}.tw::-webkit-scrollbar{height:8px!important;width:8px!important}.tw{scrollbar-width:thin!important}@media(max-width:760px){.kp-table-xbar{display:none!important}.tw.kp-wide-table{max-height:none!important;overflow:auto!important;touch-action:pan-x pan-y}.kp-table-pan-hint{display:block;top:6px;font-size:10px}.kp-date-review-modal{max-height:92vh;width:98vw;border-radius:14px}.kp-date-review-body{padding:10px}.kp-date-review-table{font-size:12px;min-width:700px}.kp-date-review-actions .btn{width:auto!important}}';
+    document.head.appendChild(st);
+  }
+  function parseAmbiguousFinanceDates(){
+    var rows=[];
+    [['payments', (typeof payments!=='undefined'?payments:[])], ['expenses', (typeof expenses!=='undefined'?expenses:[])]].forEach(function(pair){
+      var type=pair[0], arr=Array.isArray(pair[1])?pair[1]:[];
+      arr.forEach(function(rec){
+        ['date','exp_date'].forEach(function(field){
+          if(!rec || !rec[field]) return;
+          var info = window.kpSmartNormalizeDate ? window.kpSmartNormalizeDate(rec[field]) : {ambiguous:false};
+          if(info && info.ambiguous){ rows.push({type:type, field:field, id:rec.id, record:rec, value:rec[field]}); }
+        });
+      });
+    });
+    return rows;
+  }
+  function ensureReviewModal(){
+    ensureStyle();
+    var ov=document.getElementById('kp-date-review-overlay'); if(ov) return ov;
+    ov=document.createElement('div'); ov.id='kp-date-review-overlay'; ov.className='kp-date-review-overlay';
+    ov.innerHTML='<div class="kp-date-review-modal"><div class="kp-date-review-head"><div class="kp-date-review-title">?????? ???????? ??? ???????</div><div class="kp-date-review-sub">??? ??????? ???? ??? ???????? ???? ?? ???? ?????? ??????? ???? ???????.</div></div><div class="kp-date-review-body" id="kp-date-review-body"></div><div class="kp-date-review-actions"><button class="btn btn-g" type="button" id="kp-date-review-save">??? ???????? ????????</button><button class="btn btn-out" type="button" id="kp-date-review-refresh">????? ???????</button><button class="btn btn-r" type="button" id="kp-date-review-close">?????</button></div></div>';
+    document.body.appendChild(ov);
+    ov.querySelector('#kp-date-review-close').onclick=function(){ ov.classList.remove('on'); };
+    ov.querySelector('#kp-date-review-refresh').onclick=renderDateReviewRows;
+    ov.querySelector('#kp-date-review-save').onclick=saveDateReviewRows;
+    return ov;
+  }
+  function rowLabel(item){
+    var r=item.record || {};
+    return item.type==='payments' ? (r.who || r.desc || ('#'+r.id)) : (r.desc || r.cat || ('#'+r.id));
+  }
+  function renderDateReviewRows(){
+    var body=document.getElementById('kp-date-review-body'); if(!body) return;
+    var rows=parseAmbiguousFinanceDates();
+    window.__kpDateReviewRows = rows;
+    if(!rows.length){ body.innerHTML='<div class="kp-date-review-note">?? ???? ?????? ??? ????? ?????. ?? ???????? ??????? ?? ???????? ???? ??? ?? ????? ??????.</div>'; return; }
+    body.innerHTML='<div class="kp-date-review-note">?????? ??????? ?????? ??? ??????? ???? ?????? ??????? ????. ??????? ??????? ????? ??? ?? ???? ?? ?????.</div><div style="overflow:auto"><table class="kp-date-review-table"><thead><tr><th>?????</th><th>?????</th><th>??????</th><th>??????? ??????</th><th>??????? ??????</th></tr></thead><tbody>'+rows.map(function(item,idx){
+      var r=item.record || {};
+      return '<tr><td>'+(item.type==='payments'?'???????':'??????')+'</td><td>'+esc(rowLabel(item))+'<div style="font-size:11px;color:#64748b">#'+esc(item.id)+'</div></td><td>'+esc(r.amt || r.amount || '')+'</td><td dir="ltr">'+esc(item.value)+'</td><td><input type="date" data-date-review-index="'+idx+'"></td></tr>';
+    }).join('')+'</tbody></table></div>';
+  }
+  async function saveDateReviewRows(){
+    var rows=window.__kpDateReviewRows || [];
+    var inputs=Array.prototype.slice.call(document.querySelectorAll('[data-date-review-index]'));
+    var changed=[];
+    inputs.forEach(function(input){
+      var val=input.value; if(!val) return;
+      var item=rows[+input.getAttribute('data-date-review-index')]; if(!item || !item.record) return;
+      item.record[item.field + 'Original'] = item.record[item.field + 'Original'] || item.record[item.field];
+      item.record[item.field] = val;
+      item.record.dateReviewedAt = new Date().toISOString();
+      item.record.dateReviewedBy = (typeof currentUser!=='undefined' && currentUser && (currentUser.username || currentUser.name)) || 'system';
+      changed.push(item);
+    });
+    if(!changed.length){ if(window.kpMessage) window.kpMessage('?????? ????????', null, '?? ??? ?????? ?? ????? ?????.', {type:'warn'}); else alert('No date selected.'); return; }
+    try {
+      if (typeof _safeSetSlim === 'function') { _safeSetSlim('kp_payments_data', payments); _safeSetSlim('kp_expenses_data', expenses); }
+      else { localStorage.setItem('kp_payments_data', JSON.stringify(payments)); localStorage.setItem('kp_expenses_data', JSON.stringify(expenses)); }
+    } catch(_e){}
+    var failed=[];
+    for(var i=0;i<changed.length;i++){
+      var item=changed[i], ok=true;
+      try {
+        if (typeof saveRecordRemoteAware === 'function') {
+          ok = await saveRecordRemoteAware({type:item.type, activeArrayName:item.type, record:item.record, keyField:'id', label:item.type==='payments'?'payment date':'expense date'});
+        }
+      } catch(e){ ok=false; }
+      if(!ok) failed.push(item);
+    }
+    try { if(typeof renderPayments==='function') renderPayments(); if(typeof renderExpenses==='function') renderExpenses(); if(typeof renderDash==='function') renderDash(); } catch(_e){}
+    renderDateReviewRows();
+    if(window.kpMessage) window.kpMessage('?????? ????????', null, failed.length ? ('?? ??? ' + (changed.length-failed.length) + ' ?????? ????? ??? ' + failed.length + ' ??? Firebase.') : ('?? ??? ' + changed.length + ' ????? ???????? ??? Firebase.'), {type:failed.length?'warn':'ok'});
+  }
+  window.openFinanceDateReview = function(){
+    var ov=ensureReviewModal(); ov.classList.add('on'); renderDateReviewRows();
+  };
+
+  function selectedPrintDate(){
+    var el=document.getElementById('stu-print-date');
+    if(!el || !el.value) return null;
+    var parts=el.value.split('-').map(Number); if(parts.length!==3) return null;
+    var d=new Date(parts[0], parts[1]-1, parts[2]);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  function addDays(d,n){ var x=new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate()+n); return x; }
+  function weekMonday(d){ var x=new Date(d.getFullYear(), d.getMonth(), d.getDate()); var day=x.getDay(); var diff=(day===0?-6:1-day); x.setDate(x.getDate()+diff); return x; }
+  function fmtDayDate(d){
+    var days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    return days[d.getDay()] + '<br><span style="font-size:10px;font-weight:700;color:#355">' + String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear() + '</span>';
+  }
+  window.kpPrintWeekHeaders = function(){
+    var base=selectedPrintDate();
+    if(!base) return null;
+    var mon=weekMonday(base);
+    return [0,1,2,3].map(function(n){ return fmtDayDate(addDays(mon,n)); });
+  };
+  window.kpSelectedPrintDateWithDay = function(){
+    var base=selectedPrintDate();
+    return base ? fmtDayDate(base).replace('<br>',' - ').replace(/<[^>]*>/g,'') : '';
+  };
+  var oldBuildAttendance = window.buildAttendanceWeeklyTable;
+  if(typeof oldBuildAttendance === 'function' && !oldBuildAttendance.__kpDateHeaders){
+    window.buildAttendanceWeeklyTable = function(className, items){
+      var html=oldBuildAttendance.apply(this, arguments);
+      var h=window.kpPrintWeekHeaders && window.kpPrintWeekHeaders();
+      if(h){
+        ['Monday','Tuesday','Wednesday','Thursday'].forEach(function(day,i){
+          html=html.replace(new RegExp('<th>'+day+'</th>','i'), '<th>'+h[i]+'</th>');
+        });
+        var ai=0; html=html.replace(/<th>([^<]*)<\/th>/g, function(m){ if(ai<2){ ai++; return m; } var out = ai < 6 ? '<th>'+h[ai-2]+'</th>' : m; ai++; return out; });
+      }
+      return html;
+    };
+    window.buildAttendanceWeeklyTable.__kpDateHeaders = true;
+    try { buildAttendanceWeeklyTable = window.buildAttendanceWeeklyTable; } catch(_e){}
+  }
+  var oldBuildMeals = window.buildMealsWeeklyTable;
+  if(typeof oldBuildMeals === 'function' && !oldBuildMeals.__kpDateHeaders){
+    window.buildMealsWeeklyTable = function(className, items){
+      var html=oldBuildMeals.apply(this, arguments);
+      var h=window.kpPrintWeekHeaders && window.kpPrintWeekHeaders();
+      if(h){
+        var mi=0; html=html.replace(/<th colspan="2">([^<]*)<\/th>/g, function(m){ var out = mi < 4 ? '<th colspan="2">'+h[mi]+'</th>' : m; mi++; return out; });
+      }
+      return html;
+    };
+    window.buildMealsWeeklyTable.__kpDateHeaders = true;
+    try { buildMealsWeeklyTable = window.buildMealsWeeklyTable; } catch(_e){}
+  }
+
+  function enhanceTablePane(pane){
+    if(!pane || pane.__kpPanEnhanced) return;
+    pane.__kpPanEnhanced=true;
+    pane.classList.add('kp-wide-table');
+    if(!pane.querySelector('.kp-table-pan-hint')){
+      var hint=document.createElement('div'); hint.className='kp-table-pan-hint'; hint.textContent='Drag table left/right'; pane.appendChild(hint);
+      setTimeout(function(){ pane.classList.add('kp-scroll-nudge'); setTimeout(function(){ pane.classList.remove('kp-scroll-nudge'); }, 1800); }, 400);
+    }
+    var down=false,startX=0,startLeft=0,moved=false;
+    pane.addEventListener('pointerdown', function(e){ if(e.pointerType==='mouse' && e.button!==0) return; if(e.target && /input|select|textarea|button|a/i.test(e.target.tagName||'')) return; down=true; moved=false; startX=e.clientX; startLeft=pane.scrollLeft; try{ pane.setPointerCapture(e.pointerId); }catch(_e){} });
+    pane.addEventListener('pointermove', function(e){ if(!down) return; var dx=e.clientX-startX; if(Math.abs(dx)>4) moved=true; pane.scrollLeft=startLeft-dx; });
+    pane.addEventListener('pointerup', function(){ down=false; });
+    pane.addEventListener('click', function(e){ if(moved){ e.preventDefault(); e.stopPropagation(); moved=false; } }, true);
+    pane.addEventListener('wheel', function(e){ if(Math.abs(e.deltaY)>Math.abs(e.deltaX) && pane.scrollWidth>pane.clientWidth && (e.shiftKey || Math.abs(e.deltaY)<80)){ pane.scrollLeft += e.deltaY; e.preventDefault(); } }, {passive:false});
+  }
+  function refreshTableUx(){
+    ensureStyle();
+    Array.prototype.slice.call(document.querySelectorAll('.tw')).forEach(enhanceTablePane);
+    if(typeof window.kpRefreshTableScrollbars==='function') setTimeout(window.kpRefreshTableScrollbars, 60);
+  }
+  window.kpRefreshBetterTableUx = refreshTableUx;
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', refreshTableUx); else refreshTableUx();
+  window.addEventListener('resize', refreshTableUx);
+  try { new MutationObserver(function(){ clearTimeout(window.__kpBetterTableTimer); window.__kpBetterTableTimer=setTimeout(refreshTableUx, 160); }).observe(document.body,{childList:true,subtree:true}); } catch(_e){}
+})();
+</script>
+
+
+<script>
+/* KP STUDENT PRINT NURSERY LETTERHEAD 2026-05-03 */
+(function(){
+  if (window.__kpStudentPrintLetterhead20260503) return;
+  window.__kpStudentPrintLetterhead20260503 = true;
+  function safe(v){ return String(v == null ? '' : v); }
+  function esc(v){ return safe(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function setting(name, fallback){
+    try { return (window.nurserySettings && nurserySettings[name]) || fallback || ''; } catch(_e){ return fallback || ''; }
+  }
+  function nurseryName(){ return setting('name', 'Kids Park Nursery'); }
+  function nurseryAddress(){ return setting('addr_en', '') || setting('addr_ar', ''); }
+  function nurseryContact(){
+    var parts=[];
+    var phone=setting('phone','');
+    var email=setting('email','');
+    if(phone) parts.push('Tel: ' + phone);
+    if(email) parts.push('Email: ' + email);
+    return parts.join(' | ');
+  }
+  function titleForType(type){
+    if (type === 'attendance') return 'Attendance List';
+    if (type === 'meals') return 'Meals and Changing List';
+    return 'Students List';
+  }
+  function compactLetterhead(logoSrc, reportTitle){
+    return '<div class="kp-print-letterhead" style="display:grid;grid-template-columns:88px 1fr 88px;align-items:center;gap:10px;border:1.5px solid #1e6b3f;border-radius:10px;padding:6px 10px;margin:0 0 5px;background:#fbfffc;direction:ltr">' +
+      '<div style="height:48px;display:flex;align-items:center;justify-content:flex-start">' + (logoSrc ? '<img src="'+esc(logoSrc)+'" style="max-height:46px;max-width:82px;object-fit:contain">' : '') + '</div>' +
+      '<div style="text-align:center;line-height:1.22;min-width:0">' +
+        '<div style="font-size:17px;font-weight:900;color:#1e6b3f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(nurseryName()) + '</div>' +
+        '<div style="font-size:10.5px;font-weight:700;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(nurseryAddress()) + '</div>' +
+        '<div style="font-size:10px;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(nurseryContact()) + '</div>' +
+        '<div style="font-size:13px;font-weight:900;color:#111;margin-top:2px">' + esc(reportTitle) + '</div>' +
+      '</div>' +
+      '<div style="height:48px;display:flex;align-items:center;justify-content:flex-end">' + (logoSrc ? '<img src="'+esc(logoSrc)+'" style="max-height:46px;max-width:82px;object-fit:contain">' : '') + '</div>' +
+    '</div>';
+  }
+  var previousBuildStudentsPrintSection = window.buildStudentsPrintSection;
+  if (typeof previousBuildStudentsPrintSection === 'function') {
+    window.buildStudentsPrintSection = function(className, items, type, dateText, logoSrc){
+      var body = '';
+      if(type === 'attendance') body = buildAttendanceWeeklyTable(className, items);
+      else if(type === 'meals') body = buildMealsWeeklyTable(className, items);
+      else body = buildClassNameListTable(className, items);
+      var classLabel = '';
+      try { classLabel = ((CLASSES[className] && CLASSES[className].emoji) || '') + ' ' + className; } catch(_e){ classLabel = className; }
+      return '<section class="print-page">' +
+        '<div class="print-head" style="text-align:center;margin-bottom:4px">' +
+          compactLetterhead(logoSrc, titleForType(type)) +
+          '<div class="print-meta">' +
+            '<div><b>Class:</b> ' + esc(classLabel) + '</div>' +
+            '<div><b>Date:</b> ' + esc(dateText) + '</div>' +
+            '<div><b>Students:</b> ' + (items ? items.length : 0) + '</div>' +
+          '</div>' +
+        '</div>' + body + '</section>';
+    };
+    try { buildStudentsPrintSection = window.buildStudentsPrintSection; } catch(_e){}
+  }
+})();
+</script>
+
+
+<script>
+/* KP STUDENT EXPORT NURSERY LETTERHEAD 2026-05-03 */
+(function(){
+  if (window.__kpStudentExportLetterhead20260503) return;
+  window.__kpStudentExportLetterhead20260503 = true;
+  function safe(v){ return String(v == null ? '' : v); }
+  function esc(v){ return safe(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function setting(name, fallback){ try { return (window.nurserySettings && nurserySettings[name]) || fallback || ''; } catch(_e){ return fallback || ''; } }
+  function logo(){ try { return (typeof getNurseryLogoForPrint === 'function' && getNurseryLogoForPrint()) || (window.logoDataUrl || '') || setting('logoDataUrl',''); } catch(_e){ return ''; } }
+  function nurseryName(){ return setting('name', 'Kids Park Nursery'); }
+  function nurseryAddress(){ return setting('addr_en', '') || setting('addr_ar', ''); }
+  function nurseryContact(){ var p=setting('phone',''), e=setting('email',''), a=[]; if(p)a.push('Tel: '+p); if(e)a.push('Email: '+e); return a.join(' | '); }
+  function reportTitle(type){ if(type==='attendance') return 'Attendance List'; if(type==='meals') return 'Meals and Changing List'; return 'Students List'; }
+  function dateText(){ try { return (typeof getPrintDateText === 'function') ? getPrintDateText() : ''; } catch(_e){ return ''; } }
+  function classLabel(cls){ try { return ((CLASSES[cls] && CLASSES[cls].emoji) || '') + ' ' + cls; } catch(_e){ return cls || ''; } }
+  function weekLabels(){
+    try {
+      if (typeof kpPrintWeekHeaders === 'function') {
+        var h = kpPrintWeekHeaders();
+        if (h && h.length) return h.map(function(x){ return safe(x).replace(/<br\s*\/?\s*>/gi,' - ').replace(/<[^>]+>/g,''); });
+      }
+    } catch(_e){}
+    return ['Monday','Tuesday','Wednesday','Thursday'];
+  }
+  function row(cells, tag){ tag=tag||'td'; return '<tr>'+cells.map(function(c){ return '<'+tag+'>'+esc(c)+'</'+tag+'>'; }).join('')+'</tr>'; }
+  function letterhead(title){
+    var l=logo();
+    return '<table class="export-head"><tr>'+
+      '<td class="export-logo">'+(l?'<img src="'+esc(l)+'">':'')+'</td>'+
+      '<td class="export-title"><div class="nursery-name">'+esc(nurseryName())+'</div><div class="nursery-line">'+esc(nurseryAddress())+'</div><div class="nursery-line">'+esc(nurseryContact())+'</div><div class="report-title">'+esc(title)+'</div></td>'+
+      '<td class="export-logo">'+(l?'<img src="'+esc(l)+'">':'')+'</td>'+
+    '</tr></table>';
+  }
+  function buildSections(){
+    var type = document.getElementById('stu-print-type') && document.getElementById('stu-print-type').value || 'list';
+    var filtered = typeof getStudentsFilteredForPrint === 'function' ? getStudentsFilteredForPrint() : (students || []);
+    var classesToPrint = typeof getPrintSelectedClasses === 'function' ? getPrintSelectedClasses(filtered) : [];
+    if (!classesToPrint.length) return '';
+    var days = weekLabels();
+    return classesToPrint.map(function(cls){
+      var items = filtered.filter(function(s){ return s.cls === cls; }).sort(function(a,b){ return safe(a.name).localeCompare(safe(b.name),'ar'); });
+      var headers;
+      if (type === 'attendance') headers = ['#','Student','English'].concat(days);
+      else if (type === 'meals') headers = ['#','Student','English',days[0]+' meals',days[0]+' changing',days[1]+' meals',days[1]+' changing',days[2]+' meals',days[2]+' changing',days[3]+' meals',days[3]+' changing'];
+      else headers = ['#','Student','English','Class','DOB','Nationality','Medical status'];
+      var body = items.map(function(st,i){
+        if (type === 'attendance') return [i+1, st.name||'', (typeof getStudentEnglishDisplayName==='function'?getStudentEnglishDisplayName(st):st.name_en)||'', '', '', '', ''];
+        if (type === 'meals') return [i+1, st.name||'', (typeof getStudentEnglishDisplayName==='function'?getStudentEnglishDisplayName(st):st.name_en)||'', '', '', '', '', '', '', '', ''];
+        return [i+1, st.name||'', (typeof getStudentEnglishDisplayName==='function'?getStudentEnglishDisplayName(st):st.name_en)||'', st.cls||'', st.dob||'', st.nat||'', (typeof getStudentHealthSummary==='function'?getStudentHealthSummary(st):(st.medicalStatus||''))];
+      });
+      return '<section class="export-section">'+letterhead(reportTitle(type))+'<table class="meta"><tr><td><b>Class:</b> '+esc(classLabel(cls))+'</td><td><b>Date:</b> '+esc(dateText())+'</td><td><b>Students:</b> '+items.length+'</td></tr></table><table class="export-grid"><thead>'+row(headers,'th')+'</thead><tbody>'+body.map(function(r){ return row(r,'td'); }).join('')+'</tbody></table></section>';
+    }).join('<br style="page-break-after:always">');
+  }
+  window.exportStudentsSelectedReport = function(format){
+    var sections = buildSections();
+    if (!sections) return alert('No rows are available for export with the current filter.');
+    var css = '@page{size:A4 landscape;margin:7mm} body{font-family:Tajawal,Arial,sans-serif;direction:rtl;color:#111;mso-page-orientation:landscape}.export-section{margin-bottom:22px;page-break-after:always}.export-section:last-child{page-break-after:auto}.export-head{width:100%;border-collapse:collapse;border:2px solid #1e6b3f;margin-bottom:6px;background:#fbfffc}.export-head td{border:0;padding:7px 10px}.export-logo{width:95px;text-align:center}.export-logo img{max-height:58px;max-width:88px;object-fit:contain}.export-title{text-align:center;line-height:1.25}.nursery-name{font-size:20px;font-weight:900;color:#1e6b3f}.nursery-line{font-size:12px;color:#475569;font-weight:700}.report-title{font-size:15px;font-weight:900;margin-top:3px}.meta{width:100%;border-collapse:collapse;margin-bottom:7px}.meta td{border:1px solid #b9d7c4;padding:6px;background:#f7fbf9;text-align:center}.export-grid{border-collapse:collapse;width:100%;font-size:12px}.export-grid th,.export-grid td{border:1px solid #888;padding:6px;text-align:center;vertical-align:middle}.export-grid th{background:#eaf6ef;color:#1e6b3f;font-weight:900}';
+    var full = '<html dir="rtl"><head><meta charset="UTF-8"><style>'+css+'</style></head><body>'+sections+'</body></html>';
+    var ext = format === 'doc' ? 'doc' : 'xls';
+    var mime = format === 'doc' ? 'application/msword;charset=utf-8' : 'application/vnd.ms-excel;charset=utf-8';
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob(['\ufeff', full], {type:mime}));
+    a.download='students-list-'+new Date().toISOString().slice(0,10)+'.'+ext;
+    document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 300);
+  };
+})();
+</script>
+
+
+<script>
+/* KP PRINT WITHOUT EXTRA TAB + RENEWAL ATTACHMENT PRINT 2026-05-03 */
+(function(){
+  if (window.__kpPrintFrameRenewalAttachment20260503) return;
+  window.__kpPrintFrameRenewalAttachment20260503 = true;
+  function safe(v){ return String(v == null ? '' : v); }
+  function esc(v){ return safe(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function makePrintFrame(){
+    var iframe=document.createElement('iframe');
+    iframe.className='kp-hidden-print-frame';
+    iframe.setAttribute('aria-hidden','true');
+    iframe.style.position='fixed';
+    iframe.style.right='-120vw';
+    iframe.style.bottom='0';
+    iframe.style.width='1px';
+    iframe.style.height='1px';
+    iframe.style.border='0';
+    iframe.style.opacity='0';
+    document.body.appendChild(iframe);
+    var cleanup=function(){ setTimeout(function(){ try{ iframe.remove(); }catch(_e){} }, 1200); };
+    try { iframe.contentWindow.addEventListener('afterprint', cleanup); } catch(_e){}
+    setTimeout(cleanup, 45000);
+    return iframe;
+  }
+  function printHtmlWithoutTab(html){
+    var iframe=makePrintFrame();
+    var w=iframe.contentWindow;
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){ alert('Unable to open print dialog. Please try again.'); } }, 350);
+  }
+  window.kpPrintHtmlWithoutTab = printHtmlWithoutTab;
+
+  var originalPrintStudentsSelectedReport = window.printStudentsSelectedReport;
+  if (typeof originalPrintStudentsSelectedReport === 'function' && !originalPrintStudentsSelectedReport.__kpNoTabWrapped) {
+    window.printStudentsSelectedReport = function(){
+      var realOpen = window.open;
+      var frame = makePrintFrame();
+      var fakeWindow = frame.contentWindow;
+      var restored = false;
+      function restore(){ if(!restored){ restored=true; window.open = realOpen; } }
+      try {
+        window.open = function(url, target, features){
+          if (url === '' && target === '_blank') return fakeWindow;
+          return realOpen.apply(window, arguments);
+        };
+        var result = originalPrintStudentsSelectedReport.apply(this, arguments);
+        setTimeout(function(){
+          restore();
+          try { fakeWindow.addEventListener('afterprint', function(){ setTimeout(function(){ try{ frame.remove(); }catch(_e){} }, 1000); }); } catch(_e){}
+        }, 0);
+        return result;
+      } catch(e) {
+        restore();
+        try{ frame.remove(); }catch(_e){}
+        throw e;
+      } finally {
+        setTimeout(restore, 0);
+      }
+    };
+    window.printStudentsSelectedReport.__kpNoTabWrapped = true;
+    try { printStudentsSelectedReport = window.printStudentsSelectedReport; } catch(_e){}
+  }
+
+  function getRenewalById(id){
+    try { return (renewals || []).find(function(x){ return String(x && x.id) === String(id) || (typeof normKey==='function' && normKey(x && x.id) === normKey(id)); }); }
+    catch(_e){ return null; }
+  }
+  function getAttachmentForRenewal(r){
+    try { return typeof getRenAttachment === 'function' ? getRenAttachment(r) : (r && r.attachment); }
+    catch(_e){ return r && r.attachment; }
+  }
+  function renewalPrintHeader(r, att){
+    var logo=''; try { logo = (typeof getNurseryLogoForPrint === 'function' && getNurseryLogoForPrint()) || window.logoDataUrl || ''; } catch(_e){}
+    var name='Kids Park Nursery'; try { name = (nurserySettings && nurserySettings.name) || name; } catch(_e){}
+    return '<div style="display:flex;align-items:center;justify-content:space-between;border:2px solid #1e6b3f;border-radius:10px;padding:8px 12px;margin-bottom:12px;font-family:Tajawal,Arial,sans-serif;direction:rtl">' +
+      '<div style="width:90px;text-align:center">' + (logo ? '<img src="'+esc(logo)+'" style="max-height:58px;max-width:86px;object-fit:contain">' : '') + '</div>' +
+      '<div style="text-align:center;flex:1"><div style="font-size:20px;font-weight:900;color:#1e6b3f">'+esc(name)+'</div><div style="font-size:15px;font-weight:900;margin-top:3px">Renewal Attachment</div><div style="font-size:12px;color:#475569;margin-top:3px">'+esc((r && r.name) || '')+' - '+esc((att && att.name) || '')+'</div></div>' +
+      '<div style="width:90px"></div>' +
+    '</div>';
+  }
+  window.printRenAttachmentById = function(id){
+    var r=getRenewalById(id);
+    var att=getAttachmentForRenewal(r);
+    if(!att || !att.data){ alert('No attachment found for this renewal.'); return; }
+    var type=safe(att.type).toLowerCase();
+    var isPdf=type.indexOf('pdf')!==-1 || safe(att.data).indexOf('application/pdf')===5;
+    var title=esc(att.name || 'renewal attachment');
+    var header=renewalPrintHeader(r, att);
+    var body;
+    if(isPdf){
+      body='<div style="height:calc(100vh - 110px)"><embed src="'+esc(att.data)+'" type="application/pdf" style="width:100%;height:100%;border:0"></div>';
+    } else {
+      body='<div style="text-align:center"><img src="'+esc(att.data)+'" style="max-width:100%;max-height:calc(100vh - 130px);object-fit:contain"></div>';
+    }
+    printHtmlWithoutTab('<!doctype html><html><head><meta charset="UTF-8"><title>'+title+'</title><style>@page{size:A4 portrait;margin:8mm}body{margin:0;background:#fff;color:#111;font-family:Tajawal,Arial,sans-serif}</style></head><body>'+header+body+'<script>window.onload=function(){setTimeout(function(){window.focus();window.print();},450)};window.onafterprint=function(){setTimeout(function(){try{window.frameElement&&window.frameElement.remove()}catch(e){}},500)};<\/script></body></html>');
+  };
+  window.printRenAttachmentFromModal = function(){ if (typeof editingRenId === 'undefined' || !editingRenId) return; window.printRenAttachmentById(editingRenId); };
+
+  var oldResetRenewalFileUI = window.resetRenewalFileUI;
+  if (typeof oldResetRenewalFileUI === 'function' && !oldResetRenewalFileUI.__kpPrintWrapped) {
+    window.resetRenewalFileUI = function(existingAttachment){
+      var result = oldResetRenewalFileUI.apply(this, arguments);
+      var current=document.getElementById('ren-file-current');
+      if(current && existingAttachment && existingAttachment.data && current.innerHTML.indexOf('printRenAttachmentFromModal') === -1){
+        current.innerHTML += ' <button type="button" class="btn btn-b btn-sm" onclick="printRenAttachmentFromModal()">Print</button>';
+      }
+      return result;
+    };
+    window.resetRenewalFileUI.__kpPrintWrapped = true;
+    try { resetRenewalFileUI = window.resetRenewalFileUI; } catch(_e){}
+  }
+  var oldRenderRenewals = window.renderRenewals;
+  if (typeof oldRenderRenewals === 'function' && !oldRenderRenewals.__kpPrintWrapped) {
+    window.renderRenewals = function(){
+      var result = oldRenderRenewals.apply(this, arguments);
+      setTimeout(function(){
+        document.querySelectorAll('button[onclick^="openRenAttachmentById("]').forEach(function(btn){
+          var m=(btn.getAttribute('onclick')||'').match(/openRenAttachmentById\(([^)]+)\)/);
+          if(!m) return;
+          var id=m[1];
+          var parent=btn.parentElement;
+          if(parent && parent.innerHTML.indexOf('printRenAttachmentById('+id+')') === -1){
+            var p=document.createElement('button'); p.className='btn btn-out btn-sm'; p.type='button'; p.textContent='Print'; p.setAttribute('onclick','printRenAttachmentById('+id+')'); parent.insertBefore(p, btn.nextSibling);
+          }
+        });
+      }, 30);
+      return result;
+    };
+    window.renderRenewals.__kpPrintWrapped = true;
+    try { renderRenewals = window.renderRenewals; } catch(_e){}
+  }
+})();
+</script>
+
 </body>
 </html>
