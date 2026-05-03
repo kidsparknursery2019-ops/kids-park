@@ -14572,75 +14572,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   } catch(_e){}
 })();
 </script>
-<script>
-/* ============================================================
-   KP TABLE UX PATCH 2026-05-02
-   Adds a synced top horizontal scrollbar for wide table panes.
-   ============================================================ */
-(function(){
-  'use strict';
-  if (window.__kpTableScrollbarPatchInstalled) return;
-  window.__kpTableScrollbarPatchInstalled = true;
 
-  function tableScrollSources(){
-    return Array.prototype.slice.call(document.querySelectorAll('.tw')).filter(function(el){
-      return el && el.querySelector && el.querySelector('table');
-    });
-  }
-  function ensureTopScrollbar(pane){
-    if (!pane || pane.__kpXbarReady) return;
-    var bar = document.createElement('div');
-    bar.className = 'kp-table-xbar';
-    bar.setAttribute('aria-hidden', 'true');
-    var inner = document.createElement('div');
-    inner.className = 'kp-table-xbar-inner';
-    bar.appendChild(inner);
-    pane.parentNode.insertBefore(bar, pane);
-    pane.__kpXbarReady = true;
-    pane.__kpXbar = bar;
-    pane.__kpXbarInner = inner;
-
-    var syncing = false;
-    bar.addEventListener('scroll', function(){
-      if (syncing) return;
-      syncing = true;
-      pane.scrollLeft = bar.scrollLeft;
-      syncing = false;
-    });
-    pane.addEventListener('scroll', function(){
-      if (syncing) return;
-      syncing = true;
-      bar.scrollLeft = pane.scrollLeft;
-      syncing = false;
-    });
-  }
-  function refreshTableScrollbars(){
-    tableScrollSources().forEach(function(pane){
-      ensureTopScrollbar(pane);
-      var table = pane.querySelector('table');
-      var width = Math.max(pane.scrollWidth, table ? table.scrollWidth : 0, pane.clientWidth);
-      if (pane.__kpXbarInner) pane.__kpXbarInner.style.width = width + 'px';
-      if (pane.__kpXbar) {
-        var needed = width > pane.clientWidth + 4;
-        pane.__kpXbar.style.display = needed ? 'block' : 'none';
-        pane.__kpXbar.scrollLeft = pane.scrollLeft;
-      }
-    });
-  }
-  window.kpRefreshTableScrollbars = refreshTableScrollbars;
-  var timer = null;
-  function schedule(){
-    clearTimeout(timer);
-    timer = setTimeout(refreshTableScrollbars, 120);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', schedule);
-  else schedule();
-  window.addEventListener('resize', schedule);
-  try {
-    new MutationObserver(schedule).observe(document.body, { childList:true, subtree:true });
-  } catch(_e){}
-})();
-</script>
 
 <script>
 /* ============================================================
@@ -18302,174 +18234,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
 </script>
 
 
-<script>
-/* KP FINANCE DATE REVIEW TABLE SCROLL PRINT DATES 2026-05-03 */
-(function(){
-  if (window.__kpFinanceDateReviewScrollPrintDates20260503) return;
-  window.__kpFinanceDateReviewScrollPrintDates20260503 = true;
-  function txt(v){ return String(v == null ? '' : v); }
-  function esc(v){ return txt(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
-  function norm(v){ return txt(v).trim(); }
-  function ensureStyle(){
-    if (document.getElementById('kp-finance-date-review-style')) return;
-    var st=document.createElement('style'); st.id='kp-finance-date-review-style';
-    st.textContent = '.kp-date-review-overlay{position:fixed;inset:0;background:rgba(15,35,25,.42);z-index:999998;display:none;align-items:center;justify-content:center;padding:18px}.kp-date-review-overlay.on{display:flex}.kp-date-review-modal{width:min(980px,96vw);max-height:88vh;background:#fff;border-radius:16px;box-shadow:0 24px 70px rgba(15,23,42,.24);border:1px solid #dceee2;display:flex;flex-direction:column;overflow:hidden;direction:rtl;font-family:Tajawal,Arial,sans-serif}.kp-date-review-head{padding:16px 18px;background:linear-gradient(135deg,#f0faf3,#fff);border-bottom:1px solid #e6f2ea}.kp-date-review-title{font-size:18px;font-weight:900;color:#1e6b3f}.kp-date-review-sub{font-size:12px;color:#64748b;margin-top:4px}.kp-date-review-body{overflow:auto;padding:12px 16px}.kp-date-review-table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}.kp-date-review-table th,.kp-date-review-table td{border-bottom:1px solid #e5e7eb;padding:9px 8px;text-align:right;vertical-align:middle}.kp-date-review-table th{position:sticky;top:0;background:#f8fbf9;color:#1e6b3f;font-weight:900}.kp-date-review-table input{padding:8px;border:1.5px solid #d9e5dc;border-radius:9px;font-family:inherit}.kp-date-review-actions{padding:12px 16px;display:flex;gap:8px;justify-content:flex-start;border-top:1px solid #e6f2ea;flex-wrap:wrap}.kp-date-review-note{background:#fff9df;border:1px solid #ffe49b;color:#7a5600;border-radius:10px;padding:9px 11px;margin-bottom:10px;font-size:12px;line-height:1.55}.kp-table-pan-hint{position:absolute;inset-inline-end:10px;top:8px;background:rgba(30,107,63,.9);color:#fff;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:900;pointer-events:none;opacity:0;transform:translateY(-4px);transition:.18s}.tw.kp-wide-table{position:relative;cursor:grab;scrollbar-gutter:stable both-edges}.tw.kp-wide-table:active{cursor:grabbing}.tw.kp-wide-table:hover .kp-table-pan-hint,.tw.kp-wide-table.kp-scroll-nudge .kp-table-pan-hint{opacity:1;transform:translateY(0)}.kp-table-xbar{height:8px!important;margin:0!important;background:transparent!important;opacity:.35;transition:opacity .18s}.kp-table-xbar:hover{opacity:1}.kp-table-xbar::-webkit-scrollbar{height:8px!important}.tw::-webkit-scrollbar{height:8px!important;width:8px!important}.tw{scrollbar-width:thin!important}@media(max-width:760px){.kp-table-xbar{display:none!important}.tw.kp-wide-table{max-height:none!important;overflow:auto!important;touch-action:pan-x pan-y}.kp-table-pan-hint{display:block;top:6px;font-size:10px}.kp-date-review-modal{max-height:92vh;width:98vw;border-radius:14px}.kp-date-review-body{padding:10px}.kp-date-review-table{font-size:12px;min-width:700px}.kp-date-review-actions .btn{width:auto!important}}';
-    document.head.appendChild(st);
-  }
-  function parseAmbiguousFinanceDates(){
-    var rows=[];
-    [['payments', (typeof payments!=='undefined'?payments:[])], ['expenses', (typeof expenses!=='undefined'?expenses:[])]].forEach(function(pair){
-      var type=pair[0], arr=Array.isArray(pair[1])?pair[1]:[];
-      arr.forEach(function(rec){
-        ['date','exp_date'].forEach(function(field){
-          if(!rec || !rec[field]) return;
-          var info = window.kpSmartNormalizeDate ? window.kpSmartNormalizeDate(rec[field]) : {ambiguous:false};
-          if(info && info.ambiguous){ rows.push({type:type, field:field, id:rec.id, record:rec, value:rec[field]}); }
-        });
-      });
-    });
-    return rows;
-  }
-  function ensureReviewModal(){
-    ensureStyle();
-    var ov=document.getElementById('kp-date-review-overlay'); if(ov) return ov;
-    ov=document.createElement('div'); ov.id='kp-date-review-overlay'; ov.className='kp-date-review-overlay';
-    ov.innerHTML='<div class="kp-date-review-modal"><div class="kp-date-review-head"><div class="kp-date-review-title">?????? ???????? ??? ???????</div><div class="kp-date-review-sub">??? ??????? ???? ??? ???????? ???? ?? ???? ?????? ??????? ???? ???????.</div></div><div class="kp-date-review-body" id="kp-date-review-body"></div><div class="kp-date-review-actions"><button class="btn btn-g" type="button" id="kp-date-review-save">??? ???????? ????????</button><button class="btn btn-out" type="button" id="kp-date-review-refresh">????? ???????</button><button class="btn btn-r" type="button" id="kp-date-review-close">?????</button></div></div>';
-    document.body.appendChild(ov);
-    ov.querySelector('#kp-date-review-close').onclick=function(){ ov.classList.remove('on'); };
-    ov.querySelector('#kp-date-review-refresh').onclick=renderDateReviewRows;
-    ov.querySelector('#kp-date-review-save').onclick=saveDateReviewRows;
-    return ov;
-  }
-  function rowLabel(item){
-    var r=item.record || {};
-    return item.type==='payments' ? (r.who || r.desc || ('#'+r.id)) : (r.desc || r.cat || ('#'+r.id));
-  }
-  function renderDateReviewRows(){
-    var body=document.getElementById('kp-date-review-body'); if(!body) return;
-    var rows=parseAmbiguousFinanceDates();
-    window.__kpDateReviewRows = rows;
-    if(!rows.length){ body.innerHTML='<div class="kp-date-review-note">?? ???? ?????? ??? ????? ?????. ?? ???????? ??????? ?? ???????? ???? ??? ?? ????? ??????.</div>'; return; }
-    body.innerHTML='<div class="kp-date-review-note">?????? ??????? ?????? ??? ??????? ???? ?????? ??????? ????. ??????? ??????? ????? ??? ?? ???? ?? ?????.</div><div style="overflow:auto"><table class="kp-date-review-table"><thead><tr><th>?????</th><th>?????</th><th>??????</th><th>??????? ??????</th><th>??????? ??????</th></tr></thead><tbody>'+rows.map(function(item,idx){
-      var r=item.record || {};
-      return '<tr><td>'+(item.type==='payments'?'???????':'??????')+'</td><td>'+esc(rowLabel(item))+'<div style="font-size:11px;color:#64748b">#'+esc(item.id)+'</div></td><td>'+esc(r.amt || r.amount || '')+'</td><td dir="ltr">'+esc(item.value)+'</td><td><input type="date" data-date-review-index="'+idx+'"></td></tr>';
-    }).join('')+'</tbody></table></div>';
-  }
-  async function saveDateReviewRows(){
-    var rows=window.__kpDateReviewRows || [];
-    var inputs=Array.prototype.slice.call(document.querySelectorAll('[data-date-review-index]'));
-    var changed=[];
-    inputs.forEach(function(input){
-      var val=input.value; if(!val) return;
-      var item=rows[+input.getAttribute('data-date-review-index')]; if(!item || !item.record) return;
-      item.record[item.field + 'Original'] = item.record[item.field + 'Original'] || item.record[item.field];
-      item.record[item.field] = val;
-      item.record.dateReviewedAt = new Date().toISOString();
-      item.record.dateReviewedBy = (typeof currentUser!=='undefined' && currentUser && (currentUser.username || currentUser.name)) || 'system';
-      changed.push(item);
-    });
-    if(!changed.length){ if(window.kpMessage) window.kpMessage('?????? ????????', null, '?? ??? ?????? ?? ????? ?????.', {type:'warn'}); else alert('No date selected.'); return; }
-    try {
-      if (typeof _safeSetSlim === 'function') { _safeSetSlim('kp_payments_data', payments); _safeSetSlim('kp_expenses_data', expenses); }
-      else { localStorage.setItem('kp_payments_data', JSON.stringify(payments)); localStorage.setItem('kp_expenses_data', JSON.stringify(expenses)); }
-    } catch(_e){}
-    var failed=[];
-    for(var i=0;i<changed.length;i++){
-      var item=changed[i], ok=true;
-      try {
-        if (typeof saveRecordRemoteAware === 'function') {
-          ok = await saveRecordRemoteAware({type:item.type, activeArrayName:item.type, record:item.record, keyField:'id', label:item.type==='payments'?'payment date':'expense date'});
-        }
-      } catch(e){ ok=false; }
-      if(!ok) failed.push(item);
-    }
-    try { if(typeof renderPayments==='function') renderPayments(); if(typeof renderExpenses==='function') renderExpenses(); if(typeof renderDash==='function') renderDash(); } catch(_e){}
-    renderDateReviewRows();
-    if(window.kpMessage) window.kpMessage('?????? ????????', null, failed.length ? ('?? ??? ' + (changed.length-failed.length) + ' ?????? ????? ??? ' + failed.length + ' ??? Firebase.') : ('?? ??? ' + changed.length + ' ????? ???????? ??? Firebase.'), {type:failed.length?'warn':'ok'});
-  }
-  window.openFinanceDateReview = function(){
-    var ov=ensureReviewModal(); ov.classList.add('on'); renderDateReviewRows();
-  };
 
-  function selectedPrintDate(){
-    var el=document.getElementById('stu-print-date');
-    if(!el || !el.value) return null;
-    var parts=el.value.split('-').map(Number); if(parts.length!==3) return null;
-    var d=new Date(parts[0], parts[1]-1, parts[2]);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  function addDays(d,n){ var x=new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate()+n); return x; }
-  function weekMonday(d){ var x=new Date(d.getFullYear(), d.getMonth(), d.getDate()); var day=x.getDay(); var diff=(day===0?-6:1-day); x.setDate(x.getDate()+diff); return x; }
-  function fmtDayDate(d){
-    var days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    return days[d.getDay()] + '<br><span style="font-size:10px;font-weight:700;color:#355">' + String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear() + '</span>';
-  }
-  window.kpPrintWeekHeaders = function(){
-    var base=selectedPrintDate();
-    if(!base) return null;
-    var mon=weekMonday(base);
-    return [0,1,2,3].map(function(n){ return fmtDayDate(addDays(mon,n)); });
-  };
-  window.kpSelectedPrintDateWithDay = function(){
-    var base=selectedPrintDate();
-    return base ? fmtDayDate(base).replace('<br>',' - ').replace(/<[^>]*>/g,'') : '';
-  };
-  var oldBuildAttendance = window.buildAttendanceWeeklyTable;
-  if(typeof oldBuildAttendance === 'function' && !oldBuildAttendance.__kpDateHeaders){
-    window.buildAttendanceWeeklyTable = function(className, items){
-      var html=oldBuildAttendance.apply(this, arguments);
-      var h=window.kpPrintWeekHeaders && window.kpPrintWeekHeaders();
-      if(h){
-        ['Monday','Tuesday','Wednesday','Thursday'].forEach(function(day,i){
-          html=html.replace(new RegExp('<th>'+day+'</th>','i'), '<th>'+h[i]+'</th>');
-        });
-        var ai=0; html=html.replace(/<th>([^<]*)<\/th>/g, function(m){ if(ai<2){ ai++; return m; } var out = ai < 6 ? '<th>'+h[ai-2]+'</th>' : m; ai++; return out; });
-      }
-      return html;
-    };
-    window.buildAttendanceWeeklyTable.__kpDateHeaders = true;
-    try { buildAttendanceWeeklyTable = window.buildAttendanceWeeklyTable; } catch(_e){}
-  }
-  var oldBuildMeals = window.buildMealsWeeklyTable;
-  if(typeof oldBuildMeals === 'function' && !oldBuildMeals.__kpDateHeaders){
-    window.buildMealsWeeklyTable = function(className, items){
-      var html=oldBuildMeals.apply(this, arguments);
-      var h=window.kpPrintWeekHeaders && window.kpPrintWeekHeaders();
-      if(h){
-        var mi=0; html=html.replace(/<th colspan="2">([^<]*)<\/th>/g, function(m){ var out = mi < 4 ? '<th colspan="2">'+h[mi]+'</th>' : m; mi++; return out; });
-      }
-      return html;
-    };
-    window.buildMealsWeeklyTable.__kpDateHeaders = true;
-    try { buildMealsWeeklyTable = window.buildMealsWeeklyTable; } catch(_e){}
-  }
-
-  function enhanceTablePane(pane){
-    if(!pane || pane.__kpPanEnhanced) return;
-    pane.__kpPanEnhanced=true;
-    pane.classList.add('kp-wide-table');
-    if(!pane.querySelector('.kp-table-pan-hint')){
-      var hint=document.createElement('div'); hint.className='kp-table-pan-hint'; hint.textContent='Drag table left/right'; pane.appendChild(hint);
-      setTimeout(function(){ pane.classList.add('kp-scroll-nudge'); setTimeout(function(){ pane.classList.remove('kp-scroll-nudge'); }, 1800); }, 400);
-    }
-    var down=false,startX=0,startLeft=0,moved=false;
-    pane.addEventListener('pointerdown', function(e){ if(e.pointerType==='mouse' && e.button!==0) return; if(e.target && /input|select|textarea|button|a/i.test(e.target.tagName||'')) return; down=true; moved=false; startX=e.clientX; startLeft=pane.scrollLeft; try{ pane.setPointerCapture(e.pointerId); }catch(_e){} });
-    pane.addEventListener('pointermove', function(e){ if(!down) return; var dx=e.clientX-startX; if(Math.abs(dx)>4) moved=true; pane.scrollLeft=startLeft-dx; });
-    pane.addEventListener('pointerup', function(){ down=false; });
-    pane.addEventListener('click', function(e){ if(moved){ e.preventDefault(); e.stopPropagation(); moved=false; } }, true);
-    pane.addEventListener('wheel', function(e){ if(Math.abs(e.deltaY)>Math.abs(e.deltaX) && pane.scrollWidth>pane.clientWidth && (e.shiftKey || Math.abs(e.deltaY)<80)){ pane.scrollLeft += e.deltaY; e.preventDefault(); } }, {passive:false});
-  }
-  function refreshTableUx(){
-    ensureStyle();
-    Array.prototype.slice.call(document.querySelectorAll('.tw')).forEach(enhanceTablePane);
-    if(typeof window.kpRefreshTableScrollbars==='function') setTimeout(window.kpRefreshTableScrollbars, 60);
-  }
-  window.kpRefreshBetterTableUx = refreshTableUx;
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', refreshTableUx); else refreshTableUx();
-  window.addEventListener('resize', refreshTableUx);
-  try { new MutationObserver(function(){ clearTimeout(window.__kpBetterTableTimer); window.__kpBetterTableTimer=setTimeout(refreshTableUx, 160); }).observe(document.body,{childList:true,subtree:true}); } catch(_e){}
-})();
-</script>
 
 
 <script>
@@ -18915,6 +18680,31 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   };
   try { buildMealsWeeklyTable = window.buildMealsWeeklyTable; } catch(_e){}
   window.kpPrintWeekHeaders = function(){ return weekHeaders(); };
+})();
+</script>
+
+
+<script>
+/* KP LIGHTER SCROLLBAR RESTORE 2026-05-03 */
+(function(){
+  if (window.__kpLighterScrollbarRestore20260503) return;
+  window.__kpLighterScrollbarRestore20260503 = true;
+  function removeExtraBars(){
+    document.querySelectorAll('.kp-table-xbar,.kp-table-pan-hint').forEach(function(el){ try{ el.remove(); }catch(_e){} });
+    document.querySelectorAll('.tw.kp-wide-table').forEach(function(el){ el.classList.remove('kp-wide-table','kp-scroll-nudge'); el.style.cursor=''; });
+  }
+  function installStyle(){
+    if(document.getElementById('kp-light-scroll-style')) return;
+    var st=document.createElement('style'); st.id='kp-light-scroll-style';
+    st.textContent='.kp-table-xbar,.kp-table-pan-hint{display:none!important}.tw{overflow:auto!important;-webkit-overflow-scrolling:touch!important;scrollbar-width:auto!important;scrollbar-color:auto!important;padding-bottom:4px!important}.tw::-webkit-scrollbar{height:12px!important;width:12px!important;display:block!important}.tw::-webkit-scrollbar-track{background:#eef7f1!important;border-radius:8px!important}.tw::-webkit-scrollbar-thumb{background:#78b98d!important;border-radius:8px!important;border:2px solid #eef7f1!important}.tw table{min-width:max-content}.tw thead th{position:sticky;top:0;z-index:3}@media(max-width:760px){.tw{max-height:none!important;overflow:auto!important}.tw::-webkit-scrollbar{height:10px!important;width:10px!important}}';
+    document.head.appendChild(st);
+  }
+  window.kpRefreshTableScrollbars = function(){ removeExtraBars(); };
+  window.kpRefreshBetterTableUx = function(){ removeExtraBars(); };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ installStyle(); removeExtraBars(); });
+  else { installStyle(); removeExtraBars(); }
+  window.addEventListener('load', removeExtraBars);
+  setTimeout(removeExtraBars, 500);
 })();
 </script>
 
