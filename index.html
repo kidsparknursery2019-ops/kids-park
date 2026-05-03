@@ -7466,7 +7466,8 @@ function renderExpenses(){
   sanitizeCoreData();
   const q=document.getElementById('exp-search').value.toLowerCase();
   const cat=document.getElementById('exp-cat').value;
-  let f=expenses.filter(e=>(!q||String(e.desc||'').toLowerCase().includes(q))&&(!cat||e.cat===cat));
+  const yr=document.getElementById('exp-year') ? document.getElementById('exp-year').value : '';
+  let f=expenses.filter(e=>(!q||String(e.desc||'').toLowerCase().includes(q))&&(!cat||e.cat===cat)&&(!yr||getDateYear(e.exp_date||e.date)===parseInt(yr)));
   if (tableSortState['exp-table']) f = applyTableSort('exp-table', f);
   const expTheadEl = document.getElementById('exp-thead');
   if (expTheadEl) expTheadEl.innerHTML = sortableHead('exp-table', [
@@ -19102,6 +19103,140 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   document.addEventListener('DOMContentLoaded', function(){ setTimeout(function(){ addButtons(); Object.keys(TABLES).forEach(applyLayout); },300); });
   setTimeout(function(){ addButtons(); Object.keys(TABLES).forEach(applyLayout); },900);
   window.kpTableLayoutControlsStatus=function(){ return { enabled:true, tables:Object.keys(TABLES), savedIn:STORE }; };
+})();
+</script>
+
+<script>
+/* KP CURRENT YEAR DEFAULT FILTERS + RENEWAL PDF PRINT 2026-05-03 */
+(function(){
+  if (window.__kpCurrentYearFiltersAndPdfPrint20260503) return;
+  window.__kpCurrentYearFiltersAndPdfPrint20260503 = true;
+
+  function currentYear(){ return String(new Date().getFullYear()); }
+  function ensureYearOption(sel, year){
+    if(!sel) return;
+    var exists=Array.prototype.some.call(sel.options || [], function(o){ return String(o.value || o.textContent).trim() === year; });
+    if(!exists){
+      var opt=document.createElement('option');
+      opt.value=year;
+      opt.textContent=year;
+      sel.appendChild(opt);
+    }
+  }
+  function setCurrentYear(id){
+    var sel=document.getElementById(id);
+    if(!sel) return false;
+    var year=currentYear();
+    ensureYearOption(sel, year);
+    if(!sel.value) sel.value=year;
+    return true;
+  }
+  function ensureExpenseYearFilter(){
+    var cat=document.getElementById('exp-cat');
+    if(!cat || document.getElementById('exp-year')) return;
+    var sel=document.createElement('select');
+    sel.id='exp-year';
+    sel.setAttribute('aria-label','فلتر السنة');
+    sel.style.cssText='padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px';
+    var all=document.createElement('option');
+    all.value='';
+    all.textContent='كل السنوات';
+    sel.appendChild(all);
+    var y=new Date().getFullYear();
+    for(var i=y-5;i<=y+1;i++){
+      var opt=document.createElement('option');
+      opt.value=String(i);
+      opt.textContent=String(i);
+      sel.appendChild(opt);
+    }
+    sel.onchange=function(){ if(typeof renderExpenses==='function') renderExpenses(); };
+    cat.insertAdjacentElement('afterend', sel);
+  }
+  function setCurrentYearForPage(page){
+    ensureExpenseYearFilter();
+    if(page==='dash') setCurrentYear('dash-year-filter');
+    if(page==='payments') setCurrentYear('pay-year');
+    if(page==='expenses') setCurrentYear('exp-year');
+    if(page==='receipts') setCurrentYear('rec-year');
+    if(page==='finance' || page==='finreport'){
+      setCurrentYear('fin-year');
+      setCurrentYear('finreport-year');
+      setCurrentYear('report-year');
+    }
+  }
+  function setInitialYears(){
+    ensureExpenseYearFilter();
+    ['dash-year-filter','pay-year','exp-year','rec-year','fin-year','finreport-year','report-year'].forEach(setCurrentYear);
+  }
+
+  var previousGo=window.go;
+  if(typeof previousGo==='function' && !previousGo.__kpCurrentYearWrapped){
+    window.go=function(page){
+      setCurrentYearForPage(page);
+      var result=previousGo.apply(this, arguments);
+      setTimeout(function(){ setCurrentYearForPage(page); }, 0);
+      return result;
+    };
+    window.go.__kpCurrentYearWrapped=true;
+    try { go=window.go; } catch(_e){}
+  }
+
+  function dataUrlToObjectUrl(data){
+    try{
+      if(!data || data.indexOf('data:')!==0) return data;
+      var comma=data.indexOf(',');
+      if(comma<0) return data;
+      var meta=data.slice(0,comma);
+      var mime=(meta.match(/^data:([^;]+)/)||[])[1] || 'application/pdf';
+      var raw=atob(data.slice(comma+1));
+      var arr=new Uint8Array(raw.length);
+      for(var i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
+      return URL.createObjectURL(new Blob([arr], {type:mime}));
+    }catch(_e){ return data; }
+  }
+  function printPdfAttachment(data){
+    var url=dataUrlToObjectUrl(data);
+    var win=null;
+    try { win=window.open(url, '_blank'); } catch(_e){}
+    if(!win){
+      alert('تعذر فتح ملف PDF للطباعة. يرجى السماح بالنوافذ المنبثقة ثم المحاولة مرة أخرى.');
+      return;
+    }
+    setTimeout(function(){ try { win.focus(); win.print(); } catch(_e){} }, 1000);
+    if(url && url.indexOf('blob:')===0) setTimeout(function(){ try { URL.revokeObjectURL(url); } catch(_e){} }, 120000);
+  }
+  function printImageAttachment(data, title){
+    var iframe=document.createElement('iframe');
+    iframe.style.position='fixed';
+    iframe.style.right='0';
+    iframe.style.bottom='0';
+    iframe.style.width='1px';
+    iframe.style.height='1px';
+    iframe.style.border='0';
+    iframe.style.opacity='0.01';
+    document.body.appendChild(iframe);
+    var w=iframe.contentWindow;
+    var safeTitle=String(title || 'attachment').replace(/[&<>"']/g,function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; });
+    w.document.open();
+    w.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>'+safeTitle+'</title><style>@page{size:auto;margin:0}html,body{margin:0;background:#fff;width:100%;min-height:100%}.page{min-height:100vh;display:flex;align-items:center;justify-content:center}img{max-width:100vw;max-height:100vh;object-fit:contain}</style></head><body><div class="page"><img src="'+data+'"></div><script>window.onload=function(){setTimeout(function(){window.focus();window.print();},250)};window.onafterprint=function(){setTimeout(function(){try{window.frameElement&&window.frameElement.remove()}catch(e){}},500)};<\/script></body></html>');
+    w.document.close();
+    setTimeout(function(){ try{ iframe.remove(); }catch(_e){} }, 60000);
+  }
+  window.printRenAttachmentById=function(id){
+    var r=(typeof getRenewalById==='function') ? getRenewalById(id) : null;
+    var att=(typeof getAttachmentForRenewal==='function') ? getAttachmentForRenewal(r) : null;
+    if(!att || !att.data){ alert('لا يوجد مرفق لهذا التجديد.'); return; }
+    var type=String(att.type || '').toLowerCase();
+    var data=String(att.data || '');
+    var isPdf=type.indexOf('pdf')!==-1 || data.indexOf('data:application/pdf')===0;
+    if(isPdf) printPdfAttachment(data);
+    else printImageAttachment(data, att.name || 'renewal attachment');
+  };
+  window.printRenAttachmentFromModal=function(){ if (typeof editingRenId === 'undefined' || !editingRenId) return; window.printRenAttachmentById(editingRenId); };
+
+  document.addEventListener('DOMContentLoaded', function(){ setTimeout(setInitialYears, 100); });
+  setTimeout(setInitialYears, 500);
+  window.kpCurrentYearFiltersStatus=function(){ return { enabled:true, year:currentYear(), expenseYearFilter:!!document.getElementById('exp-year') }; };
 })();
 </script>
 
