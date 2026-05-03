@@ -20652,5 +20652,343 @@ document.addEventListener('change', function(e){
   };
 })();
 </script>
+<style>
+/* KP UI TIGHTENING 2026-05-03 */
+#stu-table th:nth-child(6),
+#stu-table td:nth-child(6){
+  width:150px;
+  max-width:150px;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+#stu-table td:nth-child(6) .b{
+  display:inline-flex;
+  max-width:136px;
+  white-space:normal;
+  line-height:1.35;
+  padding-inline:7px;
+}
+#email-compose-ov{
+  z-index:7000!important;
+}
+#email-compose-ov .mo{
+  position:relative;
+  z-index:7001;
+}
+.email-full-reader-overlay.kp-reader-behind-compose{
+  z-index:3990!important;
+}
+</style>
+<script>
+/*
+ KP RENEWAL ATTACHMENTS + LIVE REFRESH + EMAIL STACK FIX 2026-05-03
+ Keeps renewal files synced, keeps compose above reader, and refreshes
+ visible pages when Firebase changes.
+*/
+(function(){
+  if (window.__kpMay03SyncAndUiFixInstalled) return;
+  window.__kpMay03SyncAndUiFixInstalled = true;
+
+  var liveTimer = null;
+  var liveRunning = false;
+  var lastSeenSavedAt = '';
+  var localQuietUntil = 0;
+
+  function txt(value){ return String(value == null ? '' : value).trim(); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, ''); }
+  function norm(value){
+    try { return (typeof normKey === 'function') ? normKey(value) : txt(value); }
+    catch(_e){ return txt(value); }
+  }
+  function safeKey(value){
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(value) : ('k_' + txt(value).replace(/[.#$\[\]\/\s]/g, '_')); }
+    catch(_e){ return 'k_' + txt(value).replace(/[.#$\[\]\/\s]/g, '_'); }
+  }
+  function recordKey(record, keyField){
+    try { return (typeof kpRecordKey === 'function') ? kpRecordKey(record, keyField || 'id') : safeKey(record && record[keyField || 'id']); }
+    catch(_e){ return safeKey(record && record[keyField || 'id']); }
+  }
+  function showFail(action, error, record){
+    if (typeof window.kpShowFirebaseFailure === 'function') {
+      window.kpShowFirebaseFailure(action, error, { alert:true, record:record });
+    } else {
+      alert('Could not save to Firebase: ' + (error && error.message ? error.message : error));
+    }
+  }
+  function showOk(message){
+    try { if (typeof showSyncBadge === 'function') showSyncBadge(message); } catch(_e){}
+  }
+  async function patchFirebase(updates, timeoutMs){
+    var base = baseUrl();
+    if (!base) throw new Error('missing Firebase URL');
+    var res = await Promise.race([
+      fetch(base + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) }),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, timeoutMs || 18000); })
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return true;
+  }
+  async function readRoot(timeoutMs){
+    var base = baseUrl();
+    if (!base) throw new Error('missing Firebase URL');
+    var res = await Promise.race([
+      fetch(base + '.json?ts=' + Date.now(), { cache:'no-store' }),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, timeoutMs || 9000); })
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json() || {};
+  }
+  async function readSavedAt(){
+    var base = baseUrl();
+    if (!base) return '';
+    var res = await Promise.race([
+      fetch(base + '/savedAt.json?ts=' + Date.now(), { cache:'no-store' }),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, 4500); })
+    ]);
+    if (!res.ok) return '';
+    var value = await res.json();
+    return txt(value);
+  }
+  function renewalAttachmentKeys(id){
+    var raw = txt(id);
+    var out = {};
+    [raw, norm(raw), safeKey(raw), safeKey(raw).replace(/^k_/, '')].forEach(function(key){
+      if (key) out[key] = true;
+    });
+    return Object.keys(out);
+  }
+  function attachmentMapFromData(data){
+    var map = {};
+    var src = data && data.renewalAttachments;
+    if (!src) return map;
+    function add(key, att){
+      if (!att || !att.data) return;
+      renewalAttachmentKeys(key).forEach(function(k){ map[k] = att; });
+      if (att.id != null) renewalAttachmentKeys(att.id).forEach(function(k){ map[k] = att; });
+    }
+    if (Array.isArray(src)) src.forEach(function(att, index){ add(att && att.id != null ? att.id : index, att); });
+    else if (src && typeof src === 'object') Object.keys(src).forEach(function(key){ add(key, src[key]); });
+    return map;
+  }
+  function applyRenewalAttachments(data){
+    var map = attachmentMapFromData(data);
+    if (!Object.keys(map).length || !Array.isArray(renewals)) return false;
+    var changed = false;
+    renewals.forEach(function(r){
+      if (!r || r.id == null) return;
+      var found = null;
+      renewalAttachmentKeys(r.id).some(function(key){
+        if (map[key]) { found = map[key]; return true; }
+        return false;
+      });
+      if (!found) return;
+      r.attachment = found;
+      r.attachmentRef = true;
+      r.attachmentName = found.name || r.attachmentName || '';
+      r.attachmentType = found.type || r.attachmentType || '';
+      r.attachmentSize = found.size || r.attachmentSize || 0;
+      changed = true;
+    });
+    return changed;
+  }
+  function getAttachment(record, options){
+    if (options && options.removeAttachment) return null;
+    if (options && options.attachment) return options.attachment;
+    try {
+      if (typeof getRenAttachment === 'function') return getRenAttachment(record);
+    } catch(_e){}
+    return (record && record.attachment && record.attachment.data) ? record.attachment : null;
+  }
+  function stripRenewal(record){
+    var out = Object.assign({}, record || {});
+    delete out.attachment;
+    delete out.file;
+    delete out.fileName;
+    delete out.fileType;
+    delete out.fileSize;
+    return out;
+  }
+  function updateLocalRenewal(record, att){
+    if (!record || record.id == null || !Array.isArray(renewals)) return;
+    renewals = renewals.map(function(r){
+      if (!r || norm(r.id) !== norm(record.id)) return r;
+      var next = Object.assign({}, r, record);
+      if (att && att.data) {
+        next.attachment = att;
+        next.attachmentRef = true;
+        next.attachmentName = att.name || '';
+        next.attachmentType = att.type || '';
+        next.attachmentSize = att.size || 0;
+      } else if (record.attachmentRef === false) {
+        delete next.attachment;
+        next.attachmentRef = false;
+        next.attachmentName = '';
+        next.attachmentType = '';
+        next.attachmentSize = 0;
+      }
+      return next;
+    });
+    try { persistCoreDataToLocalStorage(); } catch(_e){}
+    try { if (typeof renderRenewals === 'function') renderRenewals(); } catch(_e){}
+    try { if (typeof renderDash === 'function') renderDash(); } catch(_e){}
+  }
+
+  window.saveRenewalRemoteAware = async function(record, options){
+    options = options || {};
+    if (!record || record.id == null) throw new Error('missing renewal id');
+    var savedAt = new Date().toISOString();
+    var key = recordKey(record, 'id');
+    var saveRecord = stripRenewal(record);
+    saveRecord.firebaseKey = key;
+    saveRecord.updatedAt = savedAt;
+    saveRecord.savedAt = savedAt;
+    saveRecord.updatedBy = (typeof currentUser !== 'undefined' && currentUser && (currentUser.username || currentUser.name)) ? (currentUser.username || currentUser.name) : 'system';
+    saveRecord.version = (parseInt(saveRecord.version || 0, 10) || 0) + 1;
+    var att = getAttachment(record, options);
+    var updates = { savedAt:savedAt, version:2 };
+    updates['renewals/' + key] = saveRecord;
+    updates['deletedRenewals/' + key] = null;
+    try {
+      if (options.removeAttachment) {
+        updates['renewalAttachments/' + key] = null;
+        saveRecord.attachmentRef = false;
+        saveRecord.attachmentName = '';
+        saveRecord.attachmentType = '';
+        saveRecord.attachmentSize = 0;
+        updates['renewals/' + key] = saveRecord;
+      } else if (att && att.data) {
+        var attachmentPayload = {
+          id: record.id,
+          name: att.name || 'renewal attachment',
+          type: att.type || '',
+          size: att.size || 0,
+          data: att.data,
+          updatedAt:savedAt
+        };
+        updates['renewalAttachments/' + key] = attachmentPayload;
+        saveRecord.attachmentRef = true;
+        saveRecord.attachmentName = attachmentPayload.name;
+        saveRecord.attachmentType = attachmentPayload.type;
+        saveRecord.attachmentSize = attachmentPayload.size;
+        updates['renewals/' + key] = saveRecord;
+        att = attachmentPayload;
+      }
+      if (typeof tombstones !== 'undefined' && tombstones) {
+        tombstones.renewals = (Array.isArray(tombstones.renewals) ? tombstones.renewals : []).filter(function(id){ return norm(id) !== norm(record.id); });
+        updates['tombstones/renewals'] = tombstones.renewals;
+      }
+      if (typeof restoredKeys !== 'undefined' && restoredKeys) {
+        restoredKeys.renewals = Array.isArray(restoredKeys.renewals) ? restoredKeys.renewals : [];
+        if (!restoredKeys.renewals.some(function(id){ return norm(id) === norm(record.id); })) restoredKeys.renewals.push(record.id);
+        updates['restoredKeys/renewals'] = restoredKeys.renewals;
+      }
+      await patchFirebase(updates, 24000);
+      Object.assign(record, saveRecord);
+      if (att && att.data) record.attachment = att;
+      updateLocalRenewal(record, att);
+      localQuietUntil = Date.now() + 2500;
+      showOk('Saved to Firebase');
+      return true;
+    } catch(e) {
+      showFail('renewal attachment', e, { id:record.id, name:record.name, attachment:att ? { name:att.name, size:att.size, type:att.type } : null });
+      throw e;
+    }
+  };
+  try { saveRenewalRemoteAware = window.saveRenewalRemoteAware; } catch(_e){}
+
+  var previousLoad = window.loadFromFirebase;
+  if (typeof previousLoad === 'function') {
+    window.loadFromFirebase = async function(){
+      var result = await previousLoad.apply(this, arguments);
+      try {
+        var data = await readRoot(9000);
+        if (applyRenewalAttachments(data)) {
+          try { if (typeof renderRenewals === 'function') renderRenewals(); } catch(_e){}
+          try { if (typeof renderDash === 'function') renderDash(); } catch(_e){}
+        }
+      } catch(e) {
+        console.warn('[renewals] attachment refresh skipped:', e && e.message);
+      }
+      return result;
+    };
+    try { loadFromFirebase = window.loadFromFirebase; } catch(_e){}
+  }
+
+  var previousOpenCompose = window.openEmailComposeModal;
+  window.openEmailComposeModal = function(mode){
+    var reader = document.getElementById('email-full-reader-overlay');
+    if (reader) reader.classList.add('kp-reader-behind-compose');
+    var result = previousOpenCompose ? previousOpenCompose.apply(this, arguments) : undefined;
+    var ov = document.getElementById('email-compose-ov');
+    if (ov) {
+      ov.classList.add('on');
+      ov.style.zIndex = '7000';
+      setTimeout(function(){
+        var first = document.getElementById(mode === 'forward' ? 'email-to' : 'email-body') || document.getElementById('email-to');
+        if (first) {
+          try { first.focus(); } catch(_e){}
+        }
+      }, 40);
+    }
+    return result;
+  };
+  try { openEmailComposeModal = window.openEmailComposeModal; } catch(_e){}
+
+  var previousCloseCompose = window.closeEmailComposeModal;
+  window.closeEmailComposeModal = function(){
+    var result = previousCloseCompose ? previousCloseCompose.apply(this, arguments) : undefined;
+    var reader = document.getElementById('email-full-reader-overlay');
+    if (reader) reader.classList.remove('kp-reader-behind-compose');
+    return result;
+  };
+  try { closeEmailComposeModal = window.closeEmailComposeModal; } catch(_e){}
+
+  function busyModalOpen(){
+    var open = Array.prototype.slice.call(document.querySelectorAll('.ov.on')).filter(function(ov){
+      return ov && ov.id !== 'email-compose-ov';
+    });
+    return open.some(function(ov){
+      return /mo-student|mo-pay|mo-exp|mo-renewal|mo-class|mo-import/.test(ov.id || '');
+    });
+  }
+  async function liveRefreshTick(){
+    if (liveRunning) return;
+    if (typeof currentUser === 'undefined' || !currentUser) return;
+    if (navigator.onLine === false) return;
+    if (Date.now() < localQuietUntil) return;
+    if (busyModalOpen()) return;
+    liveRunning = true;
+    try {
+      var remoteSavedAt = await readSavedAt();
+      if (!remoteSavedAt) return;
+      if (!lastSeenSavedAt) {
+        lastSeenSavedAt = remoteSavedAt;
+        return;
+      }
+      if (remoteSavedAt !== lastSeenSavedAt) {
+        lastSeenSavedAt = remoteSavedAt;
+        await window.loadFromFirebase();
+        try { if (typeof refreshAllViewsAfterSync === 'function') refreshAllViewsAfterSync(); } catch(_e){}
+        showOk('Updated from Firebase');
+      }
+    } catch(e) {
+      console.warn('[live-refresh] skipped:', e && e.message);
+    } finally {
+      liveRunning = false;
+    }
+  }
+  function startLiveRefresh(){
+    clearInterval(liveTimer);
+    liveTimer = setInterval(liveRefreshTick, 6000);
+    setTimeout(liveRefreshTick, 1200);
+  }
+  window.kpStartLiveFirebaseRefresh = startLiveRefresh;
+  window.kpLiveFirebaseRefreshStatus = function(){
+    return { enabled:true, intervalMs:6000, lastSeenSavedAt:lastSeenSavedAt, running:liveRunning };
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startLiveRefresh);
+  else startLiveRefresh();
+})();
+</script>
 </body>
 </html>
