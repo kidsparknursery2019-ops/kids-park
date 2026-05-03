@@ -18739,5 +18739,184 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
 })();
 </script>
 
+
+<script>
+/* KP SAFE ENGLISH DIALOG LABELS 2026-05-03 */
+(function(){
+  if (window.__kpSafeEnglishDialogs20260503) return;
+  window.__kpSafeEnglishDialogs20260503 = true;
+  function txt(v){ return String(v == null ? '' : v); }
+  function esc(v){ return txt(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function recordName(record){
+    if (!record) return 'Not specified';
+    if (typeof record === 'string' || typeof record === 'number') return txt(record);
+    return txt(record.name || record.childName || record.studentName || record.who || record.desc || record.title || record.username || record.id || record.requestId || 'Not specified');
+  }
+  function ensureConfirmEnglish(){
+    var title=document.getElementById('kp-confirm-title'); if(title) title.textContent='Confirm action';
+    var sub=document.getElementById('kp-confirm-sub'); if(sub) sub.textContent='Please review the action and record before continuing';
+    var labels=document.querySelectorAll('.kp-confirm-label');
+    if(labels[0]) labels[0].textContent='Action';
+    if(labels[1]) labels[1].textContent='Record';
+    var cancel=document.getElementById('kp-confirm-cancel'); if(cancel) cancel.textContent='Cancel';
+    var ok=document.getElementById('kp-confirm-ok'); if(ok) ok.textContent='Continue';
+  }
+  var previousKpConfirmAsync = window.kpConfirmAsync;
+  if (typeof previousKpConfirmAsync === 'function' && !previousKpConfirmAsync.__kpEnglishSafeWrapped) {
+    window.kpConfirmAsync = function(action, record, message, options){
+      ensureConfirmEnglish();
+      options = options || {};
+      if (!options.okText) options.okText = /delete|remove|reject|permanent/i.test(txt(action)+' '+txt(message)) ? 'Confirm' : 'Continue';
+      var p = previousKpConfirmAsync.call(this, action || 'Confirm action', record, message || 'Do you want to continue?', options);
+      setTimeout(ensureConfirmEnglish, 0);
+      return p;
+    };
+    window.kpConfirmAsync.__kpEnglishSafeWrapped = true;
+  }
+
+  function ambiguousRows(){
+    var rows=[];
+    [['payments', (typeof payments !== 'undefined' ? payments : [])], ['expenses', (typeof expenses !== 'undefined' ? expenses : [])]].forEach(function(pair){
+      var type=pair[0], arr=Array.isArray(pair[1]) ? pair[1] : [];
+      arr.forEach(function(rec){
+        ['date','exp_date'].forEach(function(field){
+          if(!rec || !rec[field]) return;
+          var info = window.kpSmartNormalizeDate ? window.kpSmartNormalizeDate(rec[field]) : {ambiguous:false};
+          if(info && info.ambiguous) rows.push({type:type, field:field, id:rec.id, record:rec, value:rec[field]});
+        });
+      });
+    });
+    return rows;
+  }
+  function rowTitle(item){
+    var r=item.record || {};
+    return item.type === 'payments' ? (r.who || r.desc || ('#'+item.id)) : (r.desc || r.cat || ('#'+item.id));
+  }
+  function ensureReviewStyle(){
+    if (document.getElementById('kp-date-review-english-style')) return;
+    var st=document.createElement('style'); st.id='kp-date-review-english-style';
+    st.textContent='.kp-date-review-overlay{position:fixed;inset:0;background:rgba(15,35,25,.42);z-index:999998;display:none;align-items:center;justify-content:center;padding:18px}.kp-date-review-overlay.on{display:flex}.kp-date-review-modal{width:min(980px,96vw);max-height:88vh;background:#fff;border-radius:16px;box-shadow:0 24px 70px rgba(15,23,42,.24);border:1px solid #dceee2;display:flex;flex-direction:column;overflow:hidden;direction:ltr;font-family:Tajawal,Arial,sans-serif}.kp-date-review-head{padding:16px 18px;background:linear-gradient(135deg,#f0faf3,#fff);border-bottom:1px solid #e6f2ea;text-align:left}.kp-date-review-title{font-size:18px;font-weight:900;color:#1e6b3f}.kp-date-review-sub{font-size:12px;color:#64748b;margin-top:4px}.kp-date-review-body{overflow:auto;padding:12px 16px}.kp-date-review-table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}.kp-date-review-table th,.kp-date-review-table td{border-bottom:1px solid #e5e7eb;padding:9px 8px;text-align:left;vertical-align:middle}.kp-date-review-table th{position:sticky;top:0;background:#f8fbf9;color:#1e6b3f;font-weight:900}.kp-date-review-table input{padding:8px;border:1.5px solid #d9e5dc;border-radius:9px;font-family:inherit}.kp-date-review-actions{padding:12px 16px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #e6f2ea;flex-wrap:wrap}.kp-date-review-note{background:#fff9df;border:1px solid #ffe49b;color:#7a5600;border-radius:10px;padding:9px 11px;margin-bottom:10px;font-size:12px;line-height:1.55;text-align:left}';
+    document.head.appendChild(st);
+  }
+  function ensureReviewModal(){
+    ensureReviewStyle();
+    var ov=document.getElementById('kp-date-review-overlay');
+    if(!ov){ ov=document.createElement('div'); ov.id='kp-date-review-overlay'; ov.className='kp-date-review-overlay'; document.body.appendChild(ov); }
+    ov.innerHTML='<div class="kp-date-review-modal"><div class="kp-date-review-head"><div class="kp-date-review-title">Review unclear finance dates</div><div class="kp-date-review-sub">Only dates that cannot be safely corrected automatically are shown here.</div></div><div class="kp-date-review-body" id="kp-date-review-body"></div><div class="kp-date-review-actions"><button class="btn btn-r" type="button" id="kp-date-review-close">Close</button><button class="btn btn-out" type="button" id="kp-date-review-refresh">Refresh list</button><button class="btn btn-g" type="button" id="kp-date-review-save">Save selected corrections</button></div></div>';
+    ov.querySelector('#kp-date-review-close').onclick=function(){ ov.classList.remove('on'); };
+    ov.querySelector('#kp-date-review-refresh').onclick=renderReviewRows;
+    ov.querySelector('#kp-date-review-save').onclick=saveReviewRows;
+    return ov;
+  }
+  function renderReviewRows(){
+    var body=document.getElementById('kp-date-review-body'); if(!body) return;
+    var rows=ambiguousRows(); window.__kpEnglishDateReviewRows=rows;
+    if(!rows.length){ body.innerHTML='<div class="kp-date-review-note">No unclear finance dates were found. Clear dates have already been cleaned automatically.</div>'; return; }
+    body.innerHTML='<div class="kp-date-review-note">Choose the correct date only for records you want to fix now. Empty rows will stay unchanged.</div><div style="overflow:auto"><table class="kp-date-review-table"><thead><tr><th>Section</th><th>Record</th><th>Amount</th><th>Current date</th><th>Correct date</th></tr></thead><tbody>'+rows.map(function(item,idx){
+      var r=item.record || {};
+      return '<tr><td>'+(item.type==='payments'?'Payments':'Expenses')+'</td><td>'+esc(rowTitle(item))+'<div style="font-size:11px;color:#64748b">#'+esc(item.id)+'</div></td><td>'+esc(r.amt || r.amount || '')+'</td><td dir="ltr">'+esc(item.value)+'</td><td><input type="date" data-date-review-index="'+idx+'"></td></tr>';
+    }).join('')+'</tbody></table></div>';
+  }
+  async function saveReviewRows(){
+    var rows=window.__kpEnglishDateReviewRows || [];
+    var inputs=Array.prototype.slice.call(document.querySelectorAll('[data-date-review-index]'));
+    var changed=[];
+    inputs.forEach(function(input){
+      if(!input.value) return;
+      var item=rows[+input.getAttribute('data-date-review-index')];
+      if(!item || !item.record) return;
+      item.record[item.field + 'Original'] = item.record[item.field + 'Original'] || item.record[item.field];
+      item.record[item.field] = input.value;
+      item.record.dateReviewedAt = new Date().toISOString();
+      item.record.dateReviewedBy = (typeof currentUser !== 'undefined' && currentUser && (currentUser.username || currentUser.name)) || 'system';
+      changed.push(item);
+    });
+    if(!changed.length){ if(window.kpMessage) window.kpMessage('Review unclear dates', null, 'No date was selected to save.', {type:'warn'}); else alert('No date selected.'); return; }
+    try {
+      if (typeof _safeSetSlim === 'function') { _safeSetSlim('kp_payments_data', payments); _safeSetSlim('kp_expenses_data', expenses); }
+      else { localStorage.setItem('kp_payments_data', JSON.stringify(payments)); localStorage.setItem('kp_expenses_data', JSON.stringify(expenses)); }
+    } catch(_e){}
+    var failed=[];
+    for(var i=0;i<changed.length;i++){
+      var item=changed[i], ok=true;
+      try {
+        if (typeof saveRecordRemoteAware === 'function') ok = await saveRecordRemoteAware({type:item.type, activeArrayName:item.type, record:item.record, keyField:'id', label:item.type==='payments'?'payment date':'expense date'});
+      } catch(e){ ok=false; }
+      if(!ok) failed.push(item);
+    }
+    try { if(typeof renderPayments==='function') renderPayments(); if(typeof renderExpenses==='function') renderExpenses(); if(typeof renderDash==='function') renderDash(); } catch(_e){}
+    renderReviewRows();
+    if(window.kpMessage) window.kpMessage('Review unclear dates', null, failed.length ? ('Saved ' + (changed.length - failed.length) + ' date(s), but ' + failed.length + ' could not be saved to Firebase.') : ('Saved ' + changed.length + ' corrected date(s) to Firebase.'), {type:failed.length?'warn':'ok'});
+  }
+  window.openFinanceDateReview = function(){
+    var ov=ensureReviewModal();
+    ov.classList.add('on');
+    renderReviewRows();
+  };
+  setTimeout(function(){
+    ensureConfirmEnglish();
+    var open=document.getElementById('kp-date-review-overlay');
+    if(open && open.classList.contains('on')) window.openFinanceDateReview();
+  }, 200);
+})();
+</script>
+
+
+<script>
+/* KP ARABIC PRINT WEEK HEADERS FINAL 2026-05-03 */
+(function(){
+  if (window.__kpArabicPrintWeekHeadersFinal20260503) return;
+  window.__kpArabicPrintWeekHeadersFinal20260503 = true;
+  function safe(v){ return String(v == null ? '' : v); }
+  function htmlEscape(v){ return safe(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function esc(v){ try { return typeof escapeHtml === 'function' ? escapeHtml(v) : htmlEscape(v); } catch(_e){ return htmlEscape(v); } }
+  function selectedDate(){
+    var el=document.getElementById('stu-print-date');
+    if(!el || !el.value) return new Date();
+    var p=el.value.split('-').map(Number);
+    if(p.length!==3) return new Date();
+    var d=new Date(p[0], p[1]-1, p[2]);
+    return isNaN(d.getTime()) ? new Date() : d;
+  }
+  function mondayOfWeek(d){
+    var x=new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var day=x.getDay();
+    x.setDate(x.getDate() + (day===0 ? -6 : 1-day));
+    return x;
+  }
+  function addDays(d,n){ var x=new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate()+n); return x; }
+  function ddmmyyyy(d){ return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear(); }
+  var arabicDays = ['&#1575;&#1604;&#1575;&#1579;&#1606;&#1610;&#1606;','&#1575;&#1604;&#1579;&#1604;&#1575;&#1579;&#1575;&#1569;','&#1575;&#1604;&#1571;&#1585;&#1576;&#1593;&#1575;&#1569;','&#1575;&#1604;&#1582;&#1605;&#1610;&#1587;'];
+  function weekHeaders(){
+    var start=mondayOfWeek(selectedDate());
+    return [0,1,2,3].map(function(i){ var d=addDays(start,i); return arabicDays[i] + '<br><span style="font-size:10px;font-weight:800;color:#355">' + ddmmyyyy(d) + '</span>'; });
+  }
+  function emptyRow(colspan){ return '<tr><td colspan="'+colspan+'">No students in this class</td></tr>'; }
+  window.buildAttendanceWeeklyTable = function(className, items){
+    items = Array.isArray(items) ? items : [];
+    var h=weekHeaders();
+    var rows=items.map(function(s,idx){
+      var en = (typeof getStudentEnglishDisplayName === 'function' ? getStudentEnglishDisplayName(s) : (s && s.name_en)) || '';
+      return '<tr><td>'+(idx+1)+'</td><td>'+esc((s&&s.name)||'')+'<div style="font-size:10px;color:#607060;direction:ltr;margin-top:1px">'+esc(en)+'</div></td><td></td><td></td><td></td><td></td></tr>';
+    }).join('');
+    return '<table class="print-grid attendance-grid"><thead><tr><th style="width:48px">&#1605;</th><th>&#1575;&#1587;&#1605; &#1575;&#1604;&#1591;&#1575;&#1604;&#1576;</th><th>'+h[0]+'</th><th>'+h[1]+'</th><th>'+h[2]+'</th><th>'+h[3]+'</th></tr></thead><tbody>'+(rows || emptyRow(6))+'</tbody></table>';
+  };
+  try { buildAttendanceWeeklyTable = window.buildAttendanceWeeklyTable; } catch(_e){}
+  window.buildMealsWeeklyTable = function(className, items){
+    items = Array.isArray(items) ? items : [];
+    var h=weekHeaders();
+    var head1=h.map(function(x){ return '<th colspan="2">'+x+'</th>'; }).join('');
+    var head2=[0,1,2,3].map(function(){ return '<th>&#1608;&#1580;&#1576;&#1575;&#1578;</th><th>&#1581;&#1605;&#1575;&#1605; / &#1578;&#1594;&#1610;&#1610;&#1585;</th>'; }).join('');
+    var rows=items.map(function(s,idx){
+      var en = (typeof getStudentEnglishDisplayName === 'function' ? getStudentEnglishDisplayName(s) : (s && s.name_en)) || '';
+      return '<tr><td>'+(idx+1)+'</td><td class="name-cell">'+esc((s&&s.name)||'')+'<div style="font-size:10px;color:#607060;direction:ltr;margin-top:1px;text-align:left">'+esc(en)+'</div></td><td class="blank-cell"></td><td class="blank-cell"></td><td class="blank-cell"></td><td class="blank-cell"></td><td class="blank-cell"></td><td class="blank-cell"></td><td class="blank-cell"></td><td class="blank-cell"></td></tr>';
+    }).join('');
+    return '<table class="print-grid meals-grid"><thead><tr><th rowspan="2" style="width:48px">&#1605;</th><th rowspan="2">&#1575;&#1587;&#1605; &#1575;&#1604;&#1591;&#1575;&#1604;&#1576;</th>'+head1+'</tr><tr>'+head2+'</tr></thead><tbody>'+(rows || emptyRow(10))+'</tbody></table>';
+  };
+  try { buildMealsWeeklyTable = window.buildMealsWeeklyTable; } catch(_e){}
+  window.kpPrintWeekHeaders = function(){ return weekHeaders(); };
+})();
+</script>
+
 </body>
 </html>
