@@ -2008,7 +2008,6 @@ body.kp-teacher .kp-sync-panel{
           <button class="btn btn-y btn-sm" onclick="openEmailComposeModal()">➕ إنشاء رسالة</button>
           <button class="btn btn-out btn-sm" onclick="importOutlookSentContacts()">👥 تحديث اقتراحات الإيميلات</button>
           <button class="btn btn-out btn-sm" onclick="saveEmailSettings()">💾 حفظ الإعدادات</button>
-          <button class="btn btn-out btn-sm" id="renewal-email-toggle-btn" onclick="toggleDailyRenewalEmailNotifications()">?? Daily renewal email</button>
         </div>
       </div>
 
@@ -2487,6 +2486,17 @@ body.kp-teacher .kp-sync-panel{
           </div>
                     <div style="display:none"></div>
 
+        </div>
+
+        <div class="admin-section" id="daily-renewal-email-settings" style="grid-column:1/-1">
+          <h3>تنبيهات التجديد اليومية عبر البريد</h3>
+          <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:#f8fbf9;border:1.5px solid var(--border);border-radius:14px;padding:14px">
+            <div style="min-width:240px;flex:1">
+              <div style="font-weight:900;color:var(--g1);font-size:15px">تذكيرات التجديد اليومية عبر البريد</div>
+              <div id="renewal-email-toggle-status" style="font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5">الحالة: جاري التحقق...</div>
+            </div>
+            <button class="btn btn-g btn-sm" id="renewal-email-toggle-btn" onclick="toggleDailyRenewalEmailNotifications()">تفعيل رسائل التجديد اليومية</button>
+          </div>
         </div>
 
         <div class="admin-section">
@@ -18149,17 +18159,33 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   }
 
   function getRenewalEmailEnabled(){
-    try { var st = (typeof getEmailSettings === 'function') ? getEmailSettings() : JSON.parse(localStorage.getItem('kp_email_settings')||'{}'); return st.dailyRenewalEmailsEnabled === true || localStorage.getItem('kp_daily_renewal_email_enabled') === '1'; } catch(e){ return false; }
+    try {
+      var st = (typeof getEmailSettings === 'function') ? getEmailSettings() : {};
+      if (!st || typeof st !== 'object') st = {};
+      if (st.dailyRenewalEmailsEnabled === true) return true;
+      var st1 = JSON.parse(localStorage.getItem('kp_email_settings_v1') || '{}');
+      var st2 = JSON.parse(localStorage.getItem('kp_email_settings') || '{}');
+      return st1.dailyRenewalEmailsEnabled === true || st2.dailyRenewalEmailsEnabled === true || localStorage.getItem('kp_daily_renewal_email_enabled') === '1';
+    } catch(e){ return localStorage.getItem('kp_daily_renewal_email_enabled') === '1'; }
   }
   function updateRenewalEmailButton(){
-    var b=document.getElementById('renewal-email-toggle-btn'); if(!b) return;
-    b.textContent = getRenewalEmailEnabled() ? 'Disable daily renewal email' : 'Enable daily renewal email';
+    var b=document.getElementById('renewal-email-toggle-btn'), s=document.getElementById('renewal-email-toggle-status');
+    var enabled = getRenewalEmailEnabled();
+    if(b){
+      b.textContent = enabled ? 'Turn off daily renewal emails' : 'Turn on daily renewal emails';
+      b.className = enabled ? 'btn btn-r btn-sm' : 'btn btn-g btn-sm';
+    }
+    if(s){
+      s.textContent = enabled ? 'Status: ON - daily renewal email reminders are active for the system.' : 'Status: OFF - daily renewal email reminders are disabled.';
+      s.style.color = enabled ? '#1b7f4b' : 'var(--muted)';
+    }
   }
   window.toggleDailyRenewalEmailNotifications = async function(){
     var next=!getRenewalEmailEnabled();
     var st={}; try { st = (typeof getEmailSettings === 'function') ? getEmailSettings() : JSON.parse(localStorage.getItem('kp_email_settings')||'{}'); } catch(_e){}
     st.dailyRenewalEmailsEnabled = next;
     localStorage.setItem('kp_email_settings', JSON.stringify(st));
+    localStorage.setItem('kp_email_settings_v1', JSON.stringify(Object.assign({}, JSON.parse(localStorage.getItem('kp_email_settings_v1')||'{}'), { dailyRenewalEmailsEnabled: next })));
     localStorage.setItem('kp_daily_renewal_email_enabled', next ? '1' : '0');
     var remote=false;
     try { if (currentUser && currentUser.role === 'admin' && typeof saveEmailSettingsRemoteAware === 'function') remote = await saveEmailSettingsRemoteAware({from:st.from,msClientId:st.msClientId,msTenant:st.msTenant,model:st.model,dailyRenewalEmailsEnabled:next,updatedAt:new Date().toISOString()}); } catch(_e){}
@@ -18623,6 +18649,160 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     var open=document.getElementById('kp-date-review-overlay');
     if(open && open.classList.contains('on')) window.openFinanceDateReview();
   }, 200);
+})();
+</script>
+
+
+<script>
+/* KP ARABIC SYSTEM MESSAGES FINAL 2026-05-03 */
+(function(){
+  if (window.__kpArabicSystemMessagesFinal20260503) return;
+  window.__kpArabicSystemMessagesFinal20260503 = true;
+  function txt(v){ return String(v == null ? '' : v); }
+  function esc(v){ return txt(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function recordName(record){
+    if (!record) return '';
+    if (typeof record === 'string' || typeof record === 'number') return txt(record);
+    return txt(record.name || record.childName || record.studentName || record.who || record.desc || record.title || record.email || record.username || record.id || record.requestId || '').trim();
+  }
+  function isDangerText(v){ return /delete|remove|reject|permanent|حذف|رفض|نهائي/i.test(txt(v)); }
+  function classify(message, options){
+    var m = txt(message).toLowerCase();
+    if (options && options.type) return options.type;
+    if (/failed|failure|error|not saved|تعذر|فشل|خطأ|لم يتم/.test(m)) return 'err';
+    if (/warning|warn|later|local only|تحذير|لاحق|محلي/.test(m)) return 'warn';
+    return 'ok';
+  }
+  function ar(v){
+    var s = txt(v).trim();
+    if (!s) return s;
+    var low = s.toLowerCase();
+    var map = {
+      'confirm action':'تأكيد الإجراء',
+      'please review the action and record before continuing':'يرجى مراجعة الإجراء والسجل قبل المتابعة',
+      'action':'الإجراء',
+      'record':'السجل',
+      'not specified':'غير محدد',
+      'continue':'متابعة',
+      'confirm':'تأكيد',
+      'cancel':'إلغاء',
+      'ok':'موافق',
+      'system message':'رسالة من النظام',
+      'action failed':'تعذر تنفيذ الإجراء',
+      'attention':'تنبيه',
+      'action completed':'تم تنفيذ الإجراء',
+      'approve registration request':'قبول طلب التسجيل',
+      'approve and merge registration request':'قبول طلب التسجيل ودمجه',
+      'daily renewal email':'تنبيهات التجديد اليومية عبر البريد',
+      'change password':'تغيير كلمة السر',
+      'financial date cleanup':'تنظيم تواريخ المدفوعات والمصاريف',
+      'review unclear dates':'مراجعة التواريخ غير الواضحة',
+      'firebase':'Firebase'
+    };
+    if (map[low]) return map[low];
+    return s
+      .replace(/Do you want to approve this request and add the student to the system\?/gi, 'هل تريد قبول هذا الطلب وإضافة الطالب إلى النظام؟')
+      .replace(/Do you want to approve this request and merge it with the existing student profile\?/gi, 'هل تريد قبول هذا الطلب ودمجه مع ملف الطالب الحالي؟')
+      .replace(/The request was approved and saved to Firebase\./gi, 'تم قبول الطلب وحفظه في Firebase.')
+      .replace(/The request was approved and the student profile was updated on Firebase\./gi, 'تم قبول الطلب وتحديث ملف الطالب في Firebase.')
+      .replace(/Daily renewal email notifications are enabled\./gi, 'تم تفعيل تنبيهات التجديد اليومية عبر البريد.')
+      .replace(/Daily renewal email notifications are disabled\./gi, 'تم إيقاف تنبيهات التجديد اليومية عبر البريد.')
+      .replace(/Saved to Firebase\./gi, 'تم الحفظ في Firebase.')
+      .replace(/Saved on this device\./gi, 'تم الحفظ على هذا الجهاز.')
+      .replace(/Password changed and saved to Firebase\./gi, 'تم تغيير كلمة السر وحفظها في Firebase.')
+      .replace(/Password changed locally, but could not be saved to Firebase right now\./gi, 'تم تغيير كلمة السر محلياً، ولكن تعذر حفظها في Firebase حالياً.')
+      .replace(/Please check the password details\./gi, 'يرجى التأكد من بيانات كلمة السر.')
+      .replace(/No rows are available for export with the current filter\./gi, 'لا توجد سجلات متاحة للتصدير حسب التصفية الحالية.')
+      .replace(/No attachment found for this renewal\./gi, 'لا يوجد مرفق لهذا التجديد.')
+      .replace(/Unable to open print dialog\. Please allow popups for this file\./gi, 'تعذر فتح نافذة الطباعة. يرجى السماح بالنوافذ المنبثقة لهذا الملف.')
+      .replace(/Student record was not found\./gi, 'لم يتم العثور على سجل الطالب.')
+      .replace(/Registration decision was not saved to Firebase:/gi, 'لم يتم حفظ قرار طلب التسجيل في Firebase:')
+      .replace(/Saving registration decision to Firebase\.\.\./gi, 'جاري حفظ قرار طلب التسجيل في Firebase...')
+      .replace(/Registration decision saved to Firebase/gi, 'تم حفظ قرار طلب التسجيل في Firebase')
+      .replace(/Registration requests updated/gi, 'تم تحديث طلبات التسجيل')
+      .replace(/Registration requests partially updated/gi, 'تم تحديث طلبات التسجيل جزئياً')
+      .replace(/Firebase URL is missing/gi, 'رابط Firebase غير موجود')
+      .replace(/Firebase timeout/gi, 'انتهت مهلة الاتصال مع Firebase')
+      .replace(/Firebase read timeout/gi, 'انتهت مهلة قراءة البيانات من Firebase')
+      .replace(/Cleaned (\d+) clear payment\/expense date\(s\)\. Left (\d+) unclear date\(s\) unchanged\./gi, 'تم تنظيم $1 تاريخ واضح في المدفوعات/المصاريف. بقي $2 تاريخ غير واضح بدون تغيير.')
+      .replace(/No date was selected to save\./gi, 'لم يتم اختيار أي تاريخ للحفظ.')
+      .replace(/Saved (\d+) corrected date\(s\) to Firebase\./gi, 'تم حفظ $1 تاريخ مصحح في Firebase.')
+      .replace(/Saved (\d+) date\(s\), but (\d+) could not be saved to Firebase\./gi, 'تم حفظ $1 تاريخ، ولكن تعذر حفظ $2 في Firebase.');
+  }
+  function applyConfirmArabic(){
+    var title=document.getElementById('kp-confirm-title'); if(title) title.textContent='تأكيد الإجراء';
+    var sub=document.getElementById('kp-confirm-sub'); if(sub) sub.textContent='يرجى مراجعة تفاصيل الإجراء قبل المتابعة';
+    var labels=document.querySelectorAll('.kp-confirm-label');
+    if(labels[0]) labels[0].textContent='الإجراء';
+    if(labels[1]) labels[1].textContent='السجل';
+    var cancel=document.getElementById('kp-confirm-cancel'); if(cancel) cancel.textContent='إلغاء';
+    var ok=document.getElementById('kp-confirm-ok'); if(ok && /continue|confirm|approve|merge/i.test(ok.textContent || '')) ok.textContent=isDangerText(document.getElementById('kp-confirm-action') && document.getElementById('kp-confirm-action').textContent) ? 'تأكيد' : 'متابعة';
+  }
+  function updateRenewalEmailArabic(){
+    var b=document.getElementById('renewal-email-toggle-btn'), s=document.getElementById('renewal-email-toggle-status');
+    var enabled=false;
+    try {
+      var st1=JSON.parse(localStorage.getItem('kp_email_settings_v1')||'{}');
+      var st2=JSON.parse(localStorage.getItem('kp_email_settings')||'{}');
+      enabled = st1.dailyRenewalEmailsEnabled === true || st2.dailyRenewalEmailsEnabled === true || localStorage.getItem('kp_daily_renewal_email_enabled') === '1';
+    } catch(_e){ enabled = localStorage.getItem('kp_daily_renewal_email_enabled') === '1'; }
+    if (b) {
+      b.textContent = enabled ? 'إيقاف رسائل التجديد اليومية' : 'تفعيل رسائل التجديد اليومية';
+      b.className = enabled ? 'btn btn-r btn-sm' : 'btn btn-g btn-sm';
+    }
+    if (s) {
+      s.textContent = enabled ? 'الحالة: مفعلة - يتم استخدام تنبيهات التجديد اليومية للنظام.' : 'الحالة: متوقفة - تنبيهات التجديد اليومية غير مفعلة.';
+      s.style.color = enabled ? '#1b7f4b' : 'var(--muted)';
+    }
+  }
+  function showArabicMessage(action, record, message, options){
+    options = options || {};
+    var type = classify(message, options);
+    var title = ar(options.title || action || (type === 'err' ? 'تعذر تنفيذ الإجراء' : (type === 'warn' ? 'تنبيه' : 'تم تنفيذ الإجراء')));
+    var sub = ar(options.sub || 'رسالة من النظام');
+    var icon = type === 'err' ? '!' : (type === 'warn' ? '!' : '✓');
+    var rn = recordName(record);
+    var overlay=document.getElementById('kp-message-overlay');
+    if(!overlay){ overlay=document.createElement('div'); overlay.id='kp-message-overlay'; overlay.className='kp-message-overlay'; document.body.appendChild(overlay); }
+    overlay.innerHTML='<div class="kp-message-box '+type+'"><div class="kp-message-head"><div class="kp-message-icon">'+icon+'</div><div><div class="kp-message-title">'+esc(title)+'</div><div class="kp-message-sub">'+esc(sub)+'</div></div></div>'+(rn?'<div class="kp-message-rec"><b>السجل:</b> '+esc(rn)+'</div>':'')+'<div class="kp-message-body">'+esc(ar(message || title))+'</div><div class="kp-message-actions"><button class="kp-message-ok" type="button">موافق</button></div></div>';
+    overlay.classList.add('on');
+    return new Promise(function(resolve){
+      function done(){ overlay.classList.remove('on'); resolve(true); }
+      var ok=overlay.querySelector('.kp-message-ok'); if(ok) ok.onclick=done;
+      overlay.onclick=function(e){ if(e.target===overlay) done(); };
+    });
+  }
+  var previousConfirm = window.kpConfirmAsync;
+  if (typeof previousConfirm === 'function') {
+    window.kpConfirmAsync = function(action, record, message, options){
+      options = Object.assign({}, options || {});
+      if (options.title) options.title = ar(options.title);
+      if (options.okText) options.okText = ar(options.okText);
+      else options.okText = isDangerText(action + ' ' + message) ? 'تأكيد' : 'متابعة';
+      options.cancelText = ar(options.cancelText || 'إلغاء');
+      var result = previousConfirm.call(this, ar(action || 'تأكيد الإجراء'), record, ar(message || 'هل تريد المتابعة؟'), options);
+      setTimeout(applyConfirmArabic, 0);
+      setTimeout(applyConfirmArabic, 30);
+      return result;
+    };
+    try { kpConfirmAsync = window.kpConfirmAsync; } catch(_e){}
+  }
+  window.kpMessage = showArabicMessage;
+  window.alert = function(message){ showArabicMessage(null, null, message); };
+  var previousToggle = window.toggleDailyRenewalEmailNotifications;
+  if (typeof previousToggle === 'function') {
+    window.toggleDailyRenewalEmailNotifications = async function(){
+      var r = await previousToggle.apply(this, arguments);
+      setTimeout(updateRenewalEmailArabic, 0);
+      setTimeout(updateRenewalEmailArabic, 80);
+      return r;
+    };
+    try { toggleDailyRenewalEmailNotifications = window.toggleDailyRenewalEmailNotifications; } catch(_e){}
+  }
+  document.addEventListener('DOMContentLoaded', function(){ applyConfirmArabic(); updateRenewalEmailArabic(); });
+  setTimeout(function(){ applyConfirmArabic(); updateRenewalEmailArabic(); }, 100);
+  setTimeout(updateRenewalEmailArabic, 900);
+  window.kpArabicSystemMessageStatus = function(){ return { enabled:true, messages:'arabic', confirmations:'arabic' }; };
 })();
 </script>
 
