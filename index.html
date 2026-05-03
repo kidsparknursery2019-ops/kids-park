@@ -20998,5 +20998,189 @@ document.addEventListener('change', function(e){
   else startLiveRefresh();
 })();
 </script>
+<script>
+/*
+ KP PAYMENT LINKAGE DIRECT SAVE 2026-05-03
+ Makes single and bulk payment-student linkage independent of the older
+ generic save flow, with id-normalized lookup and one-shot Firebase PATCH.
+*/
+(function(){
+  if (window.__kpPaymentLinkageDirectSaveInstalled) return;
+  window.__kpPaymentLinkageDirectSaveInstalled = true;
+
+  function txt(value){ return String(value == null ? '' : value).trim(); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, ''); }
+  function norm(value){
+    try { return (typeof normKey === 'function') ? normKey(value) : txt(value); }
+    catch(_e){ return txt(value); }
+  }
+  function same(a,b){ return norm(a) === norm(b); }
+  function safeKey(value){
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(value) : ('k_' + txt(value).replace(/[.#$\[\]\/\s]/g, '_')); }
+    catch(_e){ return 'k_' + txt(value).replace(/[.#$\[\]\/\s]/g, '_'); }
+  }
+  function recordKey(record){
+    try { return (typeof kpRecordKey === 'function') ? kpRecordKey(record, 'id') : safeKey(record && record.id); }
+    catch(_e){ return safeKey(record && record.id); }
+  }
+  function candidateKeys(payment){
+    var out = {};
+    [payment && payment.firebaseKey, payment && payment.key, payment && payment.id, safeKey(payment && payment.id), 'k_' + txt(payment && payment.id)].forEach(function(key){
+      if (key) out[key] = true;
+    });
+    return Object.keys(out);
+  }
+  function findPayment(id){
+    return (Array.isArray(payments) ? payments : []).find(function(p){ return p && same(p.id, id); }) || null;
+  }
+  function findStudent(id){
+    return (Array.isArray(students) ? students : []).find(function(s){ return s && same(s.id, id); }) || null;
+  }
+  async function patchFirebase(updates){
+    var base = baseUrl();
+    if (!base) throw new Error('missing Firebase URL');
+    var res = await Promise.race([
+      fetch(base + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) }),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, 18000); })
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return true;
+  }
+  function showFail(action, error, record){
+    if (typeof window.kpShowFirebaseFailure === 'function') {
+      window.kpShowFirebaseFailure(action, error, { alert:true, record:record });
+    } else {
+      alert('Could not save to Firebase: ' + (error && error.message ? error.message : error));
+    }
+  }
+  function redraw(){
+    try { if (typeof resetPaymentMatchCache === 'function') resetPaymentMatchCache(); } catch(_e){}
+    try { persistCoreDataToLocalStorage(); } catch(_e){}
+    try { if (typeof renderPayments === 'function') renderPayments(); } catch(_e){}
+    try { if (typeof renderReceipts === 'function') renderReceipts(); } catch(_e){}
+    try { if (typeof renderStudents === 'function') renderStudents(); } catch(_e){}
+    try { if (typeof renderDash === 'function') renderDash(); } catch(_e){}
+  }
+  function buildPaymentUpdate(payment, stuId, savedAt){
+    var record = Object.assign({}, payment, {
+      stuId: stuId,
+      firebaseKey: recordKey(payment),
+      updatedAt: savedAt,
+      savedAt: savedAt,
+      updatedBy: (typeof currentUser !== 'undefined' && currentUser && (currentUser.username || currentUser.name)) ? (currentUser.username || currentUser.name) : 'system',
+      version: (parseInt(payment.version || 0, 10) || 0) + 1
+    });
+    var key = record.firebaseKey;
+    var updates = {};
+    updates['payments/' + key] = record;
+    candidateKeys(payment).forEach(function(candidate){ updates['deletedPayments/' + candidate] = null; });
+    try {
+      if (typeof tombstones !== 'undefined' && tombstones) {
+        tombstones.payments = (Array.isArray(tombstones.payments) ? tombstones.payments : []).filter(function(id){ return !same(id, payment.id); });
+        updates['tombstones/payments'] = tombstones.payments;
+      }
+      if (typeof restoredKeys !== 'undefined' && restoredKeys) {
+        restoredKeys.payments = Array.isArray(restoredKeys.payments) ? restoredKeys.payments : [];
+        if (!restoredKeys.payments.some(function(id){ return same(id, payment.id); })) restoredKeys.payments.push(payment.id);
+        updates['restoredKeys/payments'] = restoredKeys.payments;
+      }
+    } catch(_e){}
+    return { key:key, record:record, updates:updates };
+  }
+
+  window.approvePaymentMatch = async function(paymentId, studentId){
+    var p = findPayment(paymentId);
+    if (!p) { alert('لم يتم العثور على السند.'); return false; }
+    var sid = parseInt(studentId, 10);
+    if (!sid) {
+      var info = (typeof getPaymentMatchInfo === 'function') ? getPaymentMatchInfo(p) : null;
+      sid = info && info.student ? parseInt(info.student.id, 10) : 0;
+    }
+    var s = findStudent(sid);
+    if (!s) { alert('لم يتم العثور على طالب صالح لهذا الربط'); return false; }
+    var oldStuId = p.stuId;
+    var savedAt = new Date().toISOString();
+    var payload = buildPaymentUpdate(p, s.id, savedAt);
+    var updates = Object.assign({ savedAt:savedAt, version:2 }, payload.updates);
+    try {
+      await patchFirebase(updates);
+      Object.assign(p, payload.record);
+      redraw();
+      alert('تم اعتماد ربط السند #' + p.id + ' مع ملف الطالب: ' + (s.name || ('#' + s.id)));
+      return true;
+    } catch(e) {
+      p.stuId = oldStuId;
+      redraw();
+      showFail('ربط السند بالطالب', e, { paymentId:p.id, studentId:s.id, who:p.who, amount:p.amt });
+      return false;
+    }
+  };
+  try { approvePaymentMatch = window.approvePaymentMatch; } catch(_e){}
+
+  window.unlinkPaymentMatch = async function(paymentId){
+    var p = findPayment(paymentId);
+    if (!p || !p.stuId) return false;
+    if (!confirm('فك ربط السند #' + p.id + ' من ملف الطالب؟')) return false;
+    var oldStuId = p.stuId;
+    var savedAt = new Date().toISOString();
+    var payload = buildPaymentUpdate(p, null, savedAt);
+    var updates = Object.assign({ savedAt:savedAt, version:2 }, payload.updates);
+    try {
+      await patchFirebase(updates);
+      Object.assign(p, payload.record);
+      redraw();
+      return true;
+    } catch(e) {
+      p.stuId = oldStuId;
+      redraw();
+      showFail('فك ربط السند', e, { paymentId:p.id, oldStudentId:oldStuId, who:p.who, amount:p.amt });
+      return false;
+    }
+  };
+  try { unlinkPaymentMatch = window.unlinkPaymentMatch; } catch(_e){}
+
+  window.approveAllSuggestedPaymentMatches = async function(options){
+    options = options || {};
+    var candidates = [];
+    (Array.isArray(payments) ? payments : []).forEach(function(p){
+      if (!p || p.stuId) return;
+      var info = (typeof getPaymentMatchInfo === 'function') ? getPaymentMatchInfo(p) : null;
+      if (info && info.student && (info.status === 'suggested' || info.status === 'suggested-strong')) {
+        candidates.push({ payment:p, student:info.student });
+      }
+    });
+    if (!candidates.length) {
+      if (!options.silent) alert('لا توجد روابط مقترحة لاعتمادها حالياً.');
+      return 0;
+    }
+    var savedAt = new Date().toISOString();
+    var updates = { savedAt:savedAt, version:2 };
+    var backups = candidates.map(function(item){ return { payment:item.payment, stuId:item.payment.stuId }; });
+    var records = [];
+    candidates.forEach(function(item){
+      var payload = buildPaymentUpdate(item.payment, item.student.id, savedAt);
+      Object.assign(updates, payload.updates);
+      records.push({ payment:item.payment, record:payload.record });
+    });
+    try {
+      await patchFirebase(updates);
+      records.forEach(function(item){ Object.assign(item.payment, item.record); });
+      redraw();
+      if (!options.silent) alert('تم اعتماد ' + records.length + ' عملية ربط بين السندات وملفات الطلاب');
+      return records.length;
+    } catch(e) {
+      backups.forEach(function(item){ item.payment.stuId = item.stuId; });
+      redraw();
+      showFail('اعتماد ربط السندات دفعة واحدة', e, { count:candidates.length });
+      return 0;
+    }
+  };
+  try { approveAllSuggestedPaymentMatches = window.approveAllSuggestedPaymentMatches; } catch(_e){}
+
+  window.kpPaymentLinkageStatus = function(){
+    return { enabled:true, directFirebasePatch:true, payments:Array.isArray(payments) ? payments.length : 0 };
+  };
+})();
+</script>
 </body>
 </html>
