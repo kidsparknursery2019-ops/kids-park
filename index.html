@@ -1686,6 +1686,50 @@ html{max-width:100%;overflow-x:hidden}body{max-width:100%}
 .login-btn:active{transform:translateY(1px);box-shadow:0 2px 0 #1e6b3f}
 .login-err{color:var(--r2);font-size:13px;margin-top:12px;min-height:18px;font-weight:700}
 
+.kp-confirm-overlay{
+  position:fixed;inset:0;z-index:22000;display:none;
+  align-items:center;justify-content:center;padding:18px;
+  background:rgba(16,45,30,.42);backdrop-filter:blur(5px);
+}
+.kp-confirm-overlay.on{display:flex}
+.kp-confirm-modal{
+  width:min(460px,96vw);background:#fff;border-radius:18px;
+  border:1px solid rgba(30,107,63,.14);
+  box-shadow:0 24px 70px rgba(9,44,24,.34);
+  overflow:hidden;direction:rtl;text-align:right;
+  animation:mo-pop .18s cubic-bezier(.34,1.56,.64,1);
+}
+.kp-confirm-head{
+  padding:16px 18px;background:linear-gradient(135deg,#f7fcf9,#edf8f1);
+  border-bottom:1px solid #dcefe3;display:flex;align-items:center;gap:12px;
+}
+.kp-confirm-mark{
+  width:42px;height:42px;border-radius:14px;display:flex;align-items:center;justify-content:center;
+  background:#e8f9ee;color:#1e6b3f;font-size:22px;font-weight:900;flex-shrink:0;
+  border:1px solid #cce8d6;
+}
+.kp-confirm-modal.danger .kp-confirm-mark{background:#fff0ef;color:#b3342b;border-color:#ffd0ca}
+.kp-confirm-title{font-size:17px;font-weight:900;color:#17452c;line-height:1.25}
+.kp-confirm-sub{font-size:12px;color:#6b8470;margin-top:2px;font-weight:700}
+.kp-confirm-body{padding:16px 18px 6px}
+.kp-confirm-row{
+  display:flex;gap:10px;align-items:flex-start;
+  padding:10px 12px;border:1px solid #e1efe6;border-radius:12px;background:#fbfefc;margin-bottom:9px;
+}
+.kp-confirm-label{min-width:70px;color:#6b8470;font-size:12px;font-weight:900}
+.kp-confirm-value{color:#153f29;font-size:13px;font-weight:900;line-height:1.45;word-break:break-word}
+.kp-confirm-message{
+  margin-top:11px;padding:12px;border-radius:12px;background:#f8fbf9;
+  color:#33483a;font-size:13px;line-height:1.65;white-space:pre-wrap;border:1px solid #edf4ef;
+}
+.kp-confirm-actions{display:flex;justify-content:flex-start;gap:10px;padding:14px 18px 18px}
+.kp-confirm-actions .btn{min-width:98px;justify-content:center}
+@media(max-width:560px){
+  .kp-confirm-modal{border-radius:16px}
+  .kp-confirm-actions{flex-direction:column-reverse}
+  .kp-confirm-actions .btn{width:100%}
+}
+
 
 /* ============================================================
    KP TEACHER MOBILE/UI LOCK — 2026-05-01
@@ -1763,6 +1807,33 @@ body.kp-teacher .kp-sync-panel{
 <!-- PRINT AREA -->
 <div id="receipt-print-area"></div>
 
+<div class="kp-confirm-overlay" id="kp-confirm-overlay" aria-hidden="true">
+  <div class="kp-confirm-modal" id="kp-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="kp-confirm-title">
+    <div class="kp-confirm-head">
+      <div class="kp-confirm-mark" id="kp-confirm-mark">؟</div>
+      <div>
+        <div class="kp-confirm-title" id="kp-confirm-title">تأكيد الإجراء</div>
+        <div class="kp-confirm-sub" id="kp-confirm-sub">يرجى مراجعة تفاصيل الإجراء قبل المتابعة</div>
+      </div>
+    </div>
+    <div class="kp-confirm-body">
+      <div class="kp-confirm-row">
+        <div class="kp-confirm-label">الإجراء</div>
+        <div class="kp-confirm-value" id="kp-confirm-action">-</div>
+      </div>
+      <div class="kp-confirm-row">
+        <div class="kp-confirm-label">السجل</div>
+        <div class="kp-confirm-value" id="kp-confirm-record">-</div>
+      </div>
+      <div class="kp-confirm-message" id="kp-confirm-message"></div>
+    </div>
+    <div class="kp-confirm-actions">
+      <button type="button" class="btn btn-out" id="kp-confirm-cancel">إلغاء</button>
+      <button type="button" class="btn btn-g" id="kp-confirm-ok">متابعة</button>
+    </div>
+  </div>
+</div>
+
 <div class="login-screen" id="login-screen">
   <div class="login-deco login-deco-1">🎈</div>
   <div class="login-deco login-deco-2">⭐</div>
@@ -1831,8 +1902,8 @@ body.kp-teacher .kp-sync-panel{
     <div class="nav" id="nav-forms" onclick="go('forms')">      <span class="ni">📋</span><span>طلبات التسجيل</span><span id="forms-nav-badge" class="nav-badge" style="display:none">0</span></div>
     <div class="nav" id="nav-renewals" onclick="go('renewals')">   <span class="ni">🔔</span><span>التجديدات</span><span id="renewals-nav-badge" class="nav-badge" style="display:none">0</span></div>
     <div class="nav"     onclick="go('finreport')"> <span class="ni">📈</span><span>التقارير المالية</span></div>
-    <div class="nav" id="nav-deleted" onclick="go('deleted')"><span class="ni">👶</span><span>الطلاب المحذوفون</span><span id="del-students-nav-badge" class="nav-badge" style="display:none">0</span></div>
-    <div class="nav" id="nav-other-deleted" onclick="go('otherdeleted')">    <span class="ni">🗂️</span><span>سلة المحذوفات</span></div>
+    <div class="nav" id="nav-deleted" onclick="go('otherdeleted')" style="display:none"><span class="ni">👶</span><span>الطلاب المحذوفون</span><span id="legacy-del-students-nav-badge" class="nav-badge" style="display:none">0</span></div>
+    <div class="nav" id="nav-other-deleted" onclick="go('otherdeleted')">    <span class="ni">🗂️</span><span>سلة المحذوفات</span><span id="del-students-nav-badge" class="nav-badge" style="display:none">0</span></div>
     <div class="side-sep"></div>
     <div class="nav" id="nav-email" onclick="go('email')"> <span class="ni">✉️</span><span>البريد</span></div>
     <div class="nav" id="nav-admin" onclick="go('admin')" style="display:none"><span class="ni">⚙️</span><span>الإعدادات</span></div>
@@ -2211,15 +2282,16 @@ body.kp-teacher .kp-sync-panel{
     <!-- OTHER DELETED ITEMS PAGE -->
     <div class="pg" id="pg-otherdeleted">
       <div class="pt">🗂️ سلة المحذوفات</div>
-      <div class="sg" style="grid-template-columns:repeat(4,1fr)">
+      <div class="sg" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
         <div class="sc r"><div class="sl">إجمالي العناصر</div><div class="sv" id="other-del-count">—</div></div>
+        <div class="sc"><div class="sl">&#1575;&#1604;&#1591;&#1604;&#1575;&#1576;</div><div class="sv" id="other-del-students-count">&mdash;</div></div>
         <div class="sc"><div class="sl">السندات / المدفوعات</div><div class="sv" id="other-del-payments-count">—</div></div>
         <div class="sc y"><div class="sl">المصاريف</div><div class="sv" id="other-del-expenses-count">—</div></div>
         <div class="sc b"><div class="sl">التجديدات والفصول</div><div class="sv" id="other-del-misc-count">—</div></div>
       </div>
       <div class="card">
         <div class="ct">
-          <div style="font-size:13px;color:var(--muted)">هذه الصفحة مخصصة للسندات والمدفوعات والمصاريف والتجديدات والفصول وأي سجل غير الطلاب.</div>
+          <div style="font-size:13px;color:var(--muted)">&#1607;&#1584;&#1607; &#1587;&#1604;&#1577; &#1605;&#1608;&#1581;&#1583;&#1577; &#1604;&#1580;&#1605;&#1610;&#1593; &#1575;&#1604;&#1587;&#1580;&#1604;&#1575;&#1578; &#1575;&#1604;&#1605;&#1581;&#1584;&#1608;&#1601;&#1577;: &#1575;&#1604;&#1591;&#1604;&#1575;&#1576;&#1548; &#1575;&#1604;&#1587;&#1606;&#1583;&#1575;&#1578;&#1548; &#1575;&#1604;&#1605;&#1589;&#1575;&#1585;&#1610;&#1601;&#1548; &#1575;&#1604;&#1578;&#1580;&#1583;&#1610;&#1583;&#1575;&#1578; &#1608;&#1575;&#1604;&#1601;&#1589;&#1608;&#1604;.</div>
         </div>
         <div id="other-deleted-list"></div>
       </div>
@@ -3102,7 +3174,7 @@ async function applyAttendanceLockRange(shouldLock){
   if (!classes.length) return alert('اختاري صف واحد على الأقل.');
 
   var actionText = shouldLock ? 'قفل' : 'فتح';
-  if (!confirm(actionText + ' تعديل الحضور لعدد ' + classes.length + ' صف و ' + dates.length + ' يوم؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, actionText + ' تعديل الحضور لعدد ' + classes.length + ' صف و ' + dates.length + ' يوم؟'))) return;
 
   var lockData = {
     by: (currentUser && (currentUser.username || currentUser.name)) || 'admin',
@@ -3932,7 +4004,7 @@ function kpDedupeRecordsForMigration(section, keyField) {
 
 async function migrateFirebaseToObjectPathsSafe() {
   try {
-    if (!confirm('⚠️ قبل التحويل لازم تكوني حمّلتي نسخة احتياطية قبل التحويل.\n\nالتحويل سيحوّل الطلاب/السندات/المصاريف/التجديدات إلى بنية Firebase السريعة، ولن يغيّر طلبات التسجيل القادمة من App Script.\n\nهل تريدين المتابعة؟')) return;
+    if (!(await window.kpConfirmAsync(null, null, '⚠️ قبل التحويل لازم تكوني حمّلتي نسخة احتياطية قبل التحويل.\n\nالتحويل سيحوّل الطلاب/السندات/المصاريف/التجديدات إلى بنية Firebase السريعة، ولن يغيّر طلبات التسجيل القادمة من App Script.\n\nهل تريدين المتابعة؟'))) return;
     kpMigrationSetStatus('⏳ جاري قراءة Firebase وتجهيز التحويل...', '');
     var res = await fetch(FB_URL + '.json', { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -5338,7 +5410,7 @@ async function setStudentOperationalStatus(id, status){
   const msg = isLeft
     ? 'تأكيد وضع الطالب "' + (s.name||'') + '" كطالب ترك؟\nسيختفي من قائمة الطلاب الموجودين، لكن ملفه وبياناته ستبقى محفوظة ويمكن إرجاعه لاحقاً.'
     : 'إرجاع الطالب "' + (s.name||'') + '" إلى قائمة الطلاب الموجودين؟';
-  if(!confirm(msg)) return;
+  if (!(await window.kpConfirmAsync(null, null, msg))) return;
   s.studentStatus = isLeft ? 'left' : 'active';
   s.enrollmentStatus = s.studentStatus;
   s.left = isLeft;
@@ -5896,7 +5968,7 @@ async function approvePaymentMatch(paymentId, studentId){
 async function unlinkPaymentMatch(paymentId){
   const p = payments.find(function(x){ return x.id === paymentId; });
   if (!p || !p.stuId) return;
-  if (!confirm('فك ربط السند #' + p.id + ' من ملف الطالب؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'فك ربط السند #' + p.id + ' من ملف الطالب؟'))) return;
   p.stuId = null;
   resetPaymentMatchCache();
   persistCoreDataToLocalStorage();
@@ -6374,7 +6446,7 @@ async function clearStudentHealth(id){
     alert('لا توجد حالة صحية مسجلة لهذا الطالب.');
     return;
   }
-  if (!confirm('هل تريدين حذف الحالة الصحية الحالية للطالب "' + (s.name || '') + '"؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'هل تريدين حذف الحالة الصحية الحالية للطالب "' + (s.name || '') + '"؟'))) return;
   const beforeCount = Array.isArray(students) ? students.length : 0;
   backupStudentsSnapshot('delete_health');
   const target = students.find(function(x){ return x.id === id; });
@@ -6468,7 +6540,7 @@ async function delStudent(id){
   const s = students.find(function(x){ return normKey(x && x.id) === normKey(id); });
   if (!s) return;
   const reason = prompt('سبب الحذف (اختياري):', '') || '';
-  if (!confirm('حذف الطالب "' + s.name + '"؟\nسيتم حفظه في سجل المحذوفين ويمكن استعادته.')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'حذف الطالب "' + s.name + '"؟\nسيتم حفظه في سجل المحذوفين ويمكن استعادته.'))) return;
   const deletedCopy = Object.assign({}, s, {
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
     deletionReason: reason,
@@ -6492,7 +6564,7 @@ async function delStudent(id){
 async function restoreStudent(id) {
   const s = deletedStudents.find(x => x.id === id);
   if (!s) return;
-  if (!confirm('استعادة الطالب "' + s.name + '"؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'استعادة الطالب "' + s.name + '"؟'))) return;
   const restored = Object.assign({}, s);
   delete restored.deletedAt;
   delete restored.deletionReason;
@@ -6522,8 +6594,8 @@ async function restoreStudent(id) {
 async function permanentDeleteStudent(id) {
   const s = deletedStudents.find(x => x.id === id);
   if (!s) return;
-  if (!confirm('⚠️ حذف نهائي للطالب "' + s.name + '"؟\nلا يمكن التراجع!')) return;
-  if (!confirm('تأكيد أخير: حذف نهائي؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, '⚠️ حذف نهائي للطالب "' + s.name + '"؟\nلا يمكن التراجع!'))) return;
+  if (!(await window.kpConfirmAsync(null, null, 'تأكيد أخير: حذف نهائي؟'))) return;
   deletedStudents = deletedStudents.filter(x => x.id !== id);
   _safeSetSlim('kp_deleted_students', deletedStudents);
   addTombstone('students', id);
@@ -6549,7 +6621,7 @@ function viewDeletedStudent(id) {
 async function restorePayment(id) {
   const p = deletedPayments.find(function(x){ return x.id === id; });
   if (!p) return;
-  if (!confirm('استعادة السند #' + id + '؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'استعادة السند #' + id + '؟'))) return;
   const restored = Object.assign({}, p);
   delete restored.deletedAt; delete restored.deletedBy;
   payments = payments.filter(function(x){ return x.id !== id; });
@@ -6572,7 +6644,7 @@ async function restorePayment(id) {
 async function restoreExpense(id) {
   const e = deletedExpenses.find(function(x){ return x.id === id; });
   if (!e) return;
-  if (!confirm('استعادة المصروف #' + id + '؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'استعادة المصروف #' + id + '؟'))) return;
   const restored = Object.assign({}, e);
   delete restored.deletedAt; delete restored.deletedBy;
   expenses = expenses.filter(function(x){ return x.id !== id; });
@@ -6594,7 +6666,7 @@ async function restoreExpense(id) {
 async function restoreRenewal(id) {
   const r = deletedRenewals.find(function(x){ return x.id === id; });
   if (!r) return;
-  if (!confirm('استعادة التجديد #' + id + '؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'استعادة التجديد #' + id + '؟'))) return;
   const restored = Object.assign({}, r);
   delete restored.deletedAt; delete restored.deletedBy;
   renewals = renewals.filter(function(x){ return x.id !== id; });
@@ -6616,7 +6688,7 @@ async function restoreRenewal(id) {
 async function restoreClass(name) {
   const c = deletedClasses.find(function(x){ return x.key === name; });
   if (!c) return;
-  if (!confirm('استعادة الفصل "' + name + '"؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'استعادة الفصل "' + name + '"؟'))) return;
   const classData = c.data || {teacher:'', emoji:'🏫'};
   CLASSES[name] = classData;
   CLASSES_DATA = CLASSES;
@@ -6634,7 +6706,7 @@ async function restoreClass(name) {
 }
 
 async function permanentDeleteGeneric(type, key) {
-  if (!confirm('⚠️ حذف نهائي؟ لا يمكن التراجع!')) return;
+  if (!(await window.kpConfirmAsync(null, null, '⚠️ حذف نهائي؟ لا يمكن التراجع!'))) return;
   let deletedArrayName, keyField, label;
   if (type === 'payments') {
     deletedPayments = deletedPayments.filter(function(x){ return x.id !== key; });
@@ -6679,55 +6751,66 @@ function renderDeletedSectionCard(icon, title, subtitle, actionsHtml) {
 
 function renderDeletedStudents() {
   const el = document.getElementById('deleted-list');
-  if (!el) return;
-  const totalStudents = deletedStudents.length;
-  document.getElementById('del-count').textContent = totalStudents;
+  const totalStudents = Array.isArray(deletedStudents) ? deletedStudents.length : 0;
+  const delCountEl = document.getElementById('del-count'); if (delCountEl) delCountEl.textContent = totalStudents;
   const sEl = document.getElementById('del-students-count'); if (sEl) sEl.textContent = totalStudents;
-  // تحديث badge الشريط الجانبي
   const navBadge = document.getElementById('del-students-nav-badge');
   if (navBadge) {
     navBadge.textContent = totalStudents;
     navBadge.style.display = totalStudents > 0 ? 'inline-flex' : 'none';
   }
-  if (!totalStudents) {
-    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">🗑 لا يوجد طلاب محذوفون</div>';
-    return;
+  if (el) {
+    el.innerHTML =
+      '<div style="text-align:center;padding:34px;color:var(--muted);line-height:1.9">' +
+        '<div style="font-size:28px;margin-bottom:8px">&#128450;&#65039;</div>' +
+        '<div style="font-weight:800;color:var(--g1);font-size:16px">&#1578;&#1605; &#1583;&#1605;&#1580; &#1575;&#1604;&#1591;&#1604;&#1575;&#1576; &#1575;&#1604;&#1605;&#1581;&#1584;&#1608;&#1601;&#1610;&#1606; &#1583;&#1575;&#1582;&#1604; &#1587;&#1604;&#1577; &#1575;&#1604;&#1605;&#1581;&#1584;&#1608;&#1601;&#1575;&#1578; &#1575;&#1604;&#1585;&#1574;&#1610;&#1587;&#1610;&#1577;</div>' +
+        '<div>&#1603;&#1604; &#1575;&#1604;&#1587;&#1580;&#1604;&#1575;&#1578; &#1575;&#1604;&#1605;&#1581;&#1584;&#1608;&#1601;&#1577; &#1578;&#1583;&#1575;&#1585; &#1575;&#1604;&#1570;&#1606; &#1605;&#1606; &#1605;&#1603;&#1575;&#1606; &#1608;&#1575;&#1581;&#1583;.</div>' +
+        '<button class="btn btn-g" style="margin-top:12px" onclick="go(\'otherdeleted\')">&#1601;&#1578;&#1581; &#1587;&#1604;&#1577; &#1575;&#1604;&#1605;&#1581;&#1584;&#1608;&#1601;&#1575;&#1578;</button>' +
+      '</div>';
   }
-  let html = '<div style="font-weight:800;color:var(--g1);margin:8px 0 12px">👶 الطلاب</div>';
-  html += deletedStudents.map(function(s){
-    return renderDeletedSectionCard('👶', s.name,
-      '📅 تاريخ الميلاد: ' + (s.dob||'—') + ' | 🏫 الفصل: ' + (s.cls||'—') + '<br>' +
-      '👨 ' + (s.dad||'—') + ' | 📱 ' + (s.dph||'—') + '<br>' +
-      '👩 ' + (s.mom||'—') + ' | 📱 ' + (s.mph||'—') + '<br>' +
-      '<span style="color:#e74c3c">🗑 حُذف في: ' + (s.deletedAt||'—') + '</span>' +
-      (s.deletionReason ? '<br>📝 السبب: ' + s.deletionReason : '') +
-      (s.deletedBy ? '<br>👤 بواسطة: ' + s.deletedBy : ''),
-      '<button class="btn btn-out btn-sm" onclick="viewDeletedStudent(' + s.id + ')">👁 عرض</button>' +
-      '<button class="btn btn-g btn-sm" onclick="restoreStudent(' + s.id + ')">♻️ استعادة</button>' +
-      '<button class="btn btn-r btn-sm" onclick="hardDeleteStudent(' + s.id + ', \''+  (s.name||'') + '\')">🗑 حذف نهائي</button>'
-    );
-  }).join('');
-  el.innerHTML = html;
+  if (typeof renderOtherDeletedItems === 'function') renderOtherDeletedItems();
 }
+
 
 function renderOtherDeletedItems() {
   const el = document.getElementById('other-deleted-list');
   if (!el) return;
-  const paymentsCount = deletedPayments.length;
-  const expensesCount = deletedExpenses.length;
-  const renewalsCount = deletedRenewals.length;
-  const classesCount = deletedClasses.length;
+  const studentsCount = Array.isArray(deletedStudents) ? deletedStudents.length : 0;
+  const paymentsCount = Array.isArray(deletedPayments) ? deletedPayments.length : 0;
+  const expensesCount = Array.isArray(deletedExpenses) ? deletedExpenses.length : 0;
+  const renewalsCount = Array.isArray(deletedRenewals) ? deletedRenewals.length : 0;
+  const classesCount = Array.isArray(deletedClasses) ? deletedClasses.length : 0;
   const miscCount = renewalsCount + classesCount;
-  const total = paymentsCount + expensesCount + miscCount;
+  const total = studentsCount + paymentsCount + expensesCount + miscCount;
   const totalEl = document.getElementById('other-del-count'); if (totalEl) totalEl.textContent = total;
+  const sEl = document.getElementById('other-del-students-count'); if (sEl) sEl.textContent = studentsCount;
   const pEl = document.getElementById('other-del-payments-count'); if (pEl) pEl.textContent = paymentsCount;
   const eEl = document.getElementById('other-del-expenses-count'); if (eEl) eEl.textContent = expensesCount;
   const mEl = document.getElementById('other-del-misc-count'); if (mEl) mEl.textContent = miscCount;
+  const navBadge = document.getElementById('del-students-nav-badge');
+  if (navBadge) { navBadge.textContent = studentsCount; navBadge.style.display = studentsCount > 0 ? 'inline-flex' : 'none'; }
   if (!total) {
     el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">🗑 لا يوجد عناصر محذوفة هنا</div>';
     return;
   }
   let html = '';
+  if (Array.isArray(deletedStudents) && deletedStudents.length) {
+    html += '<div style="font-weight:800;color:var(--g1);margin:16px 0 12px">&#128118; &#1575;&#1604;&#1591;&#1604;&#1575;&#1576;</div>';
+    html += deletedStudents.map(function(s){
+      var sid = JSON.stringify(s && s.id != null ? s.id : '');
+      return renderDeletedSectionCard('&#128118;', escapeHtml((s && s.name) || '&#1591;&#1575;&#1604;&#1576; &#1605;&#1581;&#1584;&#1608;&#1601;'),
+        '&#128197; &#1578;&#1575;&#1585;&#1610;&#1582; &#1575;&#1604;&#1605;&#1610;&#1604;&#1575;&#1583;: ' + escapeHtml((s && s.dob) || '?') + ' | &#127979; &#1575;&#1604;&#1601;&#1589;&#1604;: ' + escapeHtml((s && s.cls) || '?') + '<br>' +
+        '&#128104; ' + escapeHtml((s && s.dad) || '?') + ' | &#128241; ' + escapeHtml((s && s.dph) || '?') + '<br>' +
+        '&#128105; ' + escapeHtml((s && s.mom) || '?') + ' | &#128241; ' + escapeHtml((s && s.mph) || '?') + '<br>' +
+        '<span style="color:#e74c3c">&#128465; &#1581;&#1615;&#1584;&#1601; &#1601;&#1610;: ' + escapeHtml((s && s.deletedAt) || '?') + '</span>' +
+        ((s && s.deletionReason) ? '<br>&#128221; &#1575;&#1604;&#1587;&#1576;&#1576;: ' + escapeHtml(s.deletionReason) : '') +
+        ((s && s.deletedBy) ? '<br>&#128100; &#1576;&#1608;&#1575;&#1587;&#1591;&#1577;: ' + escapeHtml(s.deletedBy) : ''),
+        '<button class="btn btn-out btn-sm" onclick="viewDeletedStudent(' + sid.replace(/"/g,'&quot;') + ')">&#128065; &#1593;&#1585;&#1590;</button>' +
+        '<button class="btn btn-g btn-sm" onclick="restoreStudent(' + sid.replace(/"/g,'&quot;') + ')">&#9851;&#65039; &#1575;&#1587;&#1578;&#1593;&#1575;&#1583;&#1577;</button>' +
+        '<button class="btn btn-r btn-sm" onclick="permanentDeleteStudent(' + sid.replace(/"/g,'&quot;') + ')">&#128465; &#1581;&#1584;&#1601; &#1606;&#1607;&#1575;&#1574;&#1610;</button>'
+      );
+    }).join('');
+  }
   if (deletedPayments.length) {
     html += '<div style="font-weight:800;color:var(--g1);margin:16px 0 12px">🧾 السندات / المدفوعات</div>';
     html += deletedPayments.map(function(p){
@@ -6980,7 +7063,7 @@ async function submitAttendance(){
   // require at least one mark to avoid empty submissions
   var hasAny = students.some(function(s){ return s && s.cls===cls && attLog[date+'_'+s.id]; });
   if (!hasAny) return alert('يرجى تسجيل حضور طالب واحد على الأقل قبل الإرسال.');
-  if (!confirm('بعد الإرسال لن تتمكني من تعديل حضور هذا الفصل لهذا التاريخ. متابعة؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'بعد الإرسال لن تتمكني من تعديل حضور هذا الفصل لهذا التاريخ. متابعة؟'))) return;
   var lockData = {
     by: (currentUser && (currentUser.username || currentUser.name)) || 'teacher',
     at: new Date().toISOString()
@@ -7255,7 +7338,8 @@ function openEditPay(id){
 async function deletePayment(){
   if(!editingPayId) return;
   const p = payments.find(function(x){ return normKey(x && x.id) === normKey(editingPayId); });
-  if(!p || !confirm('حذف السند #'+p.id+' ('+p.who+')؟')) return;
+  if(!p) return;
+  if (!(await window.kpConfirmAsync(null, p, 'حذف السند #'+p.id+' ('+p.who+')؟'))) return;
   const delId = editingPayId;
   const deletedItem = Object.assign({}, p, {
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
@@ -7461,7 +7545,8 @@ async function delExpense(id){
   const delId = id || editingExpId;
   if(!delId) return;
   const exp = expenses.find(function(e){ return normKey(e && e.id) === normKey(delId); });
-  if(!exp || !confirm('حذف هذا المصروف؟')) return;
+  if(!exp) return;
+  if (!(await window.kpConfirmAsync(null, exp, 'حذف هذا المصروف؟'))) return;
 
   const deletedItem = Object.assign({}, exp, {
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
@@ -8155,10 +8240,10 @@ function downloadBackup() {
   alert('✅ تم تحميل النسخة الاحتياطية بنجاح\n\nاحفظها في مكان آمن (Google Drive/Dropbox)');
 }
 
-function restoreBackup(event) {
+async function restoreBackup(event) {
   const file = event.target.files[0];
   if (!file) return;
-  if (!confirm('⚠️ تحذير!\n\nاستعادة النسخة الاحتياطية ستحل محل جميع البيانات الحالية.\n\nهل أنت متأكد؟')) {
+  if (!(await window.kpConfirmAsync(null, null, '⚠️ تحذير!\n\nاستعادة النسخة الاحتياطية ستحل محل جميع البيانات الحالية.\n\nهل أنت متأكد؟'))) {
     event.target.value = ''; return;
   }
   const reader = new FileReader();
@@ -8287,7 +8372,7 @@ function handleImportFile(e) {
 
 async function doImport() {
   if (!importParsedData || !importParsedData.length) { alert('لا توجد بيانات'); return; }
-  if (!confirm('استيراد ' + importParsedData.length + ' سجل؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'استيراد ' + importParsedData.length + ' سجل؟'))) return;
   let added = 0;
   if (importTarget === 'students') {
     importParsedData.forEach(function(item){
@@ -8888,7 +8973,7 @@ function uploadLogo(input) {
 }
 
 async function removeLogo() {
-  if(!confirm('حذف الشعار؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'حذف الشعار؟'))) return;
   logoDataUrl = '';
   nurserySettings.logoDataUrl = '';
   localStorage.removeItem('kp_logo');
@@ -9136,7 +9221,7 @@ async function submitAddUser(){
   if (role === 'teacher') {
     ov.querySelectorAll('#au-classes-grid .ftab.on').forEach(function(b){ classes.push(b.dataset.cls); });
     if (!classes.length) {
-      if (!confirm('لم تختاري أي فصل لهذه المعلمة. ستحتاجين لتعيين الفصول لاحقاً قبل أن تتمكن من العمل. متابعة؟')) return;
+      if (!(await window.kpConfirmAsync(null, null, 'لم تختاري أي فصل لهذه المعلمة. ستحتاجين لتعيين الفصول لاحقاً قبل أن تتمكن من العمل. متابعة؟'))) return;
     }
   }
   let users;
@@ -9236,7 +9321,7 @@ function openEditUser(username){
     if (role === 'teacher') {
       ov.querySelectorAll('#eu-classes-grid .ftab.on').forEach(function(b){ picked.push(b.dataset.cls); });
       if (!picked.length) {
-        if (!confirm('لم تختاري أي فصل لهذه المعلمة. متابعة الحفظ؟')) return;
+        if (!(await window.kpConfirmAsync(null, null, 'لم تختاري أي فصل لهذه المعلمة. متابعة الحفظ؟'))) return;
       }
     }
 
@@ -9380,7 +9465,7 @@ async function toggleUserStatus(username) {
 async function deleteUser(username) {
   if(currentUser?.role !== 'admin') return alert('للمدير فقط');
   if(isPrimaryAdminUser(username)) return alert('لا يمكن حذف الحساب الرئيسي');
-  if(!confirm(`حذف المستخدم ${username}؟`)) return;
+  if (!(await window.kpConfirmAsync(null, null, `حذف المستخدم ${username}؟`))) return;
   // ✅ خذ آخر نسخة من Firebase قبل الحذف لتجنب التعارضات
   let users;
   try {
@@ -9468,7 +9553,7 @@ async function editClass(name) {
 }
 
 async function deleteClass(name) {
-  if (!confirm('حذف فصل "' + name + '"؟ سيتأثر الطلاب المسجلين فيه.')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'حذف فصل "' + name + '"؟ سيتأثر الطلاب المسجلين فيه.'))) return;
   const clsData = CLASSES[name] ? Object.assign({}, CLASSES[name]) : null;
   const deletedItem = {
     key: name,
@@ -9512,7 +9597,7 @@ function renderWorksheets() {
   }).join('');
 }
 
-function selectWsClass(className) {
+async function selectWsClass(className) {
   wsCurrentClass = className;
   const hasImg = !!worksheetImages[className];
   const input = document.createElement('input');
@@ -9531,10 +9616,10 @@ function selectWsClass(className) {
   };
 
   if(hasImg) {
-    const choice = confirm(`فصل ${className} عنده ورقة عمل موجودة.
+    const choice = await window.kpConfirmAsync(null, className, `فصل ${className} عنده ورقة عمل موجودة.
 
 موافق = عرض الأوراق الحالية
-إلغاء = استبدال الصورة`);
+إلغاء = استبدال الصورة`, { okText: 'عرض', cancelText: 'استبدال' });
     if(choice) { showWsPreview(className); }
     else { input.click(); }
   } else {
@@ -12358,18 +12443,18 @@ function openDuplicateDecisionModal(r, matches) {
 
   var mergeBtn = document.getElementById('mo-form-duplicates-merge');
   var newBtn = document.getElementById('mo-form-duplicates-new');
-  mergeBtn.onclick = function() {
+  mergeBtn.onclick = async function() {
     var selected = document.querySelector('input[name="form-match-student"]:checked');
     if (!selected) { alert('اختاري الطالب الذي تريدين الدمج معه'); return; }
     var sid = Number(selected.value);
     var target = students.find(function(s){ return s.id === sid; });
     if (!target) { alert('تعذر العثور على الطالب المحدد'); return; }
-    if (!confirm('سيتم دمج بيانات الطلب مع سجل الطالب الحالي: ' + (target.name || '') + '. هل تريدين المتابعة؟')) return;
+    if (!(await window.kpConfirmAsync(null, null, 'سيتم دمج بيانات الطلب مع سجل الطالب الحالي: ' + (target.name || '') + '. هل تريدين المتابعة؟'))) return;
     performApproveMerge(r, sid);
     closeAll();
   };
-  newBtn.onclick = function() {
-    if (!confirm('سيتم تسجيل هذا الطلب كطالب جديد. هل تريدين المتابعة؟')) return;
+  newBtn.onclick = async function() {
+    if (!(await window.kpConfirmAsync(null, null, 'سيتم تسجيل هذا الطلب كطالب جديد. هل تريدين المتابعة؟'))) return;
     performApproveNew(r);
     closeAll();
   };
@@ -12409,10 +12494,10 @@ async function performApproveMerge(r, studentId) {
   showSyncBadge('✅ تم قبول الطلب ودمج البيانات');
 }
 
-function rejectFormRow(ts) {
+async function rejectFormRow(ts) {
   var r = (typeof findRegistrationRowByToken === 'function' ? findRegistrationRowByToken(ts) : syncedFormRows.find(function(x){ return x.timestamp === ts; }))
   if (!r) return;
-  if (!confirm('سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'سيتم رفض هذا الطلب مع إمكانية التراجع لاحقاً. متابعة؟'))) return;
   setFormRowDecision(r, 'rejected', {
     approvedStudentId: null,
     approvedAction: 'reject',
@@ -12425,7 +12510,7 @@ function rejectFormRow(ts) {
 async function undoFormDecision(ts) {
   var r = (typeof findRegistrationRowByToken === 'function' ? findRegistrationRowByToken(ts) : syncedFormRows.find(function(x){ return x.timestamp === ts; }))
   if (!r || r.status === 'pending') return;
-  if (!confirm('هل تريدين التراجع عن هذا القرار وإعادة الطلب إلى قائمة الجديدة؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'هل تريدين التراجع عن هذا القرار وإعادة الطلب إلى قائمة الجديدة؟'))) return;
 
   var studentToDelete = null;
   var studentToRestore = null;
@@ -13198,7 +13283,7 @@ async function deleteRenewal() {
   if (!editingRenId) return;
   const r = renewals.find(function(x){ return normKey(x && x.id) === normKey(editingRenId); });
   if (!r) return;
-  if (!confirm('حذف "' + r.name + '"؟')) return;
+  if (!(await window.kpConfirmAsync(null, null, 'حذف "' + r.name + '"؟'))) return;
   const delId = editingRenId;
   const deletedItem = Object.assign({}, r, {
     deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
@@ -14089,7 +14174,7 @@ async function improveEmailWithMistral(isTest) {
         subjectMsg = ' وتمت إضافة عنوان مقترح: "' + suggestedSubject + '"';
       } else if (currentSubject !== suggestedSubject) {
         // إذا الذكاء اقترح عنواناً مختلفاً والمستخدم وضع عنواناً قبله، نسأل
-        const replace = confirm('اقترحَ الذكاء الاصطناعي عنواناً جديداً:\n\n"' + suggestedSubject + '"\n\nهل تريدين استبدال العنوان الحالي به؟\n\nالحالي: "' + currentSubject + '"');
+        const replace = await window.kpConfirmAsync('استبدال عنوان البريد', suggestedSubject, 'اقترحَ الذكاء الاصطناعي عنواناً جديداً:\n\n"' + suggestedSubject + '"\n\nهل تريدين استبدال العنوان الحالي به؟\n\nالحالي: "' + currentSubject + '"', { okText: '???????' });
         if (replace) {
           subjEl.value = suggestedSubject;
           subjectMsg = ' وتم استبدال العنوان بالعنوان المقترح.';
@@ -14208,7 +14293,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     var s = arr.find(function(x){ return kpIdEq(x && x.id, id); });
     if (!s) return;
     var reason = prompt('سبب الحذف (اختياري):', '') || '';
-    if (!confirm('حذف الطالب "' + (s.name || '') + '"؟\nسيتم نقله إلى سلة المحذوفات ويمكن استعادته.')) return;
+    if (!(await window.kpConfirmAsync(null, null, 'حذف الطالب "' + (s.name || '') + '"؟\nسيتم نقله إلى سلة المحذوفات ويمكن استعادته.'))) return;
     var deletedCopy = Object.assign({}, s, {
       deletedAt: new Date().toISOString().slice(0,19).replace('T',' '),
       deletionReason: reason,
@@ -14238,8 +14323,8 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     if (!Array.isArray(deletedStudents)) deletedStudents = [];
     var s = deletedStudents.find(function(x){ return kpIdEq(x && x.id, id); });
     if (!s) return;
-    if (!confirm('⚠️ حذف نهائي للطالب "' + (s.name || '') + '"؟\nسيتم مسح بياناته من Firebase ولا يمكن التراجع.')) return;
-    if (!confirm('تأكيد أخير: حذف نهائي من Firebase؟')) return;
+    if (!(await window.kpConfirmAsync(null, null, '⚠️ حذف نهائي للطالب "' + (s.name || '') + '"؟\nسيتم مسح بياناته من Firebase ولا يمكن التراجع.'))) return;
+    if (!(await window.kpConfirmAsync(null, null, 'تأكيد أخير: حذف نهائي من Firebase؟'))) return;
     deletedStudents = deletedStudents.filter(function(x){ return !kpIdEq(x && x.id, id); });
     students = (Array.isArray(students) ? students : []).filter(function(x){ return !kpIdEq(x && x.id, id); });
     try { _safeSetSlim('kp_deleted_students', deletedStudents); } catch(_e){}
@@ -14262,11 +14347,11 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   };
 
   // حذف محلي فوري — للطلاب المعلقين بسبب timeout Firebase
-  window.forceLocalDeleteStudent = function(id){
+  window.forceLocalDeleteStudent = async function(id){
     if (!Array.isArray(deletedStudents)) deletedStudents = [];
     var s = deletedStudents.find(function(x){ return kpIdEq(x && x.id, id); });
     if (!s) return;
-    if (!confirm('سيتم حذف الطالب "' + (s.name || '') + '" من الجهاز فقط.\nإذا كان لا يزال في Firebase يمكن أن يعود عند المزامنة التالية.\nمتابعة؟')) return;
+    if (!(await window.kpConfirmAsync(null, null, 'سيتم حذف الطالب "' + (s.name || '') + '" من الجهاز فقط.\nإذا كان لا يزال في Firebase يمكن أن يعود عند المزامنة التالية.\nمتابعة؟'))) return;
     deletedStudents = deletedStudents.filter(function(x){ return !kpIdEq(x && x.id, id); });
     students = (Array.isArray(students) ? students : []).filter(function(x){ return !kpIdEq(x && x.id, id); });
     try { _safeSetSlim('kp_deleted_students', deletedStudents); } catch(_e){}
@@ -17071,7 +17156,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   window.unlinkPaymentMatch = async function(paymentId){
     var p = findPayment(paymentId);
     if (!p || !p.stuId) return false;
-    if (!confirm('فك ربط السند #' + p.id + ' من ملف الطالب؟')) return false;
+    if (!(await window.kpConfirmAsync(null, p, 'فك ربط السند #' + p.id + ' من ملف الطالب؟'))) return false;
     var oldStuId = p.stuId;
     var savedAt = new Date().toISOString();
     var payload = buildPaymentUpdate(p, null, savedAt);
@@ -17265,6 +17350,167 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   setTimeout(function(){
     try { window.startAutoSync(); } catch(_e){}
   }, 900);
+})();
+</script>
+<script>
+/* ============================================================
+   KP CONFIRMATION CONTEXT 2026-05-03
+   Adds a clear action/record indicator to every confirmation.
+   ============================================================ */
+(function(){
+  'use strict';
+  if (window.__kpConfirmationContextInstalled) return;
+  window.__kpConfirmationContextInstalled = true;
+
+  var nativeConfirm = window.confirm ? window.confirm.bind(window) : null;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function clean(v){ return txt(v).replace(/\s+/g, ' ').slice(0, 160); }
+  function pickQuoted(message){
+    var patterns = [
+      /"([^"]{1,160})"/,
+      /'([^']{1,160})'/,
+      /«([^»]{1,160})»/,
+      /#\s*([A-Za-z0-9_-]{1,40})/
+    ];
+    for (var i = 0; i < patterns.length; i++) {
+      var m = message.match(patterns[i]);
+      if (m && m[1]) return clean(patterns[i].source.indexOf('#') >= 0 ? ('#' + m[1]) : m[1]);
+    }
+    return '';
+  }
+  function inferAction(message){
+    var m = txt(message).toLowerCase();
+    if (/حذف نهائي|permanent|hard delete/.test(m)) return 'حذف نهائي';
+    if (/حذف|delete|remove/.test(m)) return 'حذف';
+    if (/استعادة|restore/.test(m)) return 'استعادة';
+    if (/تراجع|reverse|undo/.test(m)) return 'تراجع عن قرار';
+    if (/رفض|reject/.test(m)) return 'رفض طلب';
+    if (/قبول|اعتماد|accept|approve/.test(m)) return 'قبول / اعتماد';
+    if (/دمج|merge/.test(m)) return 'دمج بيانات';
+    if (/فك ربط|unlink/.test(m)) return 'فك ربط';
+    if (/استيراد|import/.test(m)) return 'استيراد';
+    if (/نسخة احتياطية|backup/.test(m)) return 'نسخة احتياطية';
+    if (/الحضور|attendance/.test(m)) return 'تعديل الحضور';
+    if (/الشعار|logo/.test(m)) return 'تعديل الشعار';
+    if (/المستخدم|user/.test(m)) return 'إدارة مستخدم';
+    if (/فصل|class/.test(m)) return 'إدارة فصل';
+    if (/السند|payment|receipt/.test(m)) return 'إجراء على سند';
+    if (/المصروف|expense/.test(m)) return 'إجراء على مصروف';
+    if (/التجديد|renewal/.test(m)) return 'إجراء على تجديد';
+    if (/الطالب|student/.test(m)) return 'إجراء على طالب';
+    if (/طلب|registration/.test(m)) return 'إجراء على طلب تسجيل';
+    return 'تأكيد إجراء';
+  }
+  function inferRecord(message, explicitRecord){
+    if (explicitRecord) {
+      if (typeof explicitRecord === 'string' || typeof explicitRecord === 'number') return clean(explicitRecord);
+      var fields = ['name','childName','studentName','who','desc','title','username','id','firebaseKey','requestId'];
+      for (var i = 0; i < fields.length; i++) {
+        if (explicitRecord[fields[i]]) return clean(explicitRecord[fields[i]]);
+      }
+    }
+    var quoted = pickQuoted(message);
+    if (quoted) return quoted;
+    var p = message.match(/(?:#|رقم)\s*([A-Za-z0-9_-]{1,40})/i);
+    if (p && p[1]) return '#' + p[1];
+    return 'غير محدد';
+  }
+  function formatConfirmation(message, action, record){
+    message = txt(message);
+    if (/^تأكيد الإجراء\s*\n/.test(message) || /^Action confirmation\s*\n/i.test(message)) return message;
+    action = clean(action || inferAction(message));
+    record = clean(record || inferRecord(message));
+    return [
+      'تأكيد الإجراء',
+      'الإجراء: ' + action,
+      'السجل: ' + record,
+      '------------------------------',
+      message
+    ].join('\n');
+  }
+
+  window.kpConfirm = function(action, record, message){
+    if (!nativeConfirm) return true;
+    return nativeConfirm(formatConfirmation(message || action || '', action, record));
+  };
+
+  window.kpConfirmAsync = function(action, record, message, options){
+    options = options || {};
+    var overlay = document.getElementById('kp-confirm-overlay');
+    var modal = document.getElementById('kp-confirm-modal');
+    if (!overlay || !modal) return Promise.resolve(window.kpConfirm(action, record, message));
+
+    action = clean(action || inferAction(message || ''));
+    record = clean(inferRecord(message || '', record));
+    message = txt(message || '');
+    var danger = options.danger === true || /حذف|رفض|reject|delete|remove|permanent|نهائي/i.test(action + ' ' + message);
+
+    var title = document.getElementById('kp-confirm-title');
+    var sub = document.getElementById('kp-confirm-sub');
+    var mark = document.getElementById('kp-confirm-mark');
+    var actionEl = document.getElementById('kp-confirm-action');
+    var recordEl = document.getElementById('kp-confirm-record');
+    var msgEl = document.getElementById('kp-confirm-message');
+    var ok = document.getElementById('kp-confirm-ok');
+    var cancel = document.getElementById('kp-confirm-cancel');
+
+    if (title) title.textContent = options.title || 'تأكيد الإجراء';
+    if (sub) sub.textContent = danger ? 'هذا الإجراء قد يغير بيانات النظام' : 'يرجى مراجعة تفاصيل الإجراء قبل المتابعة';
+    if (mark) mark.textContent = danger ? '!' : '؟';
+    if (actionEl) actionEl.textContent = action || 'تأكيد إجراء';
+    if (recordEl) recordEl.textContent = record || 'غير محدد';
+    if (msgEl) msgEl.textContent = message || action;
+    if (ok) {
+      ok.textContent = options.okText || 'متابعة';
+      ok.className = 'btn ' + (danger ? 'btn-r' : 'btn-g');
+    }
+    if (cancel) cancel.textContent = options.cancelText || 'إلغاء';
+    modal.classList.toggle('danger', danger);
+    overlay.classList.add('on');
+    overlay.setAttribute('aria-hidden','false');
+
+    return new Promise(function(resolve){
+      var done = false;
+      function finish(value){
+        if (done) return;
+        done = true;
+        overlay.classList.remove('on');
+        overlay.setAttribute('aria-hidden','true');
+        cleanup();
+        resolve(value);
+      }
+      function onKey(e){
+        if (e.key === 'Escape') finish(false);
+        if (e.key === 'Enter') finish(true);
+      }
+      function onOverlay(e){
+        if (e.target === overlay) finish(false);
+      }
+      function cleanup(){
+        if (ok) ok.removeEventListener('click', yes);
+        if (cancel) cancel.removeEventListener('click', no);
+        overlay.removeEventListener('click', onOverlay);
+        document.removeEventListener('keydown', onKey);
+      }
+      function yes(){ finish(true); }
+      function no(){ finish(false); }
+      if (ok) ok.addEventListener('click', yes);
+      if (cancel) cancel.addEventListener('click', no);
+      overlay.addEventListener('click', onOverlay);
+      document.addEventListener('keydown', onKey);
+      setTimeout(function(){ try { if (ok) ok.focus(); } catch(_e){} }, 30);
+    });
+  };
+
+  window.confirm = function(message){
+    if (!nativeConfirm) return true;
+    return nativeConfirm(formatConfirmation(message));
+  };
+
+  window.kpConfirmationContextStatus = function(){
+    return { enabled:true, wrapsNativeConfirm:true, customModal:true, helpers:['kpConfirm(action, record, message)','kpConfirmAsync(action, record, message)'] };
+  };
 })();
 </script>
 <script>
@@ -17663,7 +17909,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   window.rejectFormRow = async function(token){
     var row = findRow(token);
     if (!row) return;
-    if (!confirm('Reject this registration request?')) return;
+    if (!(await window.kpConfirmAsync('رفض طلب تسجيل', row, 'هل تريد رفض طلب التسجيل هذا؟', { danger:true, okText:'رفض الطلب' }))) return;
     var now = new Date().toISOString();
     Object.assign(row, { status:'rejected', decisionAt:now, rowUpdatedAt:now, rejectedAt:now, approvedStudentId:null, approvedAction:'reject', undoData:{ revertTo:'pending' } });
     await saveDecision(row, 'rejected', {});
@@ -17710,7 +17956,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   window.undoFormDecision = async function(token){
     var row = findRow(token);
     if (!row || folderFromStatus(row.status) === 'pending') return;
-    if (!confirm('Reverse this registration decision and return it to pending?')) return;
+    if (!(await window.kpConfirmAsync('تراجع عن قرار طلب تسجيل', row, 'هل تريد إرجاع هذا الطلب إلى قائمة الطلبات الجديدة؟', { okText:'إرجاع الطلب' }))) return;
     var updates = {};
     var undo = row.undoData || {};
     if (folderFromStatus(row.status) === 'accepted' && row.approvedAction === 'new' && undo.createdStudentId != null) {
