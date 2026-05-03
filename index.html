@@ -1916,7 +1916,7 @@ body.kp-teacher .kp-sync-panel{
       </div>
       <div class="card">
         <div class="ct"><span id="stu-count">الطلاب</span></div>
-        <div class="tw"><table>
+        <div class="tw stu-table-wrap"><table id="stu-table" class="kp-students-table">
           <thead id="stu-thead"></thead>
           <tbody id="stu-tbody"></tbody>
         </table></div>
@@ -20654,19 +20654,27 @@ document.addEventListener('change', function(e){
 </script>
 <style>
 /* KP UI TIGHTENING 2026-05-03 */
+#stu-table{
+  table-layout:auto;
+}
 #stu-table th:nth-child(6),
 #stu-table td:nth-child(6){
-  width:150px;
-  max-width:150px;
+  width:96px!important;
+  min-width:96px!important;
+  max-width:96px!important;
   white-space:normal;
   overflow-wrap:anywhere;
+  word-break:break-word;
+  padding-left:6px!important;
+  padding-right:6px!important;
 }
 #stu-table td:nth-child(6) .b{
   display:inline-flex;
-  max-width:136px;
+  max-width:82px;
   white-space:normal;
   line-height:1.35;
-  padding-inline:7px;
+  padding-inline:5px;
+  font-size:11px;
 }
 #email-compose-ov{
   z-index:7000!important;
