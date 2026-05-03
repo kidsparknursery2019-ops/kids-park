@@ -3136,6 +3136,13 @@ function canManageAttendanceDateLocks(){
   return role === 'admin' || role === 'manager' || role === 'director' || uname === 'admin' || name.indexOf('مدير') !== -1;
 }
 
+function canRemoveAttendanceStatus(){
+  if (typeof currentUser === 'undefined' || !currentUser) return false;
+  var role = String(currentUser.role || '').toLowerCase();
+  var uname = String(currentUser.username || '').toLowerCase();
+  return role === 'admin' || role === 'manager' || uname === 'admin';
+}
+
 function dateRangeKeys(fromDate, toDate){
   var out = [];
   if (!fromDate || !toDate) return out;
@@ -6977,6 +6984,9 @@ function renderAttGrid(){
     const st=attLog[date+'_'+s.id]||'';
     if(st==='present')p++;if(st==='absent')a++;if(st==='late')l++;
     var disabledAttr = blocked ? ' disabled style="opacity:.5;cursor:not-allowed"' : '';
+    var clearBtn = (st && typeof canRemoveAttendanceStatus === 'function' && canRemoveAttendanceStatus())
+      ? '<button class="abtn" title="إزالة الحالة المحددة" onclick="clearAttStatus(\'' + date + '\',' + s.id + ')" style="background:#fff;border-color:#f4b6b6;color:#c62828">⌫</button>'
+      : '';
     return`<div class="ac ${st}" id="ac-${s.id}">
       <div class="av">${s.gen==='ذكر'?'👦':'👧'}</div>
       <div class="an">${s.name}<div style="font-size:11px;color:#607060;font-weight:600;direction:ltr;margin-top:2px">${getStudentEnglishDisplayName(s)}</div></div>
@@ -6985,6 +6995,7 @@ function renderAttGrid(){
         <button class="abtn p"${disabledAttr} onclick="setAtt('${date}',${s.id},'present')">✅</button>
         <button class="abtn a"${disabledAttr} onclick="setAtt('${date}',${s.id},'absent')">❌</button>
         <button class="abtn l"${disabledAttr} onclick="setAtt('${date}',${s.id},'late')">⏰</button>
+        ${clearBtn}
       </div>
     </div>`;
   }).join('');
@@ -7046,6 +7057,28 @@ async function setAtt(date,id,status){
   // ✅ حفظ فردي — PATCH على /attLog مباشرة
   const entries = {}; entries[key] = status;
   await saveAttendanceEntriesRemoteAware(entries);
+}
+
+async function clearAttStatus(date,id){
+  if (typeof canRemoveAttendanceStatus !== 'function' || !canRemoveAttendanceStatus()) {
+    return alert('هذه الصلاحية للمدير أو المسؤول فقط.');
+  }
+  var stu = students.find(function(x){ return x && x.id === +id; });
+  var key = date + '_' + id;
+  var oldStatus = attLog[key];
+  if (!oldStatus) return;
+  var name = stu && stu.name ? stu.name : ('#' + id);
+  var msg = 'إزالة حالة الحضور المحددة للطالب: ' + name + ' بتاريخ ' + date + '؟';
+  if (window.kpConfirmAsync && !(await window.kpConfirmAsync('إزالة حالة الحضور', name, msg))) return;
+  delete attLog[key];
+  renderAttGrid(); renderAttLog(); renderDash();
+  var entries = {}; entries[key] = null;
+  var saved = await saveAttendanceEntriesRemoteAware(entries);
+  if (!saved) {
+    attLog[key] = oldStatus;
+    renderAttGrid(); renderAttLog(); renderDash();
+    alert('تعذر حذف حالة الحضور من Firebase، لذلك تم إرجاع الحالة كما كانت.');
+  }
 }
 
 async function markAll(status){
