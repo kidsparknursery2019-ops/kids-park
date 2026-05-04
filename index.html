@@ -19835,6 +19835,95 @@ input,select,textarea,button{max-width:100%}
 })();
 </script>
 
+<script>
+/* KP FIREBASE AUTHORITATIVE LOAD GUARD 2026-05-04 */
+(function(){
+  if (window.__kpFirebaseAuthoritativeLoadGuard20260504) return;
+  window.__kpFirebaseAuthoritativeLoadGuard20260504 = true;
+
+  function clearLocalRuntimeBeforeCloudLoad(){
+    try { students = []; } catch(_e){}
+    try { payments = []; } catch(_e){}
+    try { expenses = []; } catch(_e){}
+    try { renewals = []; } catch(_e){}
+    try { deletedStudents = []; } catch(_e){}
+    try { deletedPayments = []; } catch(_e){}
+    try { deletedExpenses = []; } catch(_e){}
+    try { deletedRenewals = []; } catch(_e){}
+    try { deletedClasses = []; } catch(_e){}
+    try { attLog = {}; } catch(_e){}
+    try { attendanceLocks = {}; } catch(_e){}
+    try { CLASSES = {}; if (typeof CLASSES_DATA !== 'undefined') CLASSES_DATA = CLASSES; } catch(_e){}
+    try { syncedFormRows = []; } catch(_e){}
+    try { window.__localFormDecisions = {}; } catch(_e){}
+    try {
+      [
+        'kp_form_rows',
+        'kp_deleted_students',
+        'kp_deleted_payments',
+        'kp_deleted_expenses',
+        'kp_deleted_renewals',
+        'kp_deleted_classes'
+      ].forEach(function(key){ localStorage.removeItem(key); });
+    } catch(_e){}
+    try {
+      if (typeof tombstones !== 'undefined') tombstones = {students:[],payments:[],expenses:[],renewals:[],classes:[]};
+      if (typeof restoredKeys !== 'undefined') restoredKeys = {students:[],payments:[],expenses:[],renewals:[],classes:[]};
+    } catch(_e){}
+  }
+
+  async function cloudLooksReadable(){
+    try {
+      var res = await fetch(FB_URL + '/version.json?ts=' + Date.now(), { cache:'no-store' });
+      if (!res.ok) return false;
+      var version = await res.json();
+      return !!version;
+    } catch(_e) {
+      return false;
+    }
+  }
+
+  var previousLoadFromFirebase = window.loadFromFirebase || (typeof loadFromFirebase === 'function' ? loadFromFirebase : null);
+  if (typeof previousLoadFromFirebase === 'function') {
+    window.loadFromFirebase = async function(){
+      var readable = await cloudLooksReadable();
+      if (readable) clearLocalRuntimeBeforeCloudLoad();
+      return previousLoadFromFirebase.apply(this, arguments);
+    };
+    try { loadFromFirebase = window.loadFromFirebase; } catch(_e){}
+  }
+
+  var previousPushToFirebase = window.pushToFirebase || (typeof pushToFirebase === 'function' ? pushToFirebase : null);
+  if (typeof previousPushToFirebase === 'function') {
+    window.pushToFirebase = async function(){
+      if (typeof forceFullReplaceOnNextSync !== 'undefined' && forceFullReplaceOnNextSync === true) {
+        return previousPushToFirebase.apply(this, arguments);
+      }
+      try { hasUnsavedChanges = false; } catch(_e){}
+      try { pendingSync = false; } catch(_e){}
+      try { if (typeof showSyncBadge === 'function') showSyncBadge('محمي: تم منع حفظ شامل قد يعيد بيانات قديمة'); } catch(_e){}
+      console.warn('[KP] Blocked full Firebase root save. Individual record saves remain active.');
+      return false;
+    };
+    try { pushToFirebase = window.pushToFirebase; } catch(_e){}
+  }
+
+  var previousAutoSave = window.autoSave || (typeof autoSave === 'function' ? autoSave : null);
+  if (typeof previousAutoSave === 'function') {
+    window.autoSave = function(){
+      if (typeof forceFullReplaceOnNextSync !== 'undefined' && forceFullReplaceOnNextSync === true) {
+        return previousAutoSave.apply(this, arguments);
+      }
+      try { persistCoreDataToLocalStorage(); } catch(_e){}
+      try { hasUnsavedChanges = false; pendingSync = false; } catch(_e){}
+      try { if (typeof showSyncBadge === 'function') showSyncBadge('محمي: الحفظ يتم لكل سجل مباشرة على Firebase'); } catch(_e){}
+      return false;
+    };
+    try { autoSave = window.autoSave; } catch(_e){}
+  }
+})();
+</script>
+
 <style>
 /* KP STUDENT INTERNAL NOTE HIGHLIGHT 2026-05-04 */
 #stu-table td.kp-student-internal-note-cell{
