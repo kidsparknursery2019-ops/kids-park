@@ -20006,5 +20006,261 @@ input,select,textarea,button{max-width:100%}
 }
 </style>
 
+
+
+<script>
+/* =====================================================================
+   KP FIREBASE OLD-RECORD EDIT FIX 2026-05-04
+   Problem solved: old array/object duplicate records could survive under
+   legacy Firebase keys, so a fresh device could read the old duplicate.
+   This layer makes Firebase authoritative, selects newest records when
+   duplicates exist, and on every edit removes ALL old keys for the same id.
+   ===================================================================== */
+(function(){
+  if (window.__kpFirebaseOldRecordEditFix20260504) return;
+  window.__kpFirebaseOldRecordEditFix20260504 = true;
+
+  var ENTITY = {
+    students: { active:'students', deleted:'deletedStudents', keyField:'id' },
+    payments: { active:'payments', deleted:'deletedPayments', keyField:'id' },
+    expenses: { active:'expenses', deleted:'deletedExpenses', keyField:'id' },
+    renewals: { active:'renewals', deleted:'deletedRenewals', keyField:'id' }
+  };
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, ''); }
+  function norm(v){
+    try { return (typeof normKey === 'function') ? normKey(v) : txt(v); }
+    catch(_e){ return txt(v); }
+  }
+  function same(a,b){ return norm(a) === norm(b); }
+  function safeKey(value){
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(value) : ('k_' + txt(value).replace(/[.#$\[\]\/\s]/g, '_')); }
+    catch(_e){ return 'k_' + txt(value).replace(/[.#$\[\]\/\s]/g, '_'); }
+  }
+  function recordKey(record, keyField){
+    try { return (typeof kpRecordKey === 'function') ? kpRecordKey(record, keyField || 'id') : safeKey(record && record[keyField || 'id']); }
+    catch(_e){ return safeKey(record && record[keyField || 'id']); }
+  }
+  function candidateKeys(recordOrId, keyField){
+    var out = {};
+    var id = (recordOrId && typeof recordOrId === 'object') ? recordOrId[keyField || 'id'] : recordOrId;
+    var oldKey = (recordOrId && typeof recordOrId === 'object') ? (recordOrId.firebaseKey || recordOrId._fbKey || recordOrId.key || '') : '';
+    [oldKey, safeKey(id), txt(id), 'k_' + txt(id), txt(id).replace(/[.#$\[\]\/\s]/g, '_')].forEach(function(k){ if (k) out[k] = true; });
+    return Object.keys(out);
+  }
+  function stamp(item){
+    if (!item) return 0;
+    var fields = [item.updatedAt, item.savedAt, item.healthUpdatedAt, item.rowUpdatedAt, item.decisionAt, item.createdAt, item.date, item.exp_date];
+    for (var i=0;i<fields.length;i++) {
+      var t = Date.parse(fields[i] || '');
+      if (t) return t;
+    }
+    return 0;
+  }
+  function preferred(existing, incoming){
+    if (!existing) return incoming;
+    if (!incoming) return existing;
+    var a = stamp(existing), b = stamp(incoming);
+    if (a !== b) return b > a ? incoming : existing;
+    var av = parseInt(existing.version || 0, 10) || 0;
+    var bv = parseInt(incoming.version || 0, 10) || 0;
+    if (av !== bv) return bv > av ? incoming : existing;
+    // If there is no timestamp/version at all, keep the later item in Firebase order.
+    return Object.assign({}, existing, incoming);
+  }
+  function toArrayWithKeys(section){
+    if (!section) return [];
+    if (Array.isArray(section)) {
+      return section.map(function(v, i){
+        if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+        return Object.assign({}, v, { firebaseKey:v.firebaseKey || String(i) });
+      }).filter(Boolean);
+    }
+    if (typeof section === 'object') {
+      return Object.keys(section).map(function(k){
+        var v = section[k];
+        if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+        return Object.assign({}, v, { firebaseKey:v.firebaseKey || k });
+      }).filter(Boolean);
+    }
+    return [];
+  }
+  function deletedIdsFrom(list, keyField){
+    var set = {};
+    (Array.isArray(list) ? list : []).forEach(function(item){
+      var id = item && item[keyField || 'id'];
+      if (id != null && id !== '') set[norm(id)] = true;
+    });
+    return set;
+  }
+
+  // Replace the old local-wins merge. This prevents old local/cache records
+  // or old Firebase duplicates from beating a newer Firebase edit.
+  window.mergeArrayById = function(localArr, remoteArr, localTombstones, localDeletedBucket){
+    var ts = Array.isArray(localTombstones) ? localTombstones : [];
+    var deleted = deletedIdsFrom(localDeletedBucket, 'id');
+    var map = {};
+    function add(list){
+      (Array.isArray(list) ? list : []).forEach(function(item){
+        if (!item || item.id == null) return;
+        var id = norm(item.id);
+        if (deleted[id]) return;
+        if (ts.some(function(x){ return same(x, item.id); })) return;
+        map[id] = preferred(map[id], item);
+      });
+    }
+    add(toArrayWithKeys(remoteArr));
+    add(toArrayWithKeys(localArr));
+    return Object.keys(map).map(function(id){ return map[id]; }).sort(function(a,b){ return (+a.id || 0) - (+b.id || 0); });
+  };
+  try { mergeArrayById = window.mergeArrayById; } catch(_e){}
+
+  async function readRoot(timeoutMs){
+    var base = baseUrl();
+    if (!base) throw new Error('missing Firebase URL');
+    var res = await Promise.race([
+      fetch(base + '.json?ts=' + Date.now(), { cache:'no-store' }),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, timeoutMs || 12000); })
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json() || {};
+  }
+  async function patchRoot(updates, timeoutMs){
+    var base = baseUrl();
+    if (!base) throw new Error('missing Firebase URL');
+    var res = await Promise.race([
+      fetch(base + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) }),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, timeoutMs || 20000); })
+    ]);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return true;
+  }
+  function addDuplicateDeletes(updates, root, sectionName, keyField, id){
+    var section = root && root[sectionName];
+    candidateKeys(id, keyField).forEach(function(k){ updates[sectionName + '/' + k] = null; });
+    if (!section) return;
+    if (Array.isArray(section)) {
+      section.forEach(function(item, idx){
+        if (item && typeof item === 'object' && same(item[keyField || 'id'], id)) updates[sectionName + '/' + idx] = null;
+      });
+      return;
+    }
+    if (typeof section === 'object') {
+      Object.keys(section).forEach(function(k){
+        var item = section[k];
+        if (item && typeof item === 'object' && same(item[keyField || 'id'], id)) updates[sectionName + '/' + k] = null;
+      });
+    }
+  }
+  function metaArray(root, group, type){
+    var g = root && root[group] && typeof root[group] === 'object' ? root[group] : {};
+    return Array.isArray(g[type]) ? g[type].slice() : [];
+  }
+  function removeId(list, id){ return (Array.isArray(list) ? list : []).filter(function(x){ return !same(x,id); }); }
+  function addId(list, id){ var arr = Array.isArray(list) ? list.slice() : []; if (!arr.some(function(x){ return same(x,id); })) arr.push(id); return arr; }
+  function localUpsert(type, record){
+    var cfg = ENTITY[type];
+    try {
+      var target = [];
+      if (type === 'students') target = Array.isArray(students) ? students : [];
+      else if (type === 'payments') target = Array.isArray(payments) ? payments : [];
+      else if (type === 'expenses') target = Array.isArray(expenses) ? expenses : [];
+      else if (type === 'renewals') target = Array.isArray(renewals) ? renewals : [];
+      var found = false;
+      target = target.map(function(item){
+        if (item && same(item[cfg.keyField], record[cfg.keyField])) { found = true; return Object.assign({}, item, record); }
+        return item;
+      });
+      if (!found) target.push(Object.assign({}, record));
+      if (type === 'students') students = target;
+      else if (type === 'payments') payments = target;
+      else if (type === 'expenses') expenses = target;
+      else if (type === 'renewals') renewals = target;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+    } catch(_e){}
+  }
+
+  var previousSaveRecord = window.saveRecordRemoteAware || (typeof saveRecordRemoteAware === 'function' ? saveRecordRemoteAware : null);
+  window.saveRecordRemoteAware = async function(config){
+    config = config || {};
+    var type = config.type || config.activeArrayName;
+    var cfg = ENTITY[type];
+    if (!cfg || !config.record) return previousSaveRecord ? previousSaveRecord.apply(this, arguments) : false;
+
+    var original = config.record;
+    var id = original[cfg.keyField];
+    if (id == null || id === '') return previousSaveRecord ? previousSaveRecord.apply(this, arguments) : false;
+
+    var savedAt = new Date().toISOString();
+    var record = Object.assign({}, original);
+    var key = recordKey(record, cfg.keyField);
+    record[cfg.keyField] = id;
+    record.firebaseKey = key;
+    record.updatedAt = savedAt;
+    record.savedAt = savedAt;
+    record.updatedBy = (typeof currentUser !== 'undefined' && currentUser && (currentUser.username || currentUser.name)) ? (currentUser.username || currentUser.name) : 'system';
+    record.version = (parseInt(record.version || 0, 10) || 0) + 1;
+
+    try {
+      if (typeof showSyncBadge === 'function') showSyncBadge('⏳ Saving record to Firebase...');
+      var root = await readRoot(13000);
+      var updates = { version:2, savedAt:savedAt };
+      addDuplicateDeletes(updates, root, cfg.active, cfg.keyField, id);
+      addDuplicateDeletes(updates, root, cfg.deleted, cfg.keyField, id);
+      updates[cfg.active + '/' + key] = record;
+      updates['tombstones/' + type] = removeId(metaArray(root, 'tombstones', type), id);
+      updates['restoredKeys/' + type] = addId(metaArray(root, 'restoredKeys', type), id);
+      await patchRoot(updates, 22000);
+
+      Object.assign(original, record);
+      localUpsert(type, record);
+      try { if (typeof tombstones !== 'undefined' && tombstones) tombstones[type] = updates['tombstones/' + type]; localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); } catch(_e){}
+      try { if (typeof restoredKeys !== 'undefined' && restoredKeys) restoredKeys[type] = updates['restoredKeys/' + type]; localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys)); } catch(_e){}
+      try { lastSavedAt = savedAt; localStorage.setItem('kp_last_synced_at', savedAt); hasUnsavedChanges = false; pendingSync = false; } catch(_e){}
+      try { if (typeof showSyncBadge === 'function') showSyncBadge('✅ Saved to Firebase and old duplicate keys removed'); } catch(_e){}
+      return true;
+    } catch(e) {
+      console.error('[KP] verified Firebase save failed:', type, id, e);
+      if (typeof window.kpShowFirebaseFailure === 'function') window.kpShowFirebaseFailure(config.label || 'record', e, { alert:true, record:record });
+      else alert('Could not save to Firebase: ' + (e && e.message ? e.message : e));
+      throw e;
+    }
+  };
+  try { saveRecordRemoteAware = window.saveRecordRemoteAware; } catch(_e){}
+
+  // Manual tool for one-time cleanup after opening the fixed file.
+  window.kpRepairDuplicateRecordsByNewest = async function(){
+    var root = await readRoot(20000);
+    var updates = { version:2, savedAt:new Date().toISOString() };
+    Object.keys(ENTITY).forEach(function(type){
+      var cfg = ENTITY[type];
+      var activeList = toArrayWithKeys(root[cfg.active]);
+      var deletedList = toArrayWithKeys(root[cfg.deleted]);
+      var deletedIds = deletedIdsFrom(deletedList, cfg.keyField);
+      var activeMap = {};
+      activeList.forEach(function(item){
+        var id = item && item[cfg.keyField];
+        if (id == null || id === '' || deletedIds[norm(id)]) return;
+        activeMap[norm(id)] = preferred(activeMap[norm(id)], item);
+      });
+      var deletedMap = {};
+      deletedList.forEach(function(item){
+        var id = item && item[cfg.keyField];
+        if (id == null || id === '') return;
+        deletedMap[norm(id)] = preferred(deletedMap[norm(id)], item);
+      });
+      var activeOut = {}, deletedOut = {};
+      Object.keys(activeMap).forEach(function(id){ var item = activeMap[id]; var key = recordKey(item, cfg.keyField); activeOut[key] = Object.assign({}, item, { firebaseKey:key }); });
+      Object.keys(deletedMap).forEach(function(id){ var item = deletedMap[id]; var key = recordKey(item, cfg.keyField); deletedOut[key] = Object.assign({}, item, { firebaseKey:key }); });
+      updates[cfg.active] = activeOut;
+      updates[cfg.deleted] = deletedOut;
+    });
+    await patchRoot(updates, 30000);
+    try { if (typeof showSyncBadge === 'function') showSyncBadge('✅ Duplicate Firebase records cleaned by newest version'); } catch(_e){}
+    return { ok:true, savedAt:updates.savedAt };
+  };
+})();
+</script>
 </body>
 </html>
