@@ -19967,6 +19967,391 @@ input,select,textarea,button{max-width:100%}
 })();
 </script>
 
+<script>
+/* KP RECORD-BASED FIREBASE FINALIZATION 2026-05-05 */
+(function(){
+  if (window.__kpRecordBasedFirebaseFinalization20260505) return;
+  window.__kpRecordBasedFirebaseFinalization20260505 = true;
+
+  var ENTITY_TYPES = {
+    students:{ activeArrayName:'students', deletedArrayName:'deletedStudents', keyField:'id', label:'الطالب' },
+    payments:{ activeArrayName:'payments', deletedArrayName:'deletedPayments', keyField:'id', label:'السند' },
+    expenses:{ activeArrayName:'expenses', deletedArrayName:'deletedExpenses', keyField:'id', label:'المصروف' },
+    renewals:{ activeArrayName:'renewals', deletedArrayName:'deletedRenewals', keyField:'id', label:'التجديد' }
+  };
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, ''); }
+  function same(a,b){
+    try { return (typeof normKey === 'function') ? normKey(a) === normKey(b) : txt(a) === txt(b); }
+    catch(_e){ return txt(a) === txt(b); }
+  }
+  function safeKey(v){
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(v) : ('k_' + txt(v).replace(/[.#$\[\]\/\s]/g, '_')); }
+    catch(_e){ return 'k_' + txt(v).replace(/[.#$\[\]\/\s]/g, '_'); }
+  }
+  function recordKey(record, keyField){
+    try { return (typeof kpRecordKey === 'function') ? kpRecordKey(record, keyField || 'id') : safeKey(record && record[keyField || 'id']); }
+    catch(_e){ return safeKey(record && record[keyField || 'id']); }
+  }
+  function getId(record, keyField){
+    record = record || {};
+    return record[keyField || 'id'];
+  }
+  function addCandidate(out, key){
+    key = txt(key);
+    if (!key) return;
+    out[key] = true;
+    out[safeKey(key)] = true;
+  }
+  function staticCandidateKeys(record, keyField){
+    var out = {};
+    record = record || {};
+    addCandidate(out, record.firebaseKey);
+    addCandidate(out, record.key);
+    addCandidate(out, record.receiptNo);
+    addCandidate(out, record.no);
+    addCandidate(out, record[keyField || 'id']);
+    return Object.keys(out);
+  }
+  async function readSection(name){
+    var url = baseUrl();
+    if (!url) return null;
+    try {
+      var readUrl = name ? (url + '/' + name + '.json?ts=' + Date.now()) : (url + '.json?ts=' + Date.now());
+      var res = await Promise.race([
+        fetch(readUrl, { cache:'no-store' }),
+        new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('Firebase read timeout')); }, 12000); })
+      ]);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch(_e){ return null; }
+  }
+  async function aliasKeysForRecord(sectionName, record, keyField, canonicalKey){
+    var keys = {};
+    staticCandidateKeys(record, keyField).forEach(function(k){ if (k && k !== canonicalKey) keys[k] = true; });
+    var id = getId(record, keyField);
+    var section = await readSection(sectionName);
+    if (section && typeof section === 'object') {
+      Object.keys(section).forEach(function(k){
+        var child = section[k];
+        if (!child || typeof child !== 'object') return;
+        if (same(child[keyField || 'id'], id) && k !== canonicalKey) keys[k] = true;
+      });
+    }
+    delete keys[canonicalKey];
+    return Object.keys(keys);
+  }
+  async function patchFirebase(updates, timeoutMs){
+    var url = baseUrl();
+    if (!url) throw new Error('Firebase URL is missing');
+    var res = await Promise.race([
+      fetch(url + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) }),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('Firebase save timeout')); }, timeoutMs || 18000); })
+    ]);
+    if (!res.ok) {
+      var body = await res.text().catch(function(){ return ''; });
+      throw new Error('HTTP ' + res.status + (body ? ' - ' + body.slice(0,120) : ''));
+    }
+    return true;
+  }
+  function applyLocalRecord(type, record){
+    var cfg = ENTITY_TYPES[type];
+    if (!cfg || !record) return;
+    try {
+      var list = window[cfg.activeArrayName] || eval(cfg.activeArrayName);
+      if (!Array.isArray(list)) list = [];
+      var id = getId(record, cfg.keyField);
+      var idx = list.findIndex(function(item){ return item && same(item[cfg.keyField], id); });
+      if (idx >= 0) list[idx] = Object.assign(list[idx], record);
+      else list.push(record);
+      window[cfg.activeArrayName] = list;
+      try { eval(cfg.activeArrayName + ' = window[cfg.activeArrayName]'); } catch(_e){}
+    } catch(_e){}
+  }
+  async function robustSaveRecord(config){
+    config = Object.assign({}, ENTITY_TYPES[config && config.type] || {}, config || {});
+    var record = config.record;
+    var type = config.type || config.activeArrayName;
+    if (!record || !config.activeArrayName) return false;
+    var savedAt = new Date().toISOString();
+    var copy = Object.assign({}, record);
+    var key = recordKey(copy, config.keyField || 'id');
+    copy.firebaseKey = key;
+    copy.updatedAt = savedAt;
+    copy.savedAt = savedAt;
+    copy.updatedBy = (typeof currentUser !== 'undefined' && currentUser && (currentUser.username || currentUser.name)) ? (currentUser.username || currentUser.name) : 'system';
+    copy.version = (parseInt(copy.version || 0, 10) || 0) + 1;
+
+    var updates = { savedAt:savedAt, version:2 };
+    updates[config.activeArrayName + '/' + key] = copy;
+    var activeAliases = await aliasKeysForRecord(config.activeArrayName, copy, config.keyField || 'id', key);
+    activeAliases.forEach(function(alias){ updates[config.activeArrayName + '/' + alias] = null; });
+    if (config.deletedArrayName) {
+      updates[config.deletedArrayName + '/' + key] = null;
+      var deletedAliases = await aliasKeysForRecord(config.deletedArrayName, copy, config.keyField || 'id', key);
+      deletedAliases.forEach(function(alias){ updates[config.deletedArrayName + '/' + alias] = null; });
+    }
+    try {
+      if (type && typeof tombstones !== 'undefined' && tombstones) {
+        tombstones[type] = (Array.isArray(tombstones[type]) ? tombstones[type] : []).filter(function(id){ return !same(id, copy[config.keyField || 'id']); });
+        updates['tombstones/' + type] = tombstones[type];
+      }
+      if (type && typeof restoredKeys !== 'undefined' && restoredKeys) {
+        restoredKeys[type] = Array.isArray(restoredKeys[type]) ? restoredKeys[type] : [];
+        if (!restoredKeys[type].some(function(id){ return same(id, copy[config.keyField || 'id']); })) restoredKeys[type].push(copy[config.keyField || 'id']);
+        updates['restoredKeys/' + type] = restoredKeys[type];
+      }
+    } catch(_e){}
+
+    if (typeof showSyncBadge === 'function') showSyncBadge('جاري حفظ ' + (config.label || 'السجل') + ' في Firebase...');
+    await patchFirebase(updates);
+    Object.assign(record, copy);
+    applyLocalRecord(type, record);
+    try { if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage(); } catch(_e){}
+    try { lastSavedAt = savedAt; localStorage.setItem('kp_last_synced_at', savedAt); hasUnsavedChanges = false; pendingSync = false; } catch(_e){}
+    if (typeof showSyncBadge === 'function') showSyncBadge('تم حفظ ' + (config.label || 'السجل') + ' في Firebase');
+    return true;
+  }
+
+  var previousSaveRecord = window.saveRecordRemoteAware || (typeof saveRecordRemoteAware === 'function' ? saveRecordRemoteAware : null);
+  window.saveRecordRemoteAware = async function(config){
+    try {
+      return await robustSaveRecord(config || {});
+    } catch(e) {
+      console.error('[KP] robust record save failed:', config && config.type, e);
+      if (typeof window.kpShowFirebaseFailure === 'function') {
+        window.kpShowFirebaseFailure(config && config.label || 'حفظ السجل', e, { alert:true, record:config && config.record });
+      } else {
+        alert('لم يتم حفظ السجل في Firebase: ' + (e && e.message ? e.message : e));
+      }
+      if (typeof previousSaveRecord === 'function') return false;
+      return false;
+    }
+  };
+  try { saveRecordRemoteAware = window.saveRecordRemoteAware; } catch(_e){}
+
+  function folderFromStatus(status){
+    status = txt(status || 'pending').toLowerCase();
+    if (status === 'approved' || status === 'accepted' || status === 'approve' || status === 'accept') return 'accepted';
+    if (status === 'rejected' || status === 'reject') return 'rejected';
+    return 'pending';
+  }
+  function normalizeRequest(raw, key, fallbackStatus){
+    var row = raw && typeof raw === 'object' ? Object.assign({}, raw) : {};
+    try {
+      if (typeof normalizeParentRegistrationRow === 'function') row = Object.assign(row, normalizeParentRegistrationRow(row, key));
+    } catch(_e){}
+    var rowKey = safeKey(row._fbKey || row.firebaseKey || row.requestId || row.key || key || row.timestamp || row.submittedAt || row.createdAt || ('req_' + Date.now() + '_' + Math.random().toString(36).slice(2,7)));
+    row.firebaseKey = rowKey;
+    row.requestId = row.requestId || rowKey;
+    row._fbKey = rowKey;
+    row.status = row.status || fallbackStatus || 'pending';
+    row.source = row.source || 'firebase_migrated';
+    row.rowUpdatedAt = row.rowUpdatedAt || row.updatedAt || row.decisionAt || row.timestamp || row.submittedAt || row.createdAt || new Date().toISOString();
+    return row;
+  }
+  function collectRowsFromSection(section, fallbackStatus, out){
+    if (!section) return;
+    if (Array.isArray(section)) {
+      section.forEach(function(row, idx){ if (row && typeof row === 'object') out.push(normalizeRequest(row, row.firebaseKey || row.requestId || idx, fallbackStatus)); });
+      return;
+    }
+    if (typeof section === 'object') {
+      Object.keys(section).forEach(function(key){
+        var row = section[key];
+        if (row && typeof row === 'object') out.push(normalizeRequest(row, key, fallbackStatus));
+      });
+    }
+  }
+  function requestIdentity(row){
+    row = row || {};
+    var id = txt(row.emiratesId || row.idNo || row.identityNo || row.nationalId).replace(/\D+/g, '');
+    if (id) return 'id:' + id;
+    var name = txt(row.name || row.childName || row.studentName || row.child || row.fullName).toLowerCase();
+    var phone = txt(row.dadMob || row.momMob || row.dph || row.mph || row.phone).replace(/\D+/g, '');
+    var dob = txt(row.dob || row.dateOfBirth || row.birthDate);
+    if (name || phone || dob) return 'child:' + [name,phone,dob].join('|');
+    return 'key:' + txt(row.firebaseKey || row.requestId || row.timestamp);
+  }
+  function rowTime(row){
+    var fields = ['rowUpdatedAt','decisionAt','updatedAt','approvedAt','rejectedAt','submittedAt','createdAt','timestamp'];
+    for (var i=0;i<fields.length;i++) {
+      var t = Date.parse(row && row[fields[i]]);
+      if (!isNaN(t)) return t;
+    }
+    return 0;
+  }
+  function mergeRequestRows(rows){
+    var map = {};
+    rows.forEach(function(row){
+      if (!row) return;
+      var id = requestIdentity(row);
+      var old = map[id];
+      if (!old || rowTime(row) >= rowTime(old)) map[id] = row;
+    });
+    return Object.keys(map).map(function(k){ return map[k]; });
+  }
+  async function migrateRegistrationRequests(options){
+    options = options || {};
+    var root = await readSection('');
+    if (!root || typeof root !== 'object') return { total:0, migrated:0 };
+    var rows = [];
+    collectRowsFromSection(root.kp_form_rows, 'pending', rows);
+    var reg = root.registrationRequests;
+    if (reg && typeof reg === 'object') {
+      ['pending','accepted','rejected'].forEach(function(folder){ collectRowsFromSection(reg[folder], folder === 'accepted' ? 'approved' : folder, rows); });
+      Object.keys(reg).forEach(function(key){
+        if (key === 'pending' || key === 'accepted' || key === 'rejected') return;
+        var value = reg[key];
+        if (value && typeof value === 'object') rows.push(normalizeRequest(value, key, value.status || 'pending'));
+      });
+    }
+    rows = mergeRequestRows(rows);
+    if (!rows.length) return { total:0, migrated:0 };
+    var updates = {};
+    var migrated = 0;
+    rows.forEach(function(row){
+      var folder = folderFromStatus(row.status);
+      row.sourcePath = 'nursery_data/registrationRequests/' + folder;
+      updates['registrationRequests/' + folder + '/' + row.firebaseKey] = row;
+      migrated++;
+    });
+    updates.savedAt = new Date().toISOString();
+    updates.version = 2;
+    await patchFirebase(updates, 22000);
+    try {
+      var existing = Array.isArray(syncedFormRows) ? syncedFormRows : [];
+      var merged = mergeRequestRows(existing.concat(rows));
+      syncedFormRows = merged;
+      window.syncedFormRows = merged;
+      localStorage.setItem('kp_form_rows', JSON.stringify(merged));
+      if (typeof renderFormRequests === 'function') renderFormRequests();
+      if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
+    } catch(_e){}
+    if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('تم ترحيل طلبات التسجيل إلى البنية الجديدة');
+    return { total:rows.length, migrated:migrated };
+  }
+  window.kpMigrateRegistrationRequestsToRecordFolders = migrateRegistrationRequests;
+
+  var previousSyncRegistration = window.syncRegistrationRequestsFromFirebase || (typeof syncRegistrationRequestsFromFirebase === 'function' ? syncRegistrationRequestsFromFirebase : null);
+  if (typeof previousSyncRegistration === 'function') {
+    window.syncRegistrationRequestsFromFirebase = async function(options){
+      try { await migrateRegistrationRequests({ silent:true }); } catch(e){ console.warn('[KP] registration migration skipped:', e); }
+      return previousSyncRegistration.apply(this, arguments);
+    };
+    try { syncRegistrationRequestsFromFirebase = window.syncRegistrationRequestsFromFirebase; } catch(_e){}
+  }
+
+  async function collectPaymentAliases(record, canonicalKey){
+    return aliasKeysForRecord('payments', record, 'id', canonicalKey);
+  }
+  function findPayment(id){
+    try { return (Array.isArray(payments) ? payments : []).find(function(p){ return p && same(p.id, id); }) || null; }
+    catch(_e){ return null; }
+  }
+  function findStudent(id){
+    try { return (Array.isArray(students) ? students : []).find(function(s){ return s && same(s.id, id); }) || null; }
+    catch(_e){ return null; }
+  }
+  function redrawPaymentAreas(){
+    try { if (typeof resetPaymentMatchCache === 'function') resetPaymentMatchCache(); } catch(_e){}
+    try { if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage(); } catch(_e){}
+    try { if (typeof renderPayments === 'function') renderPayments(); } catch(_e){}
+    try { if (typeof renderReceipts === 'function') renderReceipts(); } catch(_e){}
+    try { if (typeof renderStudents === 'function') renderStudents(); } catch(_e){}
+    try { if (typeof renderDash === 'function') renderDash(); } catch(_e){}
+  }
+  async function buildPaymentLinkPatch(payment, studentId, savedAt){
+    var record = Object.assign({}, payment, {
+      stuId: studentId,
+      updatedAt: savedAt,
+      savedAt: savedAt,
+      updatedBy: (typeof currentUser !== 'undefined' && currentUser && (currentUser.username || currentUser.name)) ? (currentUser.username || currentUser.name) : 'system',
+      version: (parseInt(payment.version || 0, 10) || 0) + 1
+    });
+    var key = recordKey(record, 'id');
+    record.firebaseKey = key;
+    var updates = {};
+    updates['payments/' + key] = record;
+    (await collectPaymentAliases(record, key)).forEach(function(alias){ updates['payments/' + alias] = null; updates['deletedPayments/' + alias] = null; });
+    updates['deletedPayments/' + key] = null;
+    return { record:record, updates:updates };
+  }
+  window.approvePaymentMatch = async function(paymentId, studentId){
+    var p = findPayment(paymentId);
+    if (!p) { alert('لم يتم العثور على السند.'); return false; }
+    var sid = parseInt(studentId, 10);
+    if (!sid) {
+      var info = (typeof getPaymentMatchInfo === 'function') ? getPaymentMatchInfo(p) : null;
+      sid = info && info.student ? parseInt(info.student.id, 10) : 0;
+    }
+    var s = findStudent(sid);
+    if (!s) { alert('لم يتم العثور على طالب صالح لهذا الربط'); return false; }
+    var oldStuId = p.stuId;
+    var savedAt = new Date().toISOString();
+    try {
+      var built = await buildPaymentLinkPatch(p, s.id, savedAt);
+      await patchFirebase(Object.assign({ savedAt:savedAt, version:2 }, built.updates), 22000);
+      Object.assign(p, built.record);
+      redrawPaymentAreas();
+      alert('تم اعتماد ربط السند #' + p.id + ' مع ملف الطالب: ' + (s.name || ('#' + s.id)));
+      return true;
+    } catch(e) {
+      p.stuId = oldStuId;
+      redrawPaymentAreas();
+      if (typeof window.kpShowFirebaseFailure === 'function') window.kpShowFirebaseFailure('ربط السند بالطالب', e, { alert:true, record:{ paymentId:p.id, studentId:s.id, who:p.who, amount:p.amt } });
+      else alert('لم يتم حفظ الربط في Firebase: ' + (e && e.message ? e.message : e));
+      return false;
+    }
+  };
+  try { approvePaymentMatch = window.approvePaymentMatch; } catch(_e){}
+
+  window.approveAllSuggestedPaymentMatches = async function(options){
+    options = options || {};
+    var candidates = [];
+    try {
+      (Array.isArray(payments) ? payments : []).forEach(function(p){
+        if (!p || p.stuId) return;
+        var info = (typeof getPaymentMatchInfo === 'function') ? getPaymentMatchInfo(p) : null;
+        if (info && info.student && (info.status === 'suggested' || info.status === 'suggested-strong')) candidates.push({ payment:p, student:info.student });
+      });
+    } catch(_e){}
+    if (!candidates.length) {
+      if (!options.silent) alert('لا توجد روابط مقترحة لاعتمادها حالياً.');
+      return 0;
+    }
+    var savedAt = new Date().toISOString();
+    var updates = { savedAt:savedAt, version:2 };
+    var backups = candidates.map(function(item){ return { payment:item.payment, stuId:item.payment.stuId }; });
+    var records = [];
+    try {
+      for (var i=0; i<candidates.length; i++) {
+        var built = await buildPaymentLinkPatch(candidates[i].payment, candidates[i].student.id, savedAt);
+        Object.assign(updates, built.updates);
+        records.push({ payment:candidates[i].payment, record:built.record });
+      }
+      await patchFirebase(updates, 30000);
+      records.forEach(function(item){ Object.assign(item.payment, item.record); });
+      redrawPaymentAreas();
+      if (!options.silent) alert('تم اعتماد ' + records.length + ' عملية ربط بين السندات وملفات الطلاب');
+      return records.length;
+    } catch(e) {
+      backups.forEach(function(item){ item.payment.stuId = item.stuId; });
+      redrawPaymentAreas();
+      if (typeof window.kpShowFirebaseFailure === 'function') window.kpShowFirebaseFailure('اعتماد ربط السندات دفعة واحدة', e, { alert:true, record:{ count:candidates.length } });
+      else alert('لم يتم حفظ الربط في Firebase: ' + (e && e.message ? e.message : e));
+      return 0;
+    }
+  };
+  try { approveAllSuggestedPaymentMatches = window.approveAllSuggestedPaymentMatches; } catch(_e){}
+
+  setTimeout(function(){
+    try { migrateRegistrationRequests({ silent:true }); } catch(_e){}
+  }, 2500);
+})();
+</script>
+
 <style>
 /* KP TABLE FIT RESTORE 2026-05-04 */
 .tw{
