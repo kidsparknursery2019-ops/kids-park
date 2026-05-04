@@ -19967,5 +19967,44 @@ input,select,textarea,button{max-width:100%}
 })();
 </script>
 
+<style>
+/* KP TABLE FIT RESTORE 2026-05-04 */
+.tw{
+  width:100%!important;
+  max-width:100%!important;
+  overflow:auto!important;
+}
+.tw table{
+  width:100%!important;
+  min-width:100%!important;
+  max-width:none!important;
+}
+#pg-expenses .tw table,
+#pg-payments .tw table,
+#pg-students .tw table,
+#pg-renewals .tw table,
+#pg-registration .tw table,
+#pg-attendance .tw table,
+#pg-financial-reports .tw table{
+  width:100%!important;
+  min-width:100%!important;
+}
+@media (max-width:760px){
+  #pg-expenses .tw table,
+  #pg-payments .tw table,
+  #pg-renewals .tw table,
+  #pg-registration .tw table,
+  #pg-financial-reports .tw table{
+    width:max-content!important;
+    min-width:760px!important;
+  }
+  #pg-students .tw table,
+  #pg-attendance .tw table{
+    width:max-content!important;
+    min-width:980px!important;
+  }
+}
+</style>
+
 </body>
 </html>
