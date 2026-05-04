@@ -20237,7 +20237,6 @@ input,select,textarea,button{max-width:100%}
   var previousSyncRegistration = window.syncRegistrationRequestsFromFirebase || (typeof syncRegistrationRequestsFromFirebase === 'function' ? syncRegistrationRequestsFromFirebase : null);
   if (typeof previousSyncRegistration === 'function') {
     window.syncRegistrationRequestsFromFirebase = async function(options){
-      try { await migrateRegistrationRequests({ silent:true }); } catch(e){ console.warn('[KP] registration migration skipped:', e); }
       return previousSyncRegistration.apply(this, arguments);
     };
     try { syncRegistrationRequestsFromFirebase = window.syncRegistrationRequestsFromFirebase; } catch(_e){}
@@ -20345,10 +20344,6 @@ input,select,textarea,button{max-width:100%}
     }
   };
   try { approveAllSuggestedPaymentMatches = window.approveAllSuggestedPaymentMatches; } catch(_e){}
-
-  setTimeout(function(){
-    try { migrateRegistrationRequests({ silent:true }); } catch(_e){}
-  }, 2500);
 })();
 </script>
 
