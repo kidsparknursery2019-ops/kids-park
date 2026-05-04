@@ -986,6 +986,8 @@ textarea{resize:vertical;min-height:70px}
 .admin-only-mistral{display:none!important}
 body.kp-admin .admin-only-mistral{display:flex!important}
 body.kp-admin .email-hint.admin-only-mistral{display:block!important}
+.admin-only-expno{display:none!important}
+body.kp-admin .admin-only-expno{display:flex!important}
 
 
 /* ✉️ تخطيط البريد المحسن — Inbox-style: قائمة الرسائل يمين والمعاينة يسار */
@@ -2748,6 +2750,7 @@ body.kp-teacher .kp-sync-panel{
 
 <!-- Add Expense -->
 <div class="ov" id="mo-exp">
+  <!-- kp-admin-expense-number-field -->
   <div class="mo">
     <div class="mot" id="mo-exp-title">🧾 إضافة مصروف جديد</div>
     <div class="fg">
@@ -19517,6 +19520,318 @@ input,select,textarea,button{max-width:100%}
     window.visualViewport.addEventListener('scroll', setAdaptiveViewport, {passive:true});
   }
   document.addEventListener('DOMContentLoaded', setAdaptiveViewport);
+})();
+</script>
+
+<script>
+/* KP ADMIN EXPENSE NUMBER CONTROL 2026-05-04 */
+(function(){
+  if (window.__kpAdminExpenseNumberControl20260504) return;
+  window.__kpAdminExpenseNumberControl20260504 = true;
+
+  function isAdmin(){
+    try {
+      return !!(currentUser && (String(currentUser.role || '').toLowerCase() === 'admin' || String(currentUser.username || '').toLowerCase() === 'admin'));
+    } catch(_e){ return false; }
+  }
+  function ensureField(){
+    var modal=document.getElementById('mo-exp');
+    var grid=modal && modal.querySelector('.fg');
+    if(!grid) return null;
+    var input=document.getElementById('ne-id');
+    if(!input){
+      var wrap=document.createElement('div');
+      wrap.className='fl admin-only-expno';
+      wrap.innerHTML='<label>رقم المصروف - للمدير فقط</label><input id="ne-id" type="number" min="1" step="1" placeholder="سيتم تحديده تلقائياً">';
+      grid.insertBefore(wrap, grid.firstElementChild || null);
+      input=wrap.querySelector('input');
+    }
+    input.disabled=!isAdmin();
+    return input;
+  }
+  function wantedId(fallback){
+    var input=ensureField();
+    if(!isAdmin() || !input || !String(input.value || '').trim()) return Number(fallback || 0);
+    var id=parseInt(input.value,10);
+    return (Number.isFinite(id) && id > 0) ? id : 0;
+  }
+  function addIds(arr, set, oldId){
+    if (arr && !Array.isArray(arr) && typeof kpArrayFromFirebaseSection === 'function') arr=kpArrayFromFirebaseSection(arr);
+    if(!Array.isArray(arr)) return;
+    arr.forEach(function(x){
+      var raw=(x && typeof x === 'object') ? x.id : x;
+      var id=parseInt(raw,10);
+      if(Number.isFinite(id) && id > 0 && normKey(id) !== normKey(oldId)) set.add(id);
+    });
+  }
+  async function validateExpenseId(id, oldId){
+    var used=new Set();
+    addIds(typeof expenses !== 'undefined' ? expenses : [], used, oldId);
+    addIds(typeof deletedExpenses !== 'undefined' ? deletedExpenses : [], used, oldId);
+    if(typeof tombstones !== 'undefined' && tombstones) addIds(tombstones.expenses, used, oldId);
+    try{
+      var res=await fetch(FB_URL + '.json', {cache:'no-store'});
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      var data=await res.json();
+      addIds(data && data.expenses, used, oldId);
+      addIds(data && data.deletedExpenses, used, oldId);
+      addIds(data && data.tombstones && data.tombstones.expenses, used, oldId);
+    }catch(e){
+      return {ok:false, message:'تعذر التحقق من Firebase قبل تغيير رقم المصروف. يرجى المحاولة مرة أخرى.'};
+    }
+    if(used.has(id)) return {ok:false, message:'رقم المصروف ' + id + ' مستخدم مسبقاً أو محفوظ في السجلات المحذوفة.'};
+    return {ok:true};
+  }
+  async function cleanupOldExpenseNumber(oldId, newId){
+    if(normKey(oldId) === normKey(newId)) return true;
+    try{
+      if(!tombstones || typeof tombstones !== 'object') tombstones={};
+      if(!Array.isArray(tombstones.expenses)) tombstones.expenses=[];
+      if(!hasKey(tombstones.expenses, oldId)) tombstones.expenses.push(oldId);
+      if(restoredKeys && Array.isArray(restoredKeys.expenses)){
+        restoredKeys.expenses=restoredKeys.expenses.filter(function(x){ return normKey(x) !== normKey(oldId); });
+      }
+      var updates={};
+      updates['expenses/' + kpSafeFirebaseKey(oldId)] = null;
+      updates['expenses/' + oldId] = null;
+      updates['tombstones/expenses'] = tombstones.expenses;
+      if(restoredKeys && Array.isArray(restoredKeys.expenses)) updates['restoredKeys/expenses'] = restoredKeys.expenses;
+      updates.savedAt = new Date().toISOString();
+      updates.version = 2;
+      var res=await fetch(FB_URL + '.json', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates)});
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      try { localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys)); } catch(_e){}
+      return true;
+    }catch(e){
+      if(typeof showFail === 'function') showFail('expense-number-change', e, {oldId:oldId, newId:newId});
+      else alert('تم حفظ الرقم الجديد محلياً، لكن تعذر حذف الرقم القديم من Firebase: ' + oldId);
+      return false;
+    }
+  }
+
+  var previousOpenAdd=window.openAddExp;
+  window.openAddExp=function(){
+    if(typeof previousOpenAdd === 'function') previousOpenAdd.apply(this, arguments);
+    var input=ensureField();
+    if(input) input.value=isAdmin() ? getSafeNextExpenseId() : '';
+  };
+  try { openAddExp=window.openAddExp; } catch(_e){}
+
+  var previousOpenEdit=window.openEditExp;
+  window.openEditExp=function(id){
+    if(typeof previousOpenEdit === 'function') previousOpenEdit.apply(this, arguments);
+    var input=ensureField();
+    if(input) input.value=id || '';
+  };
+  try { openEditExp=window.openEditExp; } catch(_e){}
+
+  window.saveExpense=async function(){
+    var desc=document.getElementById('ne-desc').value.trim();
+    var amt=+document.getElementById('ne-amt').value;
+    if(!desc || !amt){ alert('يرجى تعبئة الحقول المطلوبة'); return; }
+    var expDate=document.getElementById('ne-date').value;
+    var cat=document.getElementById('ne-cat').value;
+    var method=document.getElementById('ne-method').value;
+    var note=document.getElementById('ne-note').value || '';
+
+    if(editingExpId){
+      var oldId=editingExpId;
+      var e=(expenses || []).find(function(x){ return normKey(x && x.id) === normKey(oldId); });
+      if(!e) return;
+      var newId=wantedId(oldId) || oldId;
+      if(isAdmin() && normKey(newId) !== normKey(oldId)){
+        var ok=await validateExpenseId(newId, oldId);
+        if(!ok.ok){ alert(ok.message); return; }
+      }
+      e.id=newId;
+      e.desc=desc;
+      e.amt=amt;
+      e.cat=cat;
+      e.method=method;
+      e.date=expDate;
+      e.exp_date=expDate;
+      e.note=note;
+      editingExpId=newId;
+      persistCoreDataToLocalStorage();
+      closeAll(); renderExpenses(); renderDash();
+      await saveRecordRemoteAware({type:'expenses', activeArrayName:'expenses', record:e, keyField:'id', label:'المصروف'});
+      if(isAdmin() && normKey(newId) !== normKey(oldId)) await cleanupOldExpenseNumber(oldId, newId);
+      alert('تم حفظ المصروف بنجاح');
+      return;
+    }
+
+    var newExpenseId=isAdmin() && wantedId(0) ? wantedId(0) : await getSafeNextExpenseIdRemoteAware();
+    if(isAdmin() && wantedId(0)){
+      var valid=await validateExpenseId(newExpenseId, null);
+      if(!valid.ok){ alert(valid.message); return; }
+    }
+    nextExpId=newExpenseId + 1;
+    var newExp={id:newExpenseId, desc:desc, amt:amt, cat:cat, method:method, date:expDate, exp_date:expDate, note:note};
+    expenses.push(newExp);
+    persistCoreDataToLocalStorage();
+    closeAll(); renderExpenses(); renderDash();
+    await saveRecordRemoteAware({type:'expenses', activeArrayName:'expenses', record:newExp, keyField:'id', label:'المصروف'});
+    alert('تم حفظ المصروف بنجاح');
+  };
+  try { saveExpense=window.saveExpense; } catch(_e){}
+
+  document.addEventListener('DOMContentLoaded', ensureField);
+  setTimeout(ensureField, 300);
+})();
+</script>
+
+<script>
+/* KP SMART EXPENSE CATEGORY FINAL 2026-05-04 */
+(function(){
+  if (window.__kpSmartExpenseCategoryFinal20260504) return;
+  window.__kpSmartExpenseCategoryFinal20260504 = true;
+
+  var autoChanging = false;
+  var editingExisting = false;
+
+  function normalizeText(value){
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[\u064b-\u065f\u0670\u0640]/g, '')
+      .replace(/[إأآا]/g, 'ا')
+      .replace(/ى/g, 'ي')
+      .replace(/ة/g, 'ه')
+      .replace(/ؤ/g, 'و')
+      .replace(/ئ/g, 'ي')
+      .replace(/[^\u0600-\u06ffa-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  function getCategorySelect(){
+    var cat = document.getElementById('ne-cat');
+    if (!cat) return null;
+    ['إيجار', 'مصاريف تشغيل'].forEach(function(label){
+      var exists = Array.prototype.some.call(cat.options, function(opt){ return opt.value === label || opt.textContent === label; });
+      if (!exists) cat.appendChild(new Option(label, label));
+    });
+    return cat;
+  }
+
+  var rules = [
+    {cat:'رواتب', words:['راتب','رواتب','معاش','اجر','اجره','مكافاه','معلمه','عامله','موظفه','ناني','مساعده','salary','wage','staff']},
+    {cat:'كهرباء وإنترنت', words:['كهرباء','انترنت','نت','واي فاي','اتصالات','دو','ديوا','فاتوره','dewa','du','etisalat','internet','wifi','electric']},
+    {cat:'إيجار', words:['ايجار','اجار','كراء','rent','lease']},
+    {cat:'قرطاسية ومستلزمات', words:['قرطاسيه','مستلزمات','مكتبه','ورق','اوراق','دفتر','دفاتر','قلم','اقلام','حبر','طباعه','طابعه','ملف','ملفات','كرتون','لاصق','مقص','stationery','paper','ink','print']},
+    {cat:'صيانة', words:['صيانه','تصليح','اصلاح','سباك','سباكه','كهربائي','مكيف','تكييف','فلتر','باب','حنفيه','maintenance','repair','fix','ac']},
+    {cat:'مواصلات', words:['مواصلات','باص','حافله','سياره','تاكسي','تكسي','نقل','بنزين','بترول','سالك','transport','bus','taxi','fuel','petrol','salik']},
+    {cat:'فعاليات', words:['فعاليه','فعاليات','احتفال','حفله','تخرج','عيد','رمضان','هدايا','بالون','بالونات','رحله','نشاط','activity','event','party','trip']},
+    {cat:'مصاريف تشغيل', words:['تشغيل','نظافه','تنظيف','مطبخ','ماء','مناديل','بامبرز','صيدليه','دواء','مطهر','اكل','طعام','سوبرماركت','رضوان','اللولو','لولو','كارفور','سيتي فارم','اسطنبول','داي توداي','الهدايا','الشموس','شموس','امازون','تيمو','توصيل','operating','cleaning','water','food','supermarket']}
+  ];
+
+  function suggestCategory(desc){
+    var source = normalizeText(desc);
+    if (!source) return '';
+    var best = {cat:'', score:0};
+    rules.forEach(function(rule){
+      var score = 0;
+      rule.words.forEach(function(word){
+        var token = normalizeText(word);
+        if (token && source.indexOf(token) !== -1) score += Math.max(1, token.length > 5 ? 2 : 1);
+      });
+      if (score > best.score) best = {cat:rule.cat, score:score};
+    });
+    return best.score ? best.cat : '';
+  }
+
+  function canAutoReplace(cat, force){
+    if (!cat) return false;
+    if (force) return true;
+    if (editingExisting) return false;
+    if (cat.dataset.kpManualCategory === '1') return false;
+    var current = String(cat.value || '').trim();
+    return !current || current === 'أخرى' || current === 'رواتب' || cat.dataset.kpAutoCategory === '1';
+  }
+
+  function applySmartCategory(force){
+    var desc = document.getElementById('ne-desc');
+    var cat = getCategorySelect();
+    if (!desc || !cat) return '';
+    var suggested = suggestCategory(desc.value);
+    if (!suggested || !canAutoReplace(cat, force)) return suggested;
+    autoChanging = true;
+    cat.value = suggested;
+    if (cat.value !== suggested) {
+      cat.appendChild(new Option(suggested, suggested));
+      cat.value = suggested;
+    }
+    cat.dataset.kpAutoCategory = '1';
+    autoChanging = false;
+    return suggested;
+  }
+
+  function bindSmartCategory(){
+    var desc = document.getElementById('ne-desc');
+    var cat = getCategorySelect();
+    if (!desc || !cat) return;
+    if (!desc.dataset.kpSmartCategoryFinalBound) {
+      desc.dataset.kpSmartCategoryFinalBound = '1';
+      desc.addEventListener('input', function(){ applySmartCategory(false); });
+      desc.addEventListener('blur', function(){ applySmartCategory(false); });
+    }
+    if (!cat.dataset.kpSmartCategoryFinalBound) {
+      cat.dataset.kpSmartCategoryFinalBound = '1';
+      cat.addEventListener('change', function(){
+        if (!autoChanging) {
+          cat.dataset.kpManualCategory = '1';
+          cat.dataset.kpAutoCategory = '0';
+        }
+      });
+    }
+  }
+
+  var previousOpenAdd = window.openAddExp;
+  if (typeof previousOpenAdd === 'function') {
+    window.openAddExp = function(){
+      var result = previousOpenAdd.apply(this, arguments);
+      editingExisting = false;
+      bindSmartCategory();
+      var cat = getCategorySelect();
+      if (cat) {
+        cat.dataset.kpManualCategory = '0';
+        cat.dataset.kpAutoCategory = '0';
+        cat.value = 'أخرى';
+      }
+      return result;
+    };
+    try { openAddExp = window.openAddExp; } catch(_e){}
+  }
+
+  var previousOpenEdit = window.openEditExp;
+  if (typeof previousOpenEdit === 'function') {
+    window.openEditExp = function(){
+      var result = previousOpenEdit.apply(this, arguments);
+      editingExisting = true;
+      bindSmartCategory();
+      var cat = getCategorySelect();
+      if (cat) {
+        cat.dataset.kpManualCategory = '1';
+        cat.dataset.kpAutoCategory = '0';
+      }
+      return result;
+    };
+    try { openEditExp = window.openEditExp; } catch(_e){}
+  }
+
+  var previousSaveExpense = window.saveExpense;
+  if (typeof previousSaveExpense === 'function') {
+    window.saveExpense = async function(){
+      bindSmartCategory();
+      var cat = getCategorySelect();
+      if (!editingExisting && cat && cat.dataset.kpManualCategory !== '1') applySmartCategory(true);
+      return previousSaveExpense.apply(this, arguments);
+    };
+    try { saveExpense = window.saveExpense; } catch(_e){}
+  }
+
+  document.addEventListener('DOMContentLoaded', bindSmartCategory);
+  setTimeout(bindSmartCategory, 300);
+
+  window.kpSuggestExpenseCategory = applySmartCategory;
 })();
 </script>
 
