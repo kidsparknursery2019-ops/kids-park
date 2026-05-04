@@ -3514,6 +3514,7 @@ async function getSafeNextReceiptIdRemoteAware() {
 function getSafeNextExpenseId(){
   const usedIds = new Set();
   function addUsedFromArray(arr){
+    if (arr && !Array.isArray(arr) && typeof kpArrayFromFirebaseSection === 'function') arr = kpArrayFromFirebaseSection(arr);
     if (!Array.isArray(arr)) return;
     arr.forEach(function(e){
       const raw = (e && typeof e === 'object') ? e.id : e;
@@ -3530,7 +3531,9 @@ function getSafeNextExpenseId(){
     const localTs = JSON.parse(localStorage.getItem('kp_tombstones') || '{}');
     addUsedFromArray(localTs && localTs.expenses);
   } catch(_) {}
-  let candidate = 600;
+  let maxId = 599;
+  usedIds.forEach(function(id){ if (id > maxId) maxId = id; });
+  let candidate = Math.max(600, maxId + 1);
   while (usedIds.has(candidate)) candidate++;
   return candidate;
 }
@@ -3649,6 +3652,7 @@ async function getSafeNextRenewalIdRemoteAware() {
 async function getSafeNextExpenseIdRemoteAware() {
   const usedIds = new Set();
   function addUsedFromArray(arr){
+    if (arr && !Array.isArray(arr) && typeof kpArrayFromFirebaseSection === 'function') arr = kpArrayFromFirebaseSection(arr);
     if (!Array.isArray(arr)) return;
     arr.forEach(function(e){
       const raw = (e && typeof e === 'object') ? e.id : e;
@@ -3668,7 +3672,9 @@ async function getSafeNextExpenseIdRemoteAware() {
       addUsedFromArray(data && data.tombstones && data.tombstones.expenses);
     }
   } catch(_) {}
-  let candidate = 600;
+  let maxId = 599;
+  usedIds.forEach(function(id){ if (id > maxId) maxId = id; });
+  let candidate = Math.max(600, maxId + 1);
   while (usedIds.has(candidate)) candidate++;
   return candidate;
 }
@@ -19385,6 +19391,132 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     else printImage(data, att.name || 'renewal attachment');
   };
   window.printRenAttachmentFromModal = function(){ if (typeof editingRenId === 'undefined' || !editingRenId) return; window.printRenAttachmentById(editingRenId); };
+})();
+</script>
+
+<style>
+/* KP adaptive phone/tablet fit layer - 2026-05-04 */
+:root{
+  --kp-vh:1vh;
+  --kp-safe-top:env(safe-area-inset-top,0px);
+  --kp-safe-right:env(safe-area-inset-right,0px);
+  --kp-safe-bottom:env(safe-area-inset-bottom,0px);
+  --kp-safe-left:env(safe-area-inset-left,0px);
+}
+html{
+  width:100%;
+  min-width:0;
+  overflow-x:hidden;
+  -webkit-text-size-adjust:100%;
+  text-size-adjust:100%;
+}
+body{
+  width:100%;
+  min-width:0;
+  min-height:calc(var(--kp-vh) * 100);
+  overflow-x:hidden;
+  overscroll-behavior-x:none;
+}
+img,video,canvas,svg{max-width:100%;height:auto}
+.hdr{
+  padding-top:max(6px,var(--kp-safe-top));
+  padding-left:max(10px,var(--kp-safe-left));
+  padding-right:max(10px,var(--kp-safe-right));
+}
+.main{min-height:calc((var(--kp-vh) * 100) - 64px)}
+.pg,.card,.ct,.ct2,.tw,.sbar,.fg{max-width:100%;min-width:0}
+.tw{
+  width:100%;
+  overflow:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable both-edges;
+}
+.tw table{width:max-content;max-width:none}
+input,select,textarea,button{max-width:100%}
+
+@media(max-width:900px){
+  .hdr{min-height:auto}
+  .wrap{
+    width:100%!important;
+    max-width:100%!important;
+    min-height:calc((var(--kp-vh) * 100) - 64px)!important;
+  }
+  .side{
+    max-width:100vw!important;
+    scroll-snap-type:x proximity;
+  }
+  .side .nav{scroll-snap-align:center}
+  .main{
+    width:100%!important;
+    max-width:100%!important;
+    min-height:auto!important;
+    padding-left:max(10px,var(--kp-safe-left))!important;
+    padding-right:max(10px,var(--kp-safe-right))!important;
+    padding-bottom:max(80px,var(--kp-safe-bottom))!important;
+  }
+  .card{contain:layout style}
+  .btn{white-space:normal;line-height:1.25}
+  .sbar,.fg{gap:9px}
+  .tw{max-height:min(68vh,calc((var(--kp-vh) * 100) - 210px))!important}
+}
+
+@media(max-width:430px){
+  body{font-size:13.5px!important}
+  .hdr-brand img{width:40px!important;height:40px!important;max-width:40px!important;max-height:40px!important}
+  .hdr-brand h1{font-size:14px!important}
+  .hdr-brand small{font-size:10px!important}
+  .kp-sync-panel{padding:7px 8px!important}
+  .kp-sync-card{padding:8px 9px!important}
+  .side{padding:7px 8px!important}
+  .nav{font-size:11.5px!important;padding:8px 9px!important}
+  .main{padding-top:10px!important}
+  .card{padding:12px!important;border-radius:14px!important}
+  .pt{font-size:16px!important}
+  table{font-size:11.8px!important}
+  input,select,textarea{font-size:12.5px!important}
+}
+
+@media(max-width:360px){
+  body{font-size:13px!important}
+  .hdr-brand h1{font-size:13px!important}
+  .nav{font-size:11px!important;padding:7px 8px!important}
+  .btn{font-size:11.5px!important;padding:7px 9px!important}
+  table{font-size:11.2px!important}
+}
+
+@media(orientation:landscape) and (max-height:520px){
+  .hdr{position:relative!important}
+  .kp-sync-panel{grid-template-columns:repeat(3,minmax(0,1fr))!important;padding:6px 8px!important}
+  .kp-sync-card{padding:6px 8px!important}
+  .side{padding:6px 8px!important}
+  .main{padding-top:8px!important;padding-bottom:18px!important}
+  .tw{max-height:calc((var(--kp-vh) * 100) - 150px)!important}
+  .login-card{max-height:calc((var(--kp-vh) * 100) - 24px);overflow:auto}
+}
+</style>
+
+<script>
+/* KP adaptive viewport sizing for Android/iOS browsers */
+(function(){
+  function setAdaptiveViewport(){
+    try{
+      var h = (window.visualViewport && window.visualViewport.height) ? window.visualViewport.height : window.innerHeight;
+      var w = (window.visualViewport && window.visualViewport.width) ? window.visualViewport.width : window.innerWidth;
+      document.documentElement.style.setProperty('--kp-vh', (h * 0.01) + 'px');
+      document.documentElement.style.setProperty('--kp-vw', (w * 0.01) + 'px');
+      document.documentElement.classList.toggle('kp-phone-narrow', w <= 430);
+      document.documentElement.classList.toggle('kp-phone-landscape', w > h && h <= 520);
+    }catch(_e){}
+  }
+  setAdaptiveViewport();
+  window.addEventListener('resize', setAdaptiveViewport, {passive:true});
+  window.addEventListener('orientationchange', function(){ setTimeout(setAdaptiveViewport, 120); }, {passive:true});
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize', setAdaptiveViewport, {passive:true});
+    window.visualViewport.addEventListener('scroll', setAdaptiveViewport, {passive:true});
+  }
+  document.addEventListener('DOMContentLoaded', setAdaptiveViewport);
 })();
 </script>
 
