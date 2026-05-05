@@ -19398,6 +19398,103 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
 </script>
 
 <script>
+/* KP COMPLETE SYSTEM BACKUP 2026-05-05 */
+(function(){
+  if (window.__kpCompleteSystemBackup20260505) return;
+  window.__kpCompleteSystemBackup20260505 = true;
+
+  function localJson(key, fallback){
+    try { return JSON.parse(localStorage.getItem(key) || ''); } catch(_e){ return fallback; }
+  }
+  function clone(value){
+    try { return JSON.parse(JSON.stringify(value == null ? null : value)); } catch(_e){ return value; }
+  }
+  async function fetchFirebaseRoot(){
+    try {
+      var res = await fetch(FB_URL + '.json?ts=' + Date.now(), { cache:'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var data = await res.json();
+      return data && typeof data === 'object' ? data : {};
+    } catch(e) {
+      console.warn('[KP] complete backup Firebase read failed:', e && e.message);
+      return {};
+    }
+  }
+  function localSnapshot(){
+    return {
+      students: clone(typeof students !== 'undefined' ? students : []),
+      payments: clone(typeof payments !== 'undefined' ? payments : []),
+      expenses: clone(typeof expenses !== 'undefined' ? expenses : []),
+      renewals: clone(typeof renewals !== 'undefined' ? renewals : []),
+      attLog: clone(typeof attLog !== 'undefined' ? attLog : {}),
+      attendanceLocks: clone(typeof attendanceLocks !== 'undefined' ? attendanceLocks : {}),
+      CLASSES: clone(typeof CLASSES !== 'undefined' ? CLASSES : {}),
+      nurserySettings: clone(typeof nurserySettings !== 'undefined' ? nurserySettings : {}),
+      deletedStudents: clone(typeof deletedStudents !== 'undefined' ? deletedStudents : []),
+      deletedPayments: clone(typeof deletedPayments !== 'undefined' ? deletedPayments : []),
+      deletedExpenses: clone(typeof deletedExpenses !== 'undefined' ? deletedExpenses : []),
+      deletedRenewals: clone(typeof deletedRenewals !== 'undefined' ? deletedRenewals : []),
+      deletedClasses: clone(typeof deletedClasses !== 'undefined' ? deletedClasses : []),
+      tombstones: clone(typeof tombstones !== 'undefined' ? tombstones : {}),
+      restoredKeys: clone(typeof restoredKeys !== 'undefined' ? restoredKeys : {}),
+      kp_users: localJson('kp_users', []),
+      kp_form_rows: clone(typeof syncedFormRows !== 'undefined' ? syncedFormRows : localJson('kp_form_rows', []))
+    };
+  }
+  function saveBackupFile(backup){
+    var blob = new Blob([JSON.stringify(backup, null, 2)], { type:'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'backup_حضانة_complete_' + new Date().toISOString().slice(0,10) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ try { URL.revokeObjectURL(url); a.remove(); } catch(_e){} }, 1000);
+  }
+  window.downloadBackup = async function(){
+    try {
+      if (typeof showSyncBadge === 'function') showSyncBadge('جاري تجهيز نسخة احتياطية كاملة...');
+      var firebaseData = await fetchFirebaseRoot();
+      var localData = localSnapshot();
+      var backup = Object.assign({}, firebaseData, {
+        backupDate: new Date().toISOString(),
+        backupType: 'complete-firebase-and-local',
+        version: firebaseData.version || 2,
+        system: 'حضـانة حديقة الأطفال',
+        __firebaseSnapshotIncluded: true,
+        __localFallbackIncluded: true,
+        __localFallback: localData
+      });
+      Object.keys(localData).forEach(function(key){
+        if (backup[key] === undefined || backup[key] === null) backup[key] = localData[key];
+      });
+      [
+        'registrationRequests',
+        'renewalAttachments',
+        'restoredKeys',
+        'tombstones',
+        'deletedStudents',
+        'deletedPayments',
+        'deletedExpenses',
+        'deletedRenewals',
+        'deletedClasses',
+        'attendanceLocks',
+        'adminMigrations'
+      ].forEach(function(key){
+        if (backup[key] === undefined) backup[key] = firebaseData[key] !== undefined ? firebaseData[key] : (localData[key] !== undefined ? localData[key] : {});
+      });
+      saveBackupFile(backup);
+      if (typeof showSyncBadge === 'function') showSyncBadge('تم تحميل النسخة الاحتياطية الكاملة');
+      alert('تم تحميل النسخة الاحتياطية الكاملة بنجاح. تشمل بيانات Firebase الحالية ونسخة محلية احتياطية داخل الملف.');
+    } catch(e) {
+      console.error('[KP] complete backup failed:', e);
+      alert('تعذر تجهيز النسخة الاحتياطية الكاملة: ' + (e && e.message ? e.message : e));
+    }
+  };
+})();
+</script>
+
+<script>
 /* KP PRESERVE REGISTRATION REQUESTS ON ROOT SAVES 2026-05-05 */
 (function(){
   if (window.__kpPreserveRegistrationRequestsOnRootSaves20260505) return;
