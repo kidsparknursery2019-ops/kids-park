@@ -19398,6 +19398,70 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
 </script>
 
 <script>
+/* KP PRESERVE REGISTRATION REQUESTS ON ROOT SAVES 2026-05-05 */
+(function(){
+  if (window.__kpPreserveRegistrationRequestsOnRootSaves20260505) return;
+  window.__kpPreserveRegistrationRequestsOnRootSaves20260505 = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function rootUrl(){
+    try { return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, '') + '.json'; }
+    catch(_e){ return ''; }
+  }
+  function isRootFirebaseUrl(input){
+    var url = '';
+    try { url = typeof input === 'string' ? input : (input && input.url) || ''; } catch(_e){}
+    if (!url) return false;
+    var root = rootUrl();
+    if (!root) return false;
+    return url.split('?')[0] === root;
+  }
+  async function currentRegistrationRequests(){
+    var base = '';
+    try { base = txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, ''); } catch(_e){}
+    if (!base) return null;
+    try {
+      var res = await fetch(base + '/registrationRequests.json?ts=' + Date.now(), { cache:'no-store' });
+      if (!res.ok) return null;
+      var data = await res.json();
+      return data && typeof data === 'object' ? data : null;
+    } catch(_e) {
+      return null;
+    }
+  }
+  function methodOf(init){
+    return txt((init && init.method) || 'GET').toUpperCase();
+  }
+  function bodyLooksLikeRootPayload(body){
+    if (!body || typeof body !== 'string') return false;
+    return /"students"\s*:|"payments"\s*:|"expenses"\s*:|"renewals"\s*:|"kp_form_rows"\s*:/.test(body);
+  }
+  var nativeFetch = window.fetch;
+  if (typeof nativeFetch !== 'function') return;
+  window.fetch = async function(input, init){
+    try {
+      var method = methodOf(init);
+      if ((method === 'PUT' || method === 'PATCH') && isRootFirebaseUrl(input) && init && typeof init.body === 'string' && bodyLooksLikeRootPayload(init.body)) {
+        var payload = JSON.parse(init.body);
+        if (payload && typeof payload === 'object' && !Object.prototype.hasOwnProperty.call(payload, 'registrationRequests')) {
+          var reg = await currentRegistrationRequests();
+          if (reg) {
+            payload.registrationRequests = reg;
+            payload.registrationRequestsPreservedAt = new Date().toISOString();
+            init = Object.assign({}, init, { body: JSON.stringify(payload) });
+            try { console.warn('[KP] Preserved registrationRequests during Firebase root save.'); } catch(_e){}
+          }
+        }
+      }
+    } catch(e) {
+      try { console.warn('[KP] registrationRequests preservation skipped:', e && e.message); } catch(_e){}
+    }
+    return nativeFetch.apply(this, arguments.length > 1 ? [input, init] : [input]);
+  };
+})();
+</script>
+
+<script>
 /* KP MOBILE PRINT FALLBACK 2026-05-05 */
 (function(){
   if (window.__kpMobilePrintFallback20260505) return;
