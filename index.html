@@ -19495,10 +19495,23 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
 </script>
 
 <script>
-/* KP PRESERVE REGISTRATION REQUESTS ON ROOT SAVES 2026-05-05 */
+/* KP PRESERVE CRITICAL SECTIONS ON ROOT SAVES 2026-05-05 */
 (function(){
   if (window.__kpPreserveRegistrationRequestsOnRootSaves20260505) return;
   window.__kpPreserveRegistrationRequestsOnRootSaves20260505 = true;
+  var CRITICAL_SECTIONS = [
+    'registrationRequests',
+    'renewalAttachments',
+    'attendanceLocks',
+    'adminMigrations',
+    'restoredKeys',
+    'tombstones',
+    'deletedStudents',
+    'deletedPayments',
+    'deletedExpenses',
+    'deletedRenewals',
+    'deletedClasses'
+  ];
 
   function txt(v){ return String(v == null ? '' : v).trim(); }
   function rootUrl(){
@@ -19513,12 +19526,12 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     if (!root) return false;
     return url.split('?')[0] === root;
   }
-  async function currentRegistrationRequests(){
+  async function currentFirebaseRoot(){
     var base = '';
     try { base = txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/$/, ''); } catch(_e){}
     if (!base) return null;
     try {
-      var res = await fetch(base + '/registrationRequests.json?ts=' + Date.now(), { cache:'no-store' });
+      var res = await fetch(base + '.json?ts=' + Date.now(), { cache:'no-store' });
       if (!res.ok) return null;
       var data = await res.json();
       return data && typeof data === 'object' ? data : null;
@@ -19540,18 +19553,34 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       var method = methodOf(init);
       if ((method === 'PUT' || method === 'PATCH') && isRootFirebaseUrl(input) && init && typeof init.body === 'string' && bodyLooksLikeRootPayload(init.body)) {
         var payload = JSON.parse(init.body);
-        if (payload && typeof payload === 'object' && !Object.prototype.hasOwnProperty.call(payload, 'registrationRequests')) {
-          var reg = await currentRegistrationRequests();
-          if (reg) {
-            payload.registrationRequests = reg;
-            payload.registrationRequestsPreservedAt = new Date().toISOString();
+        if (payload && typeof payload === 'object') {
+          var currentRoot = null;
+          var preserved = [];
+          CRITICAL_SECTIONS.forEach(function(section){
+            if (Object.prototype.hasOwnProperty.call(payload, section)) return;
+            currentRoot = currentRoot || null;
+          });
+          if (CRITICAL_SECTIONS.some(function(section){ return !Object.prototype.hasOwnProperty.call(payload, section); })) {
+            currentRoot = await currentFirebaseRoot();
+          }
+          if (currentRoot) {
+            CRITICAL_SECTIONS.forEach(function(section){
+              if (!Object.prototype.hasOwnProperty.call(payload, section) && currentRoot[section] !== undefined) {
+                payload[section] = currentRoot[section];
+                preserved.push(section);
+              }
+            });
+          }
+          if (preserved.length) {
+            payload.criticalSectionsPreservedAt = new Date().toISOString();
+            payload.criticalSectionsPreserved = preserved;
             init = Object.assign({}, init, { body: JSON.stringify(payload) });
-            try { console.warn('[KP] Preserved registrationRequests during Firebase root save.'); } catch(_e){}
+            try { console.warn('[KP] Preserved critical Firebase sections during root save:', preserved.join(', ')); } catch(_e){}
           }
         }
       }
     } catch(e) {
-      try { console.warn('[KP] registrationRequests preservation skipped:', e && e.message); } catch(_e){}
+      try { console.warn('[KP] critical Firebase section preservation skipped:', e && e.message); } catch(_e){}
     }
     return nativeFetch.apply(this, arguments.length > 1 ? [input, init] : [input]);
   };
