@@ -1989,6 +1989,7 @@ body.kp-teacher .kp-sync-panel{
         <button class="btn btn-b btn-sm" onclick="printStudentsSelectedReport()">🖨️ طباعة</button>
         <button class="btn btn-out btn-sm" onclick="exportStudentsSelectedReport('xlsx')">Excel</button>
         <button class="btn btn-out btn-sm" onclick="exportStudentsSelectedReport('doc')">Word</button>
+        <button class="btn btn-out btn-sm" onclick="kpExportElementToPdf(document.querySelector('#pg-students .card'), {title:'سجل الطلاب', orientation:'l'})" title="تصدير PDF">📄 PDF</button>
       </div>
       <div class="card">
         <div class="ct"><span id="stu-count">الطلاب</span></div>
@@ -2117,7 +2118,7 @@ body.kp-teacher .kp-sync-panel{
       <div class="sbar">
         <input type="date" id="att-date" onchange="renderAttGrid()">
         <div class="ftabs" id="cls-tabs"></div>
-        <button class="btn btn-out btn-sm" onclick="openExport('attendance')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('attendance')" title="استيراد من Excel">⬆ استيراد</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('attendance')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('attendance')" title="استيراد من Excel">⬆ استيراد</button><button class="btn btn-out btn-sm" onclick="kpExportElementToPdf(document.querySelector('#pg-att .card:last-of-type'), {title:'سجل الحضور والغياب', orientation:'l'})" title="تصدير PDF">📄 PDF</button>
       </div>
       <div id="att-admin-lock-box" class="card" style="display:none;margin-bottom:14px;padding:14px;border:2px solid var(--border);background:#fff;">
         <div class="ct" style="margin-bottom:8px;">🔐 قفل/فتح تعديل الحضور</div>
@@ -2188,7 +2189,7 @@ body.kp-teacher .kp-sync-panel{
           <option value="amt-desc">الأعلى قيمة</option>
           <option value="amt-asc">الأقل قيمة</option>
         </select>
-        <button class="btn btn-out btn-sm" onclick="openExport('payments')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openFinanceDateReview()">Review dates</button><button class="btn btn-out btn-sm" onclick="openImport('payments')" title="استيراد من Excel">⬆ استيراد</button><button class="btn btn-b btn-sm" onclick="approveAllSuggestedPaymentMatches()" title="اعتماد كل الروابط المقترحة الحالية">🔗 اعتماد ربط السندات دفعة واحدة</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('payments')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openFinanceDateReview()">Review dates</button><button class="btn btn-out btn-sm" onclick="openImport('payments')" title="استيراد من Excel">⬆ استيراد</button><button class="btn btn-b btn-sm" onclick="approveAllSuggestedPaymentMatches()" title="اعتماد كل الروابط المقترحة الحالية">🔗 اعتماد ربط السندات دفعة واحدة</button><button class="btn btn-out btn-sm" onclick="kpExportElementToPdf(document.querySelector('#pg-payments .card'), {title:'سجل المدفوعات', orientation:'l'})" title="تصدير PDF">📄 PDF</button>
       </div>
       <div class="sg" style="grid-template-columns:repeat(3,1fr)">
         <div class="sc"><div class="sl">إجمالي المحصّل</div><div class="sv fin-pos" id="pay-total">0</div><div class="ss">درهم</div></div>
@@ -2214,7 +2215,7 @@ body.kp-teacher .kp-sync-panel{
           <option value="">كل الفئات</option>
           <option>رواتب</option><option>كهرباء وإنترنت</option><option>قرطاسية ومستلزمات</option><option>صيانة</option><option>مواصلات</option><option>فعاليات</option><option>أخرى</option>
         </select>
-        <button class="btn btn-out btn-sm" onclick="openExport('expenses')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openFinanceDateReview()">Review dates</button><button class="btn btn-out btn-sm" onclick="openImport('expenses')" title="استيراد من Excel">⬆ استيراد</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('expenses')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openFinanceDateReview()">Review dates</button><button class="btn btn-out btn-sm" onclick="openImport('expenses')" title="استيراد من Excel">⬆ استيراد</button><button class="btn btn-out btn-sm" onclick="kpExportElementToPdf(document.querySelector('#pg-expenses .card'), {title:'سجل المصاريف', orientation:'l'})" title="تصدير PDF">📄 PDF</button>
       </div>
       <div class="sg" style="grid-template-columns:repeat(3,1fr)">
         <div class="sc r"><div class="sl">إجمالي المصاريف</div><div class="sv fin-neg" id="exp-total">0</div><div class="ss">درهم</div></div>
@@ -2244,7 +2245,7 @@ body.kp-teacher .kp-sync-panel{
           <option value="id-desc">رقم السند ↓</option>
           <option value="id-asc">رقم السند ↑</option>
         </select>
-        <button class="btn btn-out btn-sm" onclick="openExport('receipts')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('receipts')" title="استيراد من Excel">⬆ استيراد</button>
+        <button class="btn btn-out btn-sm" onclick="openExport('receipts')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('receipts')" title="استيراد من Excel">⬆ استيراد</button><button class="btn btn-out btn-sm" onclick="kpExportElementToPdf(document.getElementById('receipts-list'), {title:'سندات القبض'})" title="تصدير PDF">📄 PDF</button>
       </div>
       <div id="receipts-list"></div>
     </div>
@@ -2278,6 +2279,7 @@ body.kp-teacher .kp-sync-panel{
         <div class="ct">
           <div style="font-size:13px;color:var(--muted)">هذه الصفحة مخصصة فقط للطلاب المحذوفين. الحذف النهائي لا يمكن التراجع عنه.</div>
           <button class="btn btn-out btn-sm" onclick="openExport('deleted')">⬇ تصدير</button>
+          <button class="btn btn-out btn-sm" onclick="kpExportElementToPdf(document.getElementById('deleted-list'), {title:'الطلاب المحذوفون'})" title="تصدير PDF">📄 PDF</button>
         </div>
         <div id="deleted-list"></div>
       </div>
@@ -2296,6 +2298,7 @@ body.kp-teacher .kp-sync-panel{
       <div class="card">
         <div class="ct">
           <div style="font-size:13px;color:var(--muted)">&#1607;&#1584;&#1607; &#1587;&#1604;&#1577; &#1605;&#1608;&#1581;&#1583;&#1577; &#1604;&#1580;&#1605;&#1610;&#1593; &#1575;&#1604;&#1587;&#1580;&#1604;&#1575;&#1578; &#1575;&#1604;&#1605;&#1581;&#1584;&#1608;&#1601;&#1577;: &#1575;&#1604;&#1591;&#1604;&#1575;&#1576;&#1548; &#1575;&#1604;&#1587;&#1606;&#1583;&#1575;&#1578;&#1548; &#1575;&#1604;&#1605;&#1589;&#1575;&#1585;&#1610;&#1601;&#1548; &#1575;&#1604;&#1578;&#1580;&#1583;&#1610;&#1583;&#1575;&#1578; &#1608;&#1575;&#1604;&#1601;&#1589;&#1608;&#1604;.</div>
+          <button class="btn btn-out btn-sm" onclick="kpExportElementToPdf(document.getElementById('other-deleted-list'), {title:'سلة المحذوفات'})" title="تصدير PDF">📄 PDF</button>
         </div>
         <div id="other-deleted-list"></div>
       </div>
@@ -2306,6 +2309,7 @@ body.kp-teacher .kp-sync-panel{
       <div class="pt">
         📈 التقارير المالية
         <button class="btn btn-out btn-sm no-print" onclick="printFinancialReport()">🖨 طباعة التقرير</button>
+        <button class="btn btn-out btn-sm no-print" onclick="kpExportElementToPdf(document.getElementById('fr-results'), {title:'التقرير المالي'})" title="تصدير PDF">📄 PDF</button>
       </div>
 
       <div class="card no-print">
@@ -2410,7 +2414,7 @@ body.kp-teacher .kp-sync-panel{
             </select>
             <input type="text" id="ren-search" placeholder="🔍 ابحث..." oninput="renderRenewals()" style="max-width:160px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px">
           </div>
-          <button class="btn btn-out btn-sm" onclick="openExport('renewals')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('renewals')">⬆ استيراد</button><button class="btn btn-g btn-sm" onclick="openAddRenewal()">＋ إضافة</button>
+          <button class="btn btn-out btn-sm" onclick="openExport('renewals')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openImport('renewals')">⬆ استيراد</button><button class="btn btn-out btn-sm" onclick="kpExportElementToPdf(document.getElementById('ren-list'), {title:'التجديدات والوثائق الرسمية', orientation:'l'})" title="تصدير PDF">📄 PDF</button><button class="btn btn-g btn-sm" onclick="openAddRenewal()">＋ إضافة</button>
         </div>
         <div class="ren-grid" id="ren-list"></div>
       </div>
@@ -8173,28 +8177,58 @@ let importParsedData = null;
 // ========================================
 // النسخ الاحتياطي التلقائي اليومي
 // ========================================
+
+// تجميع كل بيانات النظام في كائن واحد - يستخدم لكل من النسخ التلقائي واليدوي
+// لضمان أن استعادة أي نسخة احتياطية تعيد النظام لحالته الكاملة بدون فقدان بيانات.
+function buildFullBackupSnapshot() {
+  // كل مفاتيح localStorage التي يحتاجها النظام - تُحفظ كاملة لتطابق الاستعادة
+  var lsKeys = [
+    'kp_users', 'kp_form_rows', 'kp_classes', 'kp_nursery_settings',
+    'kp_students_data', 'kp_payments_data', 'kp_expenses_data',
+    'kp_renewals_data', 'kp_attlog_data',
+    'kp_deleted_students', 'kp_deleted_payments', 'kp_deleted_expenses',
+    'kp_deleted_renewals', 'kp_deleted_classes',
+    'kp_tombstones',
+    'kp_email_settings_v1', 'kp_email_history_v1', 'kp_email_contacts_v1',
+    'kp_renewal_email_enabled', 'kp_renewal_email_settings',
+    'kp_auto_backup_enabled'
+  ];
+  var lsSnapshot = {};
+  lsKeys.forEach(function(k){
+    try {
+      var v = localStorage.getItem(k);
+      if (v !== null) lsSnapshot[k] = v; // نخزّن النص الخام بدون JSON.parse
+    } catch(_e){}
+  });
+
+  return {
+    backupDate: new Date().toISOString(),
+    version: '3.0',
+    system: 'حضانة حديقة الأطفال',
+    // البيانات الأساسية (متوافقة مع النسخ القديمة v2.0)
+    students: students,
+    payments: payments,
+    expenses: expenses,
+    renewals: renewals,
+    attLog: attLog,
+    deletedStudents: (typeof deletedStudents !== 'undefined' ? deletedStudents : []),
+    deletedPayments: (typeof deletedPayments !== 'undefined' ? deletedPayments : []),
+    deletedExpenses: (typeof deletedExpenses !== 'undefined' ? deletedExpenses : []),
+    deletedRenewals: (typeof deletedRenewals !== 'undefined' ? deletedRenewals : []),
+    deletedClasses: (typeof deletedClasses !== 'undefined' ? deletedClasses : []),
+    tombstones: (typeof tombstones !== 'undefined' ? tombstones : {}),
+    CLASSES: CLASSES,
+    nurserySettings: nurserySettings,
+    kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
+    kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]'),
+    // إضافة v3.0: لقطة كاملة لكل localStorage
+    localStorageSnapshot: lsSnapshot
+  };
+}
+
 function performAutoBackup(silent) {
   try {
-    const backup = {
-      backupDate: new Date().toISOString(),
-      version: '2.0',
-      system: 'حضانة حديقة الأطفال',
-      students: students,
-      payments: payments,
-      expenses: expenses,
-      renewals: renewals,
-      attLog: attLog,
-      deletedStudents: (typeof deletedStudents !== 'undefined' ? deletedStudents : []),
-      deletedPayments: (typeof deletedPayments !== 'undefined' ? deletedPayments : []),
-      deletedExpenses: (typeof deletedExpenses !== 'undefined' ? deletedExpenses : []),
-      deletedRenewals: (typeof deletedRenewals !== 'undefined' ? deletedRenewals : []),
-      deletedClasses: (typeof deletedClasses !== 'undefined' ? deletedClasses : []),
-      tombstones: (typeof tombstones !== 'undefined' ? tombstones : {}),
-      CLASSES: CLASSES,
-      nurserySettings: nurserySettings,
-      kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
-      kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]'),
-    };
+    const backup = buildFullBackupSnapshot();
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -8228,6 +8262,10 @@ function performAutoBackup(silent) {
 }
 
 function checkAndRunDailyBackup() {
+  // حماية من التنفيذ المزدوج خلال نفس الجلسة
+  if (window.__kpDailyBackupCheckedThisSession) return;
+  window.__kpDailyBackupCheckedThisSession = true;
+
   // تحقق هل تم أخذ نسخة احتياطية اليوم
   const enabled = localStorage.getItem('kp_auto_backup_enabled');
   if (enabled === 'false') return; // معطّل من المستخدم
@@ -8266,26 +8304,7 @@ function updateAutoBackupUI() {
 
 
 function downloadBackup() {
-  const backup = {
-    backupDate: new Date().toISOString(),
-    version: '2.0',
-    system: 'حضانة حديقة الأطفال',
-    students: students,
-    payments: payments,
-    expenses: expenses,
-    renewals: renewals,
-    attLog: attLog,
-    deletedStudents: (typeof deletedStudents !== 'undefined' ? deletedStudents : []),
-    deletedPayments: (typeof deletedPayments !== 'undefined' ? deletedPayments : []),
-    deletedExpenses: (typeof deletedExpenses !== 'undefined' ? deletedExpenses : []),
-    deletedRenewals: (typeof deletedRenewals !== 'undefined' ? deletedRenewals : []),
-    deletedClasses: (typeof deletedClasses !== 'undefined' ? deletedClasses : []),
-    tombstones: (typeof tombstones !== 'undefined' ? tombstones : {}),
-    CLASSES: CLASSES,
-    nurserySettings: nurserySettings,
-    kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
-    kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]'),
-  };
+  const backup = buildFullBackupSnapshot();
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -8307,6 +8326,8 @@ async function restoreBackup(event) {
     try {
       const backup = JSON.parse(e.target.result);
       if (!backup.version || !backup.students) { alert('❌ الملف ليس نسخة احتياطية صالحة'); return; }
+
+      // ===== المرحلة 1: استعادة المتغيرات في الذاكرة =====
       if (backup.students) students = backup.students;
       resetPaymentMatchCache();
       if (backup.payments) payments = backup.payments;
@@ -8323,11 +8344,28 @@ async function restoreBackup(event) {
       if (backup.nurserySettings) Object.assign(nurserySettings, backup.nurserySettings);
       if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(backup.kp_users));
       if (backup.kp_form_rows) { syncedFormRows = backup.kp_form_rows; _saveFormRowsSlim(syncedFormRows); }
-      refreshNextIds();
-      // امسح أي كاش محلي قديم قبل الاستبدال الكامل حتى لا يرجع الطلاب الزائدون.
+
+      // ===== المرحلة 2: تنظيف الكاش القديم قبل تطبيق اللقطة الكاملة =====
+      // هذا يضمن عدم بقاء بيانات قديمة من الجلسة الحالية
       ['kp_students_data','kp_payments_data','kp_expenses_data','kp_renewals_data','kp_attlog_data','kp_classes','kp_deleted_students','kp_deleted_payments','kp_deleted_expenses','kp_deleted_renewals','kp_deleted_classes','kp_students_backup_before_health_action'].forEach(function(k){
         try { localStorage.removeItem(k); } catch(_) {}
       });
+
+      // ===== المرحلة 3: استعادة لقطة localStorage الكاملة (نسخ v3.0+) =====
+      // هذا يعيد كل البيانات بما فيها: المستخدمين، النماذج، الإعدادات،
+      // وكل المفاتيح الإضافية بشكل مطابق تماماً للنسخة الاحتياطية.
+      if (backup.localStorageSnapshot && typeof backup.localStorageSnapshot === 'object') {
+        Object.keys(backup.localStorageSnapshot).forEach(function(k){
+          try {
+            var v = backup.localStorageSnapshot[k];
+            if (v !== null && v !== undefined) {
+              localStorage.setItem(k, String(v));
+            }
+          } catch(_e){}
+        });
+      }
+
+      refreshNextIds();
       forceFullReplaceOnNextSync = true;
       // استبدال مباشر الآن، وليس autoSave مؤجل، لتجنب أي دمج أو كاش قديم.
       pushToFirebase();
@@ -8340,7 +8378,12 @@ async function restoreBackup(event) {
       if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
       if (typeof renderOtherDeletedItems === 'function') renderOtherDeletedItems();
       if (typeof updateNotifications === 'function') updateNotifications();
-      alert('✅ تم استعادة النسخة الاحتياطية بنجاح!\n\n' + 'الطلاب: ' + (backup.students||[]).length + '\n' + 'السندات: ' + (backup.payments||[]).length + '\n' + 'المصاريف: ' + (backup.expenses||[]).length);
+
+      var versionNote = backup.version === '3.0'
+        ? '\n📦 نسخة كاملة (v3.0) - تمت استعادة جميع الإعدادات.'
+        : '\n📦 نسخة قديمة (v' + backup.version + ') - تمت الاستعادة الأساسية.';
+
+      alert('✅ تم استعادة النسخة الاحتياطية بنجاح!' + versionNote + '\n\n' + 'الطلاب: ' + (backup.students||[]).length + '\n' + 'السندات: ' + (backup.payments||[]).length + '\n' + 'المصاريف: ' + (backup.expenses||[]).length);
     } catch(err) { alert('❌ فشل قراءة الملف: ' + err.message); }
     event.target.value = '';
   };
@@ -8883,10 +8926,19 @@ function applyLogin() {
   });
   if (!firebasePollInterval) firebasePollInterval = setInterval(checkForUpdates, 8000);
   startAutoSync();
+
+  // فحص النسخ الاحتياطي اليومي مرة واحدة فقط بعد تسجيل الدخول
+  // (انتقل من معالج النقر العام لمنع التكرار)
+  setTimeout(function(){
+    if (typeof checkAndRunDailyBackup === 'function') checkAndRunDailyBackup();
+    if (typeof updateAutoBackupUI === 'function') updateAutoBackupUI();
+  }, 5000);
 }
 
 function doLogout() {
   stopFirebaseRealtimeListener();
+  // إعادة ضبط حماية فحص النسخ الاحتياطي اليومي للجلسة القادمة
+  try { window.__kpDailyBackupCheckedThisSession = false; } catch(_e){}
   currentUser = null;
   document.body.classList.remove('kp-admin');
   document.body.classList.remove('kp-teacher');
@@ -13619,11 +13671,25 @@ document.addEventListener('click', function(e) {
   if (results && search && !search.contains(e.target) && !results.contains(e.target)) {
     results.style.display = 'none';
   }
-
-  // تحقق من النسخ الاحتياطي اليومي
-  setTimeout(checkAndRunDailyBackup, 2000);
-  updateAutoBackupUI();
+  // ملاحظة: تم نقل فحص النسخ الاحتياطي اليومي إلى دالة applyLogin
+  // ليتم تنفيذه مرة واحدة فقط بعد تسجيل الدخول، وليس مع كل نقرة.
 });
+
+// تحديث واجهة النسخ الاحتياطي عند فتح صفحة الإعدادات فقط
+(function(){
+  const observer = new MutationObserver(function(){
+    if (typeof updateAutoBackupUI === 'function') {
+      const adminPage = document.getElementById('pg-admin');
+      if (adminPage && adminPage.classList.contains('active')) {
+        updateAutoBackupUI();
+      }
+    }
+  });
+  document.addEventListener('DOMContentLoaded', function(){
+    const adminPage = document.getElementById('pg-admin');
+    if (adminPage) observer.observe(adminPage, { attributes: true, attributeFilter: ['class'] });
+  });
+})();
 
 
 (function(){
@@ -18471,6 +18537,165 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){ alert('Unable to open print dialog. Please try again.'); } }, 350);
   }
   window.kpPrintHtmlWithoutTab = printHtmlWithoutTab;
+
+  // ===== Global mobile-friendly print interceptor =====
+  // On mobile browsers, popup-style window.open('', '_blank') is blocked.
+  // Detect mobile and route any print-intent window.open through a hidden iframe.
+  (function installPrintInterceptor(){
+    function isMobile(){
+      try {
+        if (/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) return true;
+        if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) return true;
+      } catch(_e){}
+      return false;
+    }
+    var realOpen = window.open;
+    if (window.__kpPrintOpenWrapped) return;
+    window.__kpPrintOpenWrapped = true;
+    window.open = function(url, target, features){
+      try {
+        // Treat empty URL with _blank target as a print popup attempt
+        var isPrintIntent = (url === '' || url === 'about:blank' || url == null) && (target === '_blank' || target == null);
+        if (isPrintIntent && isMobile()) {
+          var iframe = makePrintFrame();
+          var fw = iframe.contentWindow;
+          // Patch the fake window so existing code that calls fw.document.write + fw.print works.
+          try {
+            var origPrint = fw.print;
+            fw.print = function(){
+              try { fw.focus(); } catch(_e){}
+              try { return origPrint.apply(fw, arguments); }
+              catch(e){ alert('Unable to open print dialog. Please try again.'); }
+            };
+          } catch(_e){}
+          return fw;
+        }
+      } catch(_e){}
+      return realOpen.apply(window, arguments);
+    };
+  })();
+
+  // ===== Generic PDF export for any HTML table or list =====
+  // Uses html2canvas + jsPDF (already loaded in this file) to render any DOM
+  // element to a high-quality, multi-page PDF. RTL-aware, with a clean header.
+  window.kpExportElementToPdf = function(elementOrId, options){
+    options = options || {};
+    var el = (typeof elementOrId === 'string') ? document.getElementById(elementOrId) : elementOrId;
+    if (!el) { alert('العنصر المطلوب غير موجود / Element not found'); return; }
+    if (!window.html2canvas || !window.jspdf || !window.jspdf.jsPDF) {
+      alert('PDF libraries not loaded. Please refresh the page.');
+      return;
+    }
+    var title = options.title || (document.title || 'Report');
+    var subtitle = options.subtitle || '';
+    var orientation = options.orientation || 'p'; // 'p' portrait, 'l' landscape
+    // Build an off-screen container with branding
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;background:#fff;color:#111;padding:24px;font-family:"Cairo","Tajawal",Arial,sans-serif;direction:rtl;';
+    var nurseryName = '';
+    try {
+      var ns = JSON.parse(localStorage.getItem('kp_nursery_settings') || '{}');
+      nurseryName = ns.name || ns.nurseryName || '';
+    } catch(_e){}
+    var dateStr = new Date().toLocaleString('ar-EG');
+    var header = document.createElement('div');
+    header.style.cssText = 'text-align:center;margin-bottom:16px;border-bottom:2px solid #1976d2;padding-bottom:12px;';
+    header.innerHTML =
+      (nurseryName ? '<div style="font-size:14px;color:#1976d2;font-weight:600;margin-bottom:4px;">'+nurseryName.replace(/[<>]/g,'')+'</div>' : '') +
+      '<div style="font-size:22px;font-weight:700;color:#0d47a1;">'+title.replace(/[<>]/g,'')+'</div>' +
+      (subtitle ? '<div style="font-size:13px;color:#555;margin-top:4px;">'+subtitle.replace(/[<>]/g,'')+'</div>' : '') +
+      '<div style="font-size:11px;color:#777;margin-top:4px;">'+dateStr+'</div>';
+    wrap.appendChild(header);
+    // Clone the target so we don't disturb the live UI
+    var clone = el.cloneNode(true);
+    // Strip interactive elements that don't belong in a PDF
+    try {
+      clone.querySelectorAll('button, input[type="button"], input[type="submit"], .no-print, .kp-action-btn').forEach(function(b){ b.remove(); });
+      clone.querySelectorAll('input, select, textarea').forEach(function(inp){
+        var span = document.createElement('span');
+        span.textContent = (inp.value != null ? inp.value : '');
+        span.style.cssText = 'display:inline-block;padding:2px 4px;';
+        inp.parentNode && inp.parentNode.replaceChild(span, inp);
+      });
+    } catch(_e){}
+    // Make tables PDF-friendly
+    try {
+      clone.querySelectorAll('table').forEach(function(t){
+        t.style.width = '100%';
+        t.style.borderCollapse = 'collapse';
+        t.style.fontSize = '11px';
+        t.querySelectorAll('th, td').forEach(function(c){
+          c.style.border = '1px solid #bbb';
+          c.style.padding = '6px';
+          c.style.textAlign = 'right';
+        });
+        t.querySelectorAll('th').forEach(function(c){
+          c.style.background = '#1976d2';
+          c.style.color = '#fff';
+          c.style.fontWeight = '700';
+        });
+      });
+    } catch(_e){}
+    wrap.appendChild(clone);
+    var footer = document.createElement('div');
+    footer.style.cssText = 'margin-top:18px;padding-top:8px;border-top:1px dashed #999;text-align:center;font-size:10px;color:#888;';
+    footer.textContent = '© ' + (nurseryName || 'Nursery Management') + ' — ' + dateStr;
+    wrap.appendChild(footer);
+    document.body.appendChild(wrap);
+    // Render with html2canvas, paginate into jsPDF
+    var scale = options.scale || 2;
+    window.html2canvas(wrap, { scale: scale, backgroundColor: '#ffffff', useCORS: true, logging: false }).then(function(canvas){
+      try {
+        var jsPDF = window.jspdf.jsPDF;
+        var pdf = new jsPDF(orientation, 'mm', 'a4');
+        var pageW = pdf.internal.pageSize.getWidth();
+        var pageH = pdf.internal.pageSize.getHeight();
+        var imgW = pageW;
+        var imgH = canvas.height * imgW / canvas.width;
+        var heightLeft = imgH;
+        var position = 0;
+        var imgData = canvas.toDataURL('image/jpeg', 0.95);
+        pdf.addImage(imgData, 'JPEG', 0, position, imgW, imgH, undefined, 'FAST');
+        heightLeft -= pageH;
+        while (heightLeft > 0) {
+          position = heightLeft - imgH;
+          pdf.addPage();
+          pdf.addImage(imgData, 'JPEG', 0, position, imgW, imgH, undefined, 'FAST');
+          heightLeft -= pageH;
+        }
+        var safeName = (title || 'report').replace(/[\\\/\?\*<>:"|]/g, '_').slice(0, 80);
+        var fname = safeName + '_' + new Date().toISOString().slice(0,10) + '.pdf';
+        pdf.save(fname);
+      } catch(e) {
+        console.error('PDF export failed:', e);
+        alert('فشل تصدير PDF / PDF export failed: ' + (e && e.message || e));
+      } finally {
+        try { wrap.remove(); } catch(_e){}
+      }
+    }).catch(function(e){
+      console.error('html2canvas failed:', e);
+      alert('فشل إنشاء PDF / Failed to create PDF: ' + (e && e.message || e));
+      try { wrap.remove(); } catch(_e){}
+    });
+  };
+
+  // Convenience: export a list page by selector. Tries common patterns.
+  window.kpExportListAsPdf = function(targetSelector, title){
+    var node = null;
+    if (targetSelector) {
+      node = (typeof targetSelector === 'string') ? document.querySelector(targetSelector) : targetSelector;
+    }
+    if (!node) {
+      // Best-effort: find the active visible page
+      var active = document.querySelector('.page.active') || document.querySelector('[class*="pg-"]:not([style*="display: none"])');
+      if (active) {
+        // Prefer table inside the active page
+        node = active.querySelector('table') ? active : active;
+      }
+    }
+    if (!node) { alert('لا توجد قائمة لتصديرها / No list found to export'); return; }
+    window.kpExportElementToPdf(node, { title: title || 'تقرير' });
+  };
 
   var originalPrintStudentsSelectedReport = window.printStudentsSelectedReport;
   if (typeof originalPrintStudentsSelectedReport === 'function' && !originalPrintStudentsSelectedReport.__kpNoTabWrapped) {
