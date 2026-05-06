@@ -1989,7 +1989,7 @@ body.kp-teacher .kp-sync-panel{
         <button class="btn btn-b btn-sm" onclick="printStudentsSelectedReport()">🖨️ طباعة</button>
         <button class="btn btn-out btn-sm" onclick="exportStudentsSelectedReport('xlsx')">Excel</button>
         <button class="btn btn-out btn-sm" onclick="exportStudentsSelectedReport('doc')">Word</button>
-        <button class="btn btn-out btn-sm" onclick="kpExportElementToPdf(document.querySelector('#pg-students .card'), {title:'سجل الطلاب', orientation:'l'})" title="تصدير PDF">📄 PDF</button>
+        <button class="btn btn-out btn-sm" onclick="pdfStudentsSelectedReport()" title="تصدير PDF حسب القائمة المختارة">📄 PDF</button>
       </div>
       <div class="card">
         <div class="ct"><span id="stu-count">الطلاب</span></div>
@@ -5785,6 +5785,123 @@ function printStudentsSelectedReport(){
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
   <script>window.onload=()=>{setTimeout(()=>window.print(),250)}<\/script></body></html>`);
   w.document.close();
+}
+
+// تصدير PDF بنفس منطق الطباعة — يحترم اختيار القائمة من القائمة المنسدلة
+function pdfStudentsSelectedReport(){
+  if (!window.html2canvas || !window.jspdf || !window.jspdf.jsPDF) {
+    alert('مكتبات PDF غير محمّلة. الرجاء تحديث الصفحة.');
+    return;
+  }
+  const type = document.getElementById('stu-print-type')?.value || 'list';
+  const filtered = getStudentsFilteredForPrint();
+  let bodyHtml = '';
+  let title = 'قائمة الطلاب';
+  let extraStyles = '';
+
+  if (type === 'moe-list') {
+    const schoolYear = prompt('اكتبي العام الدراسي الذي سيظهر في الترويسة:', '2025-2026');
+    if (schoolYear === null) return;
+    bodyHtml = buildMoeStudentsPrintPage(filtered, schoolYear.trim());
+    title = 'قائمة وزارة التربية';
+    extraStyles = `
+      .moe-page{padding:0;page-break-after:always}
+      .moe-head-img{text-align:center;margin:0 0 2mm 0;height:24mm;overflow:hidden}
+      .moe-head-img img{max-width:100%;height:24mm;object-fit:contain;object-position:center top}
+      .moe-title{text-align:center;font-size:12px;font-weight:700;margin:1mm 0 6mm 0;color:#333}
+      table.moe-grid{width:100%;border-collapse:collapse;table-layout:fixed;font-size:8.2px;direction:rtl}
+      .moe-grid th,.moe-grid td{border:1px solid #555;padding:3px 2px;text-align:center;vertical-align:middle;word-break:break-word;line-height:1.25}
+      .moe-grid th{background:#d8d3d3;font-weight:800;color:#111}
+    `;
+  } else {
+    const classesToPrint = getPrintSelectedClasses(filtered);
+    if (!classesToPrint.length) { alert('لا يوجد صفوف أو طلاب ضمن الفلتر الحالي للتصدير'); return; }
+    const dateText = getPrintDateText();
+    const logoSrc = getNurseryLogoForPrint();
+    bodyHtml = classesToPrint.map(clsName => {
+      const items = filtered.filter(s => s.cls === clsName).sort((a,b) => String(a.name||'').localeCompare(String(b.name||''), 'ar'));
+      return buildStudentsPrintSection(clsName, items, type, dateText, logoSrc);
+    }).join('');
+    title = (type === 'attendance' ? 'حضور وغياب أسبوعي'
+           : type === 'meals' ? 'الوجبات والحمام'
+           : 'قائمة الأسماء');
+    extraStyles = `
+      .print-page{page-break-after:always;break-after:page;padding:0;overflow:hidden;background:#fff}
+      .print-page:last-child{page-break-after:auto;break-after:auto}
+      .print-head{text-align:center;margin-bottom:4px}
+      .print-logo-wrap{height:34px;display:flex;align-items:center;justify-content:center;margin-bottom:2px}
+      .print-logo{max-height:32px;max-width:110px;object-fit:contain}
+      .print-title{font-size:16px;font-weight:900}
+      .print-subtitle{font-size:12px;font-weight:700;margin-top:1px}
+      .print-meta{display:flex;justify-content:space-between;gap:6px;border:1px solid #333;padding:3px 6px;margin-top:4px;font-size:10.5px}
+      table.print-grid{width:100%;border-collapse:collapse;font-size:9.3px;margin-top:4px;table-layout:fixed}
+      .print-grid th,.print-grid td{border:1px solid #333;padding:3px;text-align:center;vertical-align:middle;line-height:1.08;word-break:break-word}
+      .print-grid th{background:#f3f3f3;font-weight:800}
+      .print-grid td.name-cell{text-align:right;font-weight:700}
+      .attendance-grid td{height:20px}
+      .meals-grid td.blank-cell{height:18px;width:auto}
+    `;
+  }
+
+  // ابني iframe مخفي بعرض A4 landscape (1123px @ 96dpi) لرسم الصفحات
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:1123px;height:794px;border:0;background:#fff;';
+  document.body.appendChild(iframe);
+  const doc = iframe.contentDocument;
+  doc.open();
+  doc.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
+    <style>
+      body{font-family:Tajawal,Arial,sans-serif;color:#111;margin:0;padding:8px;background:#fff;direction:rtl}
+      ${extraStyles}
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+  </head><body>${bodyHtml}</body></html>`);
+  doc.close();
+
+  // امنح الخطوط والصور وقتاً للتحميل، ثم اقتنص كل صفحة
+  const ready = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
+  Promise.all([ready, new Promise(r => setTimeout(r, 1200))]).then(async () => {
+    try {
+      const jsPDF = window.jspdf.jsPDF;
+      const pdf = new jsPDF('l', 'mm', 'a4'); // landscape A4
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const pageNodes = doc.querySelectorAll('.print-page, .moe-page');
+      const targets = pageNodes.length ? Array.from(pageNodes) : [doc.body];
+      let first = true;
+      for (const node of targets) {
+        const canvas = await window.html2canvas(node, {
+          scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false,
+          windowWidth: 1123, width: node.scrollWidth || 1123, height: node.scrollHeight
+        });
+        const imgData = canvas.toDataURL('image/jpeg', 0.92);
+        const imgW = pageW;
+        const imgH = canvas.height * imgW / canvas.width;
+        if (!first) pdf.addPage();
+        first = false;
+        // لو الصورة أطول من الصفحة، قسّمها إلى عدة صفحات
+        if (imgH <= pageH) {
+          pdf.addImage(imgData, 'JPEG', 0, 0, imgW, imgH, undefined, 'FAST');
+        } else {
+          let remaining = imgH;
+          let y = 0;
+          while (remaining > 0) {
+            pdf.addImage(imgData, 'JPEG', 0, y, imgW, imgH, undefined, 'FAST');
+            remaining -= pageH;
+            y -= pageH;
+            if (remaining > 0) pdf.addPage();
+          }
+        }
+      }
+      const fname = title.replace(/[\\\/\?\*<>:"|]/g,'_') + '_' + new Date().toISOString().slice(0,10) + '.pdf';
+      pdf.save(fname);
+    } catch (e) {
+      console.error('PDF export failed:', e);
+      alert('فشل تصدير PDF: ' + (e && e.message || e));
+    } finally {
+      try { iframe.remove(); } catch(_e){}
+    }
+  });
 }
 
 
