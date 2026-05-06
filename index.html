@@ -8273,14 +8273,32 @@ function checkAndRunDailyBackup() {
 
   const now = new Date();
   const todayKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
-  const lastBackup = localStorage.getItem('kp_last_auto_backup_v3'); // v3 key only
+  const lastBackup = localStorage.getItem('kp_last_auto_backup_v3');
+  const lastManual = localStorage.getItem('kp_last_manual_backup');
 
-  if (lastBackup === todayKey) return; // اليوم تم أخذ نسخة v3
+  // إذا أخذت أي نسخة (يدوية أو تلقائية) اليوم، تخطّ
+  if (lastBackup === todayKey || lastManual === todayKey) return;
 
   // لم تُؤخذ نسخة اليوم - خذها تلقائياً بدون سؤال
+  // نفضّل النسخة الكاملة (Firebase + محلية) لأنها الأشمل
   setTimeout(function(){
-    performAutoBackup(false);
-  }, 3000); // بعد 3 ثواني من الدخول
+    try {
+      // علّم اليوم قبل الاستدعاء لمنع أي تكرار محتمل خلال الإهلاك
+      localStorage.setItem('kp_last_auto_backup_v3', todayKey);
+      if (typeof window.downloadBackup === 'function' && window.downloadBackup.__kpComplete) {
+        // النسخة الكاملة (مع Firebase) — تُحدّث kp_last_manual_backup من تلقاء نفسها
+        Promise.resolve(window.downloadBackup()).catch(function(e){
+          console.warn('[KP] auto complete backup failed, falling back:', e);
+          performAutoBackup(false);
+        });
+      } else {
+        performAutoBackup(false);
+      }
+    } catch(e) {
+      console.error('Auto daily backup error:', e);
+      try { performAutoBackup(false); } catch(_e){}
+    }
+  }, 3000);
 }
 
 function toggleAutoBackup() {
@@ -8325,8 +8343,52 @@ async function restoreBackup(event) {
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
-      const backup = JSON.parse(e.target.result);
-      if (!backup.version || !backup.students) { alert('❌ الملف ليس نسخة احتياطية صالحة'); return; }
+      var backup = JSON.parse(e.target.result);
+
+      // ===== التطبيع: التعامل مع كل صيغ النسخ الاحتياطية =====
+      // (1) النسخة الكاملة (legacy complete-firebase-and-local) تحتوي على __localFallback
+      //     بصيغة محلية نظيفة — نفضّل استخدامها لأن جذر Firebase يحوّل المصفوفات إلى كائنات.
+      if (backup && backup.__localFallback && typeof backup.__localFallback === 'object') {
+        var fb = backup.__localFallback;
+        // ندمج __localFallback فوق الجذر مع الإبقاء على المفاتيح الإضافية الأخرى.
+        var merged = Object.assign({}, backup, fb);
+        // نحتفظ بـ version و backupDate من الجذر إذا كانت موجودة
+        if (backup.version != null) merged.version = backup.version;
+        if (backup.backupDate) merged.backupDate = backup.backupDate;
+        backup = merged;
+      }
+
+      // (2) Firebase يحوّل المصفوفات إلى كائنات بمفاتيح رقمية — نحوّلها رجوعاً إلى مصفوفات.
+      function toArrayMaybe(v){
+        if (Array.isArray(v)) return v;
+        if (v && typeof v === 'object') {
+          var keys = Object.keys(v);
+          // إذا كانت كل المفاتيح أرقام صحيحة، اعتبرها مصفوفة Firebase
+          var allNumeric = keys.length > 0 && keys.every(function(k){ return /^\d+$/.test(k); });
+          if (allNumeric) {
+            var arr = [];
+            keys.sort(function(a,b){ return Number(a)-Number(b); }).forEach(function(k){
+              if (v[k] != null) arr.push(v[k]);
+            });
+            return arr;
+          }
+          // كائن غير مصفوفة — حوّل قيمه إلى مصفوفة (نمط Firebase push IDs)
+          return Object.keys(v).map(function(k){ return v[k]; }).filter(function(x){ return x != null; });
+        }
+        return [];
+      }
+
+      ['students','payments','expenses','renewals','deletedStudents','deletedPayments','deletedExpenses','deletedRenewals','deletedClasses','kp_users','kp_form_rows'].forEach(function(k){
+        if (backup[k] != null && !Array.isArray(backup[k])) {
+          backup[k] = toArrayMaybe(backup[k]);
+        }
+      });
+
+      // (3) فحص الصلاحية بعد التطبيع
+      if (!backup.students || !Array.isArray(backup.students)) {
+        alert('❌ الملف ليس نسخة احتياطية صالحة (لا توجد قائمة طلاب)');
+        return;
+      }
 
       // ===== المرحلة 1: استعادة المتغيرات في الذاكرة =====
       if (backup.students) students = backup.students;
@@ -19710,6 +19772,15 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
         if (backup[key] === undefined) backup[key] = firebaseData[key] !== undefined ? firebaseData[key] : (localData[key] !== undefined ? localData[key] : {});
       });
       saveBackupFile(backup);
+      // علّم اليوم كي لا تُطلق النسخة التلقائية مرة أخرى في نفس اليوم
+      try {
+        var __now = new Date();
+        var __today = __now.getFullYear() + '-' + String(__now.getMonth()+1).padStart(2,'0') + '-' + String(__now.getDate()).padStart(2,'0');
+        localStorage.setItem('kp_last_manual_backup', __today);
+        localStorage.setItem('kp_last_auto_backup_v3', __today);
+        localStorage.setItem('kp_last_auto_backup', __today);
+        localStorage.setItem('kp_last_auto_backup_time', __now.toISOString());
+      } catch(_e){}
       if (typeof showSyncBadge === 'function') showSyncBadge('تم تحميل النسخة الاحتياطية الكاملة');
       alert('تم تحميل النسخة الاحتياطية الكاملة بنجاح. تشمل بيانات Firebase الحالية ونسخة محلية احتياطية داخل الملف.');
     } catch(e) {
@@ -19717,6 +19788,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       alert('تعذر تجهيز النسخة الاحتياطية الكاملة: ' + (e && e.message ? e.message : e));
     }
   };
+  try { window.downloadBackup.__kpComplete = true; } catch(_e){}
 })();
 </script>
 
