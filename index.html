@@ -8246,9 +8246,10 @@ function performAutoBackup(silent) {
     document.body.removeChild(a);
     setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
 
-    // سجّل تاريخ آخر نسخة احتياطية
+    // سجّل تاريخ آخر نسخة احتياطية (v3 — مفتاح جديد لضمان التحديث بعد الترقية)
     const todayKey = Y + '-' + M + '-' + D;
-    localStorage.setItem('kp_last_auto_backup', todayKey);
+    localStorage.setItem('kp_last_auto_backup_v3', todayKey);
+    localStorage.setItem('kp_last_auto_backup', todayKey); // backward-compat
     localStorage.setItem('kp_last_auto_backup_time', now.toISOString());
 
     if (!silent) {
@@ -8272,9 +8273,9 @@ function checkAndRunDailyBackup() {
 
   const now = new Date();
   const todayKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
-  const lastBackup = localStorage.getItem('kp_last_auto_backup');
+  const lastBackup = localStorage.getItem('kp_last_auto_backup_v3'); // v3 key only
 
-  if (lastBackup === todayKey) return; // اليوم تم أخذ نسخة
+  if (lastBackup === todayKey) return; // اليوم تم أخذ نسخة v3
 
   // لم تُؤخذ نسخة اليوم - خذها تلقائياً بدون سؤال
   setTimeout(function(){
