@@ -8424,6 +8424,25 @@ function performAutoBackup(silent) {
 }
 
 function checkAndRunDailyBackup() {
+  // 🔒 ROLE GATE — only admins / managers run the automatic daily backup.
+  // Other roles (teacher / evaluator / staff) never trigger an auto-download.
+  // They can still be backed up by an admin from the admin page.
+  try {
+    if (typeof currentUser === 'undefined' || !currentUser) return;
+    var role = String(currentUser.role || '').toLowerCase();
+    var uname = String(currentUser.username || '').toLowerCase();
+    var isAdminOrManager = (role === 'admin') || (role === 'manager') || (uname === 'admin');
+    if (!isAdminOrManager) {
+      // Mark the session check as done so we don't keep re-evaluating per page load.
+      window.__kpDailyBackupCheckedThisSession = true;
+      return;
+    }
+  } catch(_e) {
+    // If anything goes wrong reading the role, fail closed (do not back up).
+    window.__kpDailyBackupCheckedThisSession = true;
+    return;
+  }
+
   // حماية من التنفيذ المزدوج خلال نفس الجلسة
   if (window.__kpDailyBackupCheckedThisSession) return;
   window.__kpDailyBackupCheckedThisSession = true;
@@ -21341,14 +21360,22 @@ window.loadEvaluationsFromFirebase = async function(){
     var res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     var data = await res.json();
+    // Respect the host file's tombstones map — keys listed there have been
+    // permanently deleted and should not be re-hydrated into local state.
+    var tombs = [];
+    try {
+      if (typeof tombstones === 'object' && tombstones && Array.isArray(tombstones.evaluations)) {
+        tombs = tombstones.evaluations.map(function(x){ return String(x); });
+      }
+    } catch(_e) {}
     var arr = [];
     if (data && typeof data === 'object') {
       Object.keys(data).forEach(function(k){
         var rec = data[k];
-        if (rec && typeof rec === 'object') {
-          if (!rec.firebaseKey) rec.firebaseKey = k;
-          arr.push(rec);
-        }
+        if (!rec || typeof rec !== 'object') return;
+        if (!rec.firebaseKey) rec.firebaseKey = k;
+        if (tombs.indexOf(String(rec.id || k)) !== -1) return; // skip deleted
+        arr.push(rec);
       });
     }
     window.evaluations = arr;
@@ -21390,26 +21417,53 @@ function injectEvaluationsPage(){
     var st = document.createElement('style');
     st.id = 'kp-eval-styles';
     st.textContent = ''
-      + '.kp-eval-table{table-layout:auto}'
-      + '.kp-eval-table th,.kp-eval-table td{padding:6px 4px;word-break:normal;overflow-wrap:break-word}'
-      + '.kp-eval-table input[type="radio"]{width:18px;height:18px}'
-      + '/* Skill column allowed to wrap so long English text does not blow out the row */'
-      + '.kp-eval-table tbody td:nth-child(3){white-space:normal;line-height:1.35;min-width:140px;max-width:260px}'
+      + '.kp-eval-table{table-layout:auto;font-size:13px}'
+      + '.kp-eval-table th,.kp-eval-table td{padding:8px 6px;word-break:normal;overflow-wrap:break-word;border:1px solid #d9d9d9;vertical-align:middle}'
+      + '.kp-eval-table input[type="radio"]{width:20px;height:20px;cursor:pointer}'
+      + '/* Skill text wraps so long English/Arabic phrases never overflow */'
+      + '.kp-eval-table tbody td:nth-child(3){white-space:normal;line-height:1.45;min-width:200px;max-width:340px;text-align:start}'
+      + '.kp-eval-table thead th{white-space:normal;line-height:1.35}'
+      + '/* MONTH COLORING — three distinct tints so the evaluator does not'
+      + '   confuse one month\u0027s columns with the next. Same hue as locked'
+      + '   stripe so it is visually consistent. */'
+      + '.kp-eval-month-1{background:#e3f2fd}'         /* light blue */
+      + '.kp-eval-month-2{background:#fff3e0}'         /* light amber */
+      + '.kp-eval-month-3{background:#e8f5e9}'         /* light green */
+      + '.kp-eval-table thead th.kp-eval-month-1{background:#90caf9;color:#0d47a1}'
+      + '.kp-eval-table thead th.kp-eval-month-2{background:#ffcc80;color:#bf360c}'
+      + '.kp-eval-table thead th.kp-eval-month-3{background:#a5d6a7;color:#1b5e20}'
+      + '.kp-eval-table thead th.kp-eval-month-1.kp-eval-sub,'
+      + '.kp-eval-table thead th.kp-eval-month-2.kp-eval-sub,'
+      + '.kp-eval-table thead th.kp-eval-month-3.kp-eval-sub{background:transparent;color:var(--muted);font-weight:600}'
+      + '.kp-eval-table thead tr:nth-child(2) th.kp-eval-month-1{background:#bbdefb}'
+      + '.kp-eval-table thead tr:nth-child(2) th.kp-eval-month-2{background:#ffe0b2}'
+      + '.kp-eval-table thead tr:nth-child(2) th.kp-eval-month-3{background:#c8e6c9}'
       + '@media (max-width: 720px){'
-      + '  .kp-eval-table{font-size:11px}'
-      + '  .kp-eval-table th,.kp-eval-table td{padding:3px 2px}'
-      + '  .kp-eval-table input[type="radio"]{width:15px;height:15px}'
-      + '  .kp-eval-table thead th{font-size:10px}'
-      + '  .kp-eval-table tbody td:nth-child(2){font-size:10px;writing-mode:vertical-rl;text-orientation:mixed;padding:4px 2px}'
-      + '  .kp-eval-table tbody td:nth-child(3){min-width:120px;max-width:170px;font-size:11px}'
+      + '  .kp-eval-table{font-size:12px}'
+      + '  .kp-eval-table th,.kp-eval-table td{padding:5px 3px}'
+      + '  .kp-eval-table input[type="radio"]{width:18px;height:18px}'
+      + '  .kp-eval-table thead th{font-size:11px}'
+      + '  .kp-eval-table tbody td:nth-child(2){font-size:11px;writing-mode:vertical-rl;text-orientation:mixed;padding:4px 2px;min-width:28px}'
+      + '  .kp-eval-table tbody td:nth-child(3){min-width:140px;max-width:200px;font-size:12px}'
       + '  .kp-eval-scroll-hint{display:block !important}'
       + '  .kp-eval-mgr-table{min-width:720px}'
+      + '}'
+      + '/* PRINT / PDF — let everything wrap, force month colors to print, no scroll wrappers */'
+      + '@media print{'
+      + '  .kp-eval-table-wrap{overflow:visible !important;border:none !important}'
+      + '  .kp-eval-table{font-size:11px;page-break-inside:auto;width:100% !important;min-width:0 !important}'
+      + '  .kp-eval-table tr{page-break-inside:avoid;page-break-after:auto}'
+      + '  .kp-eval-table tbody td:nth-child(3){white-space:normal;max-width:none}'
+      + '  .kp-eval-month-1,.kp-eval-month-2,.kp-eval-month-3,'
+      + '  .kp-eval-table thead th.kp-eval-month-1,.kp-eval-table thead th.kp-eval-month-2,.kp-eval-table thead th.kp-eval-month-3'
+      + '  {-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}'
+      + '  .kp-eval-scroll-hint{display:none !important}'
       + '}'
       + '/* When a locked-UI role is active, suppress any stray top-bar children we did not enumerate */'
       + 'body.kp-locked-ui .topbar > *:not(#user-badge):not(#login-screen){}'
       + 'body.kp-locked-ui #notif-panel,body.kp-locked-ui #reg-notif-panel{display:none !important}'
       + '.kp-eval-locked-cell{background:#f5f5f5 !important;opacity:0.6}'
-      + '.kp-eval-month-locked{background:linear-gradient(135deg,#f8f8f8 25%,#f0f0f0 25%,#f0f0f0 50%,#f8f8f8 50%,#f8f8f8 75%,#f0f0f0 75%) !important;background-size:8px 8px !important}';
+      + '.kp-eval-month-locked{background-image:linear-gradient(135deg,rgba(0,0,0,0.05) 25%,rgba(0,0,0,0.10) 25%,rgba(0,0,0,0.10) 50%,rgba(0,0,0,0.05) 50%,rgba(0,0,0,0.05) 75%,rgba(0,0,0,0.10) 75%) !important;background-size:8px 8px !important}';
     document.head.appendChild(st);
   }
   var main = document.querySelector('.main');
@@ -21439,8 +21493,8 @@ function injectEvaluationsPage(){
     + '      </select></div>'
     + '    <div class="fl"><label>اللغة (وفقاً للطالب)</label>'
     + '      <select id="eval-lang">'
-    + '        <option value="ar-q1-l12">عربي — المستوى الأول والثاني</option>'
-    + '        <option value="en-q1-l3">English — Level 3</option>'
+    + '        <option value="ar-q1-l12">عربي</option>'
+    + '        <option value="en-q1-l3">English</option>'
     + '      </select></div>'
     + '  </div>'
     + '  <div id="eval-form-host"></div>'
@@ -21666,12 +21720,15 @@ function kpEvalBuildFormHTML(form, student, editable, savedData, quarterId, lock
     else if (monthLabels.length > 0) periodLine = (isAr ? 'فترة التقييم: ' : 'Evaluation period: ') + monthLabels.join(isAr ? '، ' : ', ');
   }
 
-  // Header (matches the original docx)
+  // Header (matches the original docx) — explicit LTR direction so the
+  // positioning is the same regardless of the surrounding RTL/LTR context
+  // (matters for PDF export). Order in source = visual left-to-right:
+  // English left, logo center, Arabic right.
   var header = ''
-    + '<div class="kp-eval-header" style="border:2px solid var(--g2);border-radius:14px;padding:12px;margin-bottom:14px;background:#fff;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px">'
+    + '<div class="kp-eval-header" dir="ltr" style="border:2px solid var(--g2);border-radius:14px;padding:12px;margin-bottom:14px;background:#fff;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px">'
     + '  <div style="font-weight:800;font-size:18px;color:#1a4a82;text-align:center">Kids Park Nursery</div>'
     + '  <img src="' + kpEvalGetHeaderLogo() + '" alt="logo" style="width:90px;height:90px;object-fit:contain"/>'
-    + '  <div style="font-weight:800;font-size:18px;color:#1a4a82;text-align:center">حضانة حديقة الأطفال</div>'
+    + '  <div style="font-weight:800;font-size:18px;color:#1a4a82;text-align:center;direction:rtl">حضانة حديقة الأطفال</div>'
     + '</div>'
     + '<div style="text-align:center;font-size:18px;font-weight:800;margin-bottom:8px">' + escapeHtml(form.title) + '</div>'
     + '<div style="text-align:center;font-size:14px;color:var(--muted);margin-bottom:6px">' + escapeHtml(form.level) + ' — ' + escapeHtml(termLabel) + (yearLabel ? ' — ' + escapeHtml(yearLabel) : '') + '</div>'
@@ -21695,7 +21752,10 @@ function kpEvalBuildFormHTML(form, student, editable, savedData, quarterId, lock
         var monthLocked = !!lock[m];
         var monthDisabled = (!editable) || monthLocked;
         var dis = monthDisabled ? 'disabled' : '';
-        var cellClass = monthLocked ? 'kp-eval-month-locked' : '';
+        // Apply both the per-month color class and (if locked) the lock-stripe class.
+        // Lock stripe is a transparent overlay so it visually combines with the month tint.
+        var monthClass = 'kp-eval-month-' + (m + 1);
+        var cellClass = monthClass + (monthLocked ? ' kp-eval-month-locked' : '');
         for (var lvl = 0; lvl < 3; lvl++){
           var name = 'eval-r-' + rowIdx + '-' + m;
           var checked = '';
@@ -21703,33 +21763,34 @@ function kpEvalBuildFormHTML(form, student, editable, savedData, quarterId, lock
             var v = savedData.skills[String(rowIdx)];
             if (v && Number(v[m]) === lvl) checked = 'checked';
           }
-          cells.push('<td class="' + cellClass + '" style="text-align:center"><input type="radio" name="' + name + '" value="' + lvl + '" ' + dis + ' ' + checked + '/></td>');
+          cells.push('<td class="' + cellClass + '" style="text-align:center;min-width:70px"><input type="radio" name="' + name + '" value="' + lvl + '" ' + dis + ' ' + checked + '/></td>');
         }
       }
       rows.push('<tr>' + cells.join('') + '</tr>');
     });
   });
 
-  // Header row with months — annotate locked months with a 🔒 marker
+  // Header row with months — color-coded per month + 🔒 marker on locked months
   var headerCellsTop = ''
     + '<th rowspan="2" style="width:36px">' + (isAr ? 'م' : '#') + '</th>'
-    + '<th rowspan="2">' + (isAr ? 'التطور' : 'Development') + '</th>'
-    + '<th rowspan="2">' + (isAr ? 'المهارة' : 'Skill') + '</th>';
+    + '<th rowspan="2" style="min-width:90px">' + (isAr ? 'التطور' : 'Development') + '</th>'
+    + '<th rowspan="2" style="min-width:200px">' + (isAr ? 'المهارة' : 'Skill') + '</th>';
   form.months.forEach(function(mo, mi){
     var lockMark = lock[mi] ? ' 🔒' : '';
-    headerCellsTop += '<th colspan="3"' + (lock[mi] ? ' class="kp-eval-month-locked"' : '') + '>' + escapeHtml(mo) + lockMark + '</th>';
+    var hClass = 'kp-eval-month-' + (mi + 1) + (lock[mi] ? ' kp-eval-month-locked' : '');
+    headerCellsTop += '<th colspan="3" class="' + hClass + '" style="min-width:210px">' + escapeHtml(mo) + lockMark + '</th>';
   });
   var headerCellsBot = '';
   for (var m = 0; m < 3; m++){
-    var bg = lock[m] ? ' kp-eval-month-locked' : '';
+    var subClass = 'kp-eval-month-' + (m + 1) + (lock[m] ? ' kp-eval-month-locked' : '');
     form.scale.forEach(function(s){
-      headerCellsBot += '<th class="' + bg + '" style="font-size:11px;font-weight:600;color:var(--muted)">' + escapeHtml(s) + '</th>';
+      headerCellsBot += '<th class="' + subClass + '" style="font-size:11px;font-weight:600;min-width:70px">' + escapeHtml(s) + '</th>';
     });
   }
 
   var table = ''
     + '<div class="kp-eval-table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:8px;max-width:100%">'
-    + '<table class="tbl kp-eval-table" dir="' + dir + '" style="min-width:680px;width:100%;border-collapse:collapse;table-layout:auto">'
+    + '<table class="tbl kp-eval-table" dir="' + dir + '" style="min-width:880px;width:100%;border-collapse:collapse;table-layout:auto">'
     + '  <thead><tr>' + headerCellsTop + '</tr><tr>' + headerCellsBot + '</tr></thead>'
     + '  <tbody>' + rows.join('') + '</tbody>'
     + '</table>'
@@ -22066,31 +22127,60 @@ window.kpEvalReopen = async function(id){
   try { kpEvalRenderForm(); } catch(_e){}
 };
 
-// Manager: DELETE an evaluation entirely (Firebase + local cache).
+// Manager: DELETE an evaluation entirely. Uses the host's
+// permanentDeleteRemoteAware helper so a tombstone is recorded — without
+// it, the record would be re-hydrated on the next Firebase sync and
+// effectively undeleted. After the delete, we also refresh the student
+// profile modal if it's open, so the entry vanishes from the student's
+// "📝 التقييمات الفصلية" list immediately.
 window.kpEvalDelete = async function(id){
   if (!window.canApproveEvaluations()) { alert('للإدارة فقط'); return; }
   var e = (window.evaluations||[]).find(function(x){ return x.id === id; });
   if (!e) { alert('السجل غير موجود'); return; }
-  if (!confirm('حذف هذا التقييم نهائياً؟\n\nالطالب: ' + (e.studentName||'') + '\nالفصل: ' + (e.term||'') + '\n\nلا يمكن التراجع عن هذا الإجراء.')) return;
+  if (!confirm('حذف هذا التقييم نهائياً؟\n\nالطالب: ' + (e.studentName||'') + '\nالفصل: ' + (e.term||'') + '\nالسنة: ' + (e.academicYear||'—') + '\n\nسيتم حذفه من ملف الطالب وفتحه من جديد للمُقيِّم. لا يمكن التراجع عن هذا الإجراء.')) return;
 
-  // Remove from Firebase by sending DELETE to /evaluations/<id>.json
-  var deleted = false;
-  try {
-    if (typeof FB_URL === 'string' && FB_URL) {
-      var url = FB_URL + '/evaluations/' + encodeURIComponent(e.id) + '.json';
-      var res = await fetch(url, { method: 'DELETE' });
-      deleted = res.ok;
-    }
-  } catch (err) { console.warn('Delete fetch failed:', err); }
+  var stuId = e.studentId;
+  var ok = false;
+  if (typeof permanentDeleteRemoteAware === 'function') {
+    ok = await permanentDeleteRemoteAware({
+      type: 'evaluations',
+      key: e.id,
+      deletedArrayName: 'evaluations',
+      keyField: 'id',
+      label: 'تقييم الطالب',
+    });
+  } else {
+    // Fallback: best-effort direct delete
+    try {
+      if (typeof FB_URL === 'string' && FB_URL) {
+        var url = FB_URL + '/evaluations/' + encodeURIComponent(e.id) + '.json';
+        var res = await fetch(url, { method: 'DELETE' });
+        ok = res.ok;
+      }
+    } catch (err) { console.warn('Delete fetch failed:', err); }
+  }
 
-  // Remove from local cache regardless (so the UI reflects intent)
+  // Remove from local cache regardless (so the UI reflects intent immediately)
   var idx = (window.evaluations||[]).findIndex(function(x){ return x.id === e.id; });
   if (idx !== -1) window.evaluations.splice(idx, 1);
   persistEvaluationsLocal();
 
-  if (deleted) alert('✅ تم حذف التقييم نهائياً.');
+  if (ok) alert('✅ تم حذف التقييم نهائياً.\nسيتمكن المُقيِّم من إنشاء تقييم جديد لنفس الطالب والفصل.');
   else alert('⚠️ تم الحذف محلياً، لكن قد يعود عند المزامنة التالية إذا تعذّر الوصول إلى Firebase.');
+
+  // Refresh manager queue
   kpEvalRenderManagerList();
+  // Refresh the student profile modal if it's currently showing this student
+  // — the profile lists evaluations and a deleted one must disappear.
+  try {
+    var pm = document.getElementById('mo-stu-profile');
+    if (pm && pm.classList.contains('on') && typeof viewStudentProfile === 'function') {
+      viewStudentProfile(stuId);
+    }
+  } catch(_e){}
+  // Refresh the eval form too in case the manager has it open for the
+  // same student/quarter — they should now see a fresh, unlocked form.
+  try { kpEvalRenderForm(); } catch(_e){}
 };
 
 // Manager: EDIT an evaluation. Opens the main eval page pre-populated
@@ -22207,17 +22297,31 @@ window.kpEvalExportPdf = async function(id){
   var stu = (typeof students !== 'undefined' ? students : []).find(function(x){ return String(x.id) === String(e.studentId); }) || { id: e.studentId, name: e.studentName };
   var form = KP_FORMS[e.formId] || KP_FORM_AR;
 
-  // Build offscreen container
+  // Build offscreen container — A4 portrait at 96dpi is ~794px, but we
+  // render at 1100px to give every column comfortable breathing room and
+  // let html2canvas downscale. min-width on the table won't trigger the
+  // overflow scrollbar visually but we override it anyway for safety.
   var holder = document.createElement('div');
   holder.style.position = 'fixed';
   holder.style.top = '-99999px';
   holder.style.left = '0';
-  holder.style.width = '900px'; // close to A4 portrait at 96dpi minus margins
+  holder.style.width = '1100px';
   holder.style.background = '#fff';
-  holder.style.padding = '20px';
+  holder.style.padding = '24px';
   holder.style.fontFamily = 'Tajawal, Arial, sans-serif';
   holder.dir = (form.lang === 'ar') ? 'rtl' : 'ltr';
   holder.innerHTML = kpEvalBuildFormHTML(form, stu, /*editable*/ false, /*data*/ e, e.quarter, null, e.academicYear);
+  // Inside the offscreen render, dissolve the scroll wrapper so all columns
+  // are visible in the canvas. html2canvas captures the layout as-is, so a
+  // hidden-overflow wrapper would clip the right side of the table.
+  try {
+    var wrap = holder.querySelector('.kp-eval-table-wrap');
+    if (wrap) { wrap.style.overflow = 'visible'; wrap.style.border = 'none'; }
+    var tbl = holder.querySelector('.kp-eval-table');
+    if (tbl) { tbl.style.minWidth = '0'; tbl.style.width = '100%'; }
+    var hint = holder.querySelector('.kp-eval-scroll-hint');
+    if (hint) hint.style.display = 'none';
+  } catch(_e){}
   // Inject stamps if approved — but ONLY under months that were evaluated
   if (e.status === 'approved' && e.stampDataUrl) {
     var stampHtml = ''
@@ -22246,7 +22350,7 @@ window.kpEvalExportPdf = async function(id){
     var canvas = await html2canvas(holder, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
     var imgData = canvas.toDataURL('image/png');
     var jsPDF = window.jspdf.jsPDF;
-    var pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    var pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
     var pageW = pdf.internal.pageSize.getWidth();
     var pageH = pdf.internal.pageSize.getHeight();
     var margin = 20;
