@@ -21298,6 +21298,107 @@ const KP_FORM_EN = {
 // All available forms keyed by id
 const KP_FORMS = { 'ar-q1-l12': KP_FORM_AR, 'en-q1-l3': KP_FORM_EN };
 
+// Arabic form: Level 3, First Quarter --------------------------------
+// Same 5-domain × 3-skill structure as the English Level 3 form, but in
+// Arabic. Skills extracted verbatim from the .docx the user uploaded.
+const KP_FORM_AR_L3 = {
+  id: 'ar-q1-l3',
+  lang: 'ar',
+  level: 'المستوى الثالث',
+  term: 'الفصل الأول',
+  title: 'استمارة تقييم فصلية',
+  scale: ['لم يتقن', 'أتقن جزءاً', 'أتقن'],
+  months: ['الشهر الأول', 'الشهر الثاني', 'الشهر الثالث'],
+  groups: [
+    { domain: 'اجتماعي', skills: [
+      'يلقي التحية عند الدخول',
+      'يذكر معلومات أساسية عن نفسه',
+      'يذكر اسم وطنه ومدينته ومعلمته وأصدقائه',
+    ]},
+    { domain: 'معرفي', skills: [
+      'يلاحظ وجه الشبه بين الأشياء',
+      'يصنف حسب اللون والحجم',
+      'يقارن القياسات ويعد من 1 إلى 10',
+    ]},
+    { domain: 'لغوي', skills: [
+      'يردد سور القرآن المقررة',
+      'يطابق صوت الحرف مع الصورة',
+      'مخارج حروفه صحيحة',
+    ]},
+    { domain: 'عاطفي', skills: [
+      'يقبل على الروضة بسعادة',
+      'يشارك ألعابه مع الآخرين',
+      'يتعاطف مع أصحابه ويساعدهم',
+    ]},
+    { domain: 'جسدي', skills: [
+      'يستخدم يده في الرسم والتلوين',
+      'يشكل بالمعجون أشكالاً محددة',
+      'يفك ويركب المكعبات ويقفز',
+    ]},
+  ],
+  parentNote: 'الرجاء من ولي الأمر التكرم بإعادة هذه الاستمارة إلى الحضانة بعد الاطلاع وشكراً.',
+};
+
+// Register the new form
+KP_FORMS['ar-q1-l3'] = KP_FORM_AR_L3;
+
+// English form: Levels 1 & 2, First Quarter ---------------------------
+// English equivalent of KP_FORM_AR (the Arabic Levels 1 & 2 form). Same
+// 5-domain × 3-skill structure. Skills supplied verbatim by the user.
+const KP_FORM_EN_L12 = {
+  id: 'en-q1-l12',
+  lang: 'en',
+  level: 'Levels 1 & 2',
+  term: 'First Term',
+  title: 'Quarterly Evaluation Form',
+  scale: ['Not Mastered', 'Partially Mastered', 'Mastered'],
+  months: ['First Month', 'Second Month', 'Third Month'],
+  groups: [
+    { domain: 'Social', skills: [
+      'Comes to nursery happily and greets others',
+      'Knows the name of their country and city',
+      'Participates in activities with other children',
+    ]},
+    { domain: 'Cognitive', skills: [
+      'Distinguishes between colors',
+      'Counts from 1 to 5',
+      'Distinguishes between big and small',
+    ]},
+    { domain: 'Language', skills: [
+      'Matches the letter to the correct picture',
+      'Pronounces letters correctly',
+      'Recites short Surahs from the Holy Quran',
+    ]},
+    { domain: 'Emotional', skills: [
+      'Loves the teacher and friends',
+      'Reacts emotionally while listening to stories',
+      'Shows attachment to personal belongings',
+    ]},
+    { domain: 'Physical', skills: [
+      'Shapes playdough easily',
+      'Pastes paper pieces onto shapes',
+      'Jumps on both feet and claps',
+    ]},
+  ],
+  parentNote: 'Kindly return this form to the nursery after reviewing it. Thank you.',
+};
+KP_FORMS['en-q1-l12'] = KP_FORM_EN_L12;
+
+// Short human-readable label for a form id, used in queue/profile listings.
+// Examples: "ar-q1-l12" → "AR L1+2" ; "ar-q1-l3" → "AR L3" ; "en-q1-l3" → "EN L3".
+// Falls back to upper-case lang if the formId is unknown (legacy records).
+function kpEvalFormLabel(rec){
+  if (!rec) return '';
+  var fid = String(rec.formId || '');
+  if (fid === 'ar-q1-l12') return 'AR L1+2';
+  if (fid === 'ar-q1-l3')  return 'AR L3';
+  if (fid === 'en-q1-l12') return 'EN L1+2';
+  if (fid === 'en-q1-l3')  return 'EN L3';
+  // Generic fallback: derive from lang + level
+  var lang = String(rec.lang || '').toUpperCase();
+  return lang || '—';
+}
+
 // All possible quarters (for selection)
 const KP_QUARTERS = [
   { id: 'q1', ar: 'الفصل الأول',   en: 'First Term'  },
@@ -21479,10 +21580,12 @@ function injectEvaluationsPage(){
     + '        <option value="q2">الفصل الثاني</option>'
     + '        <option value="q3">الفصل الثالث</option>'
     + '      </select></div>'
-    + '    <div class="fl"><label>اللغة (وفقاً للطالب)</label>'
+    + '    <div class="fl"><label>الاستمارة (اللغة والمستوى)</label>'
     + '      <select id="eval-lang">'
-    + '        <option value="ar-q1-l12">عربي</option>'
-    + '        <option value="en-q1-l3">English</option>'
+    + '        <option value="ar-q1-l12">عربي — المستوى الأول والثاني</option>'
+    + '        <option value="ar-q1-l3">عربي — المستوى الثالث</option>'
+    + '        <option value="en-q1-l12">English — Levels 1 &amp; 2</option>'
+    + '        <option value="en-q1-l3">English — Level 3</option>'
     + '      </select></div>'
     + '  </div>'
     + '  <div id="eval-form-host"></div>'
@@ -21627,9 +21730,11 @@ function kpEvalRenderForm(){
     return;
   }
 
-  // Look up an existing record for this student/quarter/lang/year so we can
+  // Look up an existing record for this student/quarter/formId/year so we can
   // pre-populate already-submitted months and lock those columns from edits.
-  var existing = kpEvalFindExistingRecord(s.id, quarterId, form.lang, academicYear);
+  // We use formId (e.g. "ar-q1-l3") not lang ("ar") because two Arabic forms
+  // exist (Levels 1+2 and Level 3) — they must be tracked separately.
+  var existing = kpEvalFindExistingRecord(s.id, quarterId, form.id, academicYear);
   var lockedMonths = [false,false,false];
   var savedData = null;
   var statusBanner = '';
@@ -21658,15 +21763,28 @@ function kpEvalRenderForm(){
   host.dataset.existingId = existing ? existing.id : '';
 }
 
-// Find an existing evaluation record for the same (student, quarter, language, year).
+// Find an existing evaluation record for the same (student, quarter, formId, year).
+// We match on `formId` (e.g. "ar-q1-l3") rather than `lang` ("ar") because there
+// can be MULTIPLE forms per language (Arabic Level 1+2 and Arabic Level 3 are
+// both Arabic). Matching only on `lang` would cause records from different
+// levels to collide. Legacy callers may still pass `lang` — see `langOrFormId`
+// fallback below.
+//
 // If `year` is omitted, matches any year for backwards compatibility.
-function kpEvalFindExistingRecord(stuId, quarter, lang, year){
+function kpEvalFindExistingRecord(stuId, quarter, langOrFormId, year){
   var arr = window.evaluations || [];
+  // If `langOrFormId` looks like a formId ("ar-q1-l3"), match on formId.
+  // Otherwise it's a bare lang code ("ar") — match on lang for old callers.
+  var asFormId = (typeof langOrFormId === 'string' && langOrFormId.indexOf('-') !== -1);
   for (var i = 0; i < arr.length; i++){
     var e = arr[i];
     if (String(e.studentId) !== String(stuId)) continue;
     if (e.quarter !== quarter) continue;
-    if (e.lang !== lang) continue;
+    if (asFormId) {
+      if (e.formId !== langOrFormId) continue;
+    } else {
+      if (e.lang !== langOrFormId) continue;
+    }
     if (year && e.academicYear && e.academicYear !== year) continue;
     if (year && !e.academicYear) continue; // legacy record without year — skip when year requested
     return e;
@@ -21854,8 +21972,9 @@ window.kpEvalSubmit = async function(){
 
   // Look up any existing record so we can merge — never overwrite already-
   // submitted months. Evaluators are blocked at the UI level (locked cells)
-  // but we re-enforce here as a safety net.
-  var existing = kpEvalFindExistingRecord(stu.id, quarter, form.lang, academicYear);
+  // but we re-enforce here as a safety net. We match by formId (e.g.
+  // "ar-q1-l3") so different Arabic levels don't overwrite each other.
+  var existing = kpEvalFindExistingRecord(stu.id, quarter, form.id, academicYear);
   var prevSubmittedMonths = existing && Array.isArray(existing.submittedMonths) && existing.submittedMonths.length === 3
     ? existing.submittedMonths.slice()
     : [false,false,false];
@@ -21928,12 +22047,15 @@ window.kpEvalSubmit = async function(){
     }
   }
 
-  // Build the record. Stable key: stu_<id>_<quarter>_<langTag>_<year> ; this
+  // Build the record. Stable key: stu_<id>_<quarter>_<formIdTag>_<year>.
+  // We use the full formId (e.g. "ar-q1-l3") not just the lang, because
+  // multiple forms exist per language (Arabic L1+2 and Arabic L3). This
   // makes resubmission UPDATE the same Firebase node (idempotent), while
-  // keeping different academic years as separate records.
+  // keeping different academic years AND different levels as separate records.
   var yearKey = String(academicYear).replace(/[^0-9A-Za-z\-]/g, '');
+  var formIdKey = String(form.id || form.lang).replace(/[^0-9A-Za-z\-]/g, '');
   var rec = {
-    id: existing ? existing.id : ('eval_' + stu.id + '_' + quarter + '_' + form.lang + '_' + yearKey),
+    id: existing ? existing.id : ('eval_' + stu.id + '_' + quarter + '_' + formIdKey + '_' + yearKey),
     type: 'evaluation',
     studentId: stu.id,
     studentName: stu.name || '',
@@ -22030,7 +22152,7 @@ function kpEvalRenderManagerList(){
       + '<td style="font-size:12px">' + escapeHtml(String(e.classId||'')) + '</td>'
       + '<td style="font-size:12px">' + escapeHtml(String(e.term||'')) + '</td>'
       + '<td style="font-size:12px;direction:ltr">' + escapeHtml(String(e.academicYear||'—')) + '</td>'
-      + '<td style="font-size:12px;direction:ltr">' + escapeHtml((e.lang||'ar').toUpperCase()) + '</td>'
+      + '<td style="font-size:12px;direction:ltr">' + escapeHtml(kpEvalFormLabel(e)) + '</td>'
       + '<td style="font-size:11px;direction:ltr;color:var(--muted)">' + escapeHtml(String(e.submittedBy||'')) + ' — ' + escapeHtml((e.submittedAt||'').slice(0,16).replace('T',' ')) + '</td>'
       + '<td>' + statusBadge + '</td>'
       + '<td style="white-space:nowrap">' + actions + '</td>'
@@ -22038,7 +22160,7 @@ function kpEvalRenderManagerList(){
   }).join('');
 
   host.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl kp-eval-mgr-table" style="width:100%;min-width:780px"><thead><tr>'
-    + '<th>الطالب</th><th>الصف</th><th>الفصل الدراسي</th><th>السنة</th><th>اللغة</th><th>الإرسال</th><th>الحالة</th><th>إجراءات</th>'
+    + '<th>الطالب</th><th>الصف</th><th>الفصل الدراسي</th><th>السنة</th><th>الاستمارة</th><th>الإرسال</th><th>الحالة</th><th>إجراءات</th>'
     + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
     + '<div class="kp-eval-scroll-hint" style="display:none;font-size:11px;color:var(--muted);text-align:center;margin-top:4px">↔ مرّري الجدول أفقياً لرؤية كل الأعمدة</div>';
 }
@@ -22504,7 +22626,7 @@ window.kpEvalExportPdf = async function(id){
         html += '<div style="color:var(--muted);font-size:12px;margin-bottom:10px">لا توجد تقييمات مسجلة لهذا الطالب بعد.</div>';
       } else {
         html += '<div style="max-height:240px;overflow:auto;margin-bottom:10px;-webkit-overflow-scrolling:touch"><table class="tbl" style="width:100%;min-width:560px"><thead><tr>'
-          + '<th>الفصل الدراسي</th><th>السنة</th><th>اللغة</th><th>الحالة</th><th>التاريخ</th><th>إجراءات</th>'
+          + '<th>الفصل الدراسي</th><th>السنة</th><th>الاستمارة</th><th>الحالة</th><th>التاريخ</th><th>إجراءات</th>'
           + '</tr></thead><tbody>'
           + stuEvals.map(function(e){
               var st = e.status === 'approved'
@@ -22514,7 +22636,7 @@ window.kpEvalExportPdf = async function(id){
                       + ' <button class="btn btn-b btn-sm" onclick="kpEvalExportPdf(\'' + escapeHtml(e.id) + '\')">📄 PDF</button>';
               return '<tr><td style="font-size:12px">' + escapeHtml(e.term||'') + '</td>'
                 + '<td style="font-size:12px;direction:ltr">' + escapeHtml(e.academicYear||'—') + '</td>'
-                + '<td style="font-size:12px;direction:ltr">' + escapeHtml((e.lang||'').toUpperCase()) + '</td>'
+                + '<td style="font-size:12px;direction:ltr">' + escapeHtml(kpEvalFormLabel(e)) + '</td>'
                 + '<td>' + st + '</td>'
                 + '<td style="font-size:11px;direction:ltr">' + escapeHtml((e.submittedAt||'').slice(0,10)) + '</td>'
                 + '<td style="white-space:nowrap">' + act + '</td></tr>';
