@@ -21447,22 +21447,6 @@ function injectEvaluationsPage(){
       + '  .kp-eval-scroll-hint{display:block !important}'
       + '  .kp-eval-mgr-table{min-width:720px}'
       + '}'
-      + '/* PRINT / PDF — let everything wrap, force month colors to print, no scroll wrappers */'
-      + '@media print{'
-      + '  body *{visibility:hidden}'
-      + '  #kp-print-eval-host, #kp-print-eval-host *{visibility:visible}'
-      + '  #kp-print-eval-host{position:absolute;inset:0;background:#fff;padding:18px;direction:inherit}'
-      + '  .kp-eval-table-wrap{overflow:visible !important;border:none !important}'
-      + '  .kp-eval-table{font-size:11px;page-break-inside:auto;width:100% !important;min-width:0 !important}'
-      + '  .kp-eval-table tr{page-break-inside:avoid;page-break-after:auto}'
-      + '  .kp-eval-table tbody td:nth-child(3){white-space:normal;line-height:1.5}'
-      + '  .kp-eval-table tbody td:nth-child(2){writing-mode:horizontal-tb !important}'
-      + '  .kp-eval-month-1,.kp-eval-month-2,.kp-eval-month-3,'
-      + '  .kp-eval-table thead th.kp-eval-month-1,.kp-eval-table thead th.kp-eval-month-2,.kp-eval-table thead th.kp-eval-month-3'
-      + '  {-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}'
-      + '  .kp-eval-scroll-hint{display:none !important}'
-      + '  @page{size:A4 landscape;margin:10mm}'
-      + '}'
       + '/* When a locked-UI role is active, suppress any stray top-bar children we did not enumerate */'
       + 'body.kp-locked-ui .topbar > *:not(#user-badge):not(#login-screen){}'
       + 'body.kp-locked-ui #notif-panel,body.kp-locked-ui #reg-notif-panel{display:none !important}'
@@ -22301,64 +22285,135 @@ window.kpEvalExportPdf = async function(id){
   var stu = (typeof students !== 'undefined' ? students : []).find(function(x){ return String(x.id) === String(e.studentId); }) || { id: e.studentId, name: e.studentName };
   var form = KP_FORMS[e.formId] || KP_FORM_AR;
 
-  // We use the browser's native print path instead of html2canvas because
-  // html2canvas mangles Arabic word order (RTL bidi handling is incorrect)
-  // and tends to break long Arabic strings into one-word-per-line. The
-  // native print engine handles RTL correctly. The user can choose
-  // "Save as PDF" from the print dialog to produce a PDF.
+  // Open a NEW window with a self-contained HTML document. We do this
+  // (rather than printing the current window) for two reasons:
+  //  1. Mobile browsers (Android Chrome) often render print previews of the
+  //     current page as blank because of modals, fixed positioning, and
+  //     visibility:hidden inheritance. A fresh window has none of those.
+  //  2. html2canvas mangles Arabic word order. The browser's native print
+  //     engine renders RTL correctly — we just need the form to be the
+  //     entire document so nothing competes with it.
+  // This same pattern is used elsewhere in this file for receipts and
+  // student lists (see buildReceiptHTML / buildMoeStudentsPrintPage).
 
-  // 1. Build a print host that contains ONLY the evaluation form.
-  //    @media print CSS hides everything else and shows only this host.
-  var hostId = 'kp-print-eval-host';
-  var existing = document.getElementById(hostId);
-  if (existing) existing.parentNode.removeChild(existing);
-  var host = document.createElement('div');
-  host.id = hostId;
-  host.dir = (form.lang === 'ar') ? 'rtl' : 'ltr';
-  host.innerHTML = kpEvalBuildFormHTML(form, stu, /*editable*/ false, /*data*/ e, e.quarter, null, e.academicYear);
+  var isAr = form.lang === 'ar';
+  var docDir = isAr ? 'rtl' : 'ltr';
+  var docLang = isAr ? 'ar' : 'en';
 
-  // 2. Inject stamps if approved — only under months that were evaluated.
+  // Build the form HTML. Pass the current data in as a read-only render.
+  var formHtml = kpEvalBuildFormHTML(form, stu, /*editable*/ false, /*data*/ e, e.quarter, null, e.academicYear);
+
+  // If approved, inject the digital stamp into the months that were evaluated.
+  // We do this in a temporary DIV so we can use querySelector.
+  var temp = document.createElement('div');
+  temp.innerHTML = formHtml;
   if (e.status === 'approved' && e.stampDataUrl) {
     var stampHtml = ''
-      + '<img src="' + e.stampDataUrl + '" alt="stamp" style="height:60px;display:block;margin:0 auto"/>'
+      + '<img src="' + e.stampDataUrl + '" alt="stamp" style="height:64px;display:block;margin:0 auto"/>'
       + '<div style="font-size:10px;color:#666;text-align:center;margin-top:2px">'
-      + escapeHtml(e.approvedBy||'') + ' — ' + escapeHtml((e.approvedAt||'').slice(0,10)) + '</div>';
+      + escapeHtml(e.approvedBy||'') + ' &mdash; ' + escapeHtml((e.approvedAt||'').slice(0,10)) + '</div>';
     var months = (Array.isArray(e.submittedMonths) && e.submittedMonths.length === 3)
       ? e.submittedMonths
       : (Array.isArray(e.evaluatedMonths) && e.evaluatedMonths.length === 3)
         ? e.evaluatedMonths
         : kpEvalComputeEvaluatedMonths(e);
     ['eval-stamp-1','eval-stamp-2','eval-stamp-3'].forEach(function(slotId, idx){
-      var slot = host.querySelector('#' + slotId);
+      var slot = temp.querySelector('#' + slotId);
       if (!slot) return;
       if (months[idx]) {
-        slot.style.borderBottom = 'none'; slot.style.height = ''; slot.innerHTML = stampHtml;
+        slot.style.borderBottom = 'none';
+        slot.style.height = '';
+        slot.innerHTML = stampHtml;
       }
     });
   }
+  var preparedHtml = temp.innerHTML;
 
-  // 3. Hint to the user about saving as PDF, then trigger native print.
-  document.body.appendChild(host);
-  // Pre-fill the page title so the saved PDF gets a sensible default filename
-  var prevTitle = document.title;
-  var safeName = (e.studentName || '').replace(/[^\w\u0600-\u06FF\s\-]/g,'').slice(0, 40);
+  // Build the page title (will be the default file name in "Save as PDF").
+  var safeName = (e.studentName || '').replace(/[^\w\u0600-\u06FF\s\-]/g,'').replace(/\s+/g,'_').slice(0, 40);
   var safeTerm = (e.term || '').replace(/\s+/g,'_');
-  document.title = 'evaluation-' + safeName + '-' + safeTerm + '-' + (e.academicYear || '') + '-' + (e.lang || '');
+  var safeYear = (e.academicYear || '').replace(/\s+/g,'_');
+  var pageTitle = 'evaluation-' + safeName + '-' + safeTerm + '-' + safeYear + '-' + (e.lang || '');
 
-  // Give the browser a tick to layout the new host before printing
-  setTimeout(function(){
-    try { window.print(); } catch(err) { console.error(err); }
-    // Clean up after print dialog closes (afterprint event), or after a fallback timeout
-    var cleanup = function(){
-      document.title = prevTitle;
-      var h = document.getElementById(hostId);
-      if (h && h.parentNode) h.parentNode.removeChild(h);
-      window.removeEventListener('afterprint', cleanup);
-    };
-    window.addEventListener('afterprint', cleanup);
-    // Safari/older browsers may not fire afterprint reliably — fallback after 60s
-    setTimeout(cleanup, 60000);
-  }, 200);
+  // Open the print window. width/height tuned for mobile too.
+  var w = window.open('', '_blank', 'width=1100,height=900');
+  if (!w) {
+    alert('⚠️ تعذّر فتح نافذة التصدير. ربما يحجب المتصفح النوافذ المنبثقة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع ثم المحاولة مرة أخرى.');
+    return;
+  }
+
+  // Compose the self-contained HTML document.
+  // We embed Tajawal font from Google Fonts (already used elsewhere in the
+  // app for prints) so Arabic looks consistent with the on-screen form.
+  var html = ''
+    + '<!DOCTYPE html><html lang="' + docLang + '" dir="' + docDir + '"><head>'
+    + '<meta charset="UTF-8">'
+    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '<title>' + escapeHtml(pageTitle) + '</title>'
+    + '<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">'
+    + '<style>'
+    + '  @page{size:A4 landscape;margin:8mm}'
+    + '  *{box-sizing:border-box}'
+    + '  html,body{margin:0;padding:0;background:#fff;color:#111}'
+    + '  body{font-family:Tajawal,Arial,sans-serif;direction:' + docDir + ';padding:14px 16px;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+    + '  /* HEADER (logo + bilingual nursery name): explicit LTR so positions are stable */'
+    + '  .kp-eval-header{border:2px solid #4caf50;border-radius:14px;padding:10px;margin-bottom:10px;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px;direction:ltr}'
+    + '  .kp-eval-header > div{font-weight:800;font-size:16px;color:#1a4a82;text-align:center;flex:1}'
+    + '  .kp-eval-header img{width:80px;height:80px;object-fit:contain}'
+    + '  /* TITLE BAR */'
+    + '  .kp-print-title{text-align:center;font-size:18px;font-weight:800;margin:6px 0 2px}'
+    + '  .kp-print-sub{text-align:center;font-size:13px;color:#666;margin-bottom:4px}'
+    + '  .kp-print-period{text-align:center;font-size:12px;color:#1b5e20;font-weight:700;margin-bottom:8px}'
+    + '  /* TABLE */'
+    + '  table.kp-eval-table{width:100%;border-collapse:collapse;table-layout:auto;direction:' + docDir + '}'
+    + '  table.kp-eval-table th,table.kp-eval-table td{border:1px solid #888;padding:6px 5px;vertical-align:middle;line-height:1.45}'
+    + '  table.kp-eval-table thead th{font-weight:800;font-size:11px;background:#f5f5f5}'
+    + '  table.kp-eval-table tr{page-break-inside:avoid;break-inside:avoid}'
+    + '  table.kp-eval-table thead{display:table-header-group}'
+    + '  /* SKILL CELL — wraps horizontally, never one-word-per-line */'
+    + '  table.kp-eval-table tbody td:nth-child(3){white-space:normal;text-align:start;font-weight:600;min-width:200px}'
+    + '  table.kp-eval-table tbody td:nth-child(2){font-weight:800;background:#f0f7f0;text-align:center;writing-mode:horizontal-tb}'
+    + '  table.kp-eval-table tbody td:nth-child(1){font-weight:700;text-align:center;width:30px}'
+    + '  table.kp-eval-table input[type="radio"]{width:16px;height:16px}'
+    + '  /* MONTH COLORING — same hues as on-screen, forced to print */'
+    + '  .kp-eval-month-1{background:#e3f2fd}'
+    + '  .kp-eval-month-2{background:#fff3e0}'
+    + '  .kp-eval-month-3{background:#e8f5e9}'
+    + '  table.kp-eval-table thead th.kp-eval-month-1{background:#90caf9;color:#0d47a1}'
+    + '  table.kp-eval-table thead th.kp-eval-month-2{background:#ffcc80;color:#bf360c}'
+    + '  table.kp-eval-table thead th.kp-eval-month-3{background:#a5d6a7;color:#1b5e20}'
+    + '  table.kp-eval-table thead tr:nth-child(2) th.kp-eval-month-1{background:#bbdefb}'
+    + '  table.kp-eval-table thead tr:nth-child(2) th.kp-eval-month-2{background:#ffe0b2}'
+    + '  table.kp-eval-table thead tr:nth-child(2) th.kp-eval-month-3{background:#c8e6c9}'
+    + '  /* Locked-month stripe: subtle so it stays visible on top of color tint */'
+    + '  .kp-eval-month-locked{background-image:linear-gradient(135deg,rgba(0,0,0,0.06) 25%,rgba(0,0,0,0.10) 25%,rgba(0,0,0,0.10) 50%,rgba(0,0,0,0.06) 50%,rgba(0,0,0,0.06) 75%,rgba(0,0,0,0.10) 75%) !important;background-size:8px 8px !important}'
+    + '  /* Hide on-screen scroll wrapper visuals */'
+    + '  .kp-eval-table-wrap{border:none !important;overflow:visible !important}'
+    + '  .kp-eval-scroll-hint{display:none !important}'
+    + '  /* PRINT TOOLBAR — hidden when actually printing */'
+    + '  .kp-print-toolbar{position:fixed;top:0;left:0;right:0;background:#1976d2;color:#fff;padding:10px;text-align:center;display:flex;gap:8px;justify-content:center;align-items:center;z-index:9999;box-shadow:0 2px 6px rgba(0,0,0,0.2)}'
+    + '  .kp-print-toolbar button{background:#fff;color:#1976d2;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:14px;font-family:inherit}'
+    + '  .kp-print-toolbar button:hover{background:#e3f2fd}'
+    + '  .kp-print-toolbar .hint{font-size:12px;opacity:0.9}'
+    + '  body{padding-top:64px}'
+    + '  @media print{'
+    + '    .kp-print-toolbar{display:none !important}'
+    + '    body{padding-top:0 !important}'
+    + '  }'
+    + '</style>'
+    + '</head><body>'
+    + '<div class="kp-print-toolbar">'
+    + '  <button onclick="window.print()">📄 طباعة / حفظ PDF</button>'
+    + '  <button onclick="window.close()" style="background:#fff;color:#888">إغلاق</button>'
+    + '  <span class="hint">من نافذة الطباعة، اختاري &quot;حفظ بصيغة PDF&quot; لتصدير الملف</span>'
+    + '</div>'
+    + preparedHtml
+    + '<script>window.addEventListener("load",function(){setTimeout(function(){try{window.print();}catch(e){}},400);});<\/script>'
+    + '</body></html>';
+
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
 };
 
 /* ------------------------------------------------------------------ *
