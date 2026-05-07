@@ -21420,44 +21420,48 @@ function injectEvaluationsPage(){
       + '.kp-eval-table{table-layout:auto;font-size:13px}'
       + '.kp-eval-table th,.kp-eval-table td{padding:8px 6px;word-break:normal;overflow-wrap:break-word;border:1px solid #d9d9d9;vertical-align:middle}'
       + '.kp-eval-table input[type="radio"]{width:20px;height:20px;cursor:pointer}'
-      + '/* Skill text wraps so long English/Arabic phrases never overflow */'
-      + '.kp-eval-table tbody td:nth-child(3){white-space:normal;line-height:1.45;min-width:200px;max-width:340px;text-align:start}'
+      + '/* Skill text wraps horizontally on word boundaries — never one-word-per-line */'
+      + '.kp-eval-table tbody td:nth-child(3){white-space:normal;line-height:1.5;min-width:240px;text-align:start;word-spacing:normal}'
+      + '/* Development (domain) cell — keep horizontal too. Never use writing-mode here. */'
+      + '.kp-eval-table tbody td:nth-child(2){white-space:normal;line-height:1.4;min-width:90px;text-align:center}'
       + '.kp-eval-table thead th{white-space:normal;line-height:1.35}'
       + '/* MONTH COLORING — three distinct tints so the evaluator does not'
-      + '   confuse one month\u0027s columns with the next. Same hue as locked'
-      + '   stripe so it is visually consistent. */'
+      + '   confuse one month\u0027s columns with the next. */'
       + '.kp-eval-month-1{background:#e3f2fd}'         /* light blue */
       + '.kp-eval-month-2{background:#fff3e0}'         /* light amber */
       + '.kp-eval-month-3{background:#e8f5e9}'         /* light green */
       + '.kp-eval-table thead th.kp-eval-month-1{background:#90caf9;color:#0d47a1}'
       + '.kp-eval-table thead th.kp-eval-month-2{background:#ffcc80;color:#bf360c}'
       + '.kp-eval-table thead th.kp-eval-month-3{background:#a5d6a7;color:#1b5e20}'
-      + '.kp-eval-table thead th.kp-eval-month-1.kp-eval-sub,'
-      + '.kp-eval-table thead th.kp-eval-month-2.kp-eval-sub,'
-      + '.kp-eval-table thead th.kp-eval-month-3.kp-eval-sub{background:transparent;color:var(--muted);font-weight:600}'
       + '.kp-eval-table thead tr:nth-child(2) th.kp-eval-month-1{background:#bbdefb}'
       + '.kp-eval-table thead tr:nth-child(2) th.kp-eval-month-2{background:#ffe0b2}'
       + '.kp-eval-table thead tr:nth-child(2) th.kp-eval-month-3{background:#c8e6c9}'
       + '@media (max-width: 720px){'
       + '  .kp-eval-table{font-size:12px}'
-      + '  .kp-eval-table th,.kp-eval-table td{padding:5px 3px}'
+      + '  .kp-eval-table th,.kp-eval-table td{padding:5px 4px}'
       + '  .kp-eval-table input[type="radio"]{width:18px;height:18px}'
       + '  .kp-eval-table thead th{font-size:11px}'
-      + '  .kp-eval-table tbody td:nth-child(2){font-size:11px;writing-mode:vertical-rl;text-orientation:mixed;padding:4px 2px;min-width:28px}'
-      + '  .kp-eval-table tbody td:nth-child(3){min-width:140px;max-width:200px;font-size:12px}'
+      + '  /* Mobile: keep development cell HORIZONTAL (no writing-mode) — user requested */'
+      + '  .kp-eval-table tbody td:nth-child(2){font-size:11px;min-width:70px;padding:4px 4px;writing-mode:horizontal-tb}'
+      + '  .kp-eval-table tbody td:nth-child(3){min-width:170px;font-size:12px;line-height:1.45}'
       + '  .kp-eval-scroll-hint{display:block !important}'
       + '  .kp-eval-mgr-table{min-width:720px}'
       + '}'
       + '/* PRINT / PDF — let everything wrap, force month colors to print, no scroll wrappers */'
       + '@media print{'
+      + '  body *{visibility:hidden}'
+      + '  #kp-print-eval-host, #kp-print-eval-host *{visibility:visible}'
+      + '  #kp-print-eval-host{position:absolute;inset:0;background:#fff;padding:18px;direction:inherit}'
       + '  .kp-eval-table-wrap{overflow:visible !important;border:none !important}'
       + '  .kp-eval-table{font-size:11px;page-break-inside:auto;width:100% !important;min-width:0 !important}'
       + '  .kp-eval-table tr{page-break-inside:avoid;page-break-after:auto}'
-      + '  .kp-eval-table tbody td:nth-child(3){white-space:normal;max-width:none}'
+      + '  .kp-eval-table tbody td:nth-child(3){white-space:normal;line-height:1.5}'
+      + '  .kp-eval-table tbody td:nth-child(2){writing-mode:horizontal-tb !important}'
       + '  .kp-eval-month-1,.kp-eval-month-2,.kp-eval-month-3,'
       + '  .kp-eval-table thead th.kp-eval-month-1,.kp-eval-table thead th.kp-eval-month-2,.kp-eval-table thead th.kp-eval-month-3'
       + '  {-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}'
       + '  .kp-eval-scroll-hint{display:none !important}'
+      + '  @page{size:A4 landscape;margin:10mm}'
       + '}'
       + '/* When a locked-UI role is active, suppress any stray top-bar children we did not enumerate */'
       + 'body.kp-locked-ui .topbar > *:not(#user-badge):not(#login-screen){}'
@@ -22297,35 +22301,26 @@ window.kpEvalExportPdf = async function(id){
   var stu = (typeof students !== 'undefined' ? students : []).find(function(x){ return String(x.id) === String(e.studentId); }) || { id: e.studentId, name: e.studentName };
   var form = KP_FORMS[e.formId] || KP_FORM_AR;
 
-  // Build offscreen container — A4 portrait at 96dpi is ~794px, but we
-  // render at 1100px to give every column comfortable breathing room and
-  // let html2canvas downscale. min-width on the table won't trigger the
-  // overflow scrollbar visually but we override it anyway for safety.
-  var holder = document.createElement('div');
-  holder.style.position = 'fixed';
-  holder.style.top = '-99999px';
-  holder.style.left = '0';
-  holder.style.width = '1100px';
-  holder.style.background = '#fff';
-  holder.style.padding = '24px';
-  holder.style.fontFamily = 'Tajawal, Arial, sans-serif';
-  holder.dir = (form.lang === 'ar') ? 'rtl' : 'ltr';
-  holder.innerHTML = kpEvalBuildFormHTML(form, stu, /*editable*/ false, /*data*/ e, e.quarter, null, e.academicYear);
-  // Inside the offscreen render, dissolve the scroll wrapper so all columns
-  // are visible in the canvas. html2canvas captures the layout as-is, so a
-  // hidden-overflow wrapper would clip the right side of the table.
-  try {
-    var wrap = holder.querySelector('.kp-eval-table-wrap');
-    if (wrap) { wrap.style.overflow = 'visible'; wrap.style.border = 'none'; }
-    var tbl = holder.querySelector('.kp-eval-table');
-    if (tbl) { tbl.style.minWidth = '0'; tbl.style.width = '100%'; }
-    var hint = holder.querySelector('.kp-eval-scroll-hint');
-    if (hint) hint.style.display = 'none';
-  } catch(_e){}
-  // Inject stamps if approved — but ONLY under months that were evaluated
+  // We use the browser's native print path instead of html2canvas because
+  // html2canvas mangles Arabic word order (RTL bidi handling is incorrect)
+  // and tends to break long Arabic strings into one-word-per-line. The
+  // native print engine handles RTL correctly. The user can choose
+  // "Save as PDF" from the print dialog to produce a PDF.
+
+  // 1. Build a print host that contains ONLY the evaluation form.
+  //    @media print CSS hides everything else and shows only this host.
+  var hostId = 'kp-print-eval-host';
+  var existing = document.getElementById(hostId);
+  if (existing) existing.parentNode.removeChild(existing);
+  var host = document.createElement('div');
+  host.id = hostId;
+  host.dir = (form.lang === 'ar') ? 'rtl' : 'ltr';
+  host.innerHTML = kpEvalBuildFormHTML(form, stu, /*editable*/ false, /*data*/ e, e.quarter, null, e.academicYear);
+
+  // 2. Inject stamps if approved — only under months that were evaluated.
   if (e.status === 'approved' && e.stampDataUrl) {
     var stampHtml = ''
-      + '<img src="' + e.stampDataUrl + '" alt="stamp" style="height:64px;display:block;margin:0 auto"/>'
+      + '<img src="' + e.stampDataUrl + '" alt="stamp" style="height:60px;display:block;margin:0 auto"/>'
       + '<div style="font-size:10px;color:#666;text-align:center;margin-top:2px">'
       + escapeHtml(e.approvedBy||'') + ' — ' + escapeHtml((e.approvedAt||'').slice(0,10)) + '</div>';
     var months = (Array.isArray(e.submittedMonths) && e.submittedMonths.length === 3)
@@ -22334,58 +22329,36 @@ window.kpEvalExportPdf = async function(id){
         ? e.evaluatedMonths
         : kpEvalComputeEvaluatedMonths(e);
     ['eval-stamp-1','eval-stamp-2','eval-stamp-3'].forEach(function(slotId, idx){
-      var slot = holder.querySelector('#' + slotId);
+      var slot = host.querySelector('#' + slotId);
       if (!slot) return;
       if (months[idx]) {
         slot.style.borderBottom = 'none'; slot.style.height = ''; slot.innerHTML = stampHtml;
       }
     });
   }
-  document.body.appendChild(holder);
 
-  try {
-    if (typeof html2canvas !== 'function' || typeof window.jspdf === 'undefined') {
-      alert('مكتبات PDF لم تُحمَّل بعد. حاولي مرة أخرى بعد ثوانٍ.'); return;
-    }
-    var canvas = await html2canvas(holder, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-    var imgData = canvas.toDataURL('image/png');
-    var jsPDF = window.jspdf.jsPDF;
-    var pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
-    var pageW = pdf.internal.pageSize.getWidth();
-    var pageH = pdf.internal.pageSize.getHeight();
-    var margin = 20;
-    var imgW = pageW - margin * 2;
-    var imgH = canvas.height * imgW / canvas.width;
+  // 3. Hint to the user about saving as PDF, then trigger native print.
+  document.body.appendChild(host);
+  // Pre-fill the page title so the saved PDF gets a sensible default filename
+  var prevTitle = document.title;
+  var safeName = (e.studentName || '').replace(/[^\w\u0600-\u06FF\s\-]/g,'').slice(0, 40);
+  var safeTerm = (e.term || '').replace(/\s+/g,'_');
+  document.title = 'evaluation-' + safeName + '-' + safeTerm + '-' + (e.academicYear || '') + '-' + (e.lang || '');
 
-    if (imgH <= pageH - margin * 2) {
-      pdf.addImage(imgData, 'PNG', margin, margin, imgW, imgH);
-    } else {
-      // Multi-page: slice the canvas
-      var pageImgH = pageH - margin * 2;
-      var pageCanvasH = canvas.width * pageImgH / imgW;
-      var rendered = 0;
-      while (rendered < canvas.height) {
-        var sliceH = Math.min(pageCanvasH, canvas.height - rendered);
-        var sliceCanvas = document.createElement('canvas');
-        sliceCanvas.width = canvas.width;
-        sliceCanvas.height = sliceH;
-        var ctx = sliceCanvas.getContext('2d');
-        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-        ctx.drawImage(canvas, 0, rendered, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
-        var sliceImg = sliceCanvas.toDataURL('image/png');
-        pdf.addImage(sliceImg, 'PNG', margin, margin, imgW, sliceH * imgW / canvas.width);
-        rendered += sliceH;
-        if (rendered < canvas.height) pdf.addPage();
-      }
-    }
-    var fileName = 'evaluation-' + (e.studentId||'') + '-' + (e.term||'').replace(/\s+/g,'_') + '-' + (e.lang||'') + '.pdf';
-    pdf.save(fileName);
-  } catch (err) {
-    console.error(err);
-    alert('فشل إنشاء PDF: ' + err.message);
-  } finally {
-    document.body.removeChild(holder);
-  }
+  // Give the browser a tick to layout the new host before printing
+  setTimeout(function(){
+    try { window.print(); } catch(err) { console.error(err); }
+    // Clean up after print dialog closes (afterprint event), or after a fallback timeout
+    var cleanup = function(){
+      document.title = prevTitle;
+      var h = document.getElementById(hostId);
+      if (h && h.parentNode) h.parentNode.removeChild(h);
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    // Safari/older browsers may not fire afterprint reliably — fallback after 60s
+    setTimeout(cleanup, 60000);
+  }, 200);
 };
 
 /* ------------------------------------------------------------------ *
