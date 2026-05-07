@@ -1802,6 +1802,50 @@ body.kp-teacher .kp-sync-panel{
 .kp-pdf-export-table td{border:1px solid #edf3ef;padding:7px 6px;text-align:center;vertical-align:top;word-break:break-word;white-space:normal}
 .kp-pdf-export-table tr:nth-child(even) td{background:#fbfdfb}
 .kp-pdf-export-foot{padding:10px 18px;border-top:1px solid #edf3ef;color:#6b8470;font-size:11px;text-align:center}
+
+/* 🔒 EVALUATOR LOCKDOWN — same hard-hide pattern used for kp-teacher.
+   The applyLogin() function unconditionally sets inline display:'inline-block'
+   on these buttons, so we need !important rules to win the cascade. */
+body.kp-evaluator .notif-btn,
+body.kp-evaluator .hdr .notif-btn,
+body.kp-evaluator #notif-btn,
+body.kp-evaluator #reg-notif-btn,
+body.kp-evaluator #btn-save-cloud,
+body.kp-evaluator #btn-refresh-cloud{
+  display:none!important;
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
+body.kp-evaluator .notif-panel,
+body.kp-evaluator #notif-panel,
+body.kp-evaluator #reg-notif-panel{
+  display:none!important;
+  visibility:hidden!important;
+}
+body.kp-evaluator .side{display:none!important}
+body.kp-evaluator .wrap{display:block!important}
+body.kp-evaluator #kp-sync-card{
+  display:none!important;
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
+body.kp-evaluator .hdr-time{display:none!important}
+body.kp-evaluator .kp-sync-panel{
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+}
+@media(max-width:760px){
+  body.kp-evaluator .main{width:100%!important;max-width:100%!important;padding:12px 10px 80px!important}
+  body.kp-evaluator .hdr .notif-btn,
+  body.kp-evaluator #notif-btn,
+  body.kp-evaluator #reg-notif-btn{display:none!important;visibility:hidden!important}
+  body.kp-evaluator .kp-sync-panel{grid-template-columns:1fr!important}
+}
+
+/* Defensive: hide every page pane EXCEPT pg-eval. The go() override
+   already routes evaluators to 'eval', but this CSS guarantees that
+   even if some other page becomes active, it stays invisible. */
+body.kp-evaluator .pg{display:none!important}
+body.kp-evaluator #pg-eval{display:block!important}
 </style>
 </head>
 <body>
@@ -8992,22 +9036,31 @@ async function doLogin() {
 
 function applyTeacherUiRestrictions(){
   var isTeacher = !!(currentUser && currentUser.role === 'teacher');
+  var isEvaluator = !!(currentUser && currentUser.role === 'evaluator');
+  var isLocked = isTeacher || isEvaluator;
   document.body.classList.toggle('kp-teacher', isTeacher);
+  document.body.classList.toggle('kp-evaluator', isEvaluator);
+  document.body.classList.toggle('kp-locked-ui', isLocked);
   var side = document.querySelector('.side');
-  if (side) side.style.display = isTeacher ? 'none' : '';
+  if (side) side.style.display = isLocked ? 'none' : '';
   var main = document.querySelector('.main');
   if (main) {
-    main.style.maxWidth = isTeacher ? '100%' : '';
-    main.style.width = isTeacher ? '100%' : '';
-    main.style.minWidth = isTeacher ? '0' : '';
+    main.style.maxWidth = isLocked ? '100%' : '';
+    main.style.width = isLocked ? '100%' : '';
+    main.style.minWidth = isLocked ? '0' : '';
   }
-  ['notif-btn','reg-notif-btn'].forEach(function(id){
+  // Hide every top-bar action button except logout. We keep the user badge
+  // (so they can see who they are and log out) and hide everything else.
+  ['notif-btn','reg-notif-btn','notif-panel','reg-notif-panel',
+   'btn-save-cloud','btn-refresh-cloud'].forEach(function(id){
     var el = document.getElementById(id);
-    if (el) el.style.display = isTeacher ? 'none' : '';
-  });
-  ['notif-panel','reg-notif-panel'].forEach(function(id){
-    var el = document.getElementById(id);
-    if (el) { el.classList.remove('open'); if (isTeacher) el.style.display = 'none'; else el.style.display = ''; }
+    if (!el) return;
+    if (isLocked) {
+      if (el.classList && el.classList.contains('open')) el.classList.remove('open');
+      el.style.display = 'none';
+    } else {
+      el.style.display = '';
+    }
   });
 }
 
@@ -9015,28 +9068,35 @@ function applyLogin() {
   document.getElementById('login-screen').style.display = 'none';
   const ub = document.getElementById('user-badge');
   ub.style.display = 'flex';
+  // For evaluator/teacher we deliberately do NOT show the topbar action
+  // buttons. The CSS rules tied to body.kp-evaluator / body.kp-teacher will
+  // also win even if something else tries to re-show them.
+  const isLockedRole = currentUser && (currentUser.role === 'evaluator' || currentUser.role === 'teacher');
   const sb = document.getElementById('btn-save-cloud');
-  if (sb) sb.style.display = 'inline-block';
+  if (sb) sb.style.display = isLockedRole ? 'none' : 'inline-block';
   const nb = document.getElementById('notif-btn');
-  if (nb) nb.style.display = 'inline-block';
+  if (nb) nb.style.display = isLockedRole ? 'none' : 'inline-block';
   const rnb = document.getElementById('reg-notif-btn');
-  if (rnb) rnb.style.display = 'inline-block';
+  if (rnb) rnb.style.display = isLockedRole ? 'none' : 'inline-block';
   const rb = document.getElementById('btn-refresh-cloud');
-  if (rb) rb.style.display = 'inline-block';
+  if (rb) rb.style.display = isLockedRole ? 'none' : 'inline-block';
   document.getElementById('ub-name').textContent = currentUser.name || currentUser.username;
   document.getElementById('ub-role').textContent =
-    currentUser.role === 'admin'   ? '👑 مدير' :
-    currentUser.role === 'teacher' ? '👩‍🏫 معلمة' :
-                                     '👤 موظف';
+    currentUser.role === 'admin'     ? '👑 مدير' :
+    currentUser.role === 'teacher'   ? '✅ متابعة الحضور' :
+    currentUser.role === 'evaluator' ? '📝 مقيِّم الطلاب' :
+                                       '👤 موظف';
   document.body.classList.toggle('kp-admin', currentUser.role === 'admin');
   document.body.classList.toggle('kp-teacher', currentUser.role === 'teacher');
+  document.body.classList.toggle('kp-evaluator', currentUser.role === 'evaluator');
   applyTeacherUiRestrictions();
+  if (typeof window.kpEvalApplyRoleVisibility === 'function') window.kpEvalApplyRoleVisibility();
   // Show admin nav only for admin
   const navAdmin = document.getElementById('nav-admin');
   if (navAdmin) navAdmin.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
 
-  // 🔒 TEACHER RESTRICTIONS — hide everything except the attendance page
-  if (currentUser.role === 'teacher') {
+  // 🔒 TEACHER & EVALUATOR RESTRICTIONS — hide everything except their respective page
+  if (currentUser.role === 'teacher' || currentUser.role === 'evaluator') {
     // Hide entire sidebar
     var side = document.querySelector('.side');
     if (side) side.style.display = 'none';
@@ -9074,10 +9134,12 @@ function applyLogin() {
   if (typeof loadCoreDataFromLocalStorage === 'function') loadCoreDataFromLocalStorage();
   if (typeof applyTombstones === 'function') applyTombstones();
   // اعتماد جماعي لمطابقات السندات المقترحة الحالية (مرة واحدة فقط)
-  let bulkApprovedNow = (currentUser.role === 'teacher') ? 0 : runOneTimeBulkMatchApproval();
+  let bulkApprovedNow = (currentUser.role === 'teacher' || currentUser.role === 'evaluator') ? 0 : runOneTimeBulkMatchApproval();
   // عرض البيانات المحلية فوراً
   if (currentUser.role === 'teacher') {
     go('att');
+  } else if (currentUser.role === 'evaluator') {
+    go('eval');
   } else {
     renderDash();
   }
@@ -9087,13 +9149,17 @@ function applyLogin() {
   setTimeout(function(){ updateNotifications(); updateRegExpiryNotifications(); }, 500);
   // تحميل من Firebase وتحديث عند الانتهاء
   loadFromFirebase().then(() => {
-    const approvedAfterSync = (currentUser.role === 'teacher') ? 0 : runOneTimeBulkMatchApproval();
+    if (typeof window.loadEvaluationsFromFirebase === 'function') { window.loadEvaluationsFromFirebase().then(function(){ if (typeof window.kpEvalRenderManagerList === 'function') window.kpEvalRenderManagerList(); }).catch(function(){}); }
+    const approvedAfterSync = (currentUser.role === 'teacher' || currentUser.role === 'evaluator') ? 0 : runOneTimeBulkMatchApproval();
     // إعادة تهيئة الفلتر بعد التحميل
     const yf2 = document.getElementById('dash-year-filter');
     if (yf2 && !yf2.value) yf2.value = String(new Date().getFullYear());
     if (currentUser.role === 'teacher') {
       // Re-render attendance with the latest cloud data (locks, marks)
       if (typeof renderAtt === 'function') renderAtt();
+    } else if (currentUser.role === 'evaluator') {
+      if (typeof window.kpEvalApplyRoleVisibility === 'function') window.kpEvalApplyRoleVisibility();
+      if (typeof window.kpEvalRenderManagerList === 'function') window.kpEvalRenderManagerList();
     } else {
       renderDash();
       updateNotifications();
@@ -9454,9 +9520,10 @@ function openAddUser() {
       + '    <div class="fl"><label>كلمة السر</label><input id="au-pass" type="password" placeholder="٤ خانات على الأقل"></div>'
       + '    <div class="fl fgr">'
       + '      <label>الدور</label>'
-      + '      <select id="au-role" onchange="(function(){var v=document.getElementById(\'au-role\').value; document.getElementById(\'au-classes-block\').style.display = v===\'teacher\' ? \'\' : \'none\';})()">'
+      + '      <select id="au-role" onchange="(function(){var v=document.getElementById(\'au-role\').value; document.getElementById(\'au-classes-block\').style.display = (v===\'teacher\'||v===\'evaluator\') ? \'\' : \'none\';})()">'
       + '        <option value="staff">👤 موظف</option>'
-      + '        <option value="teacher">👩‍🏫 معلمة (وصول لصفحة الحضور فقط)</option>'
+      + '        <option value="teacher">✅ متابعة الحضور (وصول لصفحة الحضور فقط)</option>'
+      + '        <option value="evaluator">📝 مقيِّم الطلاب (وصول لصفحة التقييمات فقط)</option>'
       + '        <option value="admin">👑 مدير</option>'
       + '      </select>'
       + '    </div>'
@@ -9506,10 +9573,13 @@ async function submitAddUser(){
   if (!user) return alert('اسم المستخدم مطلوب');
   if (!pass || pass.length < 4) return alert('كلمة السر قصيرة جداً (٤ خانات على الأقل)');
   var classes = [];
-  if (role === 'teacher') {
+  if (role === 'teacher' || role === 'evaluator') {
     ov.querySelectorAll('#au-classes-grid .ftab.on').forEach(function(b){ classes.push(b.dataset.cls); });
     if (!classes.length) {
-      if (!(await window.kpConfirmAsync(null, null, 'لم تختاري أي فصل لهذه المعلمة. ستحتاجين لتعيين الفصول لاحقاً قبل أن تتمكن من العمل. متابعة؟'))) return;
+      var msg = role === 'teacher'
+        ? 'لم تختاري أي فصل لمسؤول الحضور. ستحتاجين لتعيين الفصول لاحقاً قبل أن تتمكن من العمل. متابعة؟'
+        : 'لم تختاري أي فصل لهذا المُقيِّم. ستحتاجين لتعيين الفصول لاحقاً قبل أن يتمكن من تقييم الطلاب. متابعة؟';
+      if (!(await window.kpConfirmAsync(null, null, msg))) return;
     }
   }
   let users;
@@ -9521,7 +9591,7 @@ async function submitAddUser(){
   }
   if (users.find(function(u){ return u.username === user; })) return alert('اسم المستخدم موجود مسبقاً');
   var record = { username: user, password: pass, role: role, name: name, disabled: false, mustChangePassword: true };
-  if (role === 'teacher') record.classes = classes;
+  if (role === 'teacher' || role === 'evaluator') record.classes = classes;
   users.push(record);
   localStorage.setItem('kp_users', JSON.stringify(users));
   ov.classList.remove('on');
@@ -9555,7 +9625,8 @@ function openEditUser(username){
       + '      <label>الدور</label>'
       + '      <select id="eu-role" onchange="toggleEditUserClasses()">'
       + '        <option value="staff">👤 موظف</option>'
-      + '        <option value="teacher">👩‍🏫 معلمة (وصول لصفحة الحضور فقط)</option>'
+      + '        <option value="teacher">✅ متابعة الحضور (وصول لصفحة الحضور فقط)</option>'
+      + '        <option value="evaluator">📝 مقيِّم الطلاب (وصول لصفحة التقييمات فقط)</option>'
       + '        <option value="admin">👑 مدير</option>'
       + '      </select>'
       + '    </div>'
@@ -9606,10 +9677,10 @@ function openEditUser(username){
     if (pass && pass.length < 4) return alert('كلمة السر قصيرة جداً (٤ خانات على الأقل)');
 
     var picked = [];
-    if (role === 'teacher') {
+    if (role === 'teacher' || role === 'evaluator') {
       ov.querySelectorAll('#eu-classes-grid .ftab.on').forEach(function(b){ picked.push(b.dataset.cls); });
       if (!picked.length) {
-        if (!(await window.kpConfirmAsync(null, null, 'لم تختاري أي فصل لهذه المعلمة. متابعة الحفظ؟'))) return;
+        if (!(await window.kpConfirmAsync(null, null, 'لم تختاري أي فصل لهذا المستخدم. متابعة الحفظ؟'))) return;
       }
     }
 
@@ -9632,7 +9703,7 @@ function openEditUser(username){
       updatedAt: new Date().toISOString(),
       updatedBy: (currentUser && (currentUser.username || currentUser.name)) || 'admin'
     });
-    if (role === 'teacher') updated.classes = picked;
+    if (role === 'teacher' || role === 'evaluator') updated.classes = picked;
     else delete updated.classes;
 
     usersNow[idx] = updated;
@@ -9656,7 +9727,7 @@ function openEditUser(username){
 function toggleEditUserClasses(){
   var roleEl = document.getElementById('eu-role');
   var block = document.getElementById('eu-classes-block');
-  if (roleEl && block) block.style.display = roleEl.value === 'teacher' ? '' : 'none';
+  if (roleEl && block) block.style.display = (roleEl.value === 'teacher' || roleEl.value === 'evaluator') ? '' : 'none';
 }
 
 // 🔒 Edit class assignment for an existing teacher
@@ -21073,6 +21144,1255 @@ input,select,textarea,button{max-width:100%}
   }
 }
 </style>
+
+<!--
+================================================================================
+KIDS PARK NURSERY — EVALUATIONS MODULE (Bundle)
+================================================================================
+Drop this entire <script>...</script> block into index.html immediately BEFORE
+the closing </body> tag. It is fully self-contained and uses only the
+existing functions of the host page:
+
+  - saveRecordRemoteAware(...)   per-record Firebase save
+  - kpRecordKey(...)             stable record key generator
+  - escapeHtml(...)              HTML escaping
+  - kpSafeText(...)              safe text
+  - currentUser, students[], CLASSES, FB_URL, payments[]
+  - jsPDF + html2canvas (already loaded in <head>)
+
+This module adds:
+  1. A new role: 'evaluator' (same access as the renamed attendance-taker
+     where applicable, plus the evaluation page).
+  2. A new page #pg-eval where evaluators choose a student, pick the
+     language (Arabic / English), pick the term/quarter, and submit a
+     filled evaluation form. The form is per-record saved to Firebase under
+     /evaluations/<key> using the shared 'saveRecordRemoteAware' pattern.
+  3. A manager approval queue that lets admins approve & digitally stamp
+     evaluations. Approved records carry approver name + ISO timestamp +
+     stamp image and become read-only.
+  4. A new "📝 التقييمات" tab inside the student profile modal that lists
+     the student's evaluations, lets the user open them in a print-ready
+     view, and exports a single evaluation as a PDF whose header matches
+     the original Word form (Kids Park Nursery logo + bilingual banner).
+================================================================================
+-->
+<script>
+(function(){
+'use strict';
+
+/* ------------------------------------------------------------------ *
+ * 0. CONSTANTS — bilingual form definitions
+ *    The arrays below are taken VERBATIM from the two .docx forms the
+ *    user provided.                                                   *
+ * ------------------------------------------------------------------ */
+
+// Logo for printed/exported header (Kids Park Nursery seal).
+// Kept as a placeholder constant; populated at runtime from
+// `logoDataUrl` (already used elsewhere in the host file) so the
+// stored bytes are not duplicated. Falls back to a tiny inline SVG.
+function kpEvalGetHeaderLogo(){
+  try {
+    if (typeof logoDataUrl === 'string' && logoDataUrl.length > 100) return logoDataUrl;
+  } catch(_) {}
+  // Fallback: a minimal 1x1 transparent png so the layout still works.
+  return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+}
+
+// Arabic form: Levels 1 & 2, First Quarter ----------------------------
+const KP_FORM_AR = {
+  id: 'ar-q1-l12',
+  lang: 'ar',
+  level: 'المستوى الأول والثاني',
+  term: 'الفصل الأول',
+  title: 'استمارة تقييم فصلية',
+  scale: ['لم يتقن', 'أتقن جزءاً', 'أتقن'],
+  months: ['الشهر الأول', 'الشهر الثاني', 'الشهر الثالث'],
+  groups: [
+    { domain: 'اجتماعي', skills: [
+      'يقبل على الروضة بسعادة ويلقي التحية',
+      'يعرف اسم وطنه ومدينته',
+      'يشارك الأطفال العمل',
+    ]},
+    { domain: 'معرفي', skills: [
+      'يميز بين الألوان',
+      'يعد من 1 إلى 5',
+      'يميز بين كبير وصغير',
+    ]},
+    { domain: 'لغوي', skills: [
+      'يربط الحرف بالصورة المناسبة',
+      'مخارج حروفه سليمة',
+      'يردد سوراً من القرآن الكريم',
+    ]},
+    { domain: 'عاطفي', skills: [
+      'يحب معلمته وأصدقاءه',
+      'ينفعل عند سماع القصة',
+      'يتعلق بأشيائه الخاصة',
+    ]},
+    { domain: 'جسدي', skills: [
+      'يشكل المعجون بسهولة',
+      'يلصق قصاصات على الشكل',
+      'يقفز على قدميه ويصفق',
+    ]},
+  ],
+  parentNote: 'الرجاء من ولي الأمر التكرم بإعادة هذه الاستمارة إلى الحضانة بعد الاطلاع وشكراً.',
+};
+
+// English form: Level 3, First Quarter --------------------------------
+const KP_FORM_EN = {
+  id: 'en-q1-l3',
+  lang: 'en',
+  level: 'Level 3',
+  term: 'First Term',
+  title: 'Quarterly Evaluation Form',
+  scale: ['Not fluent', 'Partly fluent', 'Fluent'],
+  months: ['First Month', 'Second Month', 'Third Month'],
+  groups: [
+    { domain: 'Social', skills: [
+      'Greets others upon arrival',
+      'Knows basic information about himself/herself',
+      'Knows the name of the country',
+    ]},
+    { domain: 'Cognitive', skills: [
+      'Understands similarities between things',
+      'Knows the classification using the colour and the size',
+      'Can count from 1 to 10',
+    ]},
+    { domain: 'Language', skills: [
+      'Recites the holy Quran with the teacher',
+      'Connects the letter to the picture',
+      'Pronounces letters correctly',
+    ]},
+    { domain: 'Emotional', skills: [
+      'He/she comes to nursery happy',
+      'Shares toys with others',
+      'Sympathizes with his/her friends',
+    ]},
+    { domain: 'Physical', skills: [
+      'He/she uses his/her hand well to draw',
+      'Forms shapes with play-dough',
+      'He/she builds with blocks and he/she can jump',
+    ]},
+  ],
+  parentNote: 'Kindly return this form to the nursery after reviewing it. Thank you.',
+};
+
+// All available forms keyed by id
+const KP_FORMS = { 'ar-q1-l12': KP_FORM_AR, 'en-q1-l3': KP_FORM_EN };
+
+// All possible quarters (for selection)
+const KP_QUARTERS = [
+  { id: 'q1', ar: 'الفصل الأول',   en: 'First Term'  },
+  { id: 'q2', ar: 'الفصل الثاني',  en: 'Second Term' },
+  { id: 'q3', ar: 'الفصل الثالث',  en: 'Third Term'  },
+];
+
+/* ------------------------------------------------------------------ *
+ * 1. ROLE HELPERS                                                     *
+ * ------------------------------------------------------------------ */
+
+// Public test: is the current user an evaluator?
+window.isEvaluator = function(){
+  return !!(typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'evaluator');
+};
+
+// Public test: is the current user an attendance-taker (was 'teacher')?
+window.isAttendanceTaker = function(){
+  return !!(typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'teacher');
+};
+
+// Public test: can the current user manage (approve / stamp) evaluations?
+window.canApproveEvaluations = function(){
+  if (typeof currentUser === 'undefined' || !currentUser) return false;
+  var r = String(currentUser.role || '').toLowerCase();
+  var u = String(currentUser.username || '').toLowerCase();
+  return r === 'admin' || r === 'manager' || u === 'admin';
+};
+
+// Helper: which classes can the evaluator/attendance-taker see?
+window.evaluatorAllowedClasses = function(){
+  if (!window.isEvaluator() && !window.isAttendanceTaker()) return null; // null == all
+  var u = currentUser;
+  return Array.isArray(u && u.classes) ? u.classes.slice() : [];
+};
+
+/* ------------------------------------------------------------------ *
+ * 2. STATE — global in-memory cache for evaluations                  *
+ * ------------------------------------------------------------------ */
+window.evaluations = window.evaluations || []; // array of evaluation records
+
+// Hydrate from localStorage on load (will also be hydrated from Firebase
+// by the host file's loader once we extend it via the patch below).
+try {
+  var rawCache = localStorage.getItem('kp_evaluations');
+  if (rawCache) window.evaluations = JSON.parse(rawCache) || [];
+} catch(_e) { window.evaluations = []; }
+
+function persistEvaluationsLocal(){
+  try { localStorage.setItem('kp_evaluations', JSON.stringify(window.evaluations || [])); } catch(_e){}
+}
+
+/* ------------------------------------------------------------------ *
+ * 3. PUBLIC API: load evaluations from Firebase                       *
+ *    Called by the host file's loadFromFirebase() patch.              *
+ * ------------------------------------------------------------------ */
+window.loadEvaluationsFromFirebase = async function(){
+  try {
+    var url = (typeof FB_URL === 'string' ? FB_URL : '') + '/evaluations.json?_=' + Date.now();
+    var res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var data = await res.json();
+    var arr = [];
+    if (data && typeof data === 'object') {
+      Object.keys(data).forEach(function(k){
+        var rec = data[k];
+        if (rec && typeof rec === 'object') {
+          if (!rec.firebaseKey) rec.firebaseKey = k;
+          arr.push(rec);
+        }
+      });
+    }
+    window.evaluations = arr;
+    persistEvaluationsLocal();
+    return arr;
+  } catch(e) {
+    console.warn('loadEvaluationsFromFirebase failed:', e);
+    return window.evaluations || [];
+  }
+};
+
+/* ------------------------------------------------------------------ *
+ * 4. SIDEBAR LINK INJECTION + go() WIRING                             *
+ *    We inject a new "📝 التقييمات" sidebar link and a new page       *
+ *    pane #pg-eval into the DOM. Visibility depends on role.          *
+ * ------------------------------------------------------------------ */
+function injectEvaluationsSidebarLink(){
+  if (document.getElementById('nav-eval')) return;
+  var side = document.querySelector('.side');
+  if (!side) return;
+  // Find the "students" nav button to insert ours right after it
+  var anchor = null;
+  side.querySelectorAll('.nav').forEach(function(n){
+    var oc = n.getAttribute('onclick') || '';
+    if (oc.indexOf("go('students')") !== -1) anchor = n;
+  });
+  var navHtml = '<div class="nav" id="nav-eval" onclick="go(\'eval\')"><span class="ni">📝</span><span>التقييمات</span><span id="eval-pending-badge" class="nav-badge" style="display:none">0</span></div>';
+  var temp = document.createElement('div');
+  temp.innerHTML = navHtml;
+  var newNav = temp.firstChild;
+  if (anchor && anchor.nextSibling) anchor.parentNode.insertBefore(newNav, anchor.nextSibling);
+  else side.appendChild(newNav);
+}
+
+function injectEvaluationsPage(){
+  if (document.getElementById('pg-eval')) return;
+  // Inject one-time mobile CSS for the evaluation table & locked-UI shell.
+  if (!document.getElementById('kp-eval-styles')) {
+    var st = document.createElement('style');
+    st.id = 'kp-eval-styles';
+    st.textContent = ''
+      + '.kp-eval-table{table-layout:auto}'
+      + '.kp-eval-table th,.kp-eval-table td{padding:6px 4px;word-break:normal;overflow-wrap:break-word}'
+      + '.kp-eval-table input[type="radio"]{width:18px;height:18px}'
+      + '/* Skill column allowed to wrap so long English text does not blow out the row */'
+      + '.kp-eval-table tbody td:nth-child(3){white-space:normal;line-height:1.35;min-width:140px;max-width:260px}'
+      + '@media (max-width: 720px){'
+      + '  .kp-eval-table{font-size:11px}'
+      + '  .kp-eval-table th,.kp-eval-table td{padding:3px 2px}'
+      + '  .kp-eval-table input[type="radio"]{width:15px;height:15px}'
+      + '  .kp-eval-table thead th{font-size:10px}'
+      + '  .kp-eval-table tbody td:nth-child(2){font-size:10px;writing-mode:vertical-rl;text-orientation:mixed;padding:4px 2px}'
+      + '  .kp-eval-table tbody td:nth-child(3){min-width:120px;max-width:170px;font-size:11px}'
+      + '  .kp-eval-scroll-hint{display:block !important}'
+      + '  .kp-eval-mgr-table{min-width:720px}'
+      + '}'
+      + '/* When a locked-UI role is active, suppress any stray top-bar children we did not enumerate */'
+      + 'body.kp-locked-ui .topbar > *:not(#user-badge):not(#login-screen){}'
+      + 'body.kp-locked-ui #notif-panel,body.kp-locked-ui #reg-notif-panel{display:none !important}'
+      + '.kp-eval-locked-cell{background:#f5f5f5 !important;opacity:0.6}'
+      + '.kp-eval-month-locked{background:linear-gradient(135deg,#f8f8f8 25%,#f0f0f0 25%,#f0f0f0 50%,#f8f8f8 50%,#f8f8f8 75%,#f0f0f0 75%) !important;background-size:8px 8px !important}';
+    document.head.appendChild(st);
+  }
+  var main = document.querySelector('.main');
+  if (!main) return;
+  var pg = document.createElement('div');
+  pg.className = 'pg';
+  pg.id = 'pg-eval';
+  pg.innerHTML = ''
+    + '<div class="card">'
+    + '  <div class="pt">📝 تقييم الطلاب الفصلي</div>'
+    + '  <div class="ct" style="margin-bottom:12px;color:var(--muted);font-size:13px">'
+    + '    اختاري السنة الدراسية أولاً، ثم الفصل، ثم الصف والطالب واللغة. بعد الإرسال، سيظهر التقييم في قائمة الإدارة لاعتماده ووضع الختم الرقمي.'
+    + '  </div>'
+    + '  <div class="fg" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:12px">'
+    + '    <div class="fl"><label>الفصل (الصف)</label>'
+    + '      <select id="eval-cls"><option value="">— اختاري —</option></select></div>'
+    + '    <div class="fl"><label>الطالب</label>'
+    + '      <select id="eval-stu"><option value="">— اختاري الفصل أولاً —</option></select></div>'
+    + '    <div class="fl"><label>السنة الدراسية</label>'
+    + '      <select id="eval-year"><option value="">— اختاري السنة —</option></select></div>'
+    + '    <div class="fl" id="eval-quarter-wrap" style="display:none"><label>الفصل الدراسي</label>'
+    + '      <select id="eval-quarter">'
+    + '        <option value="">— اختاري الفصل —</option>'
+    + '        <option value="q1">الفصل الأول</option>'
+    + '        <option value="q2">الفصل الثاني</option>'
+    + '        <option value="q3">الفصل الثالث</option>'
+    + '      </select></div>'
+    + '    <div class="fl"><label>اللغة (وفقاً للطالب)</label>'
+    + '      <select id="eval-lang">'
+    + '        <option value="ar-q1-l12">عربي — المستوى الأول والثاني</option>'
+    + '        <option value="en-q1-l3">English — Level 3</option>'
+    + '      </select></div>'
+    + '  </div>'
+    + '  <div id="eval-form-host"></div>'
+    + '  <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">'
+    + '    <button class="btn btn-out" onclick="kpEvalReset()">↺ مسح</button>'
+    + '    <button class="btn btn-g" onclick="kpEvalSubmit()">💾 حفظ وإرسال للإدارة</button>'
+    + '  </div>'
+    + '</div>'
+    + '<div class="card" id="eval-mgr-card" style="display:none">'
+    + '  <div class="pt">🛡️ اعتماد التقييمات (للإدارة)</div>'
+    + '  <div class="ct" style="margin-bottom:8px;color:var(--muted);font-size:13px">'
+    + '    قائمة بالتقييمات بانتظار الاعتماد. اضغطي "اعتماد وختم" لإضافة التوقيع الرقمي.'
+    + '  </div>'
+    + '  <div id="eval-mgr-list"></div>'
+    + '</div>';
+  main.appendChild(pg);
+
+  // wire change events to repopulate selectors / re-render the form
+  document.getElementById('eval-cls').addEventListener('change', kpEvalRepopulateStudents);
+  document.getElementById('eval-stu').addEventListener('change', kpEvalRenderForm);
+  document.getElementById('eval-quarter').addEventListener('change', kpEvalRenderForm);
+  document.getElementById('eval-lang').addEventListener('change', kpEvalRenderForm);
+  document.getElementById('eval-year').addEventListener('change', kpEvalOnYearChange);
+  kpEvalPopulateYearSelector();
+}
+
+// Auto-detect the default academic year string (e.g. "2025-2026").
+// Months Sept-Dec → start year is the current calendar year;
+// months Jan-Aug → start year is the previous calendar year.
+function kpEvalDefaultAcademicYear(){
+  var now = new Date();
+  var y = now.getFullYear();
+  var m = now.getMonth(); // 0-11
+  var startY = (m >= 8) ? y : y - 1; // 8 = September
+  return String(startY) + '-' + String(startY + 1);
+}
+
+// Populate the year selector with the previous, current and next academic years.
+// Selecting a year reveals the quarter selector. Without a year, quarter is hidden.
+function kpEvalPopulateYearSelector(){
+  var sel = document.getElementById('eval-year');
+  if (!sel) return;
+  var now = new Date();
+  var y = now.getFullYear();
+  var m = now.getMonth();
+  var currentStart = (m >= 8) ? y : y - 1;
+  var years = [currentStart - 1, currentStart, currentStart + 1].map(function(s){
+    return s + '-' + (s + 1);
+  });
+  sel.innerHTML = '<option value="">— اختاري السنة —</option>' + years.map(function(yr){
+    return '<option value="' + escapeHtml(yr) + '">' + escapeHtml(yr) + '</option>';
+  }).join('');
+}
+
+// When the user picks an academic year, reveal the quarter selector.
+// When the user clears the year, hide quarter and clear the form area.
+function kpEvalOnYearChange(){
+  var yEl = document.getElementById('eval-year');
+  var qWrap = document.getElementById('eval-quarter-wrap');
+  var qSel = document.getElementById('eval-quarter');
+  var host = document.getElementById('eval-form-host');
+  if (!yEl || !qWrap || !qSel) return;
+  if (yEl.value) {
+    qWrap.style.display = '';
+  } else {
+    qWrap.style.display = 'none';
+    qSel.value = '';
+    if (host) host.innerHTML = '<div style="padding:18px;text-align:center;color:var(--muted)">اختاري السنة الدراسية أولاً، ثم الفصل.</div>';
+  }
+  kpEvalRenderForm();
+}
+
+/* ------------------------------------------------------------------ *
+ * 5. SELECTORS POPULATION                                             *
+ * ------------------------------------------------------------------ */
+function kpEvalPopulateClassSelector(){
+  var sel = document.getElementById('eval-cls');
+  if (!sel) return;
+  var allowed = window.evaluatorAllowedClasses();
+  var classes = Object.keys(typeof CLASSES !== 'undefined' ? CLASSES : {});
+  if (Array.isArray(allowed) && allowed.length) classes = classes.filter(function(c){ return allowed.indexOf(c) !== -1; });
+  sel.innerHTML = '<option value="">— اختاري الصف —</option>' + classes.map(function(c){
+    var em = (typeof CLASSES !== 'undefined' && CLASSES[c] && CLASSES[c].emoji) ? CLASSES[c].emoji + ' ' : '';
+    return '<option value="' + escapeHtml(c) + '">' + em + escapeHtml(c) + '</option>';
+  }).join('');
+}
+
+function kpEvalRepopulateStudents(){
+  var clsSel = document.getElementById('eval-cls');
+  var stuSel = document.getElementById('eval-stu');
+  if (!clsSel || !stuSel) return;
+  var cls = clsSel.value;
+  if (!cls) {
+    stuSel.innerHTML = '<option value="">— اختاري الفصل أولاً —</option>';
+    kpEvalRenderForm();
+    return;
+  }
+  var list = (typeof students !== 'undefined' ? students : []).filter(function(s){
+    return s && s.cls === cls && (typeof isActiveStudent === 'function' ? isActiveStudent(s) : true);
+  });
+  list.sort(function(a,b){ return String(a.name||'').localeCompare(String(b.name||''), 'ar'); });
+  stuSel.innerHTML = '<option value="">— اختاري الطالب —</option>' + list.map(function(s){
+    return '<option value="' + escapeHtml(String(s.id)) + '">#' + escapeHtml(String(s.id)) + ' — ' + escapeHtml(s.name||'') + '</option>';
+  }).join('');
+  kpEvalRenderForm();
+}
+
+/* ------------------------------------------------------------------ *
+ * 6. FORM RENDERING                                                   *
+ * ------------------------------------------------------------------ */
+function kpEvalCurrentForm(){
+  var langSel = document.getElementById('eval-lang');
+  var fid = langSel ? langSel.value : 'ar-q1-l12';
+  return KP_FORMS[fid] || KP_FORM_AR;
+}
+
+function kpEvalRenderForm(){
+  var host = document.getElementById('eval-form-host');
+  if (!host) return;
+  var form = kpEvalCurrentForm();
+  var stuId = document.getElementById('eval-stu').value;
+  var yEl = document.getElementById('eval-year');
+  var academicYear = yEl ? (yEl.value || '').trim() : '';
+  var qSel = document.getElementById('eval-quarter');
+  var quarterId = qSel ? qSel.value : '';
+
+  if (!stuId) {
+    host.innerHTML = '<div style="padding:18px;text-align:center;color:var(--muted)">اختاري الطالب لعرض الاستمارة.</div>';
+    return;
+  }
+  if (!academicYear) {
+    host.innerHTML = '<div style="padding:18px;text-align:center;color:var(--muted)">اختاري السنة الدراسية أولاً.</div>';
+    return;
+  }
+  if (!quarterId) {
+    host.innerHTML = '<div style="padding:18px;text-align:center;color:var(--muted)">اختاري الفصل الدراسي.</div>';
+    return;
+  }
+  var s = (typeof students !== 'undefined' ? students : []).find(function(x){ return String(x.id) === String(stuId); });
+  if (!s) {
+    host.innerHTML = '<div style="padding:18px;text-align:center;color:var(--r1)">الطالب غير موجود.</div>';
+    return;
+  }
+
+  // Look up an existing record for this student/quarter/lang/year so we can
+  // pre-populate already-submitted months and lock those columns from edits.
+  var existing = kpEvalFindExistingRecord(s.id, quarterId, form.lang, academicYear);
+  var lockedMonths = [false,false,false];
+  var savedData = null;
+  var statusBanner = '';
+  if (existing) {
+    savedData = existing;
+    // For evaluators, lock months that have been submitted. For managers
+    // (admin / staff with approve), nothing is locked — they can edit freely.
+    var managerCanEdit = window.canApproveEvaluations();
+    if (!managerCanEdit) {
+      lockedMonths = (Array.isArray(existing.submittedMonths) && existing.submittedMonths.length === 3)
+        ? existing.submittedMonths.slice()
+        : kpEvalComputeEvaluatedMonths(existing);
+    }
+    if (existing.status === 'approved') {
+      statusBanner = '<div style="background:#d4edda;color:#155724;padding:10px;border-radius:8px;margin-bottom:10px;font-weight:700;text-align:center">✅ هذا التقييم تم اعتماده من الإدارة. للإدارة فقط صلاحية التعديل.</div>';
+    } else if (lockedMonths.some(function(x){return x;}) && !managerCanEdit) {
+      var lockedNames = [];
+      for (var li = 0; li < 3; li++) if (lockedMonths[li]) lockedNames.push(form.months[li]);
+      statusBanner = '<div style="background:#fff3cd;color:#856404;padding:10px;border-radius:8px;margin-bottom:10px;font-weight:700;text-align:center">⏳ تم تسليم: ' + escapeHtml(lockedNames.join('، ')) + ' — هذه الأشهر مقفلة. يمكنك إدخال الأشهر الباقية فقط.</div>';
+    }
+  }
+  host.innerHTML = statusBanner + kpEvalBuildFormHTML(form, s, /*editable*/ true, /*data*/ savedData, quarterId, lockedMonths, academicYear);
+  // Stash the locked months on the host element so the submit handler can
+  // know which months are off-limits even if the user changed quarters mid-flight.
+  host.dataset.lockedMonths = JSON.stringify(lockedMonths);
+  host.dataset.existingId = existing ? existing.id : '';
+}
+
+// Find an existing evaluation record for the same (student, quarter, language, year).
+// If `year` is omitted, matches any year for backwards compatibility.
+function kpEvalFindExistingRecord(stuId, quarter, lang, year){
+  var arr = window.evaluations || [];
+  for (var i = 0; i < arr.length; i++){
+    var e = arr[i];
+    if (String(e.studentId) !== String(stuId)) continue;
+    if (e.quarter !== quarter) continue;
+    if (e.lang !== lang) continue;
+    if (year && e.academicYear && e.academicYear !== year) continue;
+    if (year && !e.academicYear) continue; // legacy record without year — skip when year requested
+    return e;
+  }
+  return null;
+}
+
+function kpEvalBuildFormHTML(form, student, editable, savedData, quarterId, lockedMonths, academicYear){
+  var isAr = form.lang === 'ar';
+  var dir = isAr ? 'rtl' : 'ltr';
+  var alignTxt = isAr ? 'right' : 'left';
+  var lock = Array.isArray(lockedMonths) && lockedMonths.length === 3 ? lockedMonths : [false,false,false];
+
+  // Resolve the localized term label from the selected quarter id.
+  // Falls back to the form's hardcoded default when no quarter is supplied
+  // (e.g. older code paths) or when an unknown id is passed.
+  var termLabel = form.term;
+  if (quarterId) {
+    for (var qi = 0; qi < KP_QUARTERS.length; qi++) {
+      if (KP_QUARTERS[qi].id === quarterId) {
+        termLabel = isAr ? KP_QUARTERS[qi].ar : KP_QUARTERS[qi].en;
+        break;
+      }
+    }
+  }
+
+  // Resolve academic year for display (use param, else savedData, else blank)
+  var yearLabel = academicYear || (savedData && savedData.academicYear) || '';
+
+  // Compute the evaluation period (which months have data) for read-only renders
+  var periodLine = '';
+  if (savedData) {
+    var monthsHave = (Array.isArray(savedData.submittedMonths) && savedData.submittedMonths.length === 3)
+      ? savedData.submittedMonths
+      : kpEvalComputeEvaluatedMonths(savedData);
+    var monthLabels = [];
+    for (var mi = 0; mi < 3; mi++) if (monthsHave[mi]) monthLabels.push(form.months[mi]);
+    if (monthLabels.length === 3) periodLine = isAr ? 'كامل الفصل (٣ أشهر)' : 'Full term (3 months)';
+    else if (monthLabels.length > 0) periodLine = (isAr ? 'فترة التقييم: ' : 'Evaluation period: ') + monthLabels.join(isAr ? '، ' : ', ');
+  }
+
+  // Header (matches the original docx)
+  var header = ''
+    + '<div class="kp-eval-header" style="border:2px solid var(--g2);border-radius:14px;padding:12px;margin-bottom:14px;background:#fff;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px">'
+    + '  <div style="font-weight:800;font-size:18px;color:#1a4a82;text-align:center">Kids Park Nursery</div>'
+    + '  <img src="' + kpEvalGetHeaderLogo() + '" alt="logo" style="width:90px;height:90px;object-fit:contain"/>'
+    + '  <div style="font-weight:800;font-size:18px;color:#1a4a82;text-align:center">حضانة حديقة الأطفال</div>'
+    + '</div>'
+    + '<div style="text-align:center;font-size:18px;font-weight:800;margin-bottom:8px">' + escapeHtml(form.title) + '</div>'
+    + '<div style="text-align:center;font-size:14px;color:var(--muted);margin-bottom:6px">' + escapeHtml(form.level) + ' — ' + escapeHtml(termLabel) + (yearLabel ? ' — ' + escapeHtml(yearLabel) : '') + '</div>'
+    + (periodLine ? '<div style="text-align:center;font-size:13px;color:var(--g1);font-weight:700;margin-bottom:14px">' + escapeHtml(periodLine) + '</div>' : '<div style="margin-bottom:14px"></div>');
+
+  // Skills table
+  var rows = [];
+  var rowIdx = 0;
+  form.groups.forEach(function(g){
+    var rowsInGroup = g.skills.length;
+    g.skills.forEach(function(skill, idx){
+      rowIdx += 1;
+      var cells = [];
+      cells.push('<td style="text-align:center;font-weight:700">' + rowIdx + '</td>');
+      if (idx === 0) {
+        cells.push('<td rowspan="' + rowsInGroup + '" style="text-align:center;font-weight:800;background:var(--gp)">' + escapeHtml(g.domain) + '</td>');
+      }
+      cells.push('<td style="text-align:' + alignTxt + ';font-weight:600">' + escapeHtml(skill) + '</td>');
+      // 3 months × 3 levels = 9 radio cells
+      for (var m = 0; m < 3; m++){
+        var monthLocked = !!lock[m];
+        var monthDisabled = (!editable) || monthLocked;
+        var dis = monthDisabled ? 'disabled' : '';
+        var cellClass = monthLocked ? 'kp-eval-month-locked' : '';
+        for (var lvl = 0; lvl < 3; lvl++){
+          var name = 'eval-r-' + rowIdx + '-' + m;
+          var checked = '';
+          if (savedData && savedData.skills) {
+            var v = savedData.skills[String(rowIdx)];
+            if (v && Number(v[m]) === lvl) checked = 'checked';
+          }
+          cells.push('<td class="' + cellClass + '" style="text-align:center"><input type="radio" name="' + name + '" value="' + lvl + '" ' + dis + ' ' + checked + '/></td>');
+        }
+      }
+      rows.push('<tr>' + cells.join('') + '</tr>');
+    });
+  });
+
+  // Header row with months — annotate locked months with a 🔒 marker
+  var headerCellsTop = ''
+    + '<th rowspan="2" style="width:36px">' + (isAr ? 'م' : '#') + '</th>'
+    + '<th rowspan="2">' + (isAr ? 'التطور' : 'Development') + '</th>'
+    + '<th rowspan="2">' + (isAr ? 'المهارة' : 'Skill') + '</th>';
+  form.months.forEach(function(mo, mi){
+    var lockMark = lock[mi] ? ' 🔒' : '';
+    headerCellsTop += '<th colspan="3"' + (lock[mi] ? ' class="kp-eval-month-locked"' : '') + '>' + escapeHtml(mo) + lockMark + '</th>';
+  });
+  var headerCellsBot = '';
+  for (var m = 0; m < 3; m++){
+    var bg = lock[m] ? ' kp-eval-month-locked' : '';
+    form.scale.forEach(function(s){
+      headerCellsBot += '<th class="' + bg + '" style="font-size:11px;font-weight:600;color:var(--muted)">' + escapeHtml(s) + '</th>';
+    });
+  }
+
+  var table = ''
+    + '<div class="kp-eval-table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:8px;max-width:100%">'
+    + '<table class="tbl kp-eval-table" dir="' + dir + '" style="min-width:680px;width:100%;border-collapse:collapse;table-layout:auto">'
+    + '  <thead><tr>' + headerCellsTop + '</tr><tr>' + headerCellsBot + '</tr></thead>'
+    + '  <tbody>' + rows.join('') + '</tbody>'
+    + '</table>'
+    + '</div>'
+    + '<div class="kp-eval-scroll-hint" style="display:none;font-size:11px;color:var(--muted);text-align:center;margin-top:4px">↔ مرّري الجدول أفقياً لرؤية كل الأعمدة</div>';
+
+  // Footer (student name, term, signatures) — parent-return note removed per spec.
+  var stuName = (student && student.name) ? student.name : '';
+  var footer = ''
+    + '<div style="margin-top:14px;font-size:13px;display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+    + '  <div><b>' + (isAr ? 'اسم الطالب' : 'Student name') + ':</b> ' + escapeHtml(stuName) + '</div>'
+    + '  <div style="text-align:' + (isAr ? 'left' : 'right') + '"><b>' + (isAr ? 'الفصل' : 'Term') + ':</b> ' + escapeHtml(termLabel) + '</div>'
+    + '</div>'
+    + '<div style="margin-top:18px;font-size:12px;color:var(--muted);display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center">'
+    + '  <div><b>' + (isAr ? 'توقيع المعلمة' : 'Teacher signature') + ' (' + escapeHtml(form.months[0]) + ')</b><div style="border-bottom:1px solid #aaa;height:24px"></div></div>'
+    + '  <div><b>' + (isAr ? 'توقيع المعلمة' : 'Teacher signature') + ' (' + escapeHtml(form.months[1]) + ')</b><div style="border-bottom:1px solid #aaa;height:24px"></div></div>'
+    + '  <div><b>' + (isAr ? 'توقيع المعلمة' : 'Teacher signature') + ' (' + escapeHtml(form.months[2]) + ')</b><div style="border-bottom:1px solid #aaa;height:24px"></div></div>'
+    + '</div>'
+    + '<div style="margin-top:8px;font-size:12px;color:var(--muted);display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center">'
+    + '  <div><b>' + (isAr ? 'توقيع الإدارة' : 'Manager signature') + '</b><div id="eval-stamp-1" style="border-bottom:1px solid #aaa;height:36px"></div></div>'
+    + '  <div><b>' + (isAr ? 'توقيع الإدارة' : 'Manager signature') + '</b><div id="eval-stamp-2" style="border-bottom:1px solid #aaa;height:36px"></div></div>'
+    + '  <div><b>' + (isAr ? 'توقيع الإدارة' : 'Manager signature') + '</b><div id="eval-stamp-3" style="border-bottom:1px solid #aaa;height:36px"></div></div>'
+    + '</div>';
+
+  return header + table + footer;
+}
+
+/* ------------------------------------------------------------------ *
+ * 7. SUBMIT (evaluator) → save to Firebase per-record                 *
+ * ------------------------------------------------------------------ */
+window.kpEvalReset = function(){
+  document.getElementById('eval-cls').value = '';
+  document.getElementById('eval-stu').innerHTML = '<option value="">— اختاري الفصل أولاً —</option>';
+  var yEl = document.getElementById('eval-year');
+  if (yEl) yEl.value = '';
+  var qWrap = document.getElementById('eval-quarter-wrap');
+  if (qWrap) qWrap.style.display = 'none';
+  document.getElementById('eval-quarter').value = '';
+  document.getElementById('eval-lang').value = 'ar-q1-l12';
+  document.getElementById('eval-form-host').innerHTML = '<div style="padding:18px;text-align:center;color:var(--muted)">اختاري السنة الدراسية ثم الفصل ثم الطالب.</div>';
+};
+
+function kpEvalCollectFormData(form){
+  var data = { skills: {} };
+  var rowIdx = 0;
+  form.groups.forEach(function(g){
+    g.skills.forEach(function(skill){
+      rowIdx += 1;
+      data.skills[String(rowIdx)] = [null, null, null];
+      for (var m = 0; m < 3; m++){
+        var sel = document.querySelector('input[name="eval-r-' + rowIdx + '-' + m + '"]:checked');
+        data.skills[String(rowIdx)][m] = sel ? Number(sel.value) : null;
+      }
+    });
+  });
+  return data;
+}
+
+window.kpEvalSubmit = async function(){
+  var stuId = document.getElementById('eval-stu').value;
+  var quarter = document.getElementById('eval-quarter').value;
+  var formId = document.getElementById('eval-lang').value;
+  var academicYear = (document.getElementById('eval-year').value || '').trim();
+  if (!stuId) { alert('اختاري الطالب أولاً'); return; }
+  if (!academicYear) { alert('اختاري السنة الدراسية أولاً'); return; }
+  if (!quarter) { alert('اختاري الفصل الدراسي'); return; }
+  var stu = (typeof students !== 'undefined' ? students : []).find(function(x){ return String(x.id) === String(stuId); });
+  if (!stu) { alert('الطالب غير موجود'); return; }
+
+  var form = KP_FORMS[formId];
+  if (!form) { alert('استمارة غير معروفة'); return; }
+  var data = kpEvalCollectFormData(form);
+
+  // Look up any existing record so we can merge — never overwrite already-
+  // submitted months. Evaluators are blocked at the UI level (locked cells)
+  // but we re-enforce here as a safety net.
+  var existing = kpEvalFindExistingRecord(stu.id, quarter, form.lang, academicYear);
+  var prevSubmittedMonths = existing && Array.isArray(existing.submittedMonths) && existing.submittedMonths.length === 3
+    ? existing.submittedMonths.slice()
+    : [false,false,false];
+  var managerCanEdit = window.canApproveEvaluations();
+
+  // Determine which months the user is submitting NOW (have any data and
+  // were not previously locked). Managers can edit all months freely.
+  var newMonthsThisSubmission = [false,false,false];
+  for (var m = 0; m < 3; m++){
+    var monthHasData = false;
+    Object.keys(data.skills).forEach(function(k){
+      var v = data.skills[k][m];
+      if (v !== null && v !== undefined && v !== '') monthHasData = true;
+    });
+    if (monthHasData && (managerCanEdit || !prevSubmittedMonths[m])) newMonthsThisSubmission[m] = true;
+  }
+
+  if (!managerCanEdit && !newMonthsThisSubmission.some(function(x){return x;})) {
+    alert('لم تُدخلي أي بيانات جديدة في الأشهر المتاحة. لا يوجد ما يُحفظ.'); return;
+  }
+
+  // For evaluator: validate that every skill has a value in each NEW month
+  // they're submitting (i.e. no half-filled month). Manager bypasses.
+  if (!managerCanEdit) {
+    var incomplete = false;
+    for (var mi = 0; mi < 3; mi++){
+      if (!newMonthsThisSubmission[mi]) continue;
+      Object.keys(data.skills).forEach(function(k){
+        var v = data.skills[k][mi];
+        if (v === null || v === undefined || v === '') incomplete = true;
+      });
+    }
+    if (incomplete) {
+      if (!confirm('بعض البنود في الشهر الذي تسلمينه لم تُملأ. متابعة الحفظ على أي حال؟ (الشهر سيُقفل بعد الحفظ)')) return;
+    }
+  }
+
+  // Merge skills: keep previously-submitted-month values from `existing`,
+  // overlay new-month values from `data`. For managers, just take `data`.
+  var mergedSkills = {};
+  Object.keys(data.skills).forEach(function(k){
+    var prev = (existing && existing.skills && existing.skills[k]) || [null,null,null];
+    var incoming = data.skills[k];
+    mergedSkills[k] = [null,null,null];
+    for (var mm = 0; mm < 3; mm++){
+      if (managerCanEdit) {
+        mergedSkills[k][mm] = incoming[mm];
+      } else if (prevSubmittedMonths[mm]) {
+        mergedSkills[k][mm] = prev[mm]; // locked → keep old
+      } else {
+        mergedSkills[k][mm] = incoming[mm];
+      }
+    }
+  });
+
+  // Compute the new submittedMonths set (union of old + new for this submission).
+  var nextSubmittedMonths = [false,false,false];
+  for (var mm2 = 0; mm2 < 3; mm2++){
+    nextSubmittedMonths[mm2] = managerCanEdit
+      ? (prevSubmittedMonths[mm2] || newMonthsThisSubmission[mm2])
+      : (prevSubmittedMonths[mm2] || newMonthsThisSubmission[mm2]);
+  }
+
+  // Resolve the localized term label for the chosen quarter.
+  var termLabel = form.term;
+  for (var qi = 0; qi < KP_QUARTERS.length; qi++) {
+    if (KP_QUARTERS[qi].id === quarter) {
+      termLabel = (form.lang === 'ar') ? KP_QUARTERS[qi].ar : KP_QUARTERS[qi].en;
+      break;
+    }
+  }
+
+  // Build the record. Stable key: stu_<id>_<quarter>_<langTag>_<year> ; this
+  // makes resubmission UPDATE the same Firebase node (idempotent), while
+  // keeping different academic years as separate records.
+  var yearKey = String(academicYear).replace(/[^0-9A-Za-z\-]/g, '');
+  var rec = {
+    id: existing ? existing.id : ('eval_' + stu.id + '_' + quarter + '_' + form.lang + '_' + yearKey),
+    type: 'evaluation',
+    studentId: stu.id,
+    studentName: stu.name || '',
+    classId: stu.cls || '',
+    quarter: quarter,
+    academicYear: academicYear,
+    formId: formId,
+    lang: form.lang,
+    level: form.level,
+    term: termLabel,
+    skills: mergedSkills,
+    submittedMonths: nextSubmittedMonths,
+    submittedBy: (currentUser && (currentUser.username || currentUser.name)) || 'system',
+    submittedAt: new Date().toISOString(),
+    // Preserve approval state if the manager is editing an approved record.
+    status: (existing && existing.status === 'approved' && managerCanEdit) ? 'approved' : (existing && existing.status === 'approved' ? 'approved' : 'pending'),
+    approvedBy: existing ? (existing.approvedBy || null) : null,
+    approvedAt: existing ? (existing.approvedAt || null) : null,
+    stampDataUrl: existing ? (existing.stampDataUrl || null) : null,
+    evaluatedMonths: existing ? (existing.evaluatedMonths || null) : null,
+  };
+
+  // Save per-record (matches the host file's existing pattern)
+  if (typeof saveRecordRemoteAware !== 'function') {
+    alert('خطأ: نظام الحفظ غير متاح'); return;
+  }
+  var ok = await saveRecordRemoteAware({
+    type: 'evaluations',
+    activeArrayName: 'evaluations',
+    record: rec,
+    keyField: 'id',
+    label: 'تقييم الطالب',
+  });
+  if (!ok) { alert('⚠️ تعذّر الحفظ على Firebase. تم حفظ نسخة محلية فقط.'); }
+  else {
+    var msgParts = [];
+    for (var mp = 0; mp < 3; mp++) if (newMonthsThisSubmission[mp]) msgParts.push(form.months[mp]);
+    alert('✅ تم إرسال التقييم للإدارة لاعتماده.\nالأشهر التي تم تسليمها: ' + (msgParts.join('، ') || '—'));
+  }
+
+  // Update local cache
+  var idx = (window.evaluations || []).findIndex(function(x){ return x.id === rec.id; });
+  if (idx === -1) (window.evaluations || (window.evaluations = [])).push(rec);
+  else window.evaluations[idx] = rec;
+  persistEvaluationsLocal();
+  kpEvalRenderManagerList(); // refresh badge
+  // Re-render the form so the just-submitted months become locked immediately
+  if (!managerCanEdit) kpEvalRenderForm();
+  else kpEvalReset();
+};
+
+/* ------------------------------------------------------------------ *
+ * 8. MANAGER QUEUE — list of pending + approve/stamp action           *
+ * ------------------------------------------------------------------ */
+function kpEvalRenderManagerList(){
+  var card = document.getElementById('eval-mgr-card');
+  var host = document.getElementById('eval-mgr-list');
+  var badge = document.getElementById('eval-pending-badge');
+  if (!card || !host) return;
+
+  if (!window.canApproveEvaluations()) {
+    card.style.display = 'none';
+    if (badge) badge.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+  var all = (window.evaluations || []).slice().sort(function(a,b){
+    return String(b.submittedAt||'').localeCompare(String(a.submittedAt||''));
+  });
+  var pending = all.filter(function(e){ return e.status !== 'approved'; });
+
+  if (badge) {
+    if (pending.length) { badge.textContent = String(pending.length); badge.style.display = ''; }
+    else badge.style.display = 'none';
+  }
+
+  if (!all.length) { host.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">لا توجد تقييمات حتى الآن.</div>'; return; }
+
+  var rows = all.map(function(e){
+    var statusBadge = e.status === 'approved'
+      ? '<span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700">✅ معتمد</span>'
+      : '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700">⏳ بانتظار الاعتماد</span>';
+    var actions = '<button class="btn btn-out btn-sm" onclick="kpEvalOpenView(\'' + escapeHtml(e.id) + '\')">👁 عرض</button>';
+    if (e.status !== 'approved') {
+      actions += ' <button class="btn btn-g btn-sm" onclick="kpEvalApprove(\'' + escapeHtml(e.id) + '\')">🛡 اعتماد وختم</button>';
+    } else {
+      actions += ' <button class="btn btn-out btn-sm" onclick="kpEvalExportPdf(\'' + escapeHtml(e.id) + '\')">📄 PDF</button>';
+      actions += ' <button class="btn btn-y btn-sm" onclick="kpEvalReopen(\'' + escapeHtml(e.id) + '\')" title="إعادة فتح للمُقيِّم">↩ إعادة فتح</button>';
+    }
+    actions += ' <button class="btn btn-out btn-sm" onclick="kpEvalManagerEdit(\'' + escapeHtml(e.id) + '\')" title="تعديل">✏️</button>';
+    actions += ' <button class="btn btn-r btn-sm" onclick="kpEvalDelete(\'' + escapeHtml(e.id) + '\')" title="حذف">🗑</button>';
+    return '<tr>'
+      + '<td style="font-size:12px">' + escapeHtml(String(e.studentName||'')) + ' <span style="color:var(--muted)">#' + escapeHtml(String(e.studentId||'')) + '</span></td>'
+      + '<td style="font-size:12px">' + escapeHtml(String(e.classId||'')) + '</td>'
+      + '<td style="font-size:12px">' + escapeHtml(String(e.term||'')) + '</td>'
+      + '<td style="font-size:12px;direction:ltr">' + escapeHtml(String(e.academicYear||'—')) + '</td>'
+      + '<td style="font-size:12px;direction:ltr">' + escapeHtml((e.lang||'ar').toUpperCase()) + '</td>'
+      + '<td style="font-size:11px;direction:ltr;color:var(--muted)">' + escapeHtml(String(e.submittedBy||'')) + ' — ' + escapeHtml((e.submittedAt||'').slice(0,16).replace('T',' ')) + '</td>'
+      + '<td>' + statusBadge + '</td>'
+      + '<td style="white-space:nowrap">' + actions + '</td>'
+      + '</tr>';
+  }).join('');
+
+  host.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl kp-eval-mgr-table" style="width:100%;min-width:780px"><thead><tr>'
+    + '<th>الطالب</th><th>الصف</th><th>الفصل الدراسي</th><th>السنة</th><th>اللغة</th><th>الإرسال</th><th>الحالة</th><th>إجراءات</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+    + '<div class="kp-eval-scroll-hint" style="display:none;font-size:11px;color:var(--muted);text-align:center;margin-top:4px">↔ مرّري الجدول أفقياً لرؤية كل الأعمدة</div>';
+}
+
+// Returns [bool, bool, bool] — which of the 3 months has any non-null data.
+// A month is "evaluated" if at least one skill row has a non-null value in that month.
+function kpEvalComputeEvaluatedMonths(rec){
+  var out = [false, false, false];
+  if (!rec || !rec.skills) return out;
+  Object.keys(rec.skills).forEach(function(rowKey){
+    var row = rec.skills[rowKey];
+    if (!Array.isArray(row)) return;
+    for (var m = 0; m < 3; m++){
+      if (row[m] !== null && row[m] !== undefined && row[m] !== '') out[m] = true;
+    }
+  });
+  return out;
+}
+
+window.kpEvalApprove = async function(id){
+  if (!window.canApproveEvaluations()) { alert('للإدارة فقط'); return; }
+  var e = (window.evaluations||[]).find(function(x){ return x.id === id; });
+  if (!e) { alert('السجل غير موجود'); return; }
+  if (!confirm('اعتماد ووضع الختم الرقمي لهذا التقييم؟ لا يمكن التراجع.')) return;
+
+  e.status = 'approved';
+  e.approvedBy = (currentUser && (currentUser.name || currentUser.username)) || 'admin';
+  e.approvedAt = new Date().toISOString();
+  // Use the existing receipt stamp as digital stamp (already loaded in host file)
+  e.stampDataUrl = (typeof KP_RECEIPT_STAMP_DATA_URL !== 'undefined') ? KP_RECEIPT_STAMP_DATA_URL : '';
+  // Determine which months actually carry data — the manager stamp should only
+  // appear under the months that were evaluated, not under empty months.
+  e.evaluatedMonths = kpEvalComputeEvaluatedMonths(e);
+
+  if (typeof saveRecordRemoteAware !== 'function') { alert('نظام الحفظ غير متاح'); return; }
+  var ok = await saveRecordRemoteAware({
+    type: 'evaluations', activeArrayName: 'evaluations',
+    record: e, keyField: 'id', label: 'اعتماد التقييم',
+  });
+  if (!ok) alert('⚠️ تم الاعتماد محلياً فقط — تعذّر الوصول إلى Firebase');
+  else alert('✅ تم اعتماد التقييم ووضع الختم');
+  persistEvaluationsLocal();
+  kpEvalRenderManagerList();
+};
+
+// Manager: REOPEN an approved evaluation (revert to pending, unlock all
+// months for the evaluator). The skill values are preserved so the evaluator
+// can adjust rather than start from scratch.
+window.kpEvalReopen = async function(id){
+  if (!window.canApproveEvaluations()) { alert('للإدارة فقط'); return; }
+  var e = (window.evaluations||[]).find(function(x){ return x.id === id; });
+  if (!e) { alert('السجل غير موجود'); return; }
+  if (!confirm('إعادة فتح هذا التقييم للمُقيِّم؟ ستُلغى حالة الاعتماد والختم، وسيتمكن المُقيِّم من تعديل كل الأشهر.')) return;
+
+  e.status = 'pending';
+  e.approvedBy = null;
+  e.approvedAt = null;
+  e.stampDataUrl = null;
+  e.evaluatedMonths = null;
+  e.submittedMonths = [false,false,false]; // unlock all months
+  e.reopenedBy = (currentUser && (currentUser.name || currentUser.username)) || 'admin';
+  e.reopenedAt = new Date().toISOString();
+
+  if (typeof saveRecordRemoteAware !== 'function') { alert('نظام الحفظ غير متاح'); return; }
+  var ok = await saveRecordRemoteAware({
+    type: 'evaluations', activeArrayName: 'evaluations',
+    record: e, keyField: 'id', label: 'إعادة فتح التقييم',
+  });
+  if (!ok) alert('⚠️ تمت إعادة الفتح محلياً فقط — تعذّر الوصول إلى Firebase');
+  else alert('✅ تمت إعادة فتح التقييم. يمكن للمُقيِّم الآن تعديل كل الأشهر.');
+  persistEvaluationsLocal();
+  kpEvalRenderManagerList();
+  // If the evaluator has the form open for this record, refresh it.
+  try { kpEvalRenderForm(); } catch(_e){}
+};
+
+// Manager: DELETE an evaluation entirely (Firebase + local cache).
+window.kpEvalDelete = async function(id){
+  if (!window.canApproveEvaluations()) { alert('للإدارة فقط'); return; }
+  var e = (window.evaluations||[]).find(function(x){ return x.id === id; });
+  if (!e) { alert('السجل غير موجود'); return; }
+  if (!confirm('حذف هذا التقييم نهائياً؟\n\nالطالب: ' + (e.studentName||'') + '\nالفصل: ' + (e.term||'') + '\n\nلا يمكن التراجع عن هذا الإجراء.')) return;
+
+  // Remove from Firebase by sending DELETE to /evaluations/<id>.json
+  var deleted = false;
+  try {
+    if (typeof FB_URL === 'string' && FB_URL) {
+      var url = FB_URL + '/evaluations/' + encodeURIComponent(e.id) + '.json';
+      var res = await fetch(url, { method: 'DELETE' });
+      deleted = res.ok;
+    }
+  } catch (err) { console.warn('Delete fetch failed:', err); }
+
+  // Remove from local cache regardless (so the UI reflects intent)
+  var idx = (window.evaluations||[]).findIndex(function(x){ return x.id === e.id; });
+  if (idx !== -1) window.evaluations.splice(idx, 1);
+  persistEvaluationsLocal();
+
+  if (deleted) alert('✅ تم حذف التقييم نهائياً.');
+  else alert('⚠️ تم الحذف محلياً، لكن قد يعود عند المزامنة التالية إذا تعذّر الوصول إلى Firebase.');
+  kpEvalRenderManagerList();
+};
+
+// Manager: EDIT an evaluation. Opens the main eval page pre-populated
+// with this record's student/quarter/lang. Manager bypasses lock logic
+// because canApproveEvaluations() returns true.
+window.kpEvalManagerEdit = function(id){
+  if (!window.canApproveEvaluations()) { alert('للإدارة فقط'); return; }
+  var e = (window.evaluations||[]).find(function(x){ return x.id === id; });
+  if (!e) { alert('السجل غير موجود'); return; }
+  // Switch to eval page and pre-populate selectors.
+  if (typeof go === 'function') go('eval');
+  setTimeout(function(){
+    var clsSel = document.getElementById('eval-cls');
+    var stuSel = document.getElementById('eval-stu');
+    var qSel = document.getElementById('eval-quarter');
+    var langSel = document.getElementById('eval-lang');
+    var yEl = document.getElementById('eval-year');
+    var qWrap = document.getElementById('eval-quarter-wrap');
+    if (!clsSel || !stuSel || !qSel || !langSel) { alert('تعذّر فتح صفحة التحرير'); return; }
+    // Make sure the year is in the dropdown — append if missing (older record).
+    if (yEl && e.academicYear) {
+      var found = false;
+      for (var i = 0; i < yEl.options.length; i++) if (yEl.options[i].value === e.academicYear) { found = true; break; }
+      if (!found) {
+        var opt = document.createElement('option');
+        opt.value = e.academicYear; opt.textContent = e.academicYear;
+        yEl.appendChild(opt);
+      }
+      yEl.value = e.academicYear;
+    }
+    if (qWrap) qWrap.style.display = e.academicYear ? '' : 'none';
+    if (e.classId) {
+      clsSel.value = e.classId;
+      kpEvalRepopulateStudents();
+    }
+    setTimeout(function(){
+      stuSel.value = String(e.studentId);
+      qSel.value = e.quarter || 'q1';
+      langSel.value = e.formId || (e.lang === 'en' ? 'en-q1-l3' : 'ar-q1-l12');
+      kpEvalRenderForm();
+      var host = document.getElementById('eval-form-host');
+      if (host && host.scrollIntoView) host.scrollIntoView({behavior:'smooth', block:'start'});
+    }, 50);
+  }, 50);
+};
+
+/* ------------------------------------------------------------------ *
+ * 9. VIEW (read-only) — full-screen modal showing the filled form     *
+ * ------------------------------------------------------------------ */
+function ensureEvalViewModal(){
+  if (document.getElementById('mo-eval-view')) return;
+  var html = ''
+    + '<div class="ov" id="mo-eval-view">'
+    + '  <div class="mo" style="width:1000px;max-width:96vw">'
+    + '    <div class="mot" id="mo-eval-view-title">📝 تقييم الطالب</div>'
+    + '    <div id="mo-eval-view-body" style="max-height:70vh;overflow-y:auto;padding:6px"></div>'
+    + '    <div class="mof">'
+    + '      <button class="btn btn-out" onclick="document.getElementById(\'mo-eval-view\').classList.remove(\'on\')">إغلاق</button>'
+    + '      <button class="btn btn-b" id="mo-eval-pdf-btn">📄 تصدير PDF</button>'
+    + '      <button class="btn btn-out" onclick="window.print()">🖨 طباعة</button>'
+    + '    </div>'
+    + '  </div>'
+    + '</div>';
+  var temp = document.createElement('div');
+  temp.innerHTML = html;
+  document.body.appendChild(temp.firstChild);
+}
+
+window.kpEvalOpenView = function(id){
+  ensureEvalViewModal();
+  var e = (window.evaluations||[]).find(function(x){ return x.id === id; });
+  if (!e) { alert('السجل غير موجود'); return; }
+  var stu = (typeof students !== 'undefined' ? students : []).find(function(x){ return String(x.id) === String(e.studentId); }) || { id: e.studentId, name: e.studentName };
+  var form = KP_FORMS[e.formId] || KP_FORM_AR;
+  var body = document.getElementById('mo-eval-view-body');
+  body.innerHTML = kpEvalBuildFormHTML(form, stu, /*editable*/ false, /*data*/ e, e.quarter, null, e.academicYear);
+  // If approved, render the digital stamp(s) into the manager-signature slots,
+  // but ONLY for months that were actually evaluated.
+  if (e.status === 'approved' && e.stampDataUrl) {
+    var stampHtml = ''
+      + '<img src="' + e.stampDataUrl + '" alt="stamp" style="height:60px;display:block;margin:0 auto"/>'
+      + '<div style="font-size:10px;color:var(--muted);text-align:center;margin-top:2px">'
+      + escapeHtml(e.approvedBy||'') + ' — ' + escapeHtml((e.approvedAt||'').slice(0,10)) + '</div>';
+    // Determine which months are stamped. Prefer submittedMonths (authoritative),
+    // then evaluatedMonths (set at approval time on older records),
+    // then live-compute from skill data.
+    var months = (Array.isArray(e.submittedMonths) && e.submittedMonths.length === 3)
+      ? e.submittedMonths
+      : (Array.isArray(e.evaluatedMonths) && e.evaluatedMonths.length === 3)
+        ? e.evaluatedMonths
+        : kpEvalComputeEvaluatedMonths(e);
+    ['eval-stamp-1','eval-stamp-2','eval-stamp-3'].forEach(function(slotId, idx){
+      var slot = body.querySelector('#' + slotId);
+      if (!slot) return;
+      if (months[idx]) {
+        slot.style.borderBottom = 'none'; slot.style.height = ''; slot.innerHTML = stampHtml;
+      }
+      // else: leave empty signature line untouched
+    });
+  }
+  document.getElementById('mo-eval-view-title').textContent = '📝 تقييم — ' + (e.studentName||'') + ' — ' + (e.term||'');
+  document.getElementById('mo-eval-pdf-btn').onclick = function(){ kpEvalExportPdf(id); };
+  document.getElementById('mo-eval-view').classList.add('on');
+};
+
+/* ------------------------------------------------------------------ *
+ * 10. PDF EXPORT — uses html2canvas + jsPDF                           *
+ *     Renders the same DOM used in the view modal so the printed PDF  *
+ *     has the EXACT same header / layout as the on-screen form.       *
+ * ------------------------------------------------------------------ */
+window.kpEvalExportPdf = async function(id){
+  var e = (window.evaluations||[]).find(function(x){ return x.id === id; });
+  if (!e) { alert('السجل غير موجود'); return; }
+  var stu = (typeof students !== 'undefined' ? students : []).find(function(x){ return String(x.id) === String(e.studentId); }) || { id: e.studentId, name: e.studentName };
+  var form = KP_FORMS[e.formId] || KP_FORM_AR;
+
+  // Build offscreen container
+  var holder = document.createElement('div');
+  holder.style.position = 'fixed';
+  holder.style.top = '-99999px';
+  holder.style.left = '0';
+  holder.style.width = '900px'; // close to A4 portrait at 96dpi minus margins
+  holder.style.background = '#fff';
+  holder.style.padding = '20px';
+  holder.style.fontFamily = 'Tajawal, Arial, sans-serif';
+  holder.dir = (form.lang === 'ar') ? 'rtl' : 'ltr';
+  holder.innerHTML = kpEvalBuildFormHTML(form, stu, /*editable*/ false, /*data*/ e, e.quarter, null, e.academicYear);
+  // Inject stamps if approved — but ONLY under months that were evaluated
+  if (e.status === 'approved' && e.stampDataUrl) {
+    var stampHtml = ''
+      + '<img src="' + e.stampDataUrl + '" alt="stamp" style="height:64px;display:block;margin:0 auto"/>'
+      + '<div style="font-size:10px;color:#666;text-align:center;margin-top:2px">'
+      + escapeHtml(e.approvedBy||'') + ' — ' + escapeHtml((e.approvedAt||'').slice(0,10)) + '</div>';
+    var months = (Array.isArray(e.submittedMonths) && e.submittedMonths.length === 3)
+      ? e.submittedMonths
+      : (Array.isArray(e.evaluatedMonths) && e.evaluatedMonths.length === 3)
+        ? e.evaluatedMonths
+        : kpEvalComputeEvaluatedMonths(e);
+    ['eval-stamp-1','eval-stamp-2','eval-stamp-3'].forEach(function(slotId, idx){
+      var slot = holder.querySelector('#' + slotId);
+      if (!slot) return;
+      if (months[idx]) {
+        slot.style.borderBottom = 'none'; slot.style.height = ''; slot.innerHTML = stampHtml;
+      }
+    });
+  }
+  document.body.appendChild(holder);
+
+  try {
+    if (typeof html2canvas !== 'function' || typeof window.jspdf === 'undefined') {
+      alert('مكتبات PDF لم تُحمَّل بعد. حاولي مرة أخرى بعد ثوانٍ.'); return;
+    }
+    var canvas = await html2canvas(holder, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+    var imgData = canvas.toDataURL('image/png');
+    var jsPDF = window.jspdf.jsPDF;
+    var pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    var pageW = pdf.internal.pageSize.getWidth();
+    var pageH = pdf.internal.pageSize.getHeight();
+    var margin = 20;
+    var imgW = pageW - margin * 2;
+    var imgH = canvas.height * imgW / canvas.width;
+
+    if (imgH <= pageH - margin * 2) {
+      pdf.addImage(imgData, 'PNG', margin, margin, imgW, imgH);
+    } else {
+      // Multi-page: slice the canvas
+      var pageImgH = pageH - margin * 2;
+      var pageCanvasH = canvas.width * pageImgH / imgW;
+      var rendered = 0;
+      while (rendered < canvas.height) {
+        var sliceH = Math.min(pageCanvasH, canvas.height - rendered);
+        var sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = canvas.width;
+        sliceCanvas.height = sliceH;
+        var ctx = sliceCanvas.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+        ctx.drawImage(canvas, 0, rendered, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+        var sliceImg = sliceCanvas.toDataURL('image/png');
+        pdf.addImage(sliceImg, 'PNG', margin, margin, imgW, sliceH * imgW / canvas.width);
+        rendered += sliceH;
+        if (rendered < canvas.height) pdf.addPage();
+      }
+    }
+    var fileName = 'evaluation-' + (e.studentId||'') + '-' + (e.term||'').replace(/\s+/g,'_') + '-' + (e.lang||'') + '.pdf';
+    pdf.save(fileName);
+  } catch (err) {
+    console.error(err);
+    alert('فشل إنشاء PDF: ' + err.message);
+  } finally {
+    document.body.removeChild(holder);
+  }
+};
+
+/* ------------------------------------------------------------------ *
+ * 11. STUDENT-PROFILE INTEGRATION — append "📝 التقييمات" tab         *
+ *     We wrap the existing viewStudentProfile() with our own that     *
+ *     calls the original first, then injects an evaluations section   *
+ *     into the modal body.                                            *
+ * ------------------------------------------------------------------ */
+(function wrapViewStudentProfile(){
+  if (typeof viewStudentProfile !== 'function') {
+    // The host hasn't defined it yet (rare). Retry once after DOM ready.
+    document.addEventListener('DOMContentLoaded', wrapViewStudentProfile);
+    return;
+  }
+  if (window.__kpEvalProfileWrapped) return;
+  window.__kpEvalProfileWrapped = true;
+  var orig = window.viewStudentProfile;
+  window.viewStudentProfile = function(id){
+    orig(id);
+    try {
+      var body = document.getElementById('mo-stu-profile-body');
+      if (!body) return;
+      var stuEvals = (window.evaluations || []).filter(function(e){ return String(e.studentId) === String(id); });
+      stuEvals.sort(function(a,b){ return String(b.submittedAt||'').localeCompare(String(a.submittedAt||'')); });
+      var html = ''
+        + '<div style="font-weight:700;color:var(--g1);margin:12px 0 8px;border-top:1.5px solid var(--border);padding-top:10px">📝 التقييمات الفصلية (' + stuEvals.length + ')</div>';
+      if (!stuEvals.length) {
+        html += '<div style="color:var(--muted);font-size:12px;margin-bottom:10px">لا توجد تقييمات مسجلة لهذا الطالب بعد.</div>';
+      } else {
+        html += '<div style="max-height:240px;overflow:auto;margin-bottom:10px;-webkit-overflow-scrolling:touch"><table class="tbl" style="width:100%;min-width:560px"><thead><tr>'
+          + '<th>الفصل الدراسي</th><th>السنة</th><th>اللغة</th><th>الحالة</th><th>التاريخ</th><th>إجراءات</th>'
+          + '</tr></thead><tbody>'
+          + stuEvals.map(function(e){
+              var st = e.status === 'approved'
+                ? '<span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700">✅ معتمد</span>'
+                : '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700">⏳ بانتظار</span>';
+              var act = '<button class="btn btn-out btn-sm" onclick="kpEvalOpenView(\'' + escapeHtml(e.id) + '\')">👁</button>'
+                      + ' <button class="btn btn-b btn-sm" onclick="kpEvalExportPdf(\'' + escapeHtml(e.id) + '\')">📄 PDF</button>';
+              return '<tr><td style="font-size:12px">' + escapeHtml(e.term||'') + '</td>'
+                + '<td style="font-size:12px;direction:ltr">' + escapeHtml(e.academicYear||'—') + '</td>'
+                + '<td style="font-size:12px;direction:ltr">' + escapeHtml((e.lang||'').toUpperCase()) + '</td>'
+                + '<td>' + st + '</td>'
+                + '<td style="font-size:11px;direction:ltr">' + escapeHtml((e.submittedAt||'').slice(0,10)) + '</td>'
+                + '<td style="white-space:nowrap">' + act + '</td></tr>';
+            }).join('')
+          + '</tbody></table></div>';
+      }
+      var sec = document.createElement('div');
+      sec.innerHTML = html;
+      body.appendChild(sec);
+    } catch (e) { console.warn('eval profile injection failed', e); }
+  };
+})();
+
+/* ------------------------------------------------------------------ *
+ * 12. go() WIRING — make sure go('eval') renders this page            *
+ * ------------------------------------------------------------------ */
+(function patchGo(){
+  if (typeof go !== 'function' || window.__kpEvalGoPatched) return;
+  window.__kpEvalGoPatched = true;
+  var origGo = window.go;
+  window.go = function(page){
+    // Block evaluators from any page other than 'eval' (similar to teacher → 'att')
+    if (typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'evaluator' && page !== 'eval' && page !== 'login') {
+      page = 'eval';
+    }
+    origGo(page);
+    if (page === 'eval') {
+      injectEvaluationsSidebarLink();
+      injectEvaluationsPage();
+      kpEvalPopulateClassSelector();
+      kpEvalRenderManagerList();
+      // mark active in sidebar
+      document.querySelectorAll('.nav').forEach(function(n){ n.classList.remove('on'); });
+      var navEl = document.getElementById('nav-eval'); if (navEl) navEl.classList.add('on');
+      // hide all pages then show ours
+      document.querySelectorAll('.pg').forEach(function(p){ p.classList.remove('on'); });
+      document.getElementById('pg-eval').classList.add('on');
+    }
+  };
+})();
+
+/* ------------------------------------------------------------------ *
+ * 13. SIDEBAR INIT — show or hide nav-eval based on role              *
+ * ------------------------------------------------------------------ */
+window.kpEvalApplyRoleVisibility = function(){
+  injectEvaluationsSidebarLink();
+  var nav = document.getElementById('nav-eval');
+  if (!nav) return;
+  if (typeof currentUser === 'undefined' || !currentUser) { nav.style.display = 'none'; return; }
+  var r = String(currentUser.role || '').toLowerCase();
+  if (r === 'evaluator' || r === 'admin' || r === 'manager' || String(currentUser.username||'').toLowerCase() === 'admin') {
+    nav.style.display = '';
+  } else {
+    nav.style.display = 'none';
+  }
+};
+
+/* ------------------------------------------------------------------ *
+ * 14. ON DOM READY — bootstrap                                        *
+ * ------------------------------------------------------------------ */
+document.addEventListener('DOMContentLoaded', function(){
+  injectEvaluationsSidebarLink();
+  injectEvaluationsPage();
+  kpEvalApplyRoleVisibility();
+  kpEvalRenderManagerList();
+});
+
+})();
+</script>
+
 
 </body>
 </html>
