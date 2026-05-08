@@ -702,7 +702,8 @@ textarea{resize:vertical;min-height:70px}
 
 /* 🛠 ADMIN */
 .admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-.admin-section{background:#fff;border-radius:20px;padding:20px;box-shadow:var(--shadow);border:1.5px solid #f0f6f3}
+.admin-section{background:#fff;border-radius:20px;padding:20px;box-shadow:var(--shadow);border:1.5px solid #f0f6f3;min-width:0}
+.admin-grid > *{min-width:0}
 .admin-section h3{
   font-family:var(--display);
   font-size:16px;
@@ -714,6 +715,17 @@ textarea{resize:vertical;min-height:70px}
 }
 .admin-user-row,.admin-class-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #f0f0f0;font-size:13px}
 .admin-user-row:last-child,.admin-class-row:last-child{border-bottom:none}
+.kp-admin-users-table-wrap{width:100%;max-width:100%;overflow-x:auto;overflow-y:auto;direction:rtl;display:block;contain:layout paint;-webkit-overflow-scrolling:touch}
+.kp-admin-users-table{width:max-content!important;min-width:920px!important;max-width:none!important;table-layout:auto}
+.kp-admin-users-table td,.kp-admin-users-table th{vertical-align:middle;white-space:nowrap}
+.kp-admin-users-table td:nth-child(4){white-space:normal;min-width:190px;max-width:260px;line-height:1.6}
+.kp-admin-users-table .btn-group{justify-content:flex-start;flex-wrap:nowrap}
+.kp-admin-user-tr.is-disabled td{background:#fff7f7!important;opacity:.82}
+@media(max-width:760px){
+  .kp-admin-users-table{font-size:12px!important}
+  .kp-admin-users-table th,.kp-admin-users-table td{padding:8px 9px!important}
+  .kp-admin-users-table .btn{padding:5px 9px;font-size:11.5px}
+}
 .logo-preview{width:120px;height:120px;object-fit:contain;border:3px solid var(--border);border-radius:18px;background:#f9f9f9;padding:6px}
 .logo-preview-empty{
   width:120px;
@@ -2577,7 +2589,7 @@ body.kp-evaluator #pg-eval{display:block!important}
           <div id="admin-classes-list" style="margin-bottom:12px"></div>
           <button class="btn btn-g btn-sm" onclick="openAddClass()">＋ إضافة فصل</button>
         </div>
-        <div class="admin-section">
+        <div class="admin-section" style="grid-column:1/-1">
           <h3>👥 إدارة المستخدمين</h3>
           <div id="admin-users-list" style="margin-bottom:12px"></div>
           <button class="btn btn-g btn-sm" onclick="openAddUser()">＋ إضافة مستخدم</button>
@@ -9475,52 +9487,90 @@ function escapeAdminHtml(v){
     return ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'})[ch];
   });
 }
+function adminJsArg(v){
+  return JSON.stringify(String(v == null ? '' : v))
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/'/g,'&#39;')
+    .replace(/"/g,'&quot;');
+}
+function adminUserRoleLabel(u){
+  var role = (u && u.role) || 'staff';
+  if (role === 'admin') return isPrimaryAdminUser(u) ? 'المدير الأساسي' : 'مدير';
+  if (role === 'teacher') return 'متابعة الحضور';
+  if (role === 'evaluator') return 'مقيّم الطلاب';
+  return 'موظف';
+}
+function adminUserRoleBadge(u){
+  var role = (u && u.role) || 'staff';
+  var cls = role === 'admin' ? 'bg' : (role === 'teacher' ? 'by' : (role === 'evaluator' ? 'bo' : 'bb'));
+  return '<span class="b '+cls+'">' + escapeAdminHtml(adminUserRoleLabel(u)) + '</span>';
+}
+function adminUserClassesText(u){
+  if (!u || (u.role !== 'teacher' && u.role !== 'evaluator')) return '—';
+  if (!Array.isArray(u.classes) || !u.classes.length) return '⚠️ بدون فصل معيّن';
+  return u.classes.map(function(c){ return (CLASSES[c] && CLASSES[c].emoji ? CLASSES[c].emoji+' ' : '') + c; }).join(' • ');
+}
 function renderAdminUsers() {
   const users = JSON.parse(localStorage.getItem('kp_users') || '[]');
   const el = document.getElementById('admin-users-list');
   if(!el) return;
-  el.innerHTML = users.map(u => {
-    var isAdmin = u.role === 'admin';
-    var isTeacher = u.role === 'teacher';
+
+  if (!users.length) {
+    el.innerHTML = '<div class="email-hint">لا يوجد مستخدمون حالياً.</div>';
+    return;
+  }
+
+  var rows = users.map(function(u){
     var isPrimaryAdmin = isPrimaryAdminUser(u);
-    var canEditThisUser = !isPrimaryAdmin || canCurrentUserManagePrimaryAdmin();
-    var canSeePasswords = canCurrentUserSeePasswords();
-    var roleLabel = isAdmin ? (isPrimaryAdmin ? 'المدير الأساسي' : 'مدير') : (isTeacher ? 'معلمة' : 'موظف');
-    var roleBg = isAdmin ? '#d0f0e0' : (isTeacher ? '#fff3c4' : 'var(--bp)');
-    var roleFg = isAdmin ? '#0e5e30' : (isTeacher ? '#8a5c00' : 'var(--b1)');
-    var shownPassword = canSeePasswords ? escapeAdminHtml(u.password || '') : maskPasswordValue(u.password);
     var disabled = u.disabled === true;
-    var userRowStyle = disabled ? 'opacity:.62;background:#fff7f7;border-radius:12px;padding:9px' : '';
-    var disabledBadge = disabled
-      ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:800;background:#ffe5e3;color:#a82323;margin-right:6px">🚫 معطّل</span>'
-      : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:800;background:#dcf5e6;color:#0e6b35;margin-right:6px">✅ فعّال</span>';
-    var classesHtml = '';
-    if (isTeacher && Array.isArray(u.classes) && u.classes.length) {
-      classesHtml = '<div style="font-size:11.5px;color:var(--muted);margin-top:4px;font-weight:700">📚 ' +
-        u.classes.map(function(c){ return (CLASSES[c] && CLASSES[c].emoji ? CLASSES[c].emoji+' ' : '') + c; }).join(' • ') +
-        '</div>';
-    } else if (isTeacher) {
-      classesHtml = '<div style="font-size:11.5px;color:var(--r1);margin-top:4px;font-weight:700">⚠️ بدون فصل معيّن</div>';
-    }
-    return `
-    <div class="admin-user-row" style="${userRowStyle}">
-      <div>
-        <b>${u.name || u.username}</b>
-        <span style="color:var(--muted);font-size:12px;margin-right:6px">(@${u.username})</span>
-        <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:${roleBg};color:${roleFg}">${roleLabel}</span>
-        ${disabledBadge}
-        <div style="font-size:11.5px;color:var(--muted);margin-top:4px;font-weight:700">🔐 كلمة المرور: <span style="direction:ltr;unicode-bidi:embed">${shownPassword}</span></div>
-        ${classesHtml}
-      </div>
-      <div class="btn-group">
-        ${canEditThisUser ? `<button class="btn btn-b btn-sm" onclick="openEditUser('${u.username.replace(/'/g,"\'")}')">✏️ تعديل</button>` : '<span style="font-size:11px;color:var(--muted);font-weight:800">🔒 محمي</span>'}
-        ${isTeacher ? `<button class="btn btn-out btn-sm" onclick="openEditUserClasses('${u.username.replace(/'/g,"\'")}')">📚 الفصول</button>` : ''}
-        ${(!isPrimaryAdmin && (!currentUser || currentUser.username !== u.username)) ? `<button class="btn ${disabled ? 'btn-g' : 'btn-y'} btn-sm" onclick="toggleUserStatus('${u.username.replace(/'/g,"\'")}')">${disabled ? '🟢 تفعيل' : '🔴 تعطيل'}</button>` : ''}
-        ${!isPrimaryAdmin ? `<button class="btn btn-r btn-sm" onclick="deleteUser('${u.username.replace(/'/g,"\'")}')">🗑</button>` : '<span style="font-size:11px;color:var(--muted)">رئيسي</span>'}
-      </div>
-    </div>`;
+    var canEditThisUser = !isPrimaryAdmin || canCurrentUserManagePrimaryAdmin();
+    var canChangeStatus = !isPrimaryAdmin && (!currentUser || currentUser.username !== u.username);
+    var canDeleteThisUser = !isPrimaryAdmin && (!currentUser || currentUser.username !== u.username);
+    var canResetThisPassword = canEditThisUser && (!isPrimaryAdmin || canCurrentUserManagePrimaryAdmin());
+    var usernameArg = adminJsArg(u.username);
+    var classesText = adminUserClassesText(u);
+    var classesClass = classesText.indexOf('⚠️') === 0 ? 'color:var(--r1);font-weight:800' : 'color:var(--muted);font-weight:800';
+
+    return ''
+      + '<tr class="kp-admin-user-tr' + (disabled ? ' is-disabled' : '') + '">'
+      + '  <td style="direction:ltr;text-align:left;font-weight:900">@' + escapeAdminHtml(u.username || '') + '</td>'
+      + '  <td><b>' + escapeAdminHtml(u.name || u.username || '') + '</b>' + (isPrimaryAdmin ? ' <span class="b bg">رئيسي</span>' : '') + '</td>'
+      + '  <td>' + adminUserRoleBadge(u) + '</td>'
+      + '  <td style="min-width:210px;' + classesClass + '">' + escapeAdminHtml(classesText) + '</td>'
+      + '  <td>' + (disabled ? '<span class="b br">🚫 معطّل</span>' : '<span class="b bg">✅ فعّال</span>') + '</td>'
+      + '  <td>'
+      + '    <div class="btn-group" style="min-width:360px">'
+      +        (canEditThisUser ? '<button class="btn btn-b btn-sm" onclick="openEditUser(' + usernameArg + ')">✏️ تعديل</button>' : '<span class="b bgr">🔒 محمي</span>')
+      +        ((u.role === 'teacher' || u.role === 'evaluator') && canEditThisUser ? '<button class="btn btn-out btn-sm" onclick="openEditUserClasses(' + usernameArg + ')">📚 الفصول</button>' : '')
+      +        (canChangeStatus ? '<button class="btn ' + (disabled ? 'btn-g' : 'btn-y') + ' btn-sm" onclick="toggleUserStatus(' + usernameArg + ')">' + (disabled ? '🟢 تفعيل' : '🔴 تعطيل') + '</button>' : '')
+      +        (canResetThisPassword ? '<button class="btn btn-out btn-sm" onclick="resetUserPassword(' + usernameArg + ')">🔑 تغيير كلمة السر</button>' : '')
+      +        (canDeleteThisUser ? '<button class="btn btn-r btn-sm" onclick="deleteUser(' + usernameArg + ')">🗑 حذف</button>' : '<span class="b bgr">لا يحذف</span>')
+      + '    </div>'
+      + '  </td>'
+      + '</tr>';
   }).join('');
+
+  el.innerHTML = ''
+    + '<div class="tw kp-admin-users-table-wrap" style="max-height:520px">'
+    + '  <table class="tbl kp-admin-users-table">'
+    + '    <thead>'
+    + '      <tr>'
+    + '        <th>اسم المستخدم</th>'
+    + '        <th>الاسم الكامل</th>'
+    + '        <th>الدور</th>'
+    + '        <th>الفصول المعيّنة</th>'
+    + '        <th>الحالة</th>'
+    + '        <th>الإجراءات</th>'
+    + '      </tr>'
+    + '    </thead>'
+    + '    <tbody>' + rows + '</tbody>'
+    + '  </table>'
+    + '</div>'
+    + '<div style="font-size:12px;color:var(--muted);font-weight:800;margin-top:8px">↔️ على الموبايل اسحبي الجدول يمين/يسار للوصول لكل الأزرار.</div>';
 }
+
 
 // 🔒 Modal-based add-user UI supporting role=teacher with multi-class selection
 function openAddUser() {
@@ -9755,7 +9805,7 @@ function openEditUserClasses(username){
   var users = JSON.parse(localStorage.getItem('kp_users') || '[]');
   var u = users.find(function(x){ return x.username === username; });
   if (!u) return alert('المستخدم غير موجود');
-  if (u.role !== 'teacher') return alert('هذا الخيار للمعلمات فقط');
+  if (u.role !== 'teacher' && u.role !== 'evaluator') return alert('هذا الخيار لمتابعة الحضور أو مقيّم الطلاب فقط');
   var ov = document.getElementById('edit-user-classes-overlay');
   if (!ov) {
     ov = document.createElement('div');
@@ -9806,6 +9856,33 @@ function openEditUserClasses(username){
     alert(ok ? '✅ تم تحديث الفصول' : '✅ تم محلياً (سيُرفع لاحقاً)');
   };
   ov.classList.add('on');
+}
+
+
+async function resetUserPassword(username) {
+  if (currentUser?.role !== 'admin') return alert('للمدير فقط');
+  var usersNow;
+  try {
+    const refreshed = await loadUsersFromFirebase();
+    usersNow = Array.isArray(refreshed.users) ? refreshed.users : JSON.parse(localStorage.getItem('kp_users') || '[]');
+  } catch(_e) {
+    usersNow = JSON.parse(localStorage.getItem('kp_users') || '[]');
+  }
+  var idx = usersNow.findIndex(function(x){ return x.username === username; });
+  if (idx === -1) return alert('المستخدم غير موجود');
+  if (isPrimaryAdminUser(usersNow[idx]) && !canCurrentUserManagePrimaryAdmin()) return alert('❌ لا يمكن تعديل حساب المستخدم admin');
+  var next = window.prompt('اكتبي كلمة السر الجديدة للمستخدم @' + username + ' (٤ خانات على الأقل):', '');
+  if (next == null) return;
+  next = String(next).trim();
+  if (!next || next.length < 4) return alert('كلمة السر قصيرة جداً (٤ خانات على الأقل)');
+  usersNow[idx].password = next;
+  usersNow[idx].mustChangePassword = true;
+  usersNow[idx].updatedAt = new Date().toISOString();
+  usersNow[idx].updatedBy = (currentUser && (currentUser.username || currentUser.name)) || 'admin';
+  localStorage.setItem('kp_users', JSON.stringify(usersNow));
+  renderAdminUsers();
+  var ok = await saveUsersToFirebase(usersNow);
+  alert(ok ? '✅ تم تغيير كلمة السر وحفظها على Firebase' : '⚠️ تم تغيير كلمة السر محلياً، لكن تعذر الحفظ على Firebase حالياً');
 }
 
 
