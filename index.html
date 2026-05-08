@@ -21570,15 +21570,22 @@ function injectEvaluationsPage(){
       + '.kp-eval-card-body{display:flex;flex-direction:column}'
       + '.kp-eval-card-month{padding:8px 10px;border-top:1px solid #f0f0f0}'
       + '.kp-eval-card-month:first-child{border-top:none}'
-      + '.kp-eval-card-month-label{font-size:11px;font-weight:800;margin-bottom:6px;color:#444;text-align:start}'
+      + '.kp-eval-card-month-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}'
+      + '.kp-eval-card-month-label{font-size:11px;font-weight:800;color:#444;text-align:start}'
+      + '.kp-eval-card-clear{background:transparent;color:#888;border:1px solid #ddd;border-radius:6px;padding:2px 8px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;line-height:1.2}'
+      + '.kp-eval-card-clear:hover,.kp-eval-card-clear:focus{background:#fff5f5;border-color:#e57373;color:#c62828}'
       + '.kp-eval-card-opts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}'
       + '.kp-eval-card-opt{display:flex;align-items:center;gap:6px;padding:8px 6px;border:1.5px solid #ddd;border-radius:8px;cursor:pointer;font-size:11.5px;font-weight:600;background:#fff;line-height:1.2;min-height:42px;justify-content:center;text-align:center}'
       + '.kp-eval-card-opt input[type="radio"]{width:18px;height:18px;cursor:pointer;flex-shrink:0;margin:0}'
       + '.kp-eval-card-opt:has(input:checked){border-color:#1a4a82;background:#e3f2fd;color:#0d47a1}'
       + '.kp-eval-card-opt input:disabled{cursor:not-allowed}'
       + '.kp-eval-card-opt:has(input:disabled){opacity:0.6;cursor:not-allowed;background:#f5f5f5}'
-      + '@media (max-width: 720px){'
-      + '  /* MOBILE — flip the layout: cards visible, table hidden. */'
+      + '@media (max-width: 900px), (pointer: coarse){'
+      + '  /* MOBILE / TOUCH — flip the layout: cards visible, table hidden.'
+      + '     We use BOTH a viewport width check and a pointer-coarse check'
+      + '     because some Android devices report css-pixel widths over 720px'
+      + '     (the previous breakpoint) due to high DPI or browser scaling.'
+      + '     pointer:coarse covers all real touchscreens — phones, tablets. */'
       + '  .kp-eval-desktop-only{display:none !important}'
       + '  .kp-eval-mobile-only{display:flex !important}'
       + '  .kp-eval-scroll-hint{display:none !important}'
@@ -21646,6 +21653,65 @@ function injectEvaluationsPage(){
   document.getElementById('eval-lang').addEventListener('change', kpEvalRenderForm);
   document.getElementById('eval-year').addEventListener('change', kpEvalOnYearChange);
   kpEvalPopulateYearSelector();
+
+  // CLEAR-SELECTION + TOGGLE-OFF support inside the form host. Native HTML
+  // radios cannot be deselected by clicking, so the user is stuck with any
+  // mistaken click. We add two affordances:
+  //  1. A small "✕ مسح" button per month block clears all 3 radios at once.
+  //  2. Clicking an already-selected option toggles it OFF (deselects).
+  // Both also propagate to the parallel table-view radios (same `name`).
+  var formHost = document.getElementById('eval-form-host');
+  if (formHost) {
+    // Track which radio was selected BEFORE this click started, per group.
+    // We need this because the browser auto-checks the radio on click, so by
+    // the time `click` fires, we can no longer tell if it was already checked.
+    var preClickState = {}; // name → value-of-checked-radio-before-click (string|null)
+
+    function captureState(ev){
+      // Find the option (label or radio) that the user is interacting with.
+      var label = ev.target.closest('.kp-eval-card-opt');
+      var r = (label && label.querySelector('input[type="radio"]')) || ev.target.closest('input[type="radio"]');
+      if (!r || r.disabled) return;
+      // Snapshot the currently-checked value in this radio group.
+      var checkedNow = document.querySelector('input[type="radio"][name="' + r.name + '"]:checked');
+      preClickState[r.name] = checkedNow ? checkedNow.value : null;
+      preClickState['__target_' + r.name] = r.value;
+    }
+    formHost.addEventListener('mousedown', captureState);
+    formHost.addEventListener('touchstart', captureState, {passive: true});
+
+    formHost.addEventListener('click', function(ev){
+      // Handle the clear button first
+      var clearBtn = ev.target.closest('.kp-eval-card-clear');
+      if (clearBtn) {
+        ev.preventDefault();
+        var rowIdx = clearBtn.getAttribute('data-row');
+        var monthIdx = clearBtn.getAttribute('data-month');
+        var name = 'eval-r-' + rowIdx + '-' + monthIdx;
+        // Clear ALL radios with this name (covers both card-view and table-view)
+        document.querySelectorAll('input[type="radio"][name="' + name + '"]').forEach(function(r){
+          r.checked = false;
+        });
+        return;
+      }
+      // Toggle-off: if the option the user clicked was already the selected
+      // one, deselect it. We test against preClickState which was captured on
+      // mousedown/touchstart BEFORE the browser auto-checked.
+      var label = ev.target.closest('.kp-eval-card-opt');
+      var r = (label && label.querySelector('input[type="radio"]')) || ev.target.closest('input[type="radio"]');
+      if (!r || r.disabled) return;
+      var prevValue = preClickState[r.name];
+      if (prevValue !== undefined && prevValue === r.value) {
+        // User re-clicked the already-selected option → toggle it off.
+        document.querySelectorAll('input[type="radio"][name="' + r.name + '"]').forEach(function(other){
+          other.checked = false;
+        });
+        ev.preventDefault();
+      }
+      // Reset state for next click
+      delete preClickState[r.name];
+    });
+  }
 }
 
 // Auto-detect the default academic year string (e.g. "2025-2026").
@@ -21990,7 +22056,13 @@ function kpEvalBuildFormHTML(form, student, editable, savedData, quarterId, lock
         }
         cardMonthBlocks.push(
           '<div class="kp-eval-card-month ' + cmClass + '">'
-          + '<div class="kp-eval-card-month-label">' + escapeHtml(form.months[cm]) + lockMark + '</div>'
+          + '<div class="kp-eval-card-month-head">'
+          +   '<div class="kp-eval-card-month-label">' + escapeHtml(form.months[cm]) + lockMark + '</div>'
+          + (cmDisabled
+              ? ''
+              : '  <button type="button" class="kp-eval-card-clear" data-row="' + rowIdx + '" data-month="' + cm + '" title="' + (isAr ? 'مسح الاختيار' : 'Clear') + '">✕ ' + (isAr ? 'مسح' : 'Clear') + '</button>'
+            )
+          + '</div>'
           + '<div class="kp-eval-card-opts">' + optsHtml + '</div>'
           + '</div>'
         );
@@ -22117,7 +22189,21 @@ function kpEvalCollectFormData(form){
       rowIdx += 1;
       data.skills[String(rowIdx)] = [null, null, null];
       for (var m = 0; m < 3; m++){
-        var sel = document.querySelector('input[name="eval-r-' + rowIdx + '-' + m + '"]:checked');
+        // Find the checked radio for this row+month. Both layouts (table +
+        // cards) emit radios with the same name; we prefer the VISIBLE one
+        // because the hidden layout could theoretically hold a stale check
+        // from before a layout switch (e.g. user rotated the device, or the
+        // CSS media query result changed). offsetParent is null when the
+        // element or any ancestor has display:none — so this filter naturally
+        // picks the on-screen layout.
+        var checks = document.querySelectorAll('input[name="eval-r-' + rowIdx + '-' + m + '"]:checked');
+        var sel = null;
+        for (var ci = 0; ci < checks.length; ci++){
+          if (checks[ci].offsetParent !== null) { sel = checks[ci]; break; }
+        }
+        // If no visible one found but a hidden one IS checked, fall back to
+        // it — better to honour the user's earlier selection than to lose data.
+        if (!sel && checks.length > 0) sel = checks[0];
         data.skills[String(rowIdx)][m] = sel ? Number(sel.value) : null;
       }
     });
