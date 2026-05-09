@@ -18979,6 +18979,10 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     window.__kpPrintOpenWrapped = true;
     window.open = function(url, target, features){
       try {
+        if (window.__kpAllowRealPopupOnce) {
+          window.__kpAllowRealPopupOnce = false;
+          return realOpen.apply(window, arguments);
+        }
         // Treat empty URL with _blank target as a print popup attempt
         var isPrintIntent = (url === '' || url === 'about:blank' || url == null) && (target === '_blank' || target == null);
         if (isPrintIntent && isMobile()) {
@@ -22134,9 +22138,12 @@ function kpEvalBuildFormHTML(form, student, editable, savedData, quarterId, lock
   // Compute the evaluation period (which months have data) for read-only renders
   var periodLine = '';
   if (savedData) {
-    var monthsHave = (Array.isArray(savedData.submittedMonths) && savedData.submittedMonths.length === 3)
-      ? savedData.submittedMonths
+    var monthsClaimed = (Array.isArray(savedData.submittedMonths) && savedData.submittedMonths.length === 3)
+      ? savedData.submittedMonths.slice()
       : kpEvalComputeEvaluatedMonths(savedData);
+    var monthsActual = kpEvalComputeEvaluatedMonths(savedData);
+    var monthsHave = [false,false,false];
+    for (var mh = 0; mh < 3; mh++) monthsHave[mh] = !!(monthsClaimed[mh] && monthsActual[mh]);
     var monthLabels = [];
     for (var mi = 0; mi < 3; mi++) if (monthsHave[mi]) monthLabels.push(form.months[mi]);
     if (monthLabels.length === 3) periodLine = isAr ? 'كامل الفصل (٣ أشهر)' : 'Full term (3 months)';
@@ -22283,9 +22290,11 @@ function kpEvalBuildFormHTML(form, student, editable, savedData, quarterId, lock
   // skill data.
   var submittedMo = [false, false, false];
   if (savedData) {
-    submittedMo = (Array.isArray(savedData.submittedMonths) && savedData.submittedMonths.length === 3)
+    var submittedClaimed = (Array.isArray(savedData.submittedMonths) && savedData.submittedMonths.length === 3)
       ? savedData.submittedMonths.slice()
       : kpEvalComputeEvaluatedMonths(savedData);
+    var submittedActual = kpEvalComputeEvaluatedMonths(savedData);
+    for (var sm = 0; sm < 3; sm++) submittedMo[sm] = !!(submittedClaimed[sm] && submittedActual[sm]);
   }
   // Resolve the evaluator's display name. Prefer the saved `submittedBy`
   // on the record; if rendering a fresh form (no savedData yet), fall back
@@ -22870,6 +22879,34 @@ async function kpEvalOpenPrintWindow(id, mode){
   // We do this in a temporary DIV so we can use querySelector.
   var temp = document.createElement('div');
   temp.innerHTML = formHtml;
+
+  // IMPORTANT PRINT FIX:
+  // kpEvalBuildFormHTML emits both the official table and the mobile card layout.
+  // The radios in both layouts share the same name. When the HTML is parsed,
+  // the later mobile-card radios steal the checked state from the earlier table
+  // radios. Then the print/PDF CSS hides the cards and shows only a blank table.
+  // For print/PDF we keep ONLY the official table and re-apply the saved answers
+  // to the table before serializing the popup document.
+  try {
+    var cardsForPrint = temp.querySelector('.kp-eval-cards');
+    if (cardsForPrint && cardsForPrint.parentNode) cardsForPrint.parentNode.removeChild(cardsForPrint);
+    if (e && e.skills) {
+      Object.keys(e.skills).forEach(function(rowKey){
+        var vals = e.skills[rowKey] || [];
+        for (var mm = 0; mm < 3; mm++) {
+          var vv = vals[mm];
+          if (vv === undefined || vv === null || vv === '') continue;
+          var selector = 'table.kp-eval-table input[name="eval-r-' + rowKey + '-' + mm + '"][value="' + Number(vv) + '"]';
+          var inp = temp.querySelector(selector);
+          if (inp) {
+            inp.checked = true;
+            inp.setAttribute('checked', 'checked');
+          }
+        }
+      });
+    }
+  } catch(_printSyncErr) {}
+
   if (e.status === 'approved' && e.stampDataUrl) {
     var stampHtml = ''
       + '<img src="' + e.stampDataUrl + '" alt="stamp" style="height:64px;display:block;margin:0 auto"/>'
@@ -22913,14 +22950,6 @@ async function kpEvalOpenPrintWindow(id, mode){
   // We embed Tajawal font from Google Fonts (already used elsewhere in the
   // app for prints) so Arabic looks consistent with the on-screen form.
 
-  // First open the popup synchronously so the browser doesn't classify it
-  // as a programmatic pop-up after async work. We point at "about:blank"
-  // initially, then navigate to the Blob URL.
-  var w = window.open('about:blank', '_blank', 'width=1100,height=900');
-  if (!w) {
-    alert('⚠️ تعذّر فتح نافذة التصدير. ربما يحجب المتصفح النوافذ المنبثقة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع ثم المحاولة مرة أخرى.');
-    return;
-  }
   var html = ''
     + '<!DOCTYPE html><html lang="' + docLang + '" dir="' + docDir + '"><head>'
     + '<meta charset="UTF-8">'
@@ -22972,6 +23001,11 @@ async function kpEvalOpenPrintWindow(id, mode){
     + '  .kp-eval-header ~ div[style*="grid-template-columns:1fr 1fr"]{font-size:10px !important;margin-top:4px !important}'
     + '  .kp-eval-header ~ div[style*="grid-template-columns:repeat(3,1fr)"]{font-size:9px !important;margin-top:4px !important;color:#666}'
     + '  .kp-eval-header ~ div[style*="grid-template-columns:repeat(3,1fr)"] div[style*="border-bottom"]{height:18px !important}'
+    + '  /* PRINT/PDF FIX: the evaluation builder emits BOTH desktop table and mobile cards. */'
+    + '  /* In the export/print popup we must force only the official table view, */'
+    + '  /* otherwise Chrome prints both layouts and the form appears duplicated. */'
+    + '  .kp-eval-mobile-only,.kp-eval-cards{display:none !important}'
+    + '  .kp-eval-desktop-only,.kp-eval-table-wrap{display:block !important}'
     + '  /* Hide on-screen scroll wrapper visuals */'
     + '  .kp-eval-table-wrap{border:none !important;overflow:visible !important}'
     + '  .kp-eval-scroll-hint{display:none !important}'
@@ -23062,19 +23096,21 @@ async function kpEvalOpenPrintWindow(id, mode){
     + '<\/script>'
     + '</body></html>';
 
-  // Hand the popup the assembled HTML via a Blob URL. The browser then
-  // loads it as a normal navigation — DOMContentLoaded/load/fonts.ready all
-  // fire correctly, and the inline <script> that triggers window.print()
-  // executes reliably (unlike document.write into a freshly-opened popup).
+  // Open a real tab/window for evaluation print/export, including on mobile.
+  // The mobile hidden-iframe print route is good for small lists, but it causes
+  // blank previews for large evaluation documents on some Android browsers.
+  window.__kpAllowRealPopupOnce = true;
+  var w = window.open('', '_blank', 'width=1100,height=900');
+  if (!w) {
+    alert('⚠️ تعذّر فتح نافذة التصدير. ربما يحجب المتصفح النوافذ المنبثقة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع ثم المحاولة مرة أخرى.');
+    return;
+  }
   try {
     var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     var blobUrl = URL.createObjectURL(blob);
     w.location.replace(blobUrl);
-    // Revoke the URL once the popup has loaded (give it a generous window).
     setTimeout(function(){ try { URL.revokeObjectURL(blobUrl); } catch(_e){} }, 60000);
   } catch (err) {
-    // Fallback: if Blob/URL APIs fail (very old browser), fall back to the
-    // legacy document.write path. Should never happen on any modern device.
     try {
       w.document.open();
       w.document.write(html);
@@ -23206,6 +23242,33 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
+
+
+<script>
+(function installStudentChangeRequestManager(){
+  if (window.__kpStudentChangeRequestManagerInstalled) return;
+  window.__kpStudentChangeRequestManagerInstalled = true;
+  var requests = [];
+  var loaded = false;
+  var filter = 'pending';
+  function esc2(v){ return (typeof escapeHtml === 'function' ? escapeHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];})); }
+  function fbBase(){ return (typeof FB_URL !== 'undefined' && FB_URL) ? String(FB_URL).replace(/[/]$/,'') : 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data'; }
+  function jsArg(v){ var bs=String.fromCharCode(92); return String(v == null ? '' : v).split(bs).join(bs+bs).split("'").join(bs+"'").replace(/[\r\n]+/g,' '); }
+  function rowsFromNode(node, group){ if (!node) return []; if (Array.isArray(node)) return node.filter(Boolean).map(function(r){ return Object.assign({}, r, {_legacyGroup:group||''}); }); return Object.keys(node).map(function(k){ var r=node[k]||{}; return Object.assign({}, r, {id:r.id||k, _legacyGroup:group||''}); }); }
+  async function loadRequests(){ try { var res = await fetch(fbBase() + '/studentChangeRequests.json?ts=' + Date.now()); var data = await res.json() || {}; var flat = []; Object.keys(data).forEach(function(k){ if (k === 'pending' || k === 'approved' || k === 'rejected') return; var r = data[k]; if (r && typeof r === 'object') flat.push(Object.assign({}, r, {id:r.id||k})); }); requests = flat.concat(rowsFromNode(data.pending, 'pending')).concat(rowsFromNode(data.approved, 'approved')).concat(rowsFromNode(data.rejected, 'rejected')); var seen = {}; requests = requests.filter(function(r){ var id=String(r.id||''); if(!id || seen[id]) return false; seen[id]=true; return true; }); loaded = true; } catch(e) { console.warn('student change requests load failed', e); requests = []; loaded = true; } }
+  function statusOf(r){ return String(r.status || r._legacyGroup || 'pending').toLowerCase(); }
+  function findStudentForRequest(r){ var sid = String(r.studentId || ''); var arr = (typeof students !== 'undefined' && Array.isArray(students)) ? students : []; return arr.find(function(s){ return sid && String(s.id) === sid; }) || arr.find(function(s){ return String(s.name||'').trim() && String(s.name||'').trim() === String(r.studentName||'').trim(); }); }
+  function mapField(key, c){ var direct = {name:'name',nameEn:'nameEn',dob:'dob',bpl:'bpl',gen:'gen',nat:'nat',idNo:'idNo',cls:'cls',dad:'dad',dph:'dph',dadEmail:'dadEmail',job:'job',mom:'mom',mph:'mph',momEmail:'momEmail',momJob:'momJob',addr:'addr',emergName:'emergName',emergRel:'emergRel',emergMob:'emergMob',health:'health',note:'note'}; var system = {birthPlace:'bpl',gender:'gen',nationality:'nat',fatherName:'dad',fatherPhone:'dph',fatherEmail:'dadEmail',fatherJob:'job',motherName:'mom',motherPhone:'mph',motherEmail:'momEmail',motherJob:'momJob',address:'addr',emergencyName:'emergName',emergencyRel:'emergRel',emergencyPhone:'emergMob',notes:'note'}; return direct[key] || direct[c && c.field] || direct[c && c.systemField] || system[c && c.systemField] || key; }
+  function ensureCard(){ var page = document.getElementById('pg-forms'); if (!page || document.getElementById('student-change-requests-card')) return; var firstCard = page.querySelector('.card'); if (!firstCard) return; var card = document.createElement('div'); card.className = 'card'; card.id = 'student-change-requests-card'; card.innerHTML = '<div class="ct"><div>📝 طلبات تعديل بيانات أولياء الأمور <span class="b by" id="student-change-pending-badge">0</span></div><div class="btn-group"><select id="student-change-filter" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px"><option value="pending">قيد المراجعة</option><option value="approved">المعتمدة</option><option value="rejected">المرفوضة</option><option value="all">الكل</option></select><button class="btn btn-out btn-sm" id="student-change-refresh">🔄 تحديث</button></div></div><div id="student-change-requests-list"><div style="text-align:center;padding:20px;color:var(--muted)">جاري تحميل طلبات التعديل...</div></div>'; firstCard.parentNode.insertBefore(card, firstCard.nextSibling); document.getElementById('student-change-refresh').onclick = function(){ loadRequests().then(renderRequests); }; document.getElementById('student-change-filter').onchange = function(){ filter=this.value; renderRequests(); }; }
+  function renderRequests(){ ensureCard(); var host = document.getElementById('student-change-requests-list'); if (!host) return; if (!loaded) { host.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">جاري تحميل طلبات التعديل...</div>'; return; } var pending = requests.filter(function(r){ return statusOf(r) === 'pending'; }).length; var badge = document.getElementById('student-change-pending-badge'); if (badge) badge.textContent = pending; var rows = requests.filter(function(r){ return filter === 'all' || statusOf(r) === filter; }).sort(function(a,b){ return String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||'')); }); if (!rows.length) { host.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">لا توجد طلبات تعديل بيانات</div>'; return; } host.innerHTML = rows.map(function(r){ var changes = r.changes || {}; var changeHtml = Object.keys(changes).map(function(k){ var c=changes[k]||{}; return '<tr><td>'+esc2(c.label||k)+'</td><td>'+esc2(c.oldValue||'—')+'</td><td style="font-weight:800;color:var(--g1)">'+esc2(c.newValue||'—')+'</td></tr>'; }).join('') || '<tr><td colspan="3">لا توجد حقول معدلة، يوجد ملاحظة فقط.</td></tr>'; var st = statusOf(r); var actions = st === 'pending' ? '<button class="btn btn-g btn-sm" onclick="kpApproveStudentChangeRequest(&quot;'+esc2(r.id)+'&quot;)">✅ اعتماد</button> <button class="btn btn-r btn-sm" onclick="kpRejectStudentChangeRequest(&quot;'+esc2(r.id)+'&quot;)">❌ رفض</button>' : '<span class="b '+(st==='approved'?'bg':'br')+'">'+(st==='approved'?'معتمد':'مرفوض')+'</span>'; return '<div class="form-req-card" style="display:block"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div><div class="form-req-name">'+esc2(r.studentName||'طالب غير محدد')+'</div><div class="form-req-meta"><span>📧 '+esc2(r.parentEmail||'—')+'</span><span>📅 '+esc2(String(r.createdAt||'').slice(0,10)||'—')+'</span></div></div><div>'+actions+'</div></div><table class="tbl" style="margin-top:10px;font-size:12px"><thead><tr><th>الحقل</th><th>القيمة الحالية</th><th>القيمة المطلوبة</th></tr></thead><tbody>'+changeHtml+'</tbody></table>'+(r.note?'<div style="margin-top:8px;color:var(--muted);font-size:12px">ملاحظة ولي الأمر: '+esc2(r.note)+'</div>':'')+'</div>'; }).join(''); }
+  async function saveRequestStatus(r, status){ var updated = Object.assign({}, r, {status:status, updatedAt:new Date().toISOString(), decidedBy:(currentUser && (currentUser.username || currentUser.name)) || 'admin'}); delete updated._legacyGroup; await fetch(fbBase() + '/studentChangeRequests/' + encodeURIComponent(updated.id) + '.json', {method:'PUT', body:JSON.stringify(updated)}); if (r._legacyGroup) { try { await fetch(fbBase() + '/studentChangeRequests/' + r._legacyGroup + '/' + encodeURIComponent(r.id) + '.json', {method:'DELETE'}); } catch(_e){} } var idx = requests.findIndex(function(x){ return x.id === r.id; }); if (idx >= 0) requests[idx] = updated; }
+  window.kpApproveStudentChangeRequest = async function(id){ var r = requests.find(function(x){ return String(x.id) === String(id); }); if (!r) return; var stu = findStudentForRequest(r); if (!stu) { alert('تعذر العثور على الطالب المرتبط بهذا الطلب.'); return; } if (window.kpConfirmAsync && !(await window.kpConfirmAsync(null, null, 'سيتم تحديث ملف الطالب: ' + (stu.name || r.studentName || '') + '. هل تريدين اعتماد طلب التعديل؟'))) return; var changes = r.changes || {}; Object.keys(changes).forEach(function(k){ var c=changes[k]||{}; stu[mapField(k,c)] = c.newValue; }); stu.updatedAt = new Date().toISOString(); if (typeof saveRecordRemoteAware === 'function') { var ok = await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:stu, keyField:'id', label:'تعديل بيانات الطالب'}); if (!ok) { alert('تعذر حفظ تعديل الطالب على Firebase. لم يتم اعتماد الطلب.'); return; } } await saveRequestStatus(r, 'approved'); if (typeof renderStudents === 'function') renderStudents(); if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم اعتماد طلب تعديل البيانات'); renderRequests(); };
+  window.kpRejectStudentChangeRequest = async function(id){ var r = requests.find(function(x){ return String(x.id) === String(id); }); if (!r) return; if (window.kpConfirmAsync && !(await window.kpConfirmAsync(null, null, 'هل تريدين رفض طلب تعديل بيانات الطالب: ' + (r.studentName || '') + '؟'))) return; await saveRequestStatus(r, 'rejected'); if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم رفض طلب تعديل البيانات'); renderRequests(); };
+  var originalRenderFormRequests = window.renderFormRequests;
+  if (typeof originalRenderFormRequests === 'function' && !originalRenderFormRequests.__studentChangeWrapped) { window.renderFormRequests = function(){ var out = originalRenderFormRequests.apply(this, arguments); ensureCard(); if(!loaded) loadRequests().then(renderRequests); else renderRequests(); return out; }; window.renderFormRequests.__studentChangeWrapped = true; }
+  document.addEventListener('DOMContentLoaded', function(){ ensureCard(); loadRequests().then(renderRequests); });
+})();
+</script>
 
 </body>
 </html>
