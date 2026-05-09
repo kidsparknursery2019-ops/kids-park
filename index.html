@@ -20237,7 +20237,10 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
           }
           if (preserved.length) {
             payload.criticalSectionsPreservedAt = new Date().toISOString();
-            payload.criticalSectionsPreserved = preserved;
+            payload.criticalSectionsPreserved = preserved.reduce(function(map, section){
+              map[section] = true;
+              return map;
+            }, {});
             init = Object.assign({}, init, { body: JSON.stringify(payload) });
             try { console.warn('[KP] Preserved critical Firebase sections during root save:', preserved.join(', ')); } catch(_e){}
           }
@@ -23267,6 +23270,69 @@ document.addEventListener('DOMContentLoaded', function(){
   var originalRenderFormRequests = window.renderFormRequests;
   if (typeof originalRenderFormRequests === 'function' && !originalRenderFormRequests.__studentChangeWrapped) { window.renderFormRequests = function(){ var out = originalRenderFormRequests.apply(this, arguments); ensureCard(); if(!loaded) loadRequests().then(renderRequests); else renderRequests(); return out; }; window.renderFormRequests.__studentChangeWrapped = true; }
   document.addEventListener('DOMContentLoaded', function(){ ensureCard(); loadRequests().then(renderRequests); });
+})();
+</script>
+
+<script id="kp-final-record-shape-only-20260509">
+(function(){
+  if (window.__kpFinalRecordShapeOnly20260509) return;
+  window.__kpFinalRecordShapeOnly20260509 = true;
+  function baseUrl(){ return String((typeof FB_URL === 'string' && FB_URL) ? FB_URL : 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data').replace(/\/+$/, ''); }
+  function safeKey(value){ var raw=String(value==null?'':value).trim() || ('record_'+Date.now()+'_'+Math.random().toString(36).slice(2,8)); return 'k_' + raw.replace(/^k_/,'').replace(/[.#$\[\]\/]/g,'_').replace(/\s+/g,'_'); }
+  function safeRecordKey(value){ var raw=String(value==null?'':value).trim() || ('record_'+Date.now()+'_'+Math.random().toString(36).slice(2,8)); return raw.replace(/[.#$\[\]\/]/g,'_').replace(/\s+/g,'_'); }
+  function arrayFromNode(node){ if(Array.isArray(node)) return node.filter(function(x){return x&&typeof x==='object';}); if(node&&typeof node==='object') return Object.keys(node).map(function(k){var x=node[k]; if(!x||typeof x!=='object') return null; if(!x.firebaseKey) x.firebaseKey=k; return x;}).filter(Boolean); return []; }
+  function userMap(users){ var map={}; arrayFromNode(users).forEach(function(u,i){ if(!u||!u.username||!u.password) return; var k=safeKey(u.firebaseKey||u.username||u.email||i); map[k]=Object.assign({},u,{firebaseKey:k}); }); return map; }
+  function requestFolder(status){ var s=String(status||'pending').toLowerCase(); if(s==='accepted'||s==='approved'||s==='approve'||s==='accept') return 'accepted'; if(s==='rejected'||s==='reject') return 'rejected'; return 'pending'; }
+  function requestKey(row){ return safeRecordKey(row&&(row.firebaseKey||row._fbKey||row.requestId||row.id||row.timestamp||row.createdAt||row.childName||row.studentName||row.name)); }
+  var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+  if (nativeFetch && !window.__kpRecordShapeFetchGuard20260509) {
+    window.__kpRecordShapeFetchGuard20260509 = true;
+    window.fetch = function(input, init){
+      try {
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        var method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+        if (/\/nursery_data\.json(?:\?|$)/.test(url) && (method === 'PATCH' || method === 'PUT') && init && typeof init.body === 'string') {
+          var body = JSON.parse(init.body);
+          if (body && typeof body === 'object') {
+            if (Object.prototype.hasOwnProperty.call(body, 'kp_form_rows')) {
+              if (method === 'PATCH') body.kp_form_rows = null;
+              else delete body.kp_form_rows;
+            }
+            if (Array.isArray(body.kp_users)) body.kp_users = userMap(body.kp_users);
+            if (Array.isArray(body.criticalSectionsPreserved)) {
+              body.criticalSectionsPreserved = body.criticalSectionsPreserved.reduce(function(map, section){
+                map[section] = true;
+                return map;
+              }, {});
+            }
+            init = Object.assign({}, init, { body: JSON.stringify(body) });
+          }
+        }
+      } catch (_e) {}
+      return nativeFetch(input, init);
+    };
+  }
+  window.loadUsersFromFirebase = async function(){
+    try { var res=await fetch(baseUrl()+'/kp_users.json',{cache:'no-store'}); if(!res.ok) throw new Error('HTTP '+res.status); var users=arrayFromNode(await res.json()).filter(function(u){return u&&u.username&&u.password;}); if(users.length){localStorage.setItem('kp_users',JSON.stringify(users)); return {ok:true,users:users,source:'firebase-records'};} }
+    catch(e){ console.warn('loadUsersFromFirebase record-shape fallback:', e&&e.message); }
+    return {ok:false,users:JSON.parse(localStorage.getItem('kp_users')||'[]'),source:'local-fallback'};
+  };
+  window.saveUsersToFirebase = async function(users){
+    if(!Array.isArray(users)) return false;
+    try { var res=await fetch(baseUrl()+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({kp_users:userMap(users),savedAt:new Date().toISOString(),version:3,activeDataShape:'record-based'})}); if(!res.ok) throw new Error('HTTP '+res.status); localStorage.setItem('kp_users',JSON.stringify(users)); return true; }
+    catch(e){ console.warn('saveUsersToFirebase record-shape failed:', e&&e.message); return false; }
+  };
+  async function saveRegistrationRows(rows){
+    rows=Array.isArray(rows)?rows:[rows];
+    var updates={kp_form_rows:null,savedAt:new Date().toISOString(),version:3,activeDataShape:'record-based'};
+    rows.filter(Boolean).forEach(function(row){ var copy=Object.assign({},row); var key=requestKey(copy); var folder=requestFolder(copy.status); copy.firebaseKey=key; copy.status=folder; updates['registrationRequests/'+folder+'/'+key]=copy; });
+    var res=await fetch(baseUrl()+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(updates)});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    return true;
+  }
+  window.saveFormRowRemoteAware = async function(formRow){ try{return await saveRegistrationRows([formRow]);}catch(e){console.error('saveFormRowRemoteAware record-shape failed:',e); return false;} };
+  window.saveFormRowsBatchRemoteAware = async function(formRows){ try{return await saveRegistrationRows(formRows||[]);}catch(e){console.error('saveFormRowsBatchRemoteAware record-shape failed:',e); return false;} };
+  try { loadUsersFromFirebase=window.loadUsersFromFirebase; saveUsersToFirebase=window.saveUsersToFirebase; saveFormRowRemoteAware=window.saveFormRowRemoteAware; saveFormRowsBatchRemoteAware=window.saveFormRowsBatchRemoteAware; } catch(_e){}
 })();
 </script>
 
