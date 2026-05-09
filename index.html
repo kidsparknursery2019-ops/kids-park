@@ -702,8 +702,7 @@ textarea{resize:vertical;min-height:70px}
 
 /* 🛠 ADMIN */
 .admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-.admin-section{background:#fff;border-radius:20px;padding:20px;box-shadow:var(--shadow);border:1.5px solid #f0f6f3;min-width:0}
-.admin-grid > *{min-width:0}
+.admin-section{background:#fff;border-radius:20px;padding:20px;box-shadow:var(--shadow);border:1.5px solid #f0f6f3}
 .admin-section h3{
   font-family:var(--display);
   font-size:16px;
@@ -715,17 +714,7 @@ textarea{resize:vertical;min-height:70px}
 }
 .admin-user-row,.admin-class-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #f0f0f0;font-size:13px}
 .admin-user-row:last-child,.admin-class-row:last-child{border-bottom:none}
-.kp-admin-users-table-wrap{width:100%;max-width:100%;overflow-x:auto;overflow-y:auto;direction:rtl;display:block;contain:layout paint;-webkit-overflow-scrolling:touch}
-.kp-admin-users-table{width:max-content!important;min-width:920px!important;max-width:none!important;table-layout:auto}
-.kp-admin-users-table td,.kp-admin-users-table th{vertical-align:middle;white-space:nowrap}
-.kp-admin-users-table td:nth-child(4){white-space:normal;min-width:190px;max-width:260px;line-height:1.6}
-.kp-admin-users-table .btn-group{justify-content:flex-start;flex-wrap:nowrap}
-.kp-admin-user-tr.is-disabled td{background:#fff7f7!important;opacity:.82}
-@media(max-width:760px){
-  .kp-admin-users-table{font-size:12px!important}
-  .kp-admin-users-table th,.kp-admin-users-table td{padding:8px 9px!important}
-  .kp-admin-users-table .btn{padding:5px 9px;font-size:11.5px}
-}
+.kp-stu-file-hint{font-size:11px;color:var(--muted);font-weight:700;margin-top:2px}.fl input[type=file]{padding:7px;background:#fff;border-style:dashed}
 .logo-preview{width:120px;height:120px;object-fit:contain;border:3px solid var(--border);border-radius:18px;background:#f9f9f9;padding:6px}
 .logo-preview-empty{
   width:120px;
@@ -2589,7 +2578,7 @@ body.kp-evaluator #pg-eval{display:block!important}
           <div id="admin-classes-list" style="margin-bottom:12px"></div>
           <button class="btn btn-g btn-sm" onclick="openAddClass()">＋ إضافة فصل</button>
         </div>
-        <div class="admin-section" style="grid-column:1/-1">
+        <div class="admin-section">
           <h3>👥 إدارة المستخدمين</h3>
           <div id="admin-users-list" style="margin-bottom:12px"></div>
           <button class="btn btn-g btn-sm" onclick="openAddUser()">＋ إضافة مستخدم</button>
@@ -2719,13 +2708,19 @@ body.kp-evaluator #pg-eval{display:block!important}
 
 <!-- Add Student -->
 <div class="ov" id="mo-student">
-  <div class="mo">
+  <div class="mo mo-lg" style="width:min(920px,96vw)">
     <div class="mot" id="mo-stu-title">➕ إضافة طالب جديد</div>
     <div class="fg">
+      <div class="fl fgr" style="background:var(--gp);border:1.5px dashed var(--border);border-radius:14px;padding:10px 12px;color:var(--g1);font-weight:800">📌 تعديل كامل لملف الطالب — نفس بيانات طلب التسجيل تقريباً. التعديلات هنا للمدير وتُحفظ مباشرة في Firebase.</div>
+
+      <div class="fl fgr"><h4 style="color:var(--g1);font-family:var(--display);margin:8px 0 0">👶 بيانات الطفل</h4></div>
       <div class="fl"><label>اسم الطالب *</label><input id="ns-name" placeholder="الاسم الكامل" oninput="autoFillStudentEnglishName()"></div>
       <div class="fl"><label>الاسم بالإنجليزية</label><input id="ns-name-en" placeholder="يُعبأ تلقائياً ويمكن تعديله"></div>
+      <div class="fl"><label>الاسم الأول</label><input id="ns-first-name" placeholder="First name"></div>
+      <div class="fl"><label>اسم العائلة</label><input id="ns-family-name" placeholder="Family name"></div>
       <div class="fl"><label>تاريخ الميلاد</label><input id="ns-dob" type="date"></div>
       <div class="fl"><label>رقم الهوية</label><input id="ns-idno" placeholder="رقم الهوية / Emirates ID"></div>
+      <div class="fl"><label>رقم الجواز</label><input id="ns-passport" placeholder="Passport No."></div>
       <div class="fl"><label>الجنس</label><select id="ns-gen"><option>ذكر</option><option>انثى</option></select></div>
       <div class="fl"><label>الجنسية</label>
         <select id="ns-nat">
@@ -2747,20 +2742,66 @@ body.kp-evaluator #pg-eval{display:block!important}
           <option>أخرى</option>
         </select>
       </div>
-      <div class="fl"><label>الفصل *</label>
-        <select id="ns-cls"></select>
-      </div>
-      <div class="fl"><label>حالة الطالب</label>
-        <select id="ns-student-status"><option value="active">موجود</option><option value="left">ترك</option></select>
-      </div>
+      <div class="fl"><label>الفصل *</label><select id="ns-cls"></select></div>
+      <div class="fl"><label>حالة الطالب</label><select id="ns-student-status"><option value="active">موجود</option><option value="left">ترك</option></select></div>
       <div class="fl"><label>مكان الميلاد</label><input id="ns-bpl" placeholder=""></div>
-      <div class="fl"><label>اسم الأب *</label><input id="ns-dad" placeholder=""></div>
-      <div class="fl"><label>عمل الأب</label><input id="ns-job" placeholder="مهندس / موظف..."></div>
-      <div class="fl"><label>هاتف الأب</label><input id="ns-dph" placeholder="05xxxxxxxx" type="tel"></div>
-      <div class="fl"><label>اسم الأم</label><input id="ns-mom" placeholder=""></div>
-      <div class="fl"><label>هاتف الأم</label><input id="ns-mph" placeholder="05xxxxxxxx" type="tel"></div>
+      <div class="fl"><label>الديانة</label><input id="ns-religion" placeholder=""></div>
+      <div class="fl"><label>اللغة الأم</label><input id="ns-mother-tongue" placeholder=""></div>
+      <div class="fl"><label>لغات أخرى</label><input id="ns-other-languages" placeholder=""></div>
       <div class="fl fgr"><label>العنوان</label><input id="ns-addr" placeholder="الشارقة - المجاز..."></div>
+
+      <div class="fl fgr"><h4 style="color:var(--g1);font-family:var(--display);margin:8px 0 0">👨 بيانات الأب</h4></div>
+      <div class="fl"><label>اسم الأب *</label><input id="ns-dad" placeholder=""></div>
+      <div class="fl"><label>جنسية الأب</label><input id="ns-dad-nat" placeholder=""></div>
+      <div class="fl"><label>هاتف الأب</label><input id="ns-dph" placeholder="05xxxxxxxx" type="tel"></div>
+      <div class="fl"><label>هاتف المنزل للأب</label><input id="ns-dad-home" placeholder="" type="tel"></div>
+      <div class="fl"><label>البريد الإلكتروني للأب</label><input id="ns-dad-email" placeholder="father@email.com" type="email" dir="ltr"></div>
+      <div class="fl"><label>عمل الأب</label><input id="ns-job" placeholder="مهندس / موظف..."></div>
+      <div class="fl"><label>جهة عمل الأب</label><input id="ns-dad-work" placeholder=""></div>
+      <div class="fl"><label>لغة الأب الأم</label><input id="ns-dad-mother-tongue" placeholder=""></div>
+      <div class="fl fgr"><label>لغات أخرى للأب</label><input id="ns-dad-other-languages" placeholder=""></div>
+
+      <div class="fl fgr"><h4 style="color:var(--g1);font-family:var(--display);margin:8px 0 0">👩 بيانات الأم</h4></div>
+      <div class="fl"><label>اسم الأم</label><input id="ns-mom" placeholder=""></div>
+      <div class="fl"><label>جنسية الأم</label><input id="ns-mom-nat" placeholder=""></div>
+      <div class="fl"><label>هاتف الأم</label><input id="ns-mph" placeholder="05xxxxxxxx" type="tel"></div>
+      <div class="fl"><label>هاتف المنزل للأم</label><input id="ns-mom-home" placeholder="" type="tel"></div>
+      <div class="fl"><label>البريد الإلكتروني للأم</label><input id="ns-mom-email" placeholder="mother@email.com" type="email" dir="ltr"></div>
+      <div class="fl"><label>عمل الأم</label><input id="ns-mom-job" placeholder=""></div>
+      <div class="fl"><label>جهة عمل الأم</label><input id="ns-mom-work" placeholder=""></div>
+      <div class="fl"><label>لغة الأم الأم</label><input id="ns-mom-mother-tongue" placeholder=""></div>
+      <div class="fl fgr"><label>لغات أخرى للأم</label><input id="ns-mom-other-languages" placeholder=""></div>
+
+      <div class="fl fgr"><h4 style="color:var(--g1);font-family:var(--display);margin:8px 0 0">🚨 الطوارئ والاستلام</h4></div>
+      <div class="fl"><label>اسم قريب الطوارئ</label><input id="ns-emerg-name" placeholder=""></div>
+      <div class="fl"><label>صلة القرابة</label><input id="ns-emerg-rel" placeholder=""></div>
+      <div class="fl"><label>هاتف الطوارئ</label><input id="ns-emerg-mob" placeholder="05xxxxxxxx" type="tel"></div>
+      <div class="fl fgr"><label>الأشخاص المخولون بالاستلام</label><textarea id="ns-authorized-pickup" rows="2" placeholder="الاسم - الصلة - الهاتف"></textarea></div>
+
+      <div class="fl fgr"><h4 style="color:var(--g1);font-family:var(--display);margin:8px 0 0">🩺 البيانات الصحية والموافقات</h4></div>
       <div class="fl fgr"><label>الحالة الصحية / الحساسية</label><textarea id="ns-health" rows="2" placeholder="مثال: حساسية ألبان، ربو، ملاحظات صحية خاصة..."></textarea></div>
+      <div class="fl"><label>هل توجد حساسية؟</label><input id="ns-allergy" placeholder="نعم / لا"></div>
+      <div class="fl"><label>نوع الحساسية</label><input id="ns-allergy-type" placeholder=""></div>
+      <div class="fl fgr"><label>تفاصيل الحساسية / الطعام / الدواء</label><textarea id="ns-allergy-note" rows="2"></textarea></div>
+      <div class="fl"><label>مرض معدي</label><input id="ns-contagious" placeholder="نعم / لا"></div>
+      <div class="fl"><label>عملية أو حادث خطير</label><input id="ns-surgical" placeholder="نعم / لا"></div>
+      <div class="fl fgr"><label>تفاصيل المرض / العملية / الحادث</label><textarea id="ns-disease-details" rows="2"></textarea></div>
+      <div class="fl"><label>موافقة التصوير</label><input id="ns-photo-consent" placeholder="نعم / لا"></div>
+      <div class="fl"><label>موافقة النشر</label><input id="ns-social-consent" placeholder="نعم / لا"></div>
+      <div class="fl fgr"><label>موافقة التمريض / الإسعاف</label><textarea id="ns-nurse-consent" rows="2"></textarea></div>
+
+      <div class="fl fgr"><h4 style="color:var(--g1);font-family:var(--display);margin:8px 0 0">📎 المرفقات والوثائق</h4></div>
+      <div class="fl"><label>صورة الطفل</label><input id="ns-img-child-photo" placeholder="رابط الصورة / الملف أو يتم تعبئته تلقائياً عند اختيار ملف" dir="ltr"><input id="ns-file-child-photo" type="file" accept="image/*,.pdf" onchange="kpStudentAttachFile('ns-img-child-photo', this)" style="margin-top:6px"><small class="kp-stu-file-hint">اختاري صورة أو PDF من الجهاز</small></div>
+      <div class="fl"><label>هوية الطفل الإماراتية</label><input id="ns-img-emirates-id" placeholder="رابط الملف أو يتم تعبئته تلقائياً عند اختيار ملف" dir="ltr"><input id="ns-file-emirates-id" type="file" accept="image/*,.pdf" onchange="kpStudentAttachFile('ns-img-emirates-id', this)" style="margin-top:6px"><small class="kp-stu-file-hint">اختاري صورة أو PDF من الجهاز</small></div>
+      <div class="fl"><label>جواز سفر الطفل</label><input id="ns-img-passport" placeholder="رابط الملف أو يتم تعبئته تلقائياً عند اختيار ملف" dir="ltr"><input id="ns-file-passport" type="file" accept="image/*,.pdf" onchange="kpStudentAttachFile('ns-img-passport', this)" style="margin-top:6px"><small class="kp-stu-file-hint">اختاري صورة أو PDF من الجهاز</small></div>
+      <div class="fl"><label>شهادة الميلاد</label><input id="ns-img-birth-cert" placeholder="رابط الملف أو يتم تعبئته تلقائياً عند اختيار ملف" dir="ltr"><input id="ns-file-birth-cert" type="file" accept="image/*,.pdf" onchange="kpStudentAttachFile('ns-img-birth-cert', this)" style="margin-top:6px"><small class="kp-stu-file-hint">اختاري صورة أو PDF من الجهاز</small></div>
+      <div class="fl"><label>شهادة التطعيم</label><input id="ns-img-vaccination" placeholder="رابط الملف أو يتم تعبئته تلقائياً عند اختيار ملف" dir="ltr"><input id="ns-file-vaccination" type="file" accept="image/*,.pdf" onchange="kpStudentAttachFile('ns-img-vaccination', this)" style="margin-top:6px"><small class="kp-stu-file-hint">اختاري صورة أو PDF من الجهاز</small></div>
+      <div class="fl"><label>إقامة الطفل</label><input id="ns-img-residency" placeholder="رابط الملف أو يتم تعبئته تلقائياً عند اختيار ملف" dir="ltr"><input id="ns-file-residency" type="file" accept="image/*,.pdf" onchange="kpStudentAttachFile('ns-img-residency', this)" style="margin-top:6px"><small class="kp-stu-file-hint">اختاري صورة أو PDF من الجهاز</small></div>
+      <div class="fl"><label>هوية الأب / ولي الأمر</label><input id="ns-img-dad-id" placeholder="رابط الملف أو يتم تعبئته تلقائياً عند اختيار ملف" dir="ltr"><input id="ns-file-dad-id" type="file" accept="image/*,.pdf" onchange="kpStudentAttachFile('ns-img-dad-id', this)" style="margin-top:6px"><small class="kp-stu-file-hint">اختاري صورة أو PDF من الجهاز</small></div>
+      <div class="fl"><label>جواز الأب / ولي الأمر</label><input id="ns-img-dad-passport" placeholder="رابط الملف أو يتم تعبئته تلقائياً عند اختيار ملف" dir="ltr"><input id="ns-file-dad-passport" type="file" accept="image/*,.pdf" onchange="kpStudentAttachFile('ns-img-dad-passport', this)" style="margin-top:6px"><small class="kp-stu-file-hint">اختاري صورة أو PDF من الجهاز</small></div>
+      <div class="fl fgr"><label>مرفقات إضافية</label><textarea id="ns-extra-attachments" rows="2" placeholder="روابط إضافية أو ملاحظات عن المرفقات"></textarea></div>
+
+      <div class="fl fgr"><h4 style="color:var(--g1);font-family:var(--display);margin:8px 0 0">📝 ملاحظات وإدارة</h4></div>
       <div class="fl fgr"><label>ملاحظات</label><textarea id="ns-note" rows="2"></textarea></div>
       <div class="fl fgr"><label>🔒 ملاحظات داخلية</label><textarea id="ns-internal-note" rows="2" placeholder="ملاحظات للموظفين فقط" style="background:#fff8e1"></textarea></div>
     </div>
@@ -6197,11 +6238,40 @@ function paymentMatchBadgeHTML(payment){
   return '<span style="color:#999">—</span>';
 }
 
+function kpStudentAttachFile(targetInputId, fileInput){
+  try{
+    var file = fileInput && fileInput.files && fileInput.files[0];
+    if(!file) return;
+    var max = 4 * 1024 * 1024;
+    if(file.size > max){
+      alert('حجم الملف كبير. الحد الأقصى لكل مرفق 4MB تقريباً حتى لا يصبح النظام بطيئاً.');
+      fileInput.value = '';
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function(ev){
+      var el = document.getElementById(targetInputId);
+      if(el){
+        el.value = ev.target.result || '';
+        el.title = file.name;
+        el.style.borderColor = 'var(--g2)';
+      }
+      var hint = fileInput.parentNode && fileInput.parentNode.querySelector('.kp-stu-file-hint');
+      if(hint) hint.textContent = '✅ تم اختيار الملف: ' + file.name;
+    };
+    reader.onerror = function(){ alert('تعذر قراءة الملف. جربي ملفاً آخر.'); };
+    reader.readAsDataURL(file);
+  }catch(e){ alert('تعذر تحميل المرفق: ' + (e.message || e)); }
+}
+window.kpStudentAttachFile = kpStudentAttachFile;
+
 function openAddStudent(){
   populateClassDropdowns();
   editingStuId=null;
   document.getElementById('mo-stu-title').textContent='➕ إضافة طالب جديد';
-  ['ns-name','ns-name-en','ns-dob','ns-idno','ns-nat','ns-bpl','ns-dad','ns-job','ns-dph','ns-mom','ns-mph','ns-addr','ns-health','ns-note','ns-internal-note'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  ['ns-name','ns-name-en','ns-first-name','ns-family-name','ns-dob','ns-idno','ns-passport','ns-nat','ns-bpl','ns-religion','ns-mother-tongue','ns-other-languages','ns-dad','ns-dad-nat','ns-job','ns-dad-work','ns-dph','ns-dad-home','ns-dad-email','ns-dad-mother-tongue','ns-dad-other-languages','ns-mom','ns-mom-nat','ns-mom-job','ns-mom-work','ns-mph','ns-mom-home','ns-mom-email','ns-mom-mother-tongue','ns-mom-other-languages','ns-emerg-name','ns-emerg-rel','ns-emerg-mob','ns-authorized-pickup','ns-addr','ns-health','ns-allergy','ns-allergy-type','ns-allergy-note','ns-contagious','ns-surgical','ns-disease-details','ns-photo-consent','ns-social-consent','ns-nurse-consent','ns-img-child-photo','ns-img-emirates-id','ns-img-passport','ns-img-birth-cert','ns-img-vaccination','ns-img-residency','ns-img-dad-id','ns-img-dad-passport','ns-extra-attachments','ns-note','ns-internal-note'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  ['ns-file-child-photo','ns-file-emirates-id','ns-file-passport','ns-file-birth-cert','ns-file-vaccination','ns-file-residency','ns-file-dad-id','ns-file-dad-passport'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  document.querySelectorAll('#mo-student .kp-stu-file-hint').forEach(function(h){ h.textContent='اختاري صورة أو PDF من الجهاز'; });
   document.getElementById('ns-gen').value='ذكر';
   document.getElementById('ns-cls').value='النحل';
   const statusEl=document.getElementById('ns-student-status'); if(statusEl) statusEl.value='active';
@@ -6683,24 +6753,67 @@ function editStudent(id){
     const el = document.getElementById(elId);
     if (el) el.value = val == null ? '' : String(val);
   };
+  ['ns-file-child-photo','ns-file-emirates-id','ns-file-passport','ns-file-birth-cert','ns-file-vaccination','ns-file-residency','ns-file-dad-id','ns-file-dad-passport'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  document.querySelectorAll('#mo-student .kp-stu-file-hint').forEach(function(h){ h.textContent='اختاري ملفاً جديداً للاستبدال أو اتركيه فارغاً للإبقاء على الحالي'; });
   const title = document.getElementById('mo-stu-title');
-  if (title) title.textContent = '✏️ تعديل: ' + (s.name || '');
+  if (title) title.textContent = '✏️ تعديل كامل: ' + (s.name || '');
   setVal('ns-name',    s.name);
   setVal('ns-name-en', getStudentEnglishDisplayName(s));
+  setVal('ns-first-name', s.firstName || '');
+  setVal('ns-family-name', s.familyName || '');
   setVal('ns-dob',     s.dob);
-  setVal('ns-idno',    getStudentIdentity(s) || '');
+  setVal('ns-idno',    getStudentIdentity(s) || s.emiratesId || s.idNo || '');
+  setVal('ns-passport', s.passport || '');
   setVal('ns-gen',     s.gen);
   setVal('ns-nat',     s.nat);
   setVal('ns-cls',     s.cls || Object.keys(CLASSES)[0]);
   setVal('ns-student-status', getStudentOperationalStatus(s));
   setVal('ns-bpl',     s.bpl);
-  setVal('ns-dad',     s.dad);
-  setVal('ns-job',     s.job);
-  setVal('ns-dph',     s.dph);
-  setVal('ns-mom',     s.mom);
-  setVal('ns-mph',     s.mph);
+  setVal('ns-religion', s.religion || '');
+  setVal('ns-mother-tongue', s.motherTongue || '');
+  setVal('ns-other-languages', s.otherLanguages || '');
+  setVal('ns-dad',     s.dad || s.dadFull || s.fatherName || '');
+  setVal('ns-dad-nat', s.dadNat || s.fatherNationality || '');
+  setVal('ns-job',     s.job || s.dadJob || '');
+  setVal('ns-dad-work', s.dadWork || '');
+  setVal('ns-dph',     s.dph || s.dadMob || s.fatherMobile || '');
+  setVal('ns-dad-home', s.dadHome || '');
+  setVal('ns-dad-email', s.dadEmail || s.fatherEmail || s.father_email || '');
+  setVal('ns-dad-mother-tongue', s.dadMotherTongue || '');
+  setVal('ns-dad-other-languages', s.dadOtherLanguages || '');
+  setVal('ns-mom',     s.mom || s.momFull || s.motherName || '');
+  setVal('ns-mom-nat', s.momNat || s.motherNationality || '');
+  setVal('ns-mom-job', s.momJob || '');
+  setVal('ns-mom-work', s.momWork || '');
+  setVal('ns-mph',     s.mph || s.momMob || s.motherMobile || '');
+  setVal('ns-mom-home', s.momHome || '');
+  setVal('ns-mom-email', s.momEmail || s.motherEmail || s.mother_email || '');
+  setVal('ns-mom-mother-tongue', s.momMotherTongue || '');
+  setVal('ns-mom-other-languages', s.momOtherLanguages || '');
+  setVal('ns-emerg-name', s.emergName || s.emergencyName || '');
+  setVal('ns-emerg-rel', s.emergRel || s.emergencyRelation || '');
+  setVal('ns-emerg-mob', s.emergMob || s.emergencyMobile || '');
+  setVal('ns-authorized-pickup', s.authorizedPickup || s.pickupPersons || s.authorizedPersons || '');
   setVal('ns-addr',    s.addr);
   setVal('ns-health',  getStudentHealthSummary(s) || s.healthOverride || s.health || s.healthStatus);
+  setVal('ns-allergy', s.allergy || '');
+  setVal('ns-allergy-type', s.allergyType || '');
+  setVal('ns-allergy-note', s.allergyNote || s.allergyMedicationFood || '');
+  setVal('ns-contagious', s.contagious || '');
+  setVal('ns-surgical', s.surgical || '');
+  setVal('ns-disease-details', s.diseaseDetails || s.accidentDetails || s.contagiousDetails || s.surgicalDetails || '');
+  setVal('ns-photo-consent', s.photoConsent || '');
+  setVal('ns-social-consent', s.socialConsent || '');
+  setVal('ns-nurse-consent', s.nurseConsent || '');
+  setVal('ns-img-child-photo', s.imgChildPhoto || '');
+  setVal('ns-img-emirates-id', s.imgEmiratesId || '');
+  setVal('ns-img-passport', s.imgPassport || s.imgChildPassport || '');
+  setVal('ns-img-birth-cert', s.imgBirthCert || '');
+  setVal('ns-img-vaccination', s.imgVaccination || '');
+  setVal('ns-img-residency', s.imgResidency || '');
+  setVal('ns-img-dad-id', s.imgDadId || s.imgFatherEmiratesId || s.imgFatherId || s.imgGuardianId || '');
+  setVal('ns-img-dad-passport', s.imgDadPassport || s.imgFatherPassport || s.imgGuardianPass || '');
+  setVal('ns-extra-attachments', s.extraAttachments || '');
   setVal('ns-note',    s.note || s.notes);
   setVal('ns-internal-note', s.internalNote || s.internal_note || '');
   setVal('ns-sub-end', s.sub_end);
@@ -6717,7 +6830,37 @@ async function saveStudent(){
   const healthChanged = !editingStuId || previousHealthValue !== manualHealthValue;
   const healthStamp = healthChanged ? new Date().toISOString() : (existingStudent && (existingStudent.healthUpdatedAt || existingStudent.healthChangedAt)) || '';
   const studentStatusValue=(document.getElementById('ns-student-status')||{}).value||'active';
-  const data={name,nameEn:(nameEnInput || transliterateArabicName(name)),dob:document.getElementById('ns-dob').value,gen:document.getElementById('ns-gen').value,nat:document.getElementById('ns-nat').value,cls:document.getElementById('ns-cls').value,studentStatus:studentStatusValue,enrollmentStatus:studentStatusValue,left:studentStatusValue==='left',bpl:document.getElementById('ns-bpl').value,dad:document.getElementById('ns-dad').value,job:document.getElementById('ns-job').value,dph:document.getElementById('ns-dph').value,mom:document.getElementById('ns-mom').value,mph:document.getElementById('ns-mph').value,addr:document.getElementById('ns-addr').value,idNo:document.getElementById('ns-idno').value,health:manualHealthValue,healthStatus:manualHealthValue,healthOverride:manualHealthValue,healthDeleted:false,healthUpdatedAt:healthStamp,note:document.getElementById('ns-note').value,internalNote:document.getElementById('ns-internal-note').value,sub_end:(document.getElementById('ns-sub-end')||{}).value||'',updatedAt:new Date().toISOString()};
+  const v=function(id){ const el=document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
+  const data={
+    name,
+    nameEn:(nameEnInput || transliterateArabicName(name)),
+    firstName:v('ns-first-name'), familyName:v('ns-family-name'),
+    dob:v('ns-dob'), gen:v('ns-gen'), nat:v('ns-nat'), cls:v('ns-cls'),
+    studentStatus:studentStatusValue,enrollmentStatus:studentStatusValue,left:studentStatusValue==='left',
+    bpl:v('ns-bpl'), religion:v('ns-religion'), motherTongue:v('ns-mother-tongue'), otherLanguages:v('ns-other-languages'),
+    dad:v('ns-dad'), dadFull:v('ns-dad'), dadNat:v('ns-dad-nat'), job:v('ns-job'), dadJob:v('ns-job'), dadWork:v('ns-dad-work'),
+    dph:v('ns-dph'), dadMob:v('ns-dph'), dadHome:v('ns-dad-home'), dadEmail:v('ns-dad-email'), fatherEmail:v('ns-dad-email'),
+    dadMotherTongue:v('ns-dad-mother-tongue'), dadOtherLanguages:v('ns-dad-other-languages'),
+    mom:v('ns-mom'), momFull:v('ns-mom'), momNat:v('ns-mom-nat'), momJob:v('ns-mom-job'), momWork:v('ns-mom-work'),
+    mph:v('ns-mph'), momMob:v('ns-mph'), momHome:v('ns-mom-home'), momEmail:v('ns-mom-email'), motherEmail:v('ns-mom-email'),
+    momMotherTongue:v('ns-mom-mother-tongue'), momOtherLanguages:v('ns-mom-other-languages'),
+    addr:v('ns-addr'), idNo:v('ns-idno'), emiratesId:v('ns-idno'), passport:v('ns-passport'),
+    emergName:v('ns-emerg-name'), emergRel:v('ns-emerg-rel'), emergMob:v('ns-emerg-mob'),
+    emergencyName:v('ns-emerg-name'), emergencyRelation:v('ns-emerg-rel'), emergencyMobile:v('ns-emerg-mob'),
+    authorizedPickup:v('ns-authorized-pickup'), pickupPersons:v('ns-authorized-pickup'), authorizedPersons:v('ns-authorized-pickup'),
+    health:manualHealthValue,healthStatus:manualHealthValue,healthOverride:manualHealthValue,healthDeleted:false,healthUpdatedAt:healthStamp,
+    allergy:v('ns-allergy'), allergyType:v('ns-allergy-type'), allergyNote:v('ns-allergy-note'), allergyMedicationFood:v('ns-allergy-note'),
+    contagious:v('ns-contagious'), surgical:v('ns-surgical'), diseaseDetails:v('ns-disease-details'), accidentDetails:v('ns-disease-details'),
+    photoConsent:v('ns-photo-consent'), socialConsent:v('ns-social-consent'), nurseConsent:v('ns-nurse-consent'),
+    imgChildPhoto:v('ns-img-child-photo'), imgEmiratesId:v('ns-img-emirates-id'), imgPassport:v('ns-img-passport'), imgChildPassport:v('ns-img-passport'),
+    imgBirthCert:v('ns-img-birth-cert'), imgVaccination:v('ns-img-vaccination'), imgResidency:v('ns-img-residency'),
+    imgDadId:v('ns-img-dad-id'), imgFatherEmiratesId:v('ns-img-dad-id'), imgFatherId:v('ns-img-dad-id'), imgGuardianId:v('ns-img-dad-id'),
+    imgDadPassport:v('ns-img-dad-passport'), imgFatherPassport:v('ns-img-dad-passport'), imgGuardianPass:v('ns-img-dad-passport'),
+    extraAttachments:v('ns-extra-attachments'),
+    imgChildPhotoName:(document.getElementById('ns-img-child-photo')||{}).title||'', imgEmiratesIdName:(document.getElementById('ns-img-emirates-id')||{}).title||'', imgPassportName:(document.getElementById('ns-img-passport')||{}).title||'', imgBirthCertName:(document.getElementById('ns-img-birth-cert')||{}).title||'', imgVaccinationName:(document.getElementById('ns-img-vaccination')||{}).title||'', imgResidencyName:(document.getElementById('ns-img-residency')||{}).title||'', imgDadIdName:(document.getElementById('ns-img-dad-id')||{}).title||'', imgDadPassportName:(document.getElementById('ns-img-dad-passport')||{}).title||'',
+    note:v('ns-note'), notes:v('ns-note'), internalNote:v('ns-internal-note'),
+    sub_end:(document.getElementById('ns-sub-end')||{}).value||'',updatedAt:new Date().toISOString()
+  };
   let savedRecord;
   if(editingStuId){
     const i=students.findIndex(x=>x.id===editingStuId);
@@ -9487,90 +9630,52 @@ function escapeAdminHtml(v){
     return ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'})[ch];
   });
 }
-function adminJsArg(v){
-  return JSON.stringify(String(v == null ? '' : v))
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/'/g,'&#39;')
-    .replace(/"/g,'&quot;');
-}
-function adminUserRoleLabel(u){
-  var role = (u && u.role) || 'staff';
-  if (role === 'admin') return isPrimaryAdminUser(u) ? 'المدير الأساسي' : 'مدير';
-  if (role === 'teacher') return 'متابعة الحضور';
-  if (role === 'evaluator') return 'مقيّم الطلاب';
-  return 'موظف';
-}
-function adminUserRoleBadge(u){
-  var role = (u && u.role) || 'staff';
-  var cls = role === 'admin' ? 'bg' : (role === 'teacher' ? 'by' : (role === 'evaluator' ? 'bo' : 'bb'));
-  return '<span class="b '+cls+'">' + escapeAdminHtml(adminUserRoleLabel(u)) + '</span>';
-}
-function adminUserClassesText(u){
-  if (!u || (u.role !== 'teacher' && u.role !== 'evaluator')) return '—';
-  if (!Array.isArray(u.classes) || !u.classes.length) return '⚠️ بدون فصل معيّن';
-  return u.classes.map(function(c){ return (CLASSES[c] && CLASSES[c].emoji ? CLASSES[c].emoji+' ' : '') + c; }).join(' • ');
-}
 function renderAdminUsers() {
   const users = JSON.parse(localStorage.getItem('kp_users') || '[]');
   const el = document.getElementById('admin-users-list');
   if(!el) return;
-
-  if (!users.length) {
-    el.innerHTML = '<div class="email-hint">لا يوجد مستخدمون حالياً.</div>';
-    return;
-  }
-
-  var rows = users.map(function(u){
+  el.innerHTML = users.map(u => {
+    var isAdmin = u.role === 'admin';
+    var isTeacher = u.role === 'teacher';
     var isPrimaryAdmin = isPrimaryAdminUser(u);
-    var disabled = u.disabled === true;
     var canEditThisUser = !isPrimaryAdmin || canCurrentUserManagePrimaryAdmin();
-    var canChangeStatus = !isPrimaryAdmin && (!currentUser || currentUser.username !== u.username);
-    var canDeleteThisUser = !isPrimaryAdmin && (!currentUser || currentUser.username !== u.username);
-    var canResetThisPassword = canEditThisUser && (!isPrimaryAdmin || canCurrentUserManagePrimaryAdmin());
-    var usernameArg = adminJsArg(u.username);
-    var classesText = adminUserClassesText(u);
-    var classesClass = classesText.indexOf('⚠️') === 0 ? 'color:var(--r1);font-weight:800' : 'color:var(--muted);font-weight:800';
-
-    return ''
-      + '<tr class="kp-admin-user-tr' + (disabled ? ' is-disabled' : '') + '">'
-      + '  <td style="direction:ltr;text-align:left;font-weight:900">@' + escapeAdminHtml(u.username || '') + '</td>'
-      + '  <td><b>' + escapeAdminHtml(u.name || u.username || '') + '</b>' + (isPrimaryAdmin ? ' <span class="b bg">رئيسي</span>' : '') + '</td>'
-      + '  <td>' + adminUserRoleBadge(u) + '</td>'
-      + '  <td style="min-width:210px;' + classesClass + '">' + escapeAdminHtml(classesText) + '</td>'
-      + '  <td>' + (disabled ? '<span class="b br">🚫 معطّل</span>' : '<span class="b bg">✅ فعّال</span>') + '</td>'
-      + '  <td>'
-      + '    <div class="btn-group" style="min-width:360px">'
-      +        (canEditThisUser ? '<button class="btn btn-b btn-sm" onclick="openEditUser(' + usernameArg + ')">✏️ تعديل</button>' : '<span class="b bgr">🔒 محمي</span>')
-      +        ((u.role === 'teacher' || u.role === 'evaluator') && canEditThisUser ? '<button class="btn btn-out btn-sm" onclick="openEditUserClasses(' + usernameArg + ')">📚 الفصول</button>' : '')
-      +        (canChangeStatus ? '<button class="btn ' + (disabled ? 'btn-g' : 'btn-y') + ' btn-sm" onclick="toggleUserStatus(' + usernameArg + ')">' + (disabled ? '🟢 تفعيل' : '🔴 تعطيل') + '</button>' : '')
-      +        (canResetThisPassword ? '<button class="btn btn-out btn-sm" onclick="resetUserPassword(' + usernameArg + ')">🔑 تغيير كلمة السر</button>' : '')
-      +        (canDeleteThisUser ? '<button class="btn btn-r btn-sm" onclick="deleteUser(' + usernameArg + ')">🗑 حذف</button>' : '<span class="b bgr">لا يحذف</span>')
-      + '    </div>'
-      + '  </td>'
-      + '</tr>';
+    var canSeePasswords = canCurrentUserSeePasswords();
+    var roleLabel = isAdmin ? (isPrimaryAdmin ? 'المدير الأساسي' : 'مدير') : (isTeacher ? 'معلمة' : 'موظف');
+    var roleBg = isAdmin ? '#d0f0e0' : (isTeacher ? '#fff3c4' : 'var(--bp)');
+    var roleFg = isAdmin ? '#0e5e30' : (isTeacher ? '#8a5c00' : 'var(--b1)');
+    var shownPassword = canSeePasswords ? escapeAdminHtml(u.password || '') : maskPasswordValue(u.password);
+    var disabled = u.disabled === true;
+    var userRowStyle = disabled ? 'opacity:.62;background:#fff7f7;border-radius:12px;padding:9px' : '';
+    var disabledBadge = disabled
+      ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:800;background:#ffe5e3;color:#a82323;margin-right:6px">🚫 معطّل</span>'
+      : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:800;background:#dcf5e6;color:#0e6b35;margin-right:6px">✅ فعّال</span>';
+    var classesHtml = '';
+    if (isTeacher && Array.isArray(u.classes) && u.classes.length) {
+      classesHtml = '<div style="font-size:11.5px;color:var(--muted);margin-top:4px;font-weight:700">📚 ' +
+        u.classes.map(function(c){ return (CLASSES[c] && CLASSES[c].emoji ? CLASSES[c].emoji+' ' : '') + c; }).join(' • ') +
+        '</div>';
+    } else if (isTeacher) {
+      classesHtml = '<div style="font-size:11.5px;color:var(--r1);margin-top:4px;font-weight:700">⚠️ بدون فصل معيّن</div>';
+    }
+    return `
+    <div class="admin-user-row" style="${userRowStyle}">
+      <div>
+        <b>${u.name || u.username}</b>
+        <span style="color:var(--muted);font-size:12px;margin-right:6px">(@${u.username})</span>
+        <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:${roleBg};color:${roleFg}">${roleLabel}</span>
+        ${disabledBadge}
+        <div style="font-size:11.5px;color:var(--muted);margin-top:4px;font-weight:700">🔐 كلمة المرور: <span style="direction:ltr;unicode-bidi:embed">${shownPassword}</span></div>
+        ${classesHtml}
+      </div>
+      <div class="btn-group">
+        ${canEditThisUser ? `<button class="btn btn-b btn-sm" onclick="openEditUser('${u.username.replace(/'/g,"\'")}')">✏️ تعديل</button>` : '<span style="font-size:11px;color:var(--muted);font-weight:800">🔒 محمي</span>'}
+        ${isTeacher ? `<button class="btn btn-out btn-sm" onclick="openEditUserClasses('${u.username.replace(/'/g,"\'")}')">📚 الفصول</button>` : ''}
+        ${(!isPrimaryAdmin && (!currentUser || currentUser.username !== u.username)) ? `<button class="btn ${disabled ? 'btn-g' : 'btn-y'} btn-sm" onclick="toggleUserStatus('${u.username.replace(/'/g,"\'")}')">${disabled ? '🟢 تفعيل' : '🔴 تعطيل'}</button>` : ''}
+        ${!isPrimaryAdmin ? `<button class="btn btn-r btn-sm" onclick="deleteUser('${u.username.replace(/'/g,"\'")}')">🗑</button>` : '<span style="font-size:11px;color:var(--muted)">رئيسي</span>'}
+      </div>
+    </div>`;
   }).join('');
-
-  el.innerHTML = ''
-    + '<div class="tw kp-admin-users-table-wrap" style="max-height:520px">'
-    + '  <table class="tbl kp-admin-users-table">'
-    + '    <thead>'
-    + '      <tr>'
-    + '        <th>اسم المستخدم</th>'
-    + '        <th>الاسم الكامل</th>'
-    + '        <th>الدور</th>'
-    + '        <th>الفصول المعيّنة</th>'
-    + '        <th>الحالة</th>'
-    + '        <th>الإجراءات</th>'
-    + '      </tr>'
-    + '    </thead>'
-    + '    <tbody>' + rows + '</tbody>'
-    + '  </table>'
-    + '</div>'
-    + '<div style="font-size:12px;color:var(--muted);font-weight:800;margin-top:8px">↔️ على الموبايل اسحبي الجدول يمين/يسار للوصول لكل الأزرار.</div>';
 }
-
 
 // 🔒 Modal-based add-user UI supporting role=teacher with multi-class selection
 function openAddUser() {
@@ -9805,7 +9910,7 @@ function openEditUserClasses(username){
   var users = JSON.parse(localStorage.getItem('kp_users') || '[]');
   var u = users.find(function(x){ return x.username === username; });
   if (!u) return alert('المستخدم غير موجود');
-  if (u.role !== 'teacher' && u.role !== 'evaluator') return alert('هذا الخيار لمتابعة الحضور أو مقيّم الطلاب فقط');
+  if (u.role !== 'teacher') return alert('هذا الخيار للمعلمات فقط');
   var ov = document.getElementById('edit-user-classes-overlay');
   if (!ov) {
     ov = document.createElement('div');
@@ -9856,33 +9961,6 @@ function openEditUserClasses(username){
     alert(ok ? '✅ تم تحديث الفصول' : '✅ تم محلياً (سيُرفع لاحقاً)');
   };
   ov.classList.add('on');
-}
-
-
-async function resetUserPassword(username) {
-  if (currentUser?.role !== 'admin') return alert('للمدير فقط');
-  var usersNow;
-  try {
-    const refreshed = await loadUsersFromFirebase();
-    usersNow = Array.isArray(refreshed.users) ? refreshed.users : JSON.parse(localStorage.getItem('kp_users') || '[]');
-  } catch(_e) {
-    usersNow = JSON.parse(localStorage.getItem('kp_users') || '[]');
-  }
-  var idx = usersNow.findIndex(function(x){ return x.username === username; });
-  if (idx === -1) return alert('المستخدم غير موجود');
-  if (isPrimaryAdminUser(usersNow[idx]) && !canCurrentUserManagePrimaryAdmin()) return alert('❌ لا يمكن تعديل حساب المستخدم admin');
-  var next = window.prompt('اكتبي كلمة السر الجديدة للمستخدم @' + username + ' (٤ خانات على الأقل):', '');
-  if (next == null) return;
-  next = String(next).trim();
-  if (!next || next.length < 4) return alert('كلمة السر قصيرة جداً (٤ خانات على الأقل)');
-  usersNow[idx].password = next;
-  usersNow[idx].mustChangePassword = true;
-  usersNow[idx].updatedAt = new Date().toISOString();
-  usersNow[idx].updatedBy = (currentUser && (currentUser.username || currentUser.name)) || 'admin';
-  localStorage.setItem('kp_users', JSON.stringify(usersNow));
-  renderAdminUsers();
-  var ok = await saveUsersToFirebase(usersNow);
-  alert(ok ? '✅ تم تغيير كلمة السر وحفظها على Firebase' : '⚠️ تم تغيير كلمة السر محلياً، لكن تعذر الحفظ على Firebase حالياً');
 }
 
 
@@ -21640,7 +21718,6 @@ function injectEvaluationsPage(){
       + '   each card with three large tap-friendly options. */'
       + '.kp-eval-cards{display:flex;flex-direction:column;gap:10px}'
       + '.kp-eval-card{border:1px solid #d9d9d9;border-radius:10px;background:#fff;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,0.04)}'
-      + '.kp-eval-card-month-card{border-width:2px}'
       + '.kp-eval-card-head{display:grid;grid-template-columns:30px auto 1fr;gap:8px;align-items:center;padding:8px 10px;background:#f0f7f0;border-bottom:1px solid #e0e0e0}'
       + '.kp-eval-card-num{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#1a4a82;color:#fff;font-weight:800;font-size:12px}'
       + '.kp-eval-card-domain{font-weight:800;font-size:12px;color:#1b5e20;background:#fff;padding:2px 8px;border-radius:6px;border:1px solid #c8e6c9;white-space:nowrap}'
@@ -21655,9 +21732,6 @@ function injectEvaluationsPage(){
       + '.kp-eval-card-opts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}'
       + '.kp-eval-card-opt{display:flex;align-items:center;gap:6px;padding:8px 6px;border:1.5px solid #ddd;border-radius:8px;cursor:pointer;font-size:11.5px;font-weight:600;background:#fff;line-height:1.2;min-height:42px;justify-content:center;text-align:center}'
       + '.kp-eval-card-opt input[type="radio"]{width:18px;height:18px;cursor:pointer;flex-shrink:0;margin:0}'
-      + '.kp-eval-radio-mark{display:inline-block;width:14px;height:14px;border:1.5px solid #999;border-radius:50%;background:#f1f1f1;position:relative;vertical-align:middle;flex-shrink:0}'
-      + '.kp-eval-radio-mark-on::after{content:"";position:absolute;left:50%;top:50%;width:6px;height:6px;border-radius:50%;background:#2c3e2e;transform:translate(-50%,-50%)}'
-      + '.kp-eval-card-opt-readonly{cursor:default}'
       + '.kp-eval-card-opt:has(input:checked){border-color:#1a4a82;background:#e3f2fd;color:#0d47a1}'
       + '.kp-eval-card-opt input:disabled{cursor:not-allowed}'
       + '.kp-eval-card-opt:has(input:disabled){opacity:0.6;cursor:not-allowed;background:#f5f5f5}'
@@ -21927,10 +22001,20 @@ function kpEvalRenderForm(){
     // (admin / staff with approve), nothing is locked — they can edit freely.
     var managerCanEdit = window.canApproveEvaluations();
     if (!managerCanEdit) {
-      // SELF-HEALING: only freeze months that were truly submitted and
-      // completed. This fixes old/corrupted records where submittedMonths was
-      // [true,true,true] even though the evaluator only submitted one month.
-      lockedMonths = kpEvalResolveLockedMonths(existing);
+      var claimed = (Array.isArray(existing.submittedMonths) && existing.submittedMonths.length === 3)
+        ? existing.submittedMonths.slice()
+        : kpEvalComputeEvaluatedMonths(existing);
+      // SELF-HEALING: a month should only be locked if BOTH the record claims
+      // it was submitted AND the skill data actually has values in that month.
+      // This auto-corrects records that were corrupted by an earlier
+      // period-locking bug (where all 3 months would be marked submitted even
+      // though only one was actually evaluated). Without this self-heal, the
+      // evaluator would be permanently stuck unable to fill those months.
+      var actualData = kpEvalComputeEvaluatedMonths(existing);
+      lockedMonths = [false, false, false];
+      for (var li = 0; li < 3; li++) {
+        lockedMonths[li] = !!(claimed[li] && actualData[li]);
+      }
     }
     if (existing.status === 'approved') {
       statusBanner = '<div style="background:#d4edda;color:#155724;padding:10px;border-radius:8px;margin-bottom:10px;font-weight:700;text-align:center">✅ هذا التقييم تم اعتماده من الإدارة. للإدارة فقط صلاحية التعديل.</div>';
@@ -22050,7 +22134,9 @@ function kpEvalBuildFormHTML(form, student, editable, savedData, quarterId, lock
   // Compute the evaluation period (which months have data) for read-only renders
   var periodLine = '';
   if (savedData) {
-    var monthsHave = kpEvalResolveLockedMonths(savedData);
+    var monthsHave = (Array.isArray(savedData.submittedMonths) && savedData.submittedMonths.length === 3)
+      ? savedData.submittedMonths
+      : kpEvalComputeEvaluatedMonths(savedData);
     var monthLabels = [];
     for (var mi = 0; mi < 3; mi++) if (monthsHave[mi]) monthLabels.push(form.months[mi]);
     if (monthLabels.length === 3) periodLine = isAr ? 'كامل الفصل (٣ أشهر)' : 'Full term (3 months)';
@@ -22104,20 +22190,15 @@ function kpEvalBuildFormHTML(form, student, editable, savedData, quarterId, lock
             var v = savedData.skills[String(rowIdx)];
             if (v && Number(v[m]) === lvl) checked = 'checked';
           }
-          if (!editable) {
-            var markClass = checked ? ' kp-eval-radio-mark-on' : '';
-            cells.push('<td class="' + cellClass + '" style="text-align:center"><span class="kp-eval-radio-mark' + markClass + '"></span></td>');
-          } else {
-            cells.push('<td class="' + cellClass + '" style="text-align:center"><input type="radio" name="' + name + '" value="' + lvl + '" ' + dis + ' ' + checked + '/></td>');
-          }
+          cells.push('<td class="' + cellClass + '" style="text-align:center"><input type="radio" name="' + name + '" value="' + lvl + '" ' + dis + ' ' + checked + '/></td>');
         }
       }
       rows.push('<tr>' + cells.join('') + '</tr>');
 
-      // ----- CARDS (mobile) -----
-      // Separate mobile card per month. This makes Month 1 / Month 2 / Month 3
-      // visually independent, so a frozen month is clearly locked while the
-      // remaining months stay easy to edit. Desktop table is unchanged.
+      // ----- CARD (mobile) -----
+      // One card per skill. Top: skill index + domain badge + skill text.
+      // Body: 3 month-blocks (color-coded) each with 3 large radio buttons.
+      var cardMonthBlocks = [];
       for (var cm = 0; cm < 3; cm++){
         var cmLocked = !!lock[cm];
         var cmDisabled = (!editable) || cmLocked;
@@ -22136,33 +22217,32 @@ function kpEvalBuildFormHTML(form, student, editable, savedData, quarterId, lock
           // tap target (the whole label) so users do not have to aim at the
           // small radio circle.
           var levelLabel = form.scale[clvl];
-          if (!editable) {
-            var cardMarkClass = ck ? ' kp-eval-radio-mark-on' : '';
-            optsHtml += '<div class="kp-eval-card-opt kp-eval-card-opt-readonly"><span class="kp-eval-radio-mark' + cardMarkClass + '"></span><span>' + escapeHtml(levelLabel) + '</span></div>';
-          } else {
-            optsHtml += '<label class="kp-eval-card-opt"><input type="radio" name="' + cmName + '" value="' + clvl + '" ' + cmDis + ' ' + ck + '/><span>' + escapeHtml(levelLabel) + '</span></label>';
-          }
+          // Per-level color hint inside the card so locked / unlocked is obvious.
+          optsHtml += '<label class="kp-eval-card-opt"><input type="radio" name="' + cmName + '" value="' + clvl + '" ' + cmDis + ' ' + ck + '/><span>' + escapeHtml(levelLabel) + '</span></label>';
         }
-        cards.push(
-          '<div class="kp-eval-card kp-eval-card-month-card ' + cmClass + '">'
-          + '<div class="kp-eval-card-head">'
-          +   '<span class="kp-eval-card-num">' + rowIdx + '</span>'
-          +   '<span class="kp-eval-card-domain">' + escapeHtml(g.domain) + '</span>'
-          +   '<span class="kp-eval-card-skill">' + escapeHtml(skill) + '</span>'
+        cardMonthBlocks.push(
+          '<div class="kp-eval-card-month ' + cmClass + '">'
+          + '<div class="kp-eval-card-month-head">'
+          +   '<div class="kp-eval-card-month-label">' + escapeHtml(form.months[cm]) + lockMark + '</div>'
+          + (cmDisabled
+              ? ''
+              : '  <button type="button" class="kp-eval-card-clear" data-row="' + rowIdx + '" data-month="' + cm + '" title="' + (isAr ? 'مسح الاختيار' : 'Clear') + '">✕ ' + (isAr ? 'مسح' : 'Clear') + '</button>'
+            )
           + '</div>'
-          + '<div class="kp-eval-card-month">'
-          +   '<div class="kp-eval-card-month-head">'
-          +     '<div class="kp-eval-card-month-label">' + escapeHtml(form.months[cm]) + lockMark + '</div>'
-          +     (cmDisabled
-                  ? ''
-                  : '  <button type="button" class="kp-eval-card-clear" data-row="' + rowIdx + '" data-month="' + cm + '" title="' + (isAr ? 'مسح الاختيار' : 'Clear') + '">✕ ' + (isAr ? 'مسح' : 'Clear') + '</button>'
-                )
-          +   '</div>'
-          +   '<div class="kp-eval-card-opts">' + optsHtml + '</div>'
-          + '</div>'
+          + '<div class="kp-eval-card-opts">' + optsHtml + '</div>'
           + '</div>'
         );
       }
+      cards.push(
+        '<div class="kp-eval-card">'
+        + '<div class="kp-eval-card-head">'
+        +   '<span class="kp-eval-card-num">' + rowIdx + '</span>'
+        +   '<span class="kp-eval-card-domain">' + escapeHtml(g.domain) + '</span>'
+        +   '<span class="kp-eval-card-skill">' + escapeHtml(skill) + '</span>'
+        + '</div>'
+        + '<div class="kp-eval-card-body">' + cardMonthBlocks.join('') + '</div>'
+        + '</div>'
+      );
     });
   });
 
@@ -22203,7 +22283,9 @@ function kpEvalBuildFormHTML(form, student, editable, savedData, quarterId, lock
   // skill data.
   var submittedMo = [false, false, false];
   if (savedData) {
-    submittedMo = kpEvalResolveLockedMonths(savedData);
+    submittedMo = (Array.isArray(savedData.submittedMonths) && savedData.submittedMonths.length === 3)
+      ? savedData.submittedMonths.slice()
+      : kpEvalComputeEvaluatedMonths(savedData);
   }
   // Resolve the evaluator's display name. Prefer the saved `submittedBy`
   // on the record; if rendering a fresh form (no savedData yet), fall back
@@ -22319,35 +22401,45 @@ window.kpEvalSubmit = async function(){
   // a month as previously-submitted if both the record claims it AND the
   // skill data has actual values in that month. Defends against records
   // corrupted by an older period-locking bug.
-  var prevSubmittedMonths = existing ? kpEvalResolveLockedMonths(existing) : [false,false,false];
+  var prevSubmittedMonths = [false,false,false];
+  if (existing) {
+    var claimedPrev = Array.isArray(existing.submittedMonths) && existing.submittedMonths.length === 3
+      ? existing.submittedMonths.slice()
+      : [false,false,false];
+    var actualPrev = kpEvalComputeEvaluatedMonths(existing);
+    for (var pi = 0; pi < 3; pi++) prevSubmittedMonths[pi] = !!(claimedPrev[pi] && actualPrev[pi]);
+  }
   var managerCanEdit = window.canApproveEvaluations();
 
-  // Determine which months the evaluator is submitting NOW. A month only
-  // becomes frozen when ALL skills in that month are filled. Partial values are
-  // kept in the record, but the month remains editable so Month 2/3 do not lock
-  // just because one stray option was selected while Month 1 was submitted.
+  // Determine which months the user is submitting NOW (have any data and
+  // were not previously locked). Managers can edit all months freely.
   var newMonthsThisSubmission = [false,false,false];
-  var monthHasAnyData = kpEvalComputeEvaluatedMonths({ skills: data.skills });
-  var monthIsComplete = kpEvalComputeCompleteMonthsFromSkills(data.skills);
   for (var m = 0; m < 3; m++){
-    if (managerCanEdit) {
-      if (monthHasAnyData[m]) newMonthsThisSubmission[m] = true;
-    } else if (!prevSubmittedMonths[m] && monthIsComplete[m]) {
-      newMonthsThisSubmission[m] = true;
-    }
+    var monthHasData = false;
+    Object.keys(data.skills).forEach(function(k){
+      var v = data.skills[k][m];
+      if (v !== null && v !== undefined && v !== '') monthHasData = true;
+    });
+    if (monthHasData && (managerCanEdit || !prevSubmittedMonths[m])) newMonthsThisSubmission[m] = true;
   }
 
   if (!managerCanEdit && !newMonthsThisSubmission.some(function(x){return x;})) {
-    alert('لا يوجد شهر مكتمل جديد لتسليمه. الشهر لا يُقفل إلا بعد تعبئة جميع بنوده، وستبقى الأشهر غير المكتملة قابلة للتعديل.'); return;
+    alert('لم تُدخلي أي بيانات جديدة في الأشهر المتاحة. لا يوجد ما يُحفظ.'); return;
   }
 
+  // For evaluator: validate that every skill has a value in each NEW month
+  // they're submitting (i.e. no half-filled month). Manager bypasses.
   if (!managerCanEdit) {
-    var partialMonths = [];
-    for (var pmi = 0; pmi < 3; pmi++){
-      if (!prevSubmittedMonths[pmi] && monthHasAnyData[pmi] && !monthIsComplete[pmi]) partialMonths.push(form.months[pmi]);
+    var incomplete = false;
+    for (var mi = 0; mi < 3; mi++){
+      if (!newMonthsThisSubmission[mi]) continue;
+      Object.keys(data.skills).forEach(function(k){
+        var v = data.skills[k][mi];
+        if (v === null || v === undefined || v === '') incomplete = true;
+      });
     }
-    if (partialMonths.length) {
-      alert('تنبيه: توجد بيانات غير مكتملة في ' + partialMonths.join('، ') + '. لن يتم قفل هذه الأشهر الآن، ويمكن استكمالها لاحقاً.');
+    if (incomplete) {
+      if (!confirm('بعض البنود في الشهر الذي تسلمينه لم تُملأ. متابعة الحفظ على أي حال؟ (الشهر سيُقفل بعد الحفظ)')) return;
     }
   }
 
@@ -22519,52 +22611,7 @@ function kpEvalComputeEvaluatedMonths(rec){
   return out;
 }
 
-
-// Returns [bool, bool, bool] — which months are fully completed across all
-// skill rows. This is stricter than kpEvalComputeEvaluatedMonths(), which only
-// means "has at least one value". We use this to prevent an accidental/legacy
-// partial value in Month 2/3 from freezing that whole month when the evaluator
-// only submitted Month 1.
-function kpEvalComputeCompleteMonthsFromSkills(skills){
-  var out = [false, false, false];
-  if (!skills) return out;
-  var keys = Object.keys(skills);
-  if (!keys.length) return out;
-  for (var m = 0; m < 3; m++){
-    var complete = true;
-    for (var i = 0; i < keys.length; i++){
-      var row = skills[keys[i]];
-      var v = Array.isArray(row) ? row[m] : null;
-      if (v === null || v === undefined || v === '') { complete = false; break; }
-    }
-    out[m] = complete;
-  }
-  return out;
-}
-
-function kpEvalComputeCompleteMonths(rec){
-  return kpEvalComputeCompleteMonthsFromSkills(rec && rec.skills);
-}
-
-// Authoritative lock resolver. submittedMonths is still preferred, but it is
-// sanitized against actual completed month data so old/corrupted records that
-// claim all 3 months are submitted do not freeze empty months.
-function kpEvalResolveLockedMonths(rec){
-  var out = [false, false, false];
-  if (!rec) return out;
-  var claimed = (Array.isArray(rec.submittedMonths) && rec.submittedMonths.length === 3)
-    ? rec.submittedMonths.slice()
-    : kpEvalComputeEvaluatedMonths(rec);
-  var complete = kpEvalComputeCompleteMonths(rec);
-  var anyData = kpEvalComputeEvaluatedMonths(rec);
-  for (var i = 0; i < 3; i++){
-    out[i] = !!(claimed[i] && (complete[i] || (rec.status === 'approved' && anyData[i])));
-  }
-  return out;
-}
-
-window.kpEvalApprove = async function(id, opts){
-  opts = opts || {};
+window.kpEvalApprove = async function(id){
   if (!window.canApproveEvaluations()) { alert('للإدارة فقط'); return; }
   var e = (window.evaluations||[]).find(function(x){ return x.id === id; });
   if (!e) { alert('السجل غير موجود'); return; }
@@ -22588,9 +22635,6 @@ window.kpEvalApprove = async function(id, opts){
   else alert('✅ تم اعتماد التقييم ووضع الختم');
   persistEvaluationsLocal();
   kpEvalRenderManagerList();
-  if (opts.refreshView) {
-    try { window.kpEvalOpenView(id); } catch(_e){}
-  }
 };
 
 // Manager: REOPEN an approved evaluation (revert to pending, unlock all
@@ -22736,7 +22780,6 @@ function ensureEvalViewModal(){
     + '    <div id="mo-eval-view-body" style="max-height:70vh;overflow-y:auto;padding:6px"></div>'
     + '    <div class="mof">'
     + '      <button class="btn btn-out" onclick="document.getElementById(\'mo-eval-view\').classList.remove(\'on\')">إغلاق</button>'
-    + '      <button class="btn btn-g" id="mo-eval-approve-btn" style="display:none">🛡 اعتماد وختم</button>'
     + '      <button class="btn btn-b" id="mo-eval-pdf-btn">📄 تصدير PDF</button>'
     + '      <button class="btn btn-out" id="mo-eval-print-btn">🖨 طباعة</button>'
     + '    </div>'
@@ -22765,7 +22808,11 @@ window.kpEvalOpenView = function(id){
     // Determine which months are stamped. Prefer submittedMonths (authoritative),
     // then evaluatedMonths (set at approval time on older records),
     // then live-compute from skill data.
-    var months = kpEvalResolveLockedMonths(e);
+    var months = (Array.isArray(e.submittedMonths) && e.submittedMonths.length === 3)
+      ? e.submittedMonths
+      : (Array.isArray(e.evaluatedMonths) && e.evaluatedMonths.length === 3)
+        ? e.evaluatedMonths
+        : kpEvalComputeEvaluatedMonths(e);
     ['eval-stamp-1','eval-stamp-2','eval-stamp-3'].forEach(function(slotId, idx){
       var slot = body.querySelector('#' + slotId);
       if (!slot) return;
@@ -22776,16 +22823,6 @@ window.kpEvalOpenView = function(id){
     });
   }
   document.getElementById('mo-eval-view-title').textContent = '📝 تقييم — ' + (e.studentName||'') + ' — ' + (e.term||'');
-  var approveBtn = document.getElementById('mo-eval-approve-btn');
-  if (approveBtn) {
-    if (window.canApproveEvaluations && window.canApproveEvaluations() && e.status !== 'approved') {
-      approveBtn.style.display = '';
-      approveBtn.onclick = function(){ kpEvalApprove(id, { refreshView: true }); };
-    } else {
-      approveBtn.style.display = 'none';
-      approveBtn.onclick = null;
-    }
-  }
   document.getElementById('mo-eval-pdf-btn').onclick = function(){ kpEvalExportPdf(id); };
   var pbtn = document.getElementById('mo-eval-print-btn');
   if (pbtn) pbtn.onclick = function(){ kpEvalPrintForm(id); };
@@ -22798,109 +22835,8 @@ window.kpEvalOpenView = function(id){
  *     Renders the same DOM used in the view modal so the printed PDF  *
  *     has the EXACT same header / layout as the on-screen form.       *
  * ------------------------------------------------------------------ */
-window.kpEvalExportPdf = async function(id){ return kpEvalDownloadPdfLikeStudents(id); };
+window.kpEvalExportPdf = async function(id){ return kpEvalOpenPrintWindow(id, 'pdf'); };
 window.kpEvalPrintForm = async function(id){ return kpEvalOpenPrintWindow(id, 'print'); };
-
-async function kpEvalDownloadPdfLikeStudents(id){
-  var e = (window.evaluations||[]).find(function(x){ return x.id === id; });
-  if (!e) { alert('السجل غير موجود'); return; }
-  if (!window.html2canvas || !window.jspdf || !window.jspdf.jsPDF) {
-    alert('مكتبات PDF غير محمّلة. الرجاء تحديث الصفحة.');
-    return;
-  }
-  var stu = (typeof students !== 'undefined' ? students : []).find(function(x){ return String(x.id) === String(e.studentId); }) || { id: e.studentId, name: e.studentName };
-  var form = KP_FORMS[e.formId] || KP_FORM_AR;
-  var isAr = form.lang === 'ar';
-  var docDir = isAr ? 'rtl' : 'ltr';
-  var formHtml = kpEvalBuildFormHTML(form, stu, false, e, e.quarter, null, e.academicYear);
-  var temp = document.createElement('div');
-  temp.innerHTML = formHtml;
-  if (e.status === 'approved' && e.stampDataUrl) {
-    var stampHtml = ''
-      + '<img src="' + e.stampDataUrl + '" alt="stamp" style="height:64px;display:block;margin:0 auto"/>'
-      + '<div style="font-size:10px;color:#666;text-align:center;margin-top:2px">'
-      + escapeHtml(e.approvedBy||'') + ' &mdash; ' + escapeHtml((e.approvedAt||'').slice(0,10)) + '</div>';
-    var months = kpEvalResolveLockedMonths(e);
-    ['eval-stamp-1','eval-stamp-2','eval-stamp-3'].forEach(function(slotId, idx){
-      var slot = temp.querySelector('#' + slotId);
-      if (slot && months[idx]) {
-        slot.style.borderBottom = 'none';
-        slot.style.height = '';
-        slot.innerHTML = stampHtml;
-      }
-    });
-  }
-
-  var iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:1123px;height:794px;border:0;background:#fff;';
-  document.body.appendChild(iframe);
-  var doc = iframe.contentDocument;
-  doc.open();
-  doc.write('<!DOCTYPE html><html lang="' + (isAr ? 'ar' : 'en') + '" dir="' + docDir + '"><head><meta charset="UTF-8">'
-    + '<style>'
-    + 'body{font-family:Tajawal,Arial,sans-serif;color:#111;margin:0;padding:8px;background:#fff;direction:' + docDir + ';font-size:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
-    + '*{box-sizing:border-box}'
-    + '.kp-eval-mobile-only,.kp-eval-cards{display:none !important}'
-    + '.kp-eval-desktop-only,.kp-eval-table-wrap{display:block !important;overflow:visible !important;border:none !important}'
-    + '.kp-eval-header{border:1.5px solid #4caf50;border-radius:10px;padding:5px 10px;margin-bottom:5px;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:8px;direction:ltr}'
-    + '.kp-eval-header>div{font-weight:800;font-size:13px;color:#1a4a82;text-align:center;flex:1}.kp-eval-header img{width:55px;height:55px;object-fit:contain}'
-    + '.kp-print-title{text-align:center;font-size:13px;font-weight:800;margin:3px 0 1px}.kp-print-sub{text-align:center;font-size:10px;color:#666;margin-bottom:1px}.kp-print-period{text-align:center;font-size:10px;color:#1b5e20;font-weight:700;margin-bottom:3px}'
-    + 'table.kp-eval-table{width:100%;border-collapse:collapse;table-layout:fixed;direction:' + docDir + ';margin-bottom:4px}'
-    + 'table.kp-eval-table th,table.kp-eval-table td{border:1px solid #888;padding:2px 3px;vertical-align:middle;line-height:1.25;font-size:10px}'
-    + 'table.kp-eval-table thead th{font-weight:800;font-size:9.5px;background:#f5f5f5;line-height:1.15}'
-    + 'table.kp-eval-table tr{page-break-inside:avoid;break-inside:avoid}table.kp-eval-table thead{display:table-header-group}'
-    + 'table.kp-eval-table tbody td:nth-child(3){white-space:normal;text-align:start;font-weight:600;word-spacing:normal;hyphens:auto}table.kp-eval-table tbody td:nth-child(2){font-weight:800;background:#f0f7f0;text-align:center;font-size:9.5px}table.kp-eval-table tbody td:nth-child(1){font-weight:700;text-align:center}'
-    + 'table.kp-eval-table input[type="radio"]{width:12px;height:12px;margin:0}.kp-eval-radio-mark{display:inline-block;width:12px;height:12px;border:1.5px solid #999;border-radius:50%;background:#eee;position:relative;vertical-align:middle}.kp-eval-radio-mark-on::after{content:"";position:absolute;left:3px;top:3px;width:4px;height:4px;border-radius:50%;background:#333}.kp-eval-month-1{background:#e3f2fd}.kp-eval-month-2{background:#fff3e0}.kp-eval-month-3{background:#e8f5e9}'
-    + 'table.kp-eval-table thead th.kp-eval-month-1{background:#90caf9;color:#0d47a1}table.kp-eval-table thead th.kp-eval-month-2{background:#ffcc80;color:#bf360c}table.kp-eval-table thead th.kp-eval-month-3{background:#a5d6a7;color:#1b5e20}'
-    + '.kp-eval-month-locked{background-image:linear-gradient(135deg,rgba(0,0,0,0.06) 25%,rgba(0,0,0,0.10) 25%,rgba(0,0,0,0.10) 50%,rgba(0,0,0,0.06) 50%,rgba(0,0,0,0.06) 75%,rgba(0,0,0,0.10) 75%) !important;background-size:7px 7px !important}'
-    + '.kp-eval-scroll-hint{display:none !important}'
-    + '</style>'
-    + '<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">'
-    + '</head><body><div class="kp-eval-pdf-page">' + temp.innerHTML + '</div></body></html>');
-  doc.close();
-
-  var ready = (doc.fonts && doc.fonts.ready) ? doc.fonts.ready : Promise.resolve();
-  Promise.all([ready, new Promise(function(r){ setTimeout(r, 900); })]).then(async function(){
-    try {
-      var t = doc.querySelector('.kp-eval-table');
-      if (t && !t.querySelector('colgroup')) {
-        var cg = doc.createElement('colgroup');
-        ['3%','9%','24%','7.11%','7.11%','7.11%','7.11%','7.11%','7.11%','7.11%','7.11%','7.12%'].forEach(function(w){ var c = doc.createElement('col'); c.style.width = w; cg.appendChild(c); });
-        t.insertBefore(cg, t.firstChild);
-      }
-      var jsPDF = window.jspdf.jsPDF;
-      var pdf = new jsPDF('l', 'mm', 'a4');
-      var pageW = pdf.internal.pageSize.getWidth();
-      var pageH = pdf.internal.pageSize.getHeight();
-      var node = doc.querySelector('.kp-eval-pdf-page') || doc.body;
-      var canvas = await window.html2canvas(node, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false, windowWidth: 1123, width: node.scrollWidth || 1123, height: node.scrollHeight });
-      var imgData = canvas.toDataURL('image/jpeg', 0.92);
-      var imgW = pageW;
-      var imgH = canvas.height * imgW / canvas.width;
-      if (imgH <= pageH) {
-        pdf.addImage(imgData, 'JPEG', 0, 0, imgW, imgH, undefined, 'FAST');
-      } else {
-        var remaining = imgH;
-        var y = 0;
-        var first = true;
-        while (remaining > 0) {
-          if (!first) pdf.addPage();
-          first = false;
-          pdf.addImage(imgData, 'JPEG', 0, y, imgW, imgH, undefined, 'FAST');
-          remaining -= pageH;
-          y -= pageH;
-        }
-      }
-      var fname = ('evaluation_' + (e.studentName||'student') + '_' + (e.academicYear||'') + '_' + (e.term||'')).replace(/[\\/\?\*<>:"|]/g,'_').replace(/\s+/g,'_') + '.pdf';
-      pdf.save(fname);
-    } catch (err) {
-      console.error('Evaluation PDF export failed:', err);
-      alert('فشل تصدير PDF: ' + (err && err.message || err));
-    } finally {
-      try { iframe.remove(); } catch(_e){}
-    }
-  });
-}
 
 // Mode 'pdf'    → toolbar emphasises "Save as PDF", auto-triggers print dialog so
 //                 mobile users go straight to the destination picker.
@@ -22926,21 +22862,6 @@ async function kpEvalOpenPrintWindow(id, mode){
   var isAr = form.lang === 'ar';
   var docDir = isAr ? 'rtl' : 'ltr';
   var docLang = isAr ? 'ar' : 'en';
-
-  // Open the popup immediately while we are still inside the user's tap/click
-  // gesture. Mobile Chrome is much stricter than desktop: if we build the whole
-  // HTML first and only then call window.open(), the PDF popup/print dialog can
-  // be blocked or remain blank.
-  var w = window.open('about:blank', '_blank', 'width=1100,height=900');
-  if (!w) {
-    alert('⚠️ تعذّر فتح نافذة التصدير. ربما يحجب المتصفح النوافذ المنبثقة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع ثم المحاولة مرة أخرى.');
-    return;
-  }
-  try {
-    w.document.open();
-    w.document.write('<!doctype html><html dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Preparing PDF</title></head><body style="font-family:Arial,sans-serif;text-align:center;padding:30px">جاري تجهيز ملف PDF...</body></html>');
-    w.document.close();
-  } catch(_prepErr){}
 
   // Build the form HTML. Pass the current data in as a read-only render.
   var formHtml = kpEvalBuildFormHTML(form, stu, /*editable*/ false, /*data*/ e, e.quarter, null, e.academicYear);
@@ -22992,7 +22913,14 @@ async function kpEvalOpenPrintWindow(id, mode){
   // We embed Tajawal font from Google Fonts (already used elsewhere in the
   // app for prints) so Arabic looks consistent with the on-screen form.
 
-  // The popup was already opened above, immediately inside the user gesture.
+  // First open the popup synchronously so the browser doesn't classify it
+  // as a programmatic pop-up after async work. We point at "about:blank"
+  // initially, then navigate to the Blob URL.
+  var w = window.open('about:blank', '_blank', 'width=1100,height=900');
+  if (!w) {
+    alert('⚠️ تعذّر فتح نافذة التصدير. ربما يحجب المتصفح النوافذ المنبثقة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع ثم المحاولة مرة أخرى.');
+    return;
+  }
   var html = ''
     + '<!DOCTYPE html><html lang="' + docLang + '" dir="' + docDir + '"><head>'
     + '<meta charset="UTF-8">'
@@ -23027,7 +22955,7 @@ async function kpEvalOpenPrintWindow(id, mode){
     + '  table.kp-eval-table tbody td:nth-child(3){white-space:normal;text-align:start;font-weight:600;word-spacing:normal;hyphens:auto}'
     + '  table.kp-eval-table tbody td:nth-child(2){font-weight:800;background:#f0f7f0;text-align:center;writing-mode:horizontal-tb;font-size:9.5px}'
     + '  table.kp-eval-table tbody td:nth-child(1){font-weight:700;text-align:center}'
-    + '  table.kp-eval-table input[type="radio"]{width:12px;height:12px;margin:0}.kp-eval-radio-mark{display:inline-block;width:12px;height:12px;border:1.5px solid #999;border-radius:50%;background:#eee;position:relative;vertical-align:middle}.kp-eval-radio-mark-on::after{content:"";position:absolute;left:3px;top:3px;width:4px;height:4px;border-radius:50%;background:#333}'
+    + '  table.kp-eval-table input[type="radio"]{width:12px;height:12px;margin:0}'
     + '  /* MONTH COLORING — same hues as on-screen, forced to print */'
     + '  .kp-eval-month-1{background:#e3f2fd}'
     + '  .kp-eval-month-2{background:#fff3e0}'
@@ -23119,7 +23047,7 @@ async function kpEvalOpenPrintWindow(id, mode){
     + '      // PDF mode: auto-trigger print so the user lands directly in the'
     + '      // destination picker. Print mode: do NOT auto-trigger — let the'
     + '      // user review the form first.'
-    + '      if(MODE==="pdf"){ setTimeout(triggerPrint,350); setTimeout(triggerPrint,1200); }'
+    + '      if(MODE==="pdf"){ setTimeout(triggerPrint,200); }'
     + '    };'
     + '    if(document.fonts && document.fonts.ready){'
     + '      document.fonts.ready.then(function(){setTimeout(afterFonts,100);});'
