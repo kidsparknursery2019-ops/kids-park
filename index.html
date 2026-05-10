@@ -23660,6 +23660,118 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
+
+
+<script id="kp-data-attachment-open-fix-20260510">
+(function(){
+  if (window.__kpDataAttachmentOpenFix20260510) return;
+  window.__kpDataAttachmentOpenFix20260510 = true;
+
+  function esc(v){
+    return String(v == null ? '' : v).replace(/[&<>"']/g,function(ch){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+    });
+  }
+  function clean(v){ return String(v == null ? '' : v).trim(); }
+  function isDataUrl(v){ return /^data:[^,]+,/i.test(clean(v)); }
+  function mimeOfDataUrl(dataUrl){
+    var m = clean(dataUrl).match(/^data:([^;,]+)(?:;[^,]*)?,/i);
+    return (m && m[1]) ? m[1].toLowerCase() : 'application/octet-stream';
+  }
+  function fileExtFromMime(mime){
+    mime = String(mime || '').toLowerCase();
+    if (mime.indexOf('pdf') !== -1) return '.pdf';
+    if (mime.indexOf('png') !== -1) return '.png';
+    if (mime.indexOf('jpeg') !== -1 || mime.indexOf('jpg') !== -1) return '.jpg';
+    if (mime.indexOf('webp') !== -1) return '.webp';
+    if (mime.indexOf('gif') !== -1) return '.gif';
+    return '';
+  }
+  function dataUrlToBlob(dataUrl){
+    try{
+      dataUrl = clean(dataUrl);
+      if (!isDataUrl(dataUrl)) return null;
+      var comma = dataUrl.indexOf(',');
+      var meta = dataUrl.slice(0, comma);
+      var payload = dataUrl.slice(comma + 1);
+      var mime = mimeOfDataUrl(dataUrl);
+      var isBase64 = /;base64/i.test(meta);
+      var binary;
+      if (isBase64) {
+        payload = payload.replace(/\s/g, '');
+        binary = atob(payload);
+      } else {
+        binary = decodeURIComponent(payload);
+      }
+      var len = binary.length;
+      var bytes = new Uint8Array(len);
+      for (var i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+      return new Blob([bytes], {type:mime});
+    }catch(e){
+      console.warn('Attachment data-url conversion failed:', e);
+      return null;
+    }
+  }
+  function blobUrlFromDataUrl(dataUrl){
+    var blob = dataUrlToBlob(dataUrl);
+    return blob ? URL.createObjectURL(blob) : '';
+  }
+  function safeDownloadName(title, mime){
+    title = clean(title) || 'student-attachment';
+    title = title.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 120);
+    if (!/\.[a-z0-9]{2,6}$/i.test(title)) title += fileExtFromMime(mime);
+    return title;
+  }
+
+  window.kpOpenEmbeddedAttachment = function(src, title){
+    src = clean(src);
+    title = clean(title) || 'مرفق الطالب';
+    if (!src) { alert('لا يوجد مرفق قابل للفتح.'); return; }
+
+    if (/^https?:\/\//i.test(src) || /^blob:/i.test(src)) {
+      window.open(src, '_blank', 'noopener');
+      return;
+    }
+
+    var mime = isDataUrl(src) ? mimeOfDataUrl(src) : 'application/octet-stream';
+    if (!isDataUrl(src) && /^[A-Za-z0-9+/=\s]+$/.test(src) && src.length > 200) {
+      src = 'data:' + mime + ';base64,' + src.replace(/\s/g, '');
+    }
+
+    var url = isDataUrl(src) ? (blobUrlFromDataUrl(src) || src) : src;
+    var isPdf = mime.indexOf('pdf') !== -1 || /^data:application\/pdf/i.test(src);
+    var isImage = mime.indexOf('image/') === 0 || /^data:image\//i.test(src);
+    var downloadName = safeDownloadName(title, mime);
+    var w = window.open('', '_blank');
+    if (!w) { alert('المتصفح منع فتح الملف. اسمحي بالنوافذ المنبثقة ثم جربي مرة ثانية.'); return; }
+
+    var viewer;
+    if (isPdf) {
+      viewer = '<embed src="'+esc(url)+'" type="application/pdf" style="width:100%;height:82vh;border:0;background:white;border-radius:12px" />';
+    } else if (isImage) {
+      viewer = '<div style="text-align:center;background:white;border-radius:12px;padding:10px"><img src="'+esc(url)+'" style="max-width:100%;max-height:82vh;object-fit:contain" alt="'+esc(title)+'"></div>';
+    } else {
+      viewer = '<div style="background:white;border-radius:12px;padding:28px;text-align:center"><div style="font-size:46px">📎</div><p>لا يمكن معاينة هذا النوع داخل المتصفح، استخدمي زر التحميل.</p></div>';
+    }
+
+    w.document.write('<!doctype html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(title)+'</title><style>body{font-family:Tajawal,Arial,sans-serif;margin:0;padding:16px;background:#f7fbf9;color:#263b2d}.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}.btn{display:inline-block;padding:9px 14px;border-radius:10px;background:#2a8b54;color:white;text-decoration:none;font-weight:800;margin-inline-start:6px}.btn2{background:#3b7dd8}.name{font-weight:900;color:#2a8b54;word-break:break-word}</style></head><body><div class="bar"><div class="name">📎 '+esc(title)+'</div><div><a class="btn" href="'+esc(url)+'" target="_blank" rel="noopener">فتح مباشر</a><a class="btn btn2" href="'+esc(url)+'" download="'+esc(downloadName)+'">تحميل</a></div></div>'+viewer+'<script>window.addEventListener("beforeunload",function(){try{if("'+esc(url)+'".indexOf("blob:")===0&&window.opener){window.opener.URL.revokeObjectURL("'+esc(url)+'");}}catch(e){}});<\/script></body></html>');
+    w.document.close();
+  };
+
+  document.addEventListener('click', function(e){
+    var target = e.target;
+    var a = target && target.closest ? target.closest('a[href]') : null;
+    if (!a) return;
+    var href = a.getAttribute('href') || '';
+    if (!/^data:/i.test(href)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var title = a.getAttribute('download') || a.getAttribute('title') || (a.textContent || '').trim() || 'مرفق الطالب';
+    window.kpOpenEmbeddedAttachment(href, title);
+  }, true);
+})();
+</script>
+
 </body>
 </html>
 
