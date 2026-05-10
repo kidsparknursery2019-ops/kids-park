@@ -1873,6 +1873,20 @@ body.kp-evaluator #pg-eval{display:block!important}
 @media(max-width:760px){.kp-users-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.kp-users-grid{grid-template-columns:1fr}.kp-users-head{align-items:stretch}.kp-users-actions{width:100%}.kp-users-actions .btn{flex:1}.kp-users-hint{border-radius:14px;width:100%;text-align:center}.kp-user-card{padding:12px}.kp-user-actions .btn{flex:1 1 44%}}
 
 </style>
+
+<style id="kp-eval-desktop-card-fix-20260510">
+/* Evaluation desktop preview must show the table only. The generic card rule uses display:flex, so this final rule must be stronger. */
+.kp-eval-mobile-only,
+.kp-eval-cards.kp-eval-mobile-only{display:none!important}
+.kp-eval-desktop-only,
+.kp-eval-table-wrap.kp-eval-desktop-only{display:block!important}
+@media(max-width:900px){
+  .kp-eval-desktop-only,
+  .kp-eval-table-wrap.kp-eval-desktop-only{display:none!important}
+  .kp-eval-mobile-only,
+  .kp-eval-cards.kp-eval-mobile-only{display:flex!important}
+}
+</style>
 </head>
 <body class="kp-booting">
 
@@ -21786,6 +21800,8 @@ function injectEvaluationsPage(){
       + '.kp-eval-card-opt:has(input:checked){border-color:#1a4a82;background:#e3f2fd;color:#0d47a1}'
       + '.kp-eval-card-opt input:disabled{cursor:not-allowed}'
       + '.kp-eval-card-opt:has(input:disabled){opacity:0.6;cursor:not-allowed;background:#f5f5f5}'
+      + '.kp-eval-cards.kp-eval-mobile-only{display:none !important}'
+      + '.kp-eval-table-wrap.kp-eval-desktop-only{display:block !important}'
       + '@media(max-width:900px){'
       + '  /* MOBILE / TOUCH — flip the layout: cards visible, table hidden.'
       + '     We use BOTH a viewport width check and a pointer-coarse check'
