@@ -1847,6 +1847,23 @@ body.kp-evaluator .kp-sync-panel{
    even if some other page becomes active, it stays invisible. */
 body.kp-evaluator .pg{display:none!important}
 body.kp-evaluator #pg-eval{display:block!important}
+
+/* KP organized users settings panel */
+.kp-users-admin-section{grid-column:1/-1!important;background:linear-gradient(180deg,#ffffff 0%,#fbfffc 100%);border:1px solid #dfeee5!important;box-shadow:0 10px 28px rgba(46,139,84,.08)!important}
+.kp-users-admin-section>h3,.kp-users-admin-section>#admin-users-list+button{display:none!important}
+.kp-users-board{display:flex;flex-direction:column;gap:14px}
+.kp-users-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:4px 2px 10px;border-bottom:1px solid #e4f1e9}
+.kp-users-title{display:flex;align-items:center;gap:10px;min-width:0}
+.kp-users-title-icon{width:42px;height:42px;border-radius:15px;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--g2),var(--g1));color:#fff;font-size:22px;box-shadow:0 7px 16px rgba(46,139,84,.18)}
+.kp-users-title h3{margin:0!important;color:var(--g1);font-size:20px;line-height:1.2}.kp-users-title small{display:block;color:var(--muted);font-weight:800;font-size:12px;margin-top:3px}
+.kp-users-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.kp-users-actions .btn{box-shadow:none!important;border-radius:13px!important}
+.kp-users-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.kp-users-stat{background:#fff;border:1px solid #e4f1e9;border-radius:16px;padding:10px 12px;box-shadow:0 4px 14px rgba(46,139,84,.06)}.kp-users-stat b{display:block;color:var(--g1);font-size:19px;line-height:1}.kp-users-stat span{display:block;color:var(--muted);font-size:11.5px;font-weight:900;margin-top:5px}
+.kp-users-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.kp-users-search{flex:1 1 260px;position:relative}.kp-users-search input{width:100%;padding-right:38px!important;border-radius:16px!important;background:#fff!important}.kp-users-search:before{content:'\1F50E';position:absolute;right:13px;top:50%;transform:translateY(-50%);z-index:1;opacity:.75}.kp-users-hint{color:var(--muted);font-size:12px;font-weight:800;background:#f5fbf7;border:1px dashed #cfe9d8;border-radius:999px;padding:8px 12px}
+.kp-users-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}.kp-user-card{background:#fff;border:1px solid #e3f0e8;border-radius:18px;padding:13px;box-shadow:0 6px 18px rgba(46,139,84,.07);display:flex;flex-direction:column;gap:11px;min-width:0}.kp-user-card.is-disabled{opacity:.7;background:#fffafa;border-color:#ffd6d2}.kp-user-card.is-protected{border-color:#cfe9d8;background:linear-gradient(180deg,#fff,#f8fffb)}
+.kp-user-main{display:flex;gap:10px;align-items:flex-start;min-width:0}.kp-user-avatar{width:42px;height:42px;border-radius:15px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;color:#fff;font-size:20px;background:linear-gradient(135deg,#2f7edb,#58a6ff)}.kp-user-avatar.admin{background:linear-gradient(135deg,#21834f,#35b776)}.kp-user-avatar.teacher{background:linear-gradient(135deg,#d58b00,#ffd65c);color:#513600}.kp-user-avatar.evaluator{background:linear-gradient(135deg,#7b61ff,#b18cff)}.kp-user-info{min-width:0;flex:1}.kp-user-name{font-weight:900;color:var(--text);font-size:16px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.kp-user-username{direction:ltr;text-align:right;color:var(--muted);font-size:12px;font-weight:800;margin-top:2px}.kp-user-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.kp-user-badge{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:900;border:1px solid transparent}.kp-user-badge.role-admin{background:#dff5e8;color:#0e5e30}.kp-user-badge.role-teacher{background:#fff3c4;color:#8a5c00}.kp-user-badge.role-evaluator{background:#ece8ff;color:#5136b9}.kp-user-badge.role-staff{background:#e8f2ff;color:#1c5c9c}.kp-user-badge.active{background:#dcf5e6;color:#0e6b35}.kp-user-badge.disabled{background:#ffe5e3;color:#a82323}.kp-user-badge.protected{background:#f1f5f2;color:#527060;border-color:#dce8df}
+.kp-user-meta{display:grid;gap:7px;background:#fbfffc;border:1px solid #eef6f1;border-radius:14px;padding:9px}.kp-user-meta-row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;font-size:12px;font-weight:800;color:var(--muted)}.kp-user-meta-row span:last-child{color:var(--text);font-weight:900;text-align:left;direction:ltr;unicode-bidi:embed;word-break:break-word}.kp-user-classes{direction:rtl;text-align:right!important;color:var(--g1)!important;line-height:1.6}.kp-user-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-start;border-top:1px solid #eef6f1;padding-top:10px}.kp-user-actions .btn{box-shadow:none!important;border-radius:12px!important;padding:7px 10px!important;font-size:12px!important}.kp-empty-users{padding:22px;text-align:center;border:2px dashed #cfe9d8;border-radius:18px;color:var(--muted);font-weight:900;background:#fbfffc}
+@media(max-width:760px){.kp-users-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.kp-users-grid{grid-template-columns:1fr}.kp-users-head{align-items:stretch}.kp-users-actions{width:100%}.kp-users-actions .btn{flex:1}.kp-users-hint{border-radius:14px;width:100%;text-align:center}.kp-user-card{padding:12px}.kp-user-actions .btn{flex:1 1 44%}}
+
 </style>
 </head>
 <body>
@@ -2578,7 +2595,7 @@ body.kp-evaluator #pg-eval{display:block!important}
           <div id="admin-classes-list" style="margin-bottom:12px"></div>
           <button class="btn btn-g btn-sm" onclick="openAddClass()">＋ إضافة فصل</button>
         </div>
-        <div class="admin-section">
+        <div class="admin-section kp-users-admin-section">
           <h3>👥 إدارة المستخدمين</h3>
           <div id="admin-users-list" style="margin-bottom:12px"></div>
           <button class="btn btn-g btn-sm" onclick="openAddUser()">＋ إضافة مستخدم</button>
@@ -9626,47 +9643,106 @@ function renderAdminUsers() {
   const users = JSON.parse(localStorage.getItem('kp_users') || '[]');
   const el = document.getElementById('admin-users-list');
   if(!el) return;
-  el.innerHTML = users.map(u => {
-    var isAdmin = u.role === 'admin';
-    var isTeacher = u.role === 'teacher';
+  function T(s){ return s; }
+  function esc(v){ return escapeAdminHtml(v == null ? '' : v); }
+  function jsArg(v){ return JSON.stringify(String(v == null ? '' : v)); }
+  function roleMeta(u){
+    var role = String((u && u.role) || 'staff');
+    var primary = isPrimaryAdminUser(u);
+    if (role === 'admin') return {key:'admin', icon:'\uD83D\uDC51', label: primary ? T('\u0627\u0644\u0645\u062F\u064A\u0631 \u0627\u0644\u0623\u0633\u0627\u0633\u064A') : T('\u0645\u062F\u064A\u0631')};
+    if (role === 'teacher') return {key:'teacher', icon:'\u2705', label:T('\u0645\u062A\u0627\u0628\u0639\u0629 \u0627\u0644\u062D\u0636\u0648\u0631')};
+    if (role === 'evaluator') return {key:'evaluator', icon:'\uD83D\uDCDD', label:T('\u0645\u0642\u064A\u0651\u0645 \u0627\u0644\u0637\u0644\u0627\u0628')};
+    return {key:'staff', icon:'\uD83D\uDC64', label:T('\u0645\u0648\u0638\u0641')};
+  }
+  var total = users.length;
+  var activeCount = users.filter(function(u){ return !(u && u.disabled === true); }).length;
+  var disabledCount = users.filter(function(u){ return u && u.disabled === true; }).length;
+  var adminCount = users.filter(function(u){ return u && u.role === 'admin'; }).length;
+  var limitedCount = users.filter(function(u){ return u && (u.role === 'teacher' || u.role === 'evaluator'); }).length;
+  var cards = users.map(function(u){
+    u = u || {};
+    var meta = roleMeta(u);
+    var isTeacherLike = u.role === 'teacher' || u.role === 'evaluator';
     var isPrimaryAdmin = isPrimaryAdminUser(u);
     var canEditThisUser = !isPrimaryAdmin || canCurrentUserManagePrimaryAdmin();
     var canSeePasswords = canCurrentUserSeePasswords();
-    var roleLabel = isAdmin ? (isPrimaryAdmin ? 'المدير الأساسي' : 'مدير') : (isTeacher ? 'معلمة' : 'موظف');
-    var roleBg = isAdmin ? '#d0f0e0' : (isTeacher ? '#fff3c4' : 'var(--bp)');
-    var roleFg = isAdmin ? '#0e5e30' : (isTeacher ? '#8a5c00' : 'var(--b1)');
-    var shownPassword = canSeePasswords ? escapeAdminHtml(u.password || '') : maskPasswordValue(u.password);
+    var shownPassword = canSeePasswords ? esc(u.password || '') : maskPasswordValue(u.password);
     var disabled = u.disabled === true;
-    var userRowStyle = disabled ? 'opacity:.62;background:#fff7f7;border-radius:12px;padding:9px' : '';
-    var disabledBadge = disabled
-      ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:800;background:#ffe5e3;color:#a82323;margin-right:6px">🚫 معطّل</span>'
-      : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:800;background:#dcf5e6;color:#0e6b35;margin-right:6px">✅ فعّال</span>';
-    var classesHtml = '';
-    if (isTeacher && Array.isArray(u.classes) && u.classes.length) {
-      classesHtml = '<div style="font-size:11.5px;color:var(--muted);margin-top:4px;font-weight:700">📚 ' +
-        u.classes.map(function(c){ return (CLASSES[c] && CLASSES[c].emoji ? CLASSES[c].emoji+' ' : '') + c; }).join(' • ') +
-        '</div>';
-    } else if (isTeacher) {
-      classesHtml = '<div style="font-size:11.5px;color:var(--r1);margin-top:4px;font-weight:700">⚠️ بدون فصل معيّن</div>';
+    var statusBadge = disabled
+      ? '<span class="kp-user-badge disabled">\uD83D\uDEAB ' + T('\u0645\u0639\u0637\u0651\u0644') + '</span>'
+      : '<span class="kp-user-badge active">\u2705 ' + T('\u0641\u0639\u0651\u0627\u0644') + '</span>';
+    var protectedBadge = isPrimaryAdmin ? '<span class="kp-user-badge protected">\uD83D\uDD12 ' + T('\u0645\u062D\u0645\u064A') + '</span>' : '';
+    var classesText = T('\u063A\u064A\u0631 \u0645\u0637\u0644\u0648\u0628');
+    if (isTeacherLike && Array.isArray(u.classes) && u.classes.length) {
+      classesText = u.classes.map(function(c){ return (CLASSES[c] && CLASSES[c].emoji ? CLASSES[c].emoji + ' ' : '') + c; }).join(' \u2022 ');
+    } else if (isTeacherLike) {
+      classesText = T('\u26A0\uFE0F \u0628\u062F\u0648\u0646 \u0641\u0635\u0648\u0644 \u0645\u0639\u064A\u0651\u0646\u0629');
     }
-    return `
-    <div class="admin-user-row" style="${userRowStyle}">
-      <div>
-        <b>${u.name || u.username}</b>
-        <span style="color:var(--muted);font-size:12px;margin-right:6px">(@${u.username})</span>
-        <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:${roleBg};color:${roleFg}">${roleLabel}</span>
-        ${disabledBadge}
-        <div style="font-size:11.5px;color:var(--muted);margin-top:4px;font-weight:700">🔐 كلمة المرور: <span style="direction:ltr;unicode-bidi:embed">${shownPassword}</span></div>
-        ${classesHtml}
-      </div>
-      <div class="btn-group">
-        ${canEditThisUser ? `<button class="btn btn-b btn-sm" onclick="openEditUser('${u.username.replace(/'/g,"\'")}')">✏️ تعديل</button>` : '<span style="font-size:11px;color:var(--muted);font-weight:800">🔒 محمي</span>'}
-        ${isTeacher ? `<button class="btn btn-out btn-sm" onclick="openEditUserClasses('${u.username.replace(/'/g,"\'")}')">📚 الفصول</button>` : ''}
-        ${(!isPrimaryAdmin && (!currentUser || currentUser.username !== u.username)) ? `<button class="btn ${disabled ? 'btn-g' : 'btn-y'} btn-sm" onclick="toggleUserStatus('${u.username.replace(/'/g,"\'")}')">${disabled ? '🟢 تفعيل' : '🔴 تعطيل'}</button>` : ''}
-        ${!isPrimaryAdmin ? `<button class="btn btn-r btn-sm" onclick="deleteUser('${u.username.replace(/'/g,"\'")}')">🗑</button>` : '<span style="font-size:11px;color:var(--muted)">رئيسي</span>'}
-      </div>
-    </div>`;
+    var searchText = [u.name, u.username, meta.label, classesText, disabled ? T('\u0645\u0639\u0637\u0644') : T('\u0641\u0639\u0627\u0644')].join(' ').toLowerCase();
+    var actions = '';
+    if (canEditThisUser) actions += '<button class="btn btn-b btn-sm" onclick=\'openEditUser(' + jsArg(u.username) + ')\'>\u270F\uFE0F ' + T('\u062A\u0639\u062F\u064A\u0644 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A') + '</button>';
+    else actions += '<span class="kp-user-badge protected">\uD83D\uDD12 ' + T('\u0645\u062D\u0645\u064A') + '</span>';
+    if (isTeacherLike) actions += '<button class="btn btn-out btn-sm" onclick=\'openEditUserClasses(' + jsArg(u.username) + ')\'>\uD83D\uDCDA ' + T('\u0627\u0644\u0641\u0635\u0648\u0644') + '</button>';
+    if (!isPrimaryAdmin && (!currentUser || currentUser.username !== u.username)) actions += '<button class="btn ' + (disabled ? 'btn-g' : 'btn-y') + ' btn-sm" onclick=\'toggleUserStatus(' + jsArg(u.username) + ')\'>' + (disabled ? '\uD83D\uDFE2 ' + T('\u062A\u0641\u0639\u064A\u0644') : '\uD83D\uDD34 ' + T('\u062A\u0639\u0637\u064A\u0644')) + '</button>';
+    if (!isPrimaryAdmin) actions += '<button class="btn btn-r btn-sm" onclick=\'deleteUser(' + jsArg(u.username) + ')\'>\uD83D\uDDD1 ' + T('\u062D\u0630\u0641') + '</button>';
+    return '<article class="kp-user-card ' + (disabled ? 'is-disabled ' : '') + (isPrimaryAdmin ? 'is-protected' : '') + '" data-user-card data-search="' + esc(searchText) + '">'
+      + '<div class="kp-user-main">'
+      + '<div class="kp-user-avatar ' + meta.key + '">' + meta.icon + '</div>'
+      + '<div class="kp-user-info">'
+      + '<div class="kp-user-name">' + esc(u.name || u.username || T('\u0628\u062F\u0648\u0646 \u0627\u0633\u0645')) + '</div>'
+      + '<div class="kp-user-username">@' + esc(u.username || '') + '</div>'
+      + '<div class="kp-user-badges"><span class="kp-user-badge role-' + meta.key + '">' + meta.icon + ' ' + meta.label + '</span>' + statusBadge + protectedBadge + '</div>'
+      + '</div></div>'
+      + '<div class="kp-user-meta">'
+      + '<div class="kp-user-meta-row"><span>' + T('\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631') + '</span><span>' + shownPassword + '</span></div>'
+      + '<div class="kp-user-meta-row"><span>' + T('\u0627\u0644\u0641\u0635\u0648\u0644 / \u0627\u0644\u0646\u0637\u0627\u0642') + '</span><span class="kp-user-classes">' + esc(classesText) + '</span></div>'
+      + '</div>'
+      + '<div class="kp-user-actions">' + actions + '</div>'
+      + '</article>';
   }).join('');
+  if (!cards) cards = '<div class="kp-empty-users">' + T('\u0644\u0627 \u064A\u0648\u062C\u062F \u0645\u0633\u062A\u062E\u062F\u0645\u0648\u0646 \u062D\u0627\u0644\u064A\u0627\u064B. \u0623\u0636\u0641 \u0623\u0648\u0644 \u0645\u0633\u062A\u062E\u062F\u0645 \u0645\u0646 \u0627\u0644\u0632\u0631 \u0623\u0639\u0644\u0627\u0647.') + '</div>';
+  el.innerHTML = '<div class="kp-users-board">'
+    + '<div class="kp-users-head">'
+    + '<div class="kp-users-title"><span class="kp-users-title-icon">\uD83D\uDC65</span><div><h3>' + T('\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645\u064A\u0646') + '</h3><small>' + T('\u0639\u0631\u0636 \u0645\u0646\u0638\u0645 \u0644\u0644\u062D\u0633\u0627\u0628\u0627\u062A \u0648\u0627\u0644\u0635\u0644\u0627\u062D\u064A\u0627\u062A \u0645\u0639 \u062A\u0639\u062F\u064A\u0644 \u0623\u0633\u0631\u0639') + '</small></div></div>'
+    + '<div class="kp-users-actions"><button class="btn btn-g btn-sm" onclick="openAddUser()">\uFF0B ' + T('\u0625\u0636\u0627\u0641\u0629 \u0645\u0633\u062A\u062E\u062F\u0645') + '</button><button class="btn btn-out btn-sm" onclick="renderAdminUsers()">\u21BB ' + T('\u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0639\u0631\u0636') + '</button></div>'
+    + '</div>'
+    + '<div class="kp-users-stats">'
+    + '<div class="kp-users-stat"><b>' + total + '</b><span>' + T('\u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645\u064A\u0646') + '</span></div>'
+    + '<div class="kp-users-stat"><b>' + activeCount + '</b><span>' + T('\u062D\u0633\u0627\u0628\u0627\u062A \u0641\u0639\u0627\u0644\u0629') + '</span></div>'
+    + '<div class="kp-users-stat"><b>' + disabledCount + '</b><span>' + T('\u062D\u0633\u0627\u0628\u0627\u062A \u0645\u0639\u0637\u0644\u0629') + '</span></div>'
+    + '<div class="kp-users-stat"><b>' + adminCount + '</b><span>' + T('\u0645\u062F\u0631\u0627\u0621') + '</span></div>'
+    + '<div class="kp-users-stat"><b>' + limitedCount + '</b><span>' + T('\u0635\u0644\u0627\u062D\u064A\u0627\u062A \u0645\u062D\u062F\u062F\u0629') + '</span></div>'
+    + '</div>'
+    + '<div class="kp-users-tools"><div class="kp-users-search"><input id="kp-users-search" type="search" placeholder="' + T('\u0628\u062D\u062B \u0628\u0627\u0644\u0627\u0633\u0645\u060C \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645\u060C \u0627\u0644\u062F\u0648\u0631 \u0623\u0648 \u0627\u0644\u0641\u0635\u0644...') + '" oninput="kpFilterAdminUsers(this.value)"></div><div class="kp-users-hint">' + T('\u0627\u0644\u062A\u0639\u062F\u064A\u0644 \u0648\u0627\u0644\u062D\u0630\u0641 \u0648\u0627\u0644\u062D\u0627\u0644\u0629 \u0645\u062D\u0641\u0648\u0638\u0629 \u0639\u0644\u0649 Firebase \u0639\u0646\u062F \u0627\u0644\u0636\u063A\u0637 \u0639\u0644\u0649 \u0627\u0644\u0625\u062C\u0631\u0627\u0621') + '</div></div>'
+    + '<div class="kp-users-grid" id="kp-users-grid">' + cards + '</div>'
+    + '</div>';
+}
+
+function kpFilterAdminUsers(value){
+  var q = String(value || '').trim().toLowerCase();
+  var cards = document.querySelectorAll('#admin-users-list [data-user-card]');
+  var shown = 0;
+  cards.forEach(function(card){
+    var ok = !q || String(card.getAttribute('data-search') || '').toLowerCase().indexOf(q) !== -1;
+    card.style.display = ok ? '' : 'none';
+    if (ok) shown++;
+  });
+  var grid = document.getElementById('kp-users-grid');
+  var empty = document.getElementById('kp-users-filter-empty');
+  if (grid) {
+    if (!shown && cards.length) {
+      if (!empty) {
+        empty = document.createElement('div');
+        empty.id = 'kp-users-filter-empty';
+        empty.className = 'kp-empty-users';
+        empty.textContent = String.fromCharCode(1604,1575,32,1578,1608,1580,1583,32,1606,1578,1575,1574,1580,32,1605,1591,1575,1576,1602,1577,32,1604,1604,1576,1581,1579,32,1575,1604,1581,1575,1604,1610,46);
+        grid.appendChild(empty);
+      }
+      empty.style.display = '';
+    } else if (empty) {
+      empty.style.display = 'none';
+    }
+  }
 }
 
 // 🔒 Modal-based add-user UI supporting role=teacher with multi-class selection
@@ -14453,7 +14529,7 @@ async function readOutlookMessage(i){
 
 async function openOutlookMessageFull(i){
   try{ await readOutlookMessage(i); openSelectedEmailFull(); }
-  catch(e){ setEmailStatus('ØªØ¹Ø°Ø± ÙØªØ­ Ø§ÙØ±Ø³Ø§ÙØ© ÙØ§ÙÙØ©: '+(e.message||e),'err'); }
+  catch(e){ setEmailStatus('???? ??? ??????? ?????: '+(e.message||e),'err'); }
 }
 function ensureEmailFullReader(){
   let ov=document.getElementById('email-full-reader-overlay');
@@ -20835,7 +20911,7 @@ input,select,textarea,button{max-width:100%}
   window.__kpStudentInternalNoteHighlight20260504 = true;
   function isRealNoteText(text){
     text = String(text || '').replace(/\s+/g, ' ').trim();
-    return !!text && text !== '-' && text !== '—' && text !== 'â€”';
+    return !!text && text !== '-' && text !== '—' && text !== '?';
   }
   function highlightStudentInternalNotes(){
     var table = document.getElementById('stu-table');
