@@ -1,4 +1,4 @@
-?<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
@@ -5876,374 +5876,6 @@ function printStudentsSelectedReport(){
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
     <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script>
-
-<script id="kp-manager-secure-doc-change-requests-20260510-fixed">
-(function(){
-  if (window.__kpStudentChangeRequestsFixed20260510) return;
-  window.__kpStudentChangeRequestsFixed20260510 = true;
-
-  var DOC_FIELDS = {
-    imgChildPhoto:true, imgEmiratesId:true, imgPassport:true, imgBirthCert:true,
-    imgVaccination:true, imgResidency:true, imgGuardianId:true, imgGuardianPass:true,
-    imgDadId:true, imgDadPassport:true, imgChildPassport:true,
-    imgFatherEmiratesId:true, imgFatherId:true, imgFatherPassport:true,
-    imgMedical:true, imgMotherId:true, imgMotherPassport:true,
-    childPhoto:true, emiratesIdPhoto:true, passportPhoto:true, birthCertificate:true,
-    vaccinationCard:true, residencyPhoto:true, medicalFile:true
-  };
-
-  var state = { requests: [], loaded:false, filter:'pending', busy:false };
-
-  function baseUrl(){
-    try {
-      if (typeof FB_URL !== 'undefined' && FB_URL) return String(FB_URL).replace(/\/$/, '');
-      if (window.FB_URL) return String(window.FB_URL).replace(/\/$/, '');
-    } catch(_e) {}
-    return 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data';
-  }
-  function clean(v){ return String(v == null ? '' : v).trim(); }
-  function esc(v){
-    return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){
-      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-    });
-  }
-  function safeJs(v){ return String(v == null ? '' : v).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/[\r\n]+/g,' '); }
-  function safeKey(v){ return clean(v || ('key_' + Date.now())).replace(/[.#$\[\]\/]/g,'_').replace(/\s+/g,'_'); }
-  function reqId(r){ return clean(r && (r.id || r.requestId || r.firebaseKey || r.__key)) || ('req_' + Date.now()); }
-  function statusOf(r){
-    var s = clean(r && (r.status || r.__group || r._legacyGroup || 'pending')).toLowerCase();
-    if (s === 'accepted' || s === 'accept' || s === 'approve') return 'approved';
-    if (s === 'rejected' || s === 'reject') return 'rejected';
-    if (s === 'approved') return 'approved';
-    return 'pending';
-  }
-  function statusRank(r){ var s = statusOf(r); return s === 'pending' ? 1 : 3; }
-  function rowTime(r){ return Date.parse((r && (r.updatedAt || r.approvedAt || r.rejectedAt || r.createdAt)) || '') || 0; }
-  function isAttachmentChange(c, k){ return !!(c && (c.isAttachment || c.fileData || c.fileName || DOC_FIELDS[k] || DOC_FIELDS[c.field] || DOC_FIELDS[c.systemField])); }
-  function fileLabel(c){ return clean(c && (c.fileName || c.newValue || c.name)) || 'ملف مرفق'; }
-
-  function mapField(k, c){
-    c = c || {};
-    var f = clean(c.field || c.systemField || c.key || k);
-    if (DOC_FIELDS[f]) return f;
-    if (DOC_FIELDS[k]) return k;
-    var map = {
-      name:'name', arabicName:'name', studentName:'name', nameAr:'name',
-      nameEn:'nameEn', englishName:'nameEn',
-      dob:'dob', birthDate:'dob', dateOfBirth:'dob',
-      bpl:'bpl', birthPlace:'bpl', placeOfBirth:'bpl',
-      gen:'gen', gender:'gen', sex:'gen',
-      nat:'nat', nationality:'nat',
-      idNo:'idNo', identityNo:'idNo', nationalId:'idNo', emiratesId:'idNo',
-      cls:'cls', class:'cls', className:'cls', studentClass:'cls',
-      dad:'dad', fatherName:'dad', father:'dad',
-      dph:'dph', fatherPhone:'dph', dadPhone:'dph', fatherMobile:'dph',
-      dadEmail:'dadEmail', fatherEmail:'dadEmail',
-      job:'job', fatherJob:'job', dadJob:'job',
-      mom:'mom', motherName:'mom', mother:'mom',
-      mph:'mph', motherPhone:'mph', momPhone:'mph', motherMobile:'mph',
-      momEmail:'momEmail', motherEmail:'momEmail',
-      momJob:'momJob', motherJob:'momJob',
-      addr:'addr', address:'addr', homeAddress:'addr',
-      emergName:'emergName', emergencyName:'emergName', emergencyContact:'emergName',
-      emergRel:'emergRel', emergencyRel:'emergRel', emergencyRelation:'emergRel',
-      emergMob:'emergMob', emergencyPhone:'emergMob', emergencyMobile:'emergMob',
-      health:'health', medicalStatus:'health', medicalNotes:'health', healthDetails:'health',
-      note:'note', notes:'note', remarks:'note'
-    };
-    return map[f] || map[k] || f || k;
-  }
-
-  function rowsFromNode(node, group){
-    var out = [];
-    if (!node) return out;
-    if (Array.isArray(node)) {
-      node.forEach(function(r, i){ if (r && typeof r === 'object') out.push(Object.assign({}, r, { id:r.id || r.requestId || String(i), __group:group, __key:String(i) })); });
-      return out;
-    }
-    if (typeof node === 'object') {
-      Object.keys(node).forEach(function(k){
-        var r = node[k];
-        if (r && typeof r === 'object') out.push(Object.assign({}, r, { id:r.id || r.requestId || k, __group:group, __key:k }));
-      });
-    }
-    return out;
-  }
-
-  async function loadRequests(){
-    var res = await fetch(baseUrl() + '/studentChangeRequests.json?ts=' + Date.now(), {cache:'no-store'});
-    if (!res.ok) throw new Error('تعذر تحميل طلبات تعديل البيانات من Firebase (' + res.status + ').');
-    var data = await res.json() || {};
-    var all = [];
-    Object.keys(data || {}).forEach(function(k){
-      var node = data[k];
-      if (k === 'pending' || k === 'approved' || k === 'accepted' || k === 'rejected') {
-        all = all.concat(rowsFromNode(node, k));
-      } else if (node && typeof node === 'object') {
-        all.push(Object.assign({}, node, { id:node.id || node.requestId || k, __key:k }));
-      }
-    });
-    var byId = {};
-    all.forEach(function(r){
-      var id = reqId(r);
-      r.id = id;
-      var old = byId[id];
-      if (!old || statusRank(r) > statusRank(old) || (statusRank(r) === statusRank(old) && rowTime(r) >= rowTime(old))) byId[id] = r;
-    });
-    state.requests = Object.keys(byId).map(function(k){ return byId[k]; });
-    state.loaded = true;
-    return state.requests;
-  }
-
-  function ensureCard(){
-    var page = document.getElementById('pg-forms');
-    if (!page) return null;
-    var card = document.getElementById('student-change-requests-card');
-    if (!card) {
-      var firstCard = page.querySelector('.card');
-      card = document.createElement('div');
-      card.className = 'card';
-      card.id = 'student-change-requests-card';
-      card.innerHTML = '<div class="ct"><div>📝 طلبات تعديل بيانات أولياء الأمور <span class="b by" id="student-change-pending-badge">0</span></div><div class="btn-group"><select id="student-change-filter" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px"><option value="pending">قيد المراجعة</option><option value="approved">المعتمدة</option><option value="rejected">المرفوضة</option><option value="all">الكل</option></select><button class="btn btn-out btn-sm" id="student-change-refresh">🔄 تحديث</button></div></div><div id="student-change-requests-list"></div>';
-      if (firstCard && firstCard.parentNode) firstCard.parentNode.insertBefore(card, firstCard.nextSibling);
-      else page.appendChild(card);
-    }
-    var sel = document.getElementById('student-change-filter');
-    if (sel && !sel.__kpFixedBound) {
-      sel.__kpFixedBound = true;
-      if (state.filter) sel.value = state.filter;
-      sel.addEventListener('change', function(){ state.filter = this.value || 'pending'; renderRequests(); });
-    }
-    var refresh = document.getElementById('student-change-refresh');
-    if (refresh && !refresh.__kpFixedBound) {
-      refresh.__kpFixedBound = true;
-      refresh.addEventListener('click', function(){ window.kpLoadStudentChangeRequests(); });
-    }
-    return card;
-  }
-
-  function attachmentButton(r, k, c){
-    if (!isAttachmentChange(c, k)) return '';
-    if (!c || !c.fileData) return '<span class="b by" title="لا يوجد ملف داخل الطلب">مرفق بدون معاينة</span>';
-    return '<button type="button" class="btn btn-b btn-sm" onclick="kpViewStudentChangeAttachment(\'' + safeJs(reqId(r)) + '\',\'' + safeJs(k) + '\')">👁️ عرض المرفق</button>';
-  }
-
-  function renderRequests(){
-    ensureCard();
-    var host = document.getElementById('student-change-requests-list');
-    if (!host) return;
-    var badge = document.getElementById('student-change-pending-badge');
-    if (!state.loaded) {
-      host.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">جاري تحميل طلبات التعديل...</div>';
-      if (badge) badge.textContent = '0';
-      return;
-    }
-    var pendingCount = state.requests.filter(function(r){ return statusOf(r) === 'pending'; }).length;
-    if (badge) badge.textContent = pendingCount;
-    var rows = state.requests.filter(function(r){ return state.filter === 'all' || statusOf(r) === state.filter; })
-      .sort(function(a,b){ return rowTime(b) - rowTime(a); });
-    if (!rows.length) {
-      host.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">لا توجد طلبات تعديل بيانات</div>';
-      return;
-    }
-    host.innerHTML = rows.map(function(r){
-      var st = statusOf(r);
-      var changes = r.changes || {};
-      var keys = Object.keys(changes);
-      var changeHtml = keys.map(function(k){
-        var c = changes[k] || {};
-        var newVal = isAttachmentChange(c, k) ? fileLabel(c) : (c.newValue || '—');
-        return '<tr><td>' + esc(c.label || k) + '</td><td>' + esc(c.oldValue || '—') + '</td><td style="font-weight:800;color:var(--g1)">' + esc(newVal) + '<div style="margin-top:6px">' + attachmentButton(r, k, c) + '</div></td></tr>';
-      }).join('') || '<tr><td colspan="3">لا توجد حقول معدلة، يوجد ملاحظة فقط.</td></tr>';
-      var actions = st === 'pending'
-        ? '<button class="btn btn-g btn-sm" onclick="kpApproveStudentChangeRequest(\'' + safeJs(reqId(r)) + '\')">✅ اعتماد</button> <button class="btn btn-r btn-sm" onclick="kpRejectStudentChangeRequest(\'' + safeJs(reqId(r)) + '\')">❌ رفض</button>'
-        : '<span class="b ' + (st === 'approved' ? 'bg' : 'br') + '">' + (st === 'approved' ? 'معتمد' : 'مرفوض') + '</span>';
-      return '<div class="form-req-card" style="display:block"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div><div class="form-req-name">' + esc(r.studentName || r.name || 'طالب غير محدد') + '</div><div class="form-req-meta"><span>📧 ' + esc(r.parentEmail || '—') + '</span><span>📱 ' + esc(r.parentPhone || '—') + '</span><span>📅 ' + esc(String(r.createdAt || '').slice(0,10) || '—') + '</span></div></div><div class="btn-group">' + actions + '</div></div><table class="tbl" style="margin-top:10px;font-size:12px"><thead><tr><th>الحقل</th><th>القيمة الحالية</th><th>القيمة المطلوبة</th></tr></thead><tbody>' + changeHtml + '</tbody></table>' + (r.note ? '<div style="margin-top:8px;color:var(--muted);font-size:12px">ملاحظة ولي الأمر: ' + esc(r.note) + '</div>' : '') + '</div>';
-    }).join('');
-  }
-
-  function findRequest(id){ return state.requests.find(function(r){ return String(reqId(r)) === String(id); }); }
-  function findStudentForRequest(r){
-    var list = Array.isArray(window.students) ? window.students : (typeof students !== 'undefined' && Array.isArray(students) ? students : []);
-    var sid = clean(r && (r.studentId || r.stuId || r.childId));
-    var sname = clean(r && (r.studentName || r.name));
-    var idx = list.findIndex(function(s){ return sid && clean(s && s.id) === sid; });
-    if (idx < 0 && sname) idx = list.findIndex(function(s){ return clean(s && (s.name || '')) === sname || clean(s && (s.nameEn || '')) === sname; });
-    return { list:list, index:idx, student: idx >= 0 ? list[idx] : null };
-  }
-
-  function makeViewerHtml(c){
-    var data = c && c.fileData;
-    var name = fileLabel(c);
-    var type = clean(c && c.fileType).toLowerCase();
-    if (!data) return '<div style="padding:30px;text-align:center;color:var(--muted)">لا يوجد ملف قابل للمعاينة داخل هذا الطلب.</div>';
-    if (type.indexOf('image/') === 0 || /^data:image\//i.test(data)) {
-      return '<div style="text-align:center"><img src="' + esc(data) + '" alt="' + esc(name) + '" style="max-width:100%;max-height:74vh;border-radius:14px;border:1px solid var(--border);background:#fff"></div>';
-    }
-    if (type.indexOf('pdf') !== -1 || /^data:application\/pdf/i.test(data)) {
-      return '<iframe src="' + esc(data) + '" style="width:100%;height:74vh;border:1px solid var(--border);border-radius:14px;background:#fff"></iframe>';
-    }
-    return '<div style="padding:22px;text-align:center"><p style="margin-bottom:12px;color:var(--muted);font-weight:800">هذا النوع من الملفات قد لا يظهر داخل الصفحة.</p><a class="btn btn-b" href="' + esc(data) + '" download="' + esc(name) + '" target="_blank" rel="noopener">فتح / تنزيل المرفق</a></div>';
-  }
-
-  window.kpViewStudentChangeAttachment = function(id, key){
-    var r = findRequest(id);
-    if (!r) return alert('لم يتم العثور على طلب التعديل. اضغطي تحديث ثم حاولي مرة أخرى.');
-    var c = r.changes && r.changes[key];
-    if (!c) return alert('لم يتم العثور على المرفق داخل هذا الطلب.');
-    var old = document.getElementById('kp-change-attachment-viewer');
-    if (old) old.remove();
-    var overlay = document.createElement('div');
-    overlay.id = 'kp-change-attachment-viewer';
-    overlay.className = 'ov on';
-    overlay.style.zIndex = '5000';
-    overlay.innerHTML = '<div class="mo mo-lg" style="width:min(980px,96vw);max-height:94vh"><div class="mot" style="justify-content:space-between"><span>👁️ معاينة المرفق: ' + esc(c.label || key) + '</span><button class="btn btn-r btn-sm" type="button" onclick="document.getElementById(\'kp-change-attachment-viewer\').remove()">إغلاق</button></div><div style="font-size:12px;color:var(--muted);font-weight:800;margin-bottom:10px">' + esc(fileLabel(c)) + '</div>' + makeViewerHtml(c) + '</div>';
-    document.body.appendChild(overlay);
-  };
-
-  async function saveStudent(stu){
-    if (typeof window.saveRecordRemoteAware === 'function') {
-      var ok = await window.saveRecordRemoteAware({ type:'students', activeArrayName:'students', record:stu, keyField:'id', label:'تعديل بيانات الطالب' });
-      if (ok === false) return false;
-      return true;
-    }
-    var key = (typeof kpRecordKey === 'function') ? kpRecordKey(stu, 'id') : safeKey(stu && (stu.firebaseKey || stu.id || stu.name));
-    stu.firebaseKey = key;
-    var updates = { savedAt:new Date().toISOString(), version:2 };
-    updates['students/' + key] = stu;
-    updates['deletedStudents/' + key] = null;
-    var res = await fetch(baseUrl() + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) });
-    return res.ok;
-  }
-
-  async function moveRequestToStatus(r, status){
-    var id = safeKey(reqId(r));
-    var now = new Date().toISOString();
-    var payload = Object.assign({}, r, {
-      id:reqId(r),
-      status:status,
-      updatedAt:now,
-      decidedAt:now,
-      decidedBy:(window.currentUser && (window.currentUser.username || window.currentUser.name)) || (typeof currentUser !== 'undefined' && currentUser && (currentUser.username || currentUser.name)) || 'admin'
-    });
-    if (status === 'approved') payload.approvedAt = now;
-    if (status === 'rejected') payload.rejectedAt = now;
-    delete payload.__group; delete payload.__key; delete payload._legacyGroup;
-    var updates = { savedAt:now };
-    ['pending','approved','accepted','rejected'].forEach(function(g){ updates['studentChangeRequests/' + g + '/' + id] = null; });
-    if (r.__group && r.__key) updates['studentChangeRequests/' + r.__group + '/' + safeKey(r.__key)] = null;
-    if (!r.__group && r.__key) updates['studentChangeRequests/' + safeKey(r.__key)] = null;
-    updates['studentChangeRequests/' + status + '/' + id] = payload;
-    var res = await fetch(baseUrl() + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) });
-    if (!res.ok) throw new Error('تعذر تحديث حالة الطلب على Firebase (' + res.status + ').');
-  }
-
-  async function confirmAction(message, options){
-    if (window.kpConfirmAsync) return await window.kpConfirmAsync(null, null, message, options || {});
-    return window.confirm(message);
-  }
-
-  window.kpApproveStudentChangeRequest = async function(id){
-    if (state.busy) return;
-    state.busy = true;
-    try {
-      await loadRequests();
-      var r = findRequest(id);
-      if (!r) throw new Error('لم يتم العثور على طلب التعديل.');
-      if (statusOf(r) !== 'pending') { renderRequests(); return; }
-      var found = findStudentForRequest(r);
-      if (!found.student) throw new Error('لم يتم العثور على الطالب المرتبط بهذا الطلب.');
-      var label = clean(found.student.name || found.student.nameEn || r.studentName || 'الطالب');
-      var okConfirm = await confirmAction('سيتم تحديث ملف الطالب: ' + label + '.\nبعد الاعتماد سيتم نقل الطلب من قيد المراجعة إلى المعتمدة. هل تريدين المتابعة؟', { okText:'اعتماد الطلب' });
-      if (!okConfirm) return;
-      var changes = r.changes || {};
-      Object.keys(changes).forEach(function(k){
-        var c = changes[k] || {};
-        var dest = mapField(k, c);
-        if (!dest) return;
-        if (isAttachmentChange(c, k) && c.fileData) {
-          found.student[dest] = c.fileData;
-          if (c.fileName) found.student[dest + 'Name'] = c.fileName;
-          if (c.fileType) found.student[dest + 'Type'] = c.fileType;
-          if (c.fileSize) found.student[dest + 'Size'] = c.fileSize;
-        } else {
-          found.student[dest] = c.newValue;
-        }
-      });
-      found.student.updatedAt = new Date().toISOString();
-      found.list[found.index] = found.student;
-      window.students = found.list;
-      var saved = await saveStudent(found.student);
-      if (!saved) throw new Error('لم يتم حفظ تعديل الطالب على Firebase. لم يتم اعتماد الطلب.');
-      try { if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage(); } catch(_e) {}
-      try { if (typeof saveToLocalStorage === 'function') saveToLocalStorage(); } catch(_e2) {}
-      await moveRequestToStatus(r, 'approved');
-      await loadRequests();
-      renderRequests();
-      try { if (typeof renderStudents === 'function') renderStudents(); } catch(_e3) {}
-      if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم اعتماد طلب التعديل وتحديث ملف الطالب');
-    } catch(e) {
-      console.error('kpApproveStudentChangeRequest failed:', e);
-      alert('تعذر اعتماد طلب التعديل: ' + (e && e.message ? e.message : e));
-    } finally {
-      state.busy = false;
-    }
-  };
-
-  window.kpRejectStudentChangeRequest = async function(id){
-    if (state.busy) return;
-    state.busy = true;
-    try {
-      await loadRequests();
-      var r = findRequest(id);
-      if (!r) throw new Error('لم يتم العثور على طلب التعديل.');
-      if (statusOf(r) !== 'pending') { renderRequests(); return; }
-      var okConfirm = await confirmAction('هل تريدين رفض طلب تعديل بيانات الطالب: ' + clean(r.studentName || r.name || '') + '؟', { danger:true, okText:'رفض الطلب' });
-      if (!okConfirm) return;
-      await moveRequestToStatus(r, 'rejected');
-      await loadRequests();
-      renderRequests();
-      if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم رفض طلب تعديل البيانات');
-    } catch(e) {
-      console.error('kpRejectStudentChangeRequest failed:', e);
-      alert('تعذر رفض طلب التعديل: ' + (e && e.message ? e.message : e));
-    } finally {
-      state.busy = false;
-    }
-  };
-
-  window.kpLoadStudentChangeRequests = async function(){
-    try {
-      ensureCard();
-      renderRequests();
-      await loadRequests();
-      renderRequests();
-    } catch(e) {
-      console.error('kpLoadStudentChangeRequests failed:', e);
-      state.loaded = true;
-      var host = document.getElementById('student-change-requests-list');
-      if (host) host.innerHTML = '<div style="text-align:center;padding:20px;color:var(--r1);font-weight:800">تعذر تحميل طلبات تعديل البيانات: ' + esc(e && e.message ? e.message : e) + '</div>';
-    }
-  };
-
-  var previousRenderFormRequests = window.renderFormRequests;
-  if (typeof previousRenderFormRequests === 'function' && !previousRenderFormRequests.__kpStudentChangeFixedWrapped) {
-    window.renderFormRequests = function(){
-      var result = previousRenderFormRequests.apply(this, arguments);
-      setTimeout(function(){ window.kpLoadStudentChangeRequests(); }, 120);
-      return result;
-    };
-    window.renderFormRequests.__kpStudentChangeFixedWrapped = true;
-    try { renderFormRequests = window.renderFormRequests; } catch(_e) {}
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function(){ setTimeout(window.kpLoadStudentChangeRequests, 250); });
-  } else {
-    setTimeout(window.kpLoadStudentChangeRequests, 250);
-  }
-})();
-</script>
 
 </body></html>`);
     w.document.close();
@@ -23677,29 +23309,293 @@ document.addEventListener('DOMContentLoaded', function(){
 
 <script>
 (function installStudentChangeRequestManager(){
-  if (window.__kpStudentChangeRequestManagerInstalled) return;
-  window.__kpStudentChangeRequestManagerInstalled = true;
+  window.__kpStudentChangeRequestManagerInstalled = '20260510-fixed-safe-v2';
   var requests = [];
   var loaded = false;
   var filter = 'pending';
-  function esc2(v){ return (typeof escapeHtml === 'function' ? escapeHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];})); }
-  function fbBase(){ return (typeof FB_URL !== 'undefined' && FB_URL) ? String(FB_URL).replace(/[/]$/,'') : 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data'; }
-  function jsArg(v){ var bs=String.fromCharCode(92); return String(v == null ? '' : v).split(bs).join(bs+bs).split("'").join(bs+"'").replace(/[\r\n]+/g,' '); }
-  function rowsFromNode(node, group){ if (!node) return []; if (Array.isArray(node)) return node.filter(Boolean).map(function(r){ return Object.assign({}, r, {_legacyGroup:group||''}); }); return Object.keys(node).map(function(k){ var r=node[k]||{}; return Object.assign({}, r, {id:r.id||k, _legacyGroup:group||''}); }); }
-  async function loadRequests(){ try { var res = await fetch(fbBase() + '/studentChangeRequests.json?ts=' + Date.now()); var data = await res.json() || {}; var flat = []; Object.keys(data).forEach(function(k){ if (k === 'pending' || k === 'approved' || k === 'rejected') return; var r = data[k]; if (r && typeof r === 'object') flat.push(Object.assign({}, r, {id:r.id||k})); }); requests = flat.concat(rowsFromNode(data.pending, 'pending')).concat(rowsFromNode(data.approved, 'approved')).concat(rowsFromNode(data.rejected, 'rejected')); var seen = {}; requests = requests.filter(function(r){ var id=String(r.id||''); if(!id || seen[id]) return false; seen[id]=true; return true; }); loaded = true; } catch(e) { console.warn('student change requests load failed', e); requests = []; loaded = true; } }
-  function statusOf(r){ return String(r.status || r._legacyGroup || 'pending').toLowerCase(); }
-  function findStudentForRequest(r){ var sid = String(r.studentId || ''); var arr = (typeof students !== 'undefined' && Array.isArray(students)) ? students : []; return arr.find(function(s){ return sid && String(s.id) === sid; }) || arr.find(function(s){ return String(s.name||'').trim() && String(s.name||'').trim() === String(r.studentName||'').trim(); }); }
-  function mapField(key, c){ var direct = {name:'name',nameEn:'nameEn',dob:'dob',bpl:'bpl',gen:'gen',nat:'nat',idNo:'idNo',cls:'cls',dad:'dad',dph:'dph',dadEmail:'dadEmail',job:'job',mom:'mom',mph:'mph',momEmail:'momEmail',momJob:'momJob',addr:'addr',emergName:'emergName',emergRel:'emergRel',emergMob:'emergMob',health:'health',note:'note'}; var system = {birthPlace:'bpl',gender:'gen',nationality:'nat',fatherName:'dad',fatherPhone:'dph',fatherEmail:'dadEmail',fatherJob:'job',motherName:'mom',motherPhone:'mph',motherEmail:'momEmail',motherJob:'momJob',address:'addr',emergencyName:'emergName',emergencyRel:'emergRel',emergencyPhone:'emergMob',notes:'note'}; return direct[key] || direct[c && c.field] || direct[c && c.systemField] || system[c && c.systemField] || key; }
-  function ensureCard(){ var page = document.getElementById('pg-forms'); if (!page || document.getElementById('student-change-requests-card')) return; var firstCard = page.querySelector('.card'); if (!firstCard) return; var card = document.createElement('div'); card.className = 'card'; card.id = 'student-change-requests-card'; card.innerHTML = '<div class="ct"><div>📝 طلبات تعديل بيانات أولياء الأمور <span class="b by" id="student-change-pending-badge">0</span></div><div class="btn-group"><select id="student-change-filter" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px"><option value="pending">قيد المراجعة</option><option value="approved">المعتمدة</option><option value="rejected">المرفوضة</option><option value="all">الكل</option></select><button class="btn btn-out btn-sm" id="student-change-refresh">🔄 تحديث</button></div></div><div id="student-change-requests-list"><div style="text-align:center;padding:20px;color:var(--muted)">جاري تحميل طلبات التعديل...</div></div>'; firstCard.parentNode.insertBefore(card, firstCard.nextSibling); document.getElementById('student-change-refresh').onclick = function(){ loadRequests().then(renderRequests); }; document.getElementById('student-change-filter').onchange = function(){ filter=this.value; renderRequests(); }; }
-  function renderRequests(){ ensureCard(); var host = document.getElementById('student-change-requests-list'); if (!host) return; if (!loaded) { host.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">جاري تحميل طلبات التعديل...</div>'; return; } var pending = requests.filter(function(r){ return statusOf(r) === 'pending'; }).length; var badge = document.getElementById('student-change-pending-badge'); if (badge) badge.textContent = pending; var rows = requests.filter(function(r){ return filter === 'all' || statusOf(r) === filter; }).sort(function(a,b){ return String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||'')); }); if (!rows.length) { host.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">لا توجد طلبات تعديل بيانات</div>'; return; } host.innerHTML = rows.map(function(r){ var changes = r.changes || {}; var changeHtml = Object.keys(changes).map(function(k){ var c=changes[k]||{}; return '<tr><td>'+esc2(c.label||k)+'</td><td>'+esc2(c.oldValue||'—')+'</td><td style="font-weight:800;color:var(--g1)">'+esc2(c.newValue||'—')+'</td></tr>'; }).join('') || '<tr><td colspan="3">لا توجد حقول معدلة، يوجد ملاحظة فقط.</td></tr>'; var st = statusOf(r); var actions = st === 'pending' ? '<button class="btn btn-g btn-sm" onclick="kpApproveStudentChangeRequest(&quot;'+esc2(r.id)+'&quot;)">✅ اعتماد</button> <button class="btn btn-r btn-sm" onclick="kpRejectStudentChangeRequest(&quot;'+esc2(r.id)+'&quot;)">❌ رفض</button>' : '<span class="b '+(st==='approved'?'bg':'br')+'">'+(st==='approved'?'معتمد':'مرفوض')+'</span>'; return '<div class="form-req-card" style="display:block"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div><div class="form-req-name">'+esc2(r.studentName||'طالب غير محدد')+'</div><div class="form-req-meta"><span>📧 '+esc2(r.parentEmail||'—')+'</span><span>📅 '+esc2(String(r.createdAt||'').slice(0,10)||'—')+'</span></div></div><div>'+actions+'</div></div><table class="tbl" style="margin-top:10px;font-size:12px"><thead><tr><th>الحقل</th><th>القيمة الحالية</th><th>القيمة المطلوبة</th></tr></thead><tbody>'+changeHtml+'</tbody></table>'+(r.note?'<div style="margin-top:8px;color:var(--muted);font-size:12px">ملاحظة ولي الأمر: '+esc2(r.note)+'</div>':'')+'</div>'; }).join(''); }
-  async function saveRequestStatus(r, status){ var updated = Object.assign({}, r, {status:status, updatedAt:new Date().toISOString(), decidedBy:(currentUser && (currentUser.username || currentUser.name)) || 'admin'}); delete updated._legacyGroup; await fetch(fbBase() + '/studentChangeRequests/' + encodeURIComponent(updated.id) + '.json', {method:'PUT', body:JSON.stringify(updated)}); if (r._legacyGroup) { try { await fetch(fbBase() + '/studentChangeRequests/' + r._legacyGroup + '/' + encodeURIComponent(r.id) + '.json', {method:'DELETE'}); } catch(_e){} } var idx = requests.findIndex(function(x){ return x.id === r.id; }); if (idx >= 0) requests[idx] = updated; }
-  window.kpApproveStudentChangeRequest = async function(id){ var r = requests.find(function(x){ return String(x.id) === String(id); }); if (!r) return; var stu = findStudentForRequest(r); if (!stu) { alert('تعذر العثور على الطالب المرتبط بهذا الطلب.'); return; } if (window.kpConfirmAsync && !(await window.kpConfirmAsync(null, null, 'سيتم تحديث ملف الطالب: ' + (stu.name || r.studentName || '') + '. هل تريدين اعتماد طلب التعديل؟'))) return; var changes = r.changes || {}; Object.keys(changes).forEach(function(k){ var c=changes[k]||{}; stu[mapField(k,c)] = c.newValue; }); stu.updatedAt = new Date().toISOString(); if (typeof saveRecordRemoteAware === 'function') { var ok = await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:stu, keyField:'id', label:'تعديل بيانات الطالب'}); if (!ok) { alert('تعذر حفظ تعديل الطالب على Firebase. لم يتم اعتماد الطلب.'); return; } } await saveRequestStatus(r, 'approved'); if (typeof renderStudents === 'function') renderStudents(); if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم اعتماد طلب تعديل البيانات'); renderRequests(); };
-  window.kpRejectStudentChangeRequest = async function(id){ var r = requests.find(function(x){ return String(x.id) === String(id); }); if (!r) return; if (window.kpConfirmAsync && !(await window.kpConfirmAsync(null, null, 'هل تريدين رفض طلب تعديل بيانات الطالب: ' + (r.studentName || '') + '؟'))) return; await saveRequestStatus(r, 'rejected'); if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم رفض طلب تعديل البيانات'); renderRequests(); };
+  var GROUPS = ['pending','approved','accepted','rejected'];
+
+  function esc2(v){
+    return (typeof escapeHtml === 'function' ? escapeHtml(v) : String(v == null ? '' : v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}));
+  }
+  function clean(v){ return String(v == null ? '' : v).trim(); }
+  function fbBase(){ return (typeof FB_URL !== 'undefined' && FB_URL) ? String(FB_URL).replace(/\/+$/,'') : 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data'; }
+  function safeKey(v){ return clean(v).replace(/[.#$\[\]\/]/g,'_') || ('req_' + Date.now()); }
+  function reqKey(r){ return safeKey(r && (r.id || r.requestId || r.firebaseKey || r._fbKey || r.__key || r.createdAt)); }
+  function statusOf(r){
+    var s = clean(r && (r.status || r._legacyGroup || r.__group || 'pending')).toLowerCase();
+    if (s === 'accepted') return 'approved';
+    if (s === 'approve') return 'approved';
+    if (s === 'reject') return 'rejected';
+    if (s !== 'approved' && s !== 'rejected') return 'pending';
+    return s;
+  }
+  function statusRank(r){ var s=statusOf(r); return s === 'pending' ? 1 : 2; }
+  function rowsFromNode(node, group){
+    if (!node) return [];
+    if (Array.isArray(node)) return node.filter(Boolean).map(function(r,i){ return Object.assign({}, r, {id:r.id||r.requestId||String(i), _legacyGroup:group||'', status:r.status||group||'pending'}); });
+    if (typeof node !== 'object') return [];
+    return Object.keys(node).map(function(k){
+      var r = node[k];
+      if (!r || typeof r !== 'object') return null;
+      return Object.assign({}, r, {id:r.id||r.requestId||k, _legacyGroup:group||'', __key:k, status:r.status||group||'pending'});
+    }).filter(Boolean);
+  }
+  async function loadRequests(){
+    try {
+      var res = await fetch(fbBase() + '/studentChangeRequests.json?ts=' + Date.now(), {cache:'no-store'});
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var data = await res.json() || {};
+      var all = [];
+      Object.keys(data).forEach(function(k){
+        if (GROUPS.indexOf(k) >= 0) return;
+        var r = data[k];
+        if (r && typeof r === 'object' && (r.changes || r.type === 'studentChangeRequest' || r.source === 'parent_portal')) all.push(Object.assign({}, r, {id:r.id||r.requestId||k, __key:k}));
+      });
+      all = all
+        .concat(rowsFromNode(data.pending, 'pending'))
+        .concat(rowsFromNode(data.approved, 'approved'))
+        .concat(rowsFromNode(data.accepted, 'approved'))
+        .concat(rowsFromNode(data.rejected, 'rejected'));
+      var byId = {};
+      all.forEach(function(r){
+        var id = clean(r.id || r.requestId || r.__key);
+        if (!id) return;
+        r.id = id;
+        var old = byId[id];
+        if (!old || statusRank(r) > statusRank(old) || clean(r.updatedAt || r.createdAt) > clean(old.updatedAt || old.createdAt)) byId[id] = r;
+      });
+      requests = Object.keys(byId).map(function(k){ return byId[k]; });
+      loaded = true;
+    } catch(e) {
+      console.warn('student change requests load failed', e);
+      requests = [];
+      loaded = true;
+    }
+  }
+  function studentIdOf(s){ return clean(s && (s.id || s.stuId || s.studentId || s.childId || s.student_id)); }
+  function findStudentForRequest(r){
+    var sid = clean(r && (r.studentId || r.stuId || r.childId || r.student_id));
+    var arr = (typeof students !== 'undefined' && Array.isArray(students)) ? students : (Array.isArray(window.students) ? window.students : []);
+    var found = arr.find(function(s){ return sid && studentIdOf(s) === sid; });
+    if (found) return found;
+    var nm = clean(r && (r.studentName || r.childName || r.name));
+    if (nm) found = arr.find(function(s){ return clean(s.name) === nm || clean(s.nameEn) === nm || clean(s.childName) === nm; });
+    return found || null;
+  }
+  function mapField(key, c){
+    c = c || {};
+    var f = clean(c.systemField || c.field || key);
+    var map = {
+      gender:'gen', gen:'gen', nationality:'nat', nat:'nat', address:'addr', addr:'addr',
+      phone:'dph', parentPhone:'dph', guardianPhone:'dph', fatherPhone:'dph', dph:'dph',
+      motherPhone:'mph', motherMobile:'mph', mph:'mph', email:'dadEmail', parentEmail:'dadEmail', fatherEmail:'dadEmail', dadEmail:'dadEmail',
+      guardian:'dad', parentName:'dad', fatherName:'dad', dad:'dad', motherName:'mom', mom:'mom',
+      motherEmail:'momEmail', momEmail:'momEmail', motherJob:'momJob', momJob:'momJob', fatherJob:'job', job:'job',
+      class:'cls', className:'cls', cls:'cls', health:'health', medicalStatus:'health', note:'note', notes:'note',
+      imgChildPhoto:'imgChildPhoto', imgEmiratesId:'imgEmiratesId', imgPassport:'imgPassport', imgChildPassport:'imgPassport',
+      imgBirthCert:'imgBirthCert', imgVaccination:'imgVaccination', imgResidency:'imgResidency',
+      imgGuardianId:'imgDadId', imgFatherEmiratesId:'imgDadId', imgFatherId:'imgDadId', imgDadId:'imgDadId',
+      imgGuardianPass:'imgDadPassport', imgFatherPassport:'imgDadPassport', imgDadPassport:'imgDadPassport', imgMedical:'imgMedical'
+    };
+    return map[f] || map[key] || f || key;
+  }
+  function aliasesFor(dest){
+    var a = {
+      gen:['gen','gender'], nat:['nat','nationality'], addr:['addr','address'], cls:['cls','class','className'],
+      dph:['dph','dadMob','fatherPhone','guardianPhone','phone'], dadEmail:['dadEmail','fatherEmail','email'], dad:['dad','dadFull','fatherName','guardian'], job:['job','dadJob','fatherJob'],
+      mph:['mph','momMob','motherPhone','motherMobile'], momEmail:['momEmail','motherEmail'], mom:['mom','momFull','motherName'], momJob:['momJob','motherJob'],
+      emergName:['emergName','emergencyName'], emergRel:['emergRel','emergencyRelation'], emergMob:['emergMob','emergencyMobile'],
+      health:['health','healthStatus','healthOverride'], note:['note','notes'], imgPassport:['imgPassport','imgChildPassport'],
+      imgDadId:['imgDadId','imgFatherEmiratesId','imgFatherId','imgGuardianId'], imgDadPassport:['imgDadPassport','imgFatherPassport','imgGuardianPass']
+    };
+    return a[dest] || [dest];
+  }
+  function setStudentField(stu, dest, value, c){
+    aliasesFor(dest).forEach(function(k){ stu[k] = value; });
+    if (dest === 'health') { stu.healthDeleted = false; stu.healthUpdatedAt = new Date().toISOString(); }
+    if (c && (c.fileName || c.fileType || c.fileSize)) {
+      aliasesFor(dest).forEach(function(k){
+        if (c.fileName) stu[k + 'Name'] = c.fileName;
+        if (c.fileType) stu[k + 'Type'] = c.fileType;
+        if (c.fileSize) stu[k + 'Size'] = c.fileSize;
+      });
+    }
+  }
+  function isAttachmentChange(c){
+    c = c || {};
+    return !!(c.isAttachment || c.fileData || /^data:/i.test(clean(c.newValue)) || /^https?:\/\//i.test(clean(c.newValue)) && /\.(pdf|png|jpe?g|webp|gif)(\?|#|$)/i.test(clean(c.newValue)));
+  }
+  function attachmentValue(c){ c = c || {}; return c.fileData || (/^data:/i.test(clean(c.newValue)) || /^https?:\/\//i.test(clean(c.newValue)) ? clean(c.newValue) : ''); }
+  function shortValue(v){
+    v = clean(v);
+    if (!v) return '—';
+    if (/^data:/i.test(v)) return 'ملف مرفق';
+    if (v.length > 90) return v.slice(0,90) + '...';
+    return v;
+  }
+  function changeNewDisplay(c){ if (isAttachmentChange(c)) return c.fileName || c.newValue || 'مرفق جديد'; return shortValue(c && c.newValue); }
+  function changeOldDisplay(c){ if (isAttachmentChange(c)) return c.oldValue ? 'ملف سابق' : '—'; return shortValue(c && c.oldValue); }
+
+  function ensureCard(){
+    var page = document.getElementById('pg-forms');
+    if (!page || document.getElementById('student-change-requests-card')) return;
+    var firstCard = page.querySelector('.card');
+    if (!firstCard) return;
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'student-change-requests-card';
+    card.innerHTML = '<div class="ct"><div>📝 طلبات تعديل بيانات أولياء الأمور <span class="b by" id="student-change-pending-badge">0</span></div><div class="btn-group"><select id="student-change-filter" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:Tajawal,sans-serif;font-size:13px"><option value="pending">قيد المراجعة</option><option value="approved">المعتمدة</option><option value="rejected">المرفوضة</option><option value="all">الكل</option></select><button class="btn btn-out btn-sm" id="student-change-refresh">🔄 تحديث</button></div></div><div id="student-change-requests-list"><div style="text-align:center;padding:20px;color:var(--muted)">جاري تحميل طلبات التعديل...</div></div>';
+    firstCard.parentNode.insertBefore(card, firstCard.nextSibling);
+    var refresh = document.getElementById('student-change-refresh');
+    if (refresh) refresh.onclick = function(){ loaded = false; renderRequests(); loadRequests().then(renderRequests); };
+    var sel = document.getElementById('student-change-filter');
+    if (sel) sel.onchange = function(){ filter = this.value; renderRequests(); };
+  }
+
+  function bindRenderedActions(host){
+    host.querySelectorAll('[data-kp-approve]').forEach(function(btn){ btn.onclick = function(){ window.kpApproveStudentChangeRequest(btn.getAttribute('data-kp-approve')); }; });
+    host.querySelectorAll('[data-kp-reject]').forEach(function(btn){ btn.onclick = function(){ window.kpRejectStudentChangeRequest(btn.getAttribute('data-kp-reject')); }; });
+    host.querySelectorAll('[data-kp-view-attachment]').forEach(function(btn){ btn.onclick = function(){ window.kpViewStudentChangeAttachment(btn.getAttribute('data-kp-request'), btn.getAttribute('data-kp-field')); }; });
+  }
+
+  function renderRequests(){
+    ensureCard();
+    var host = document.getElementById('student-change-requests-list');
+    if (!host) return;
+    if (!loaded) { host.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">جاري تحميل طلبات التعديل...</div>'; return; }
+    var pending = requests.filter(function(r){ return statusOf(r) === 'pending'; }).length;
+    var badge = document.getElementById('student-change-pending-badge');
+    if (badge) badge.textContent = pending;
+    var rows = requests.filter(function(r){ return filter === 'all' || statusOf(r) === filter; }).sort(function(a,b){ return clean(b.updatedAt||b.createdAt).localeCompare(clean(a.updatedAt||a.createdAt)); });
+    if (!rows.length) { host.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">لا توجد طلبات تعديل بيانات</div>'; return; }
+    host.innerHTML = rows.map(function(r){
+      var changes = r.changes || {};
+      var changeHtml = Object.keys(changes).map(function(k){
+        var c = changes[k] || {};
+        var viewBtn = isAttachmentChange(c) ? '<button type="button" class="btn btn-b btn-sm" data-kp-view-attachment="1" data-kp-request="'+esc2(r.id)+'" data-kp-field="'+esc2(k)+'">👁️ عرض المرفق</button>' : '';
+        return '<tr><td>'+esc2(c.label||k)+'</td><td>'+esc2(changeOldDisplay(c))+'</td><td style="font-weight:800;color:var(--g1)">'+esc2(changeNewDisplay(c))+'</td><td>'+viewBtn+'</td></tr>';
+      }).join('') || '<tr><td colspan="4">لا توجد حقول معدلة، يوجد ملاحظة فقط.</td></tr>';
+      var st = statusOf(r);
+      var actions = st === 'pending'
+        ? '<button type="button" class="btn btn-g btn-sm" data-kp-approve="'+esc2(r.id)+'">✅ اعتماد</button> <button type="button" class="btn btn-r btn-sm" data-kp-reject="'+esc2(r.id)+'">❌ رفض</button>'
+        : '<span class="b '+(st==='approved'?'bg':'br')+'">'+(st==='approved'?'معتمد':'مرفوض')+'</span>';
+      return '<div class="form-req-card" style="display:block"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div><div class="form-req-name">'+esc2(r.studentName||'طالب غير محدد')+'</div><div class="form-req-meta"><span>📧 '+esc2(r.parentEmail||r.parentPhone||'—')+'</span><span>📅 '+esc2(clean(r.createdAt).slice(0,10)||'—')+'</span></div></div><div>'+actions+'</div></div><table class="tbl" style="margin-top:10px;font-size:12px"><thead><tr><th>الحقل</th><th>القيمة الحالية</th><th>القيمة المطلوبة</th><th>المرفق</th></tr></thead><tbody>'+changeHtml+'</tbody></table>'+(r.note?'<div style="margin-top:8px;color:var(--muted);font-size:12px">ملاحظة ولي الأمر: '+esc2(r.note)+'</div>':'')+'</div>';
+    }).join('');
+    bindRenderedActions(host);
+  }
+
+  async function moveRequestStatus(r, status){
+    var target = status === 'rejected' ? 'rejected' : (status === 'pending' ? 'pending' : 'approved');
+    var key = reqKey(r);
+    var updated = Object.assign({}, r, {id:key, status:target, updatedAt:new Date().toISOString(), decidedAt:new Date().toISOString(), decidedBy:(typeof currentUser !== 'undefined' && currentUser && (currentUser.username || currentUser.name)) ? (currentUser.username || currentUser.name) : 'admin'});
+    if (target === 'approved') updated.approvedAt = updated.decidedAt;
+    if (target === 'rejected') updated.rejectedAt = updated.decidedAt;
+    delete updated._legacyGroup; delete updated.__group; delete updated.__key;
+    var keys = {};
+    [key, r.id, r.requestId, r.firebaseKey, r._fbKey, r.__key].forEach(function(k){ k = safeKey(k); if (k) keys[k] = true; });
+    var updates = {savedAt:new Date().toISOString()};
+    Object.keys(keys).forEach(function(k){
+      updates['studentChangeRequests/' + k] = null;
+      GROUPS.forEach(function(g){ updates['studentChangeRequests/' + g + '/' + k] = null; });
+    });
+    updates['studentChangeRequests/' + target + '/' + key] = updated;
+    var res = await fetch(fbBase() + '.json', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates)});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var idx = requests.findIndex(function(x){ return clean(x.id) === clean(r.id); });
+    if (idx >= 0) requests[idx] = updated; else requests.push(updated);
+    return updated;
+  }
+
+  function applyChangesToStudent(stu, changes){
+    Object.keys(changes || {}).forEach(function(k){
+      var c = changes[k] || {};
+      var dest = mapField(k, c);
+      if (!dest) return;
+      var value = isAttachmentChange(c) ? (c.fileData || c.newValue || '') : c.newValue;
+      setStudentField(stu, dest, value, c);
+    });
+    stu.updatedAt = new Date().toISOString();
+  }
+
+  window.kpViewStudentChangeAttachment = function(requestId, fieldKey){
+    var r = requests.find(function(x){ return clean(x.id) === clean(requestId); });
+    var c = r && r.changes && r.changes[fieldKey];
+    if (!c) return alert('لم يتم العثور على المرفق داخل الطلب.');
+    var src = attachmentValue(c);
+    if (!src) return alert('لا يوجد ملف قابل للعرض في هذا الطلب.');
+    if (/^https?:\/\//i.test(src)) { window.open(src, '_blank'); return; }
+    var title = c.fileName || c.label || 'مرفق الطلب';
+    var type = c.fileType || (src.indexOf('data:application/pdf') === 0 ? 'application/pdf' : 'image');
+    var w = window.open('', '_blank');
+    if (!w) return alert('يرجى السماح بفتح النوافذ المنبثقة لعرض المرفق.');
+    var body = /^application\/pdf/i.test(type) || src.indexOf('data:application/pdf') === 0
+      ? '<iframe src="'+esc2(src)+'" style="width:100%;height:92vh;border:0"></iframe>'
+      : '<div style="text-align:center"><img src="'+esc2(src)+'" style="max-width:100%;max-height:90vh;object-fit:contain"></div>';
+    w.document.write('<!doctype html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>'+esc2(title)+'</title><style>body{font-family:Arial,Tajawal,sans-serif;margin:0;padding:16px;background:#f7fbf9}.bar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}.btn{padding:9px 14px;background:#2a8b54;color:white;border-radius:10px;text-decoration:none;font-weight:bold}</style></head><body><div class="bar"><b>'+esc2(title)+'</b><a class="btn" href="'+esc2(src)+'" download="'+esc2(title)+'">تحميل</a></div>'+body+'</body></html>');
+    w.document.close();
+  };
+
+  window.kpApproveStudentChangeRequest = async function(id){
+    try {
+      var r = requests.find(function(x){ return clean(x.id) === clean(id); });
+      if (!r) { await loadRequests(); r = requests.find(function(x){ return clean(x.id) === clean(id); }); }
+      if (!r) return alert('لم يتم العثور على طلب التعديل. اضغطي تحديث ثم جربي مرة ثانية.');
+      var stu = findStudentForRequest(r);
+      if (!stu) return alert('تعذر العثور على الطالب المرتبط بهذا الطلب. لم يتم اعتماد الطلب.');
+      var ok = true;
+      if (window.kpConfirmAsync) ok = await window.kpConfirmAsync('اعتماد طلب تعديل البيانات', (stu.name || r.studentName || 'طالب'), 'سيتم تحديث ملف الطالب ثم نقل الطلب من قيد المراجعة إلى المعتمدة. هل تريدين المتابعة؟', {okText:'اعتماد', title:'اعتماد طلب التعديل'});
+      if (!ok) return;
+      applyChangesToStudent(stu, r.changes || {});
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      if (typeof saveRecordRemoteAware === 'function') {
+        var saved = await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:stu, keyField:'id', label:'تعديل بيانات الطالب'});
+        if (saved === false) throw new Error('تعذر حفظ ملف الطالب على Firebase');
+      } else if (typeof autoSave === 'function') {
+        await autoSave();
+      }
+      await moveRequestStatus(r, 'approved');
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof renderDash === 'function') renderDash();
+      await loadRequests();
+      renderRequests();
+      if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم اعتماد طلب التعديل وتحديث ملف الطالب');
+      else alert('✅ تم اعتماد طلب التعديل وتحديث ملف الطالب.');
+    } catch(e) {
+      console.error('Approve student change request failed:', e);
+      alert('تعذر اعتماد طلب التعديل: ' + (e && e.message ? e.message : e));
+    }
+  };
+
+  window.kpRejectStudentChangeRequest = async function(id){
+    try {
+      var r = requests.find(function(x){ return clean(x.id) === clean(id); });
+      if (!r) { await loadRequests(); r = requests.find(function(x){ return clean(x.id) === clean(id); }); }
+      if (!r) return alert('لم يتم العثور على طلب التعديل.');
+      var ok = true;
+      if (window.kpConfirmAsync) ok = await window.kpConfirmAsync('رفض طلب تعديل البيانات', (r.studentName || 'طالب'), 'سيتم نقل الطلب إلى المرفوضة بدون تعديل ملف الطالب. هل تريدين المتابعة؟', {okText:'رفض', title:'رفض طلب التعديل', danger:true});
+      if (!ok) return;
+      await moveRequestStatus(r, 'rejected');
+      await loadRequests();
+      renderRequests();
+      if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم رفض طلب تعديل البيانات');
+    } catch(e) {
+      console.error('Reject student change request failed:', e);
+      alert('تعذر رفض طلب التعديل: ' + (e && e.message ? e.message : e));
+    }
+  };
+
+  window.kpLoadStudentChangeRequests = async function(){ ensureCard(); loaded = false; renderRequests(); await loadRequests(); renderRequests(); };
   var originalRenderFormRequests = window.renderFormRequests;
-  if (typeof originalRenderFormRequests === 'function' && !originalRenderFormRequests.__studentChangeWrapped) { window.renderFormRequests = function(){ var out = originalRenderFormRequests.apply(this, arguments); ensureCard(); if(!loaded) loadRequests().then(renderRequests); else renderRequests(); return out; }; window.renderFormRequests.__studentChangeWrapped = true; }
-  document.addEventListener('DOMContentLoaded', function(){ ensureCard(); loadRequests().then(renderRequests); });
+  if (typeof originalRenderFormRequests === 'function' && !originalRenderFormRequests.__studentChangeWrapped) {
+    window.renderFormRequests = function(){ var out = originalRenderFormRequests.apply(this, arguments); setTimeout(window.kpLoadStudentChangeRequests, 80); return out; };
+    window.renderFormRequests.__studentChangeWrapped = true;
+    try { renderFormRequests = window.renderFormRequests; } catch(_e) {}
+  }
+  document.addEventListener('DOMContentLoaded', function(){ window.kpLoadStudentChangeRequests(); });
 })();
 </script>
+
 
 <script id="kp-final-record-shape-only-20260509">
 (function(){
@@ -23766,3 +23662,4 @@ document.addEventListener('DOMContentLoaded', function(){
 
 </body>
 </html>
+
