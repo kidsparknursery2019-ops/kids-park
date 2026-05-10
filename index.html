@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+?<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
@@ -4081,8 +4081,7 @@ async function downloadPreMigrationFirebaseBackup() {
         deletedClasses: (typeof deletedClasses !== 'undefined' ? deletedClasses : []),
         tombstones: (typeof tombstones !== 'undefined' ? tombstones : {}),
         restoredKeys: (typeof restoredKeys !== 'undefined' ? restoredKeys : {}),
-        kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
-        kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]')
+        kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]')
       };
     }
     data.__backupPurpose = 'before-object-path-migration';
@@ -4151,8 +4150,6 @@ async function migrateFirebaseToObjectPathsSafe() {
     migrated.deletedExpenses = kpDedupeRecordsForMigration(data.deletedExpenses, 'id');
     migrated.deletedRenewals = kpDedupeRecordsForMigration(data.deletedRenewals, 'id');
 
-    // حماية طلبات التسجيل: نتركها كما هي تماماً سواء kp_form_rows أو registrationRequests.
-    if (Object.prototype.hasOwnProperty.call(data, 'kp_form_rows')) migrated.kp_form_rows = data.kp_form_rows;
     if (Object.prototype.hasOwnProperty.call(data, 'registrationRequests')) migrated.registrationRequests = data.registrationRequests;
 
     migrated.version = 2;
@@ -4552,77 +4549,74 @@ function pruneOldLocalDecisions() {
   });
 }
 
-// حفظ صف نموذج تسجيل واحد (بحسب timestamp) — حفظ فردي بدون رفع كامل لقاعدة البيانات
+function registrationFolderFromStatus(status) {
+  var s = String(status || 'pending').toLowerCase();
+  if (s === 'accepted' || s === 'approved' || s === 'approve' || s === 'accept') return 'accepted';
+  if (s === 'rejected' || s === 'reject') return 'rejected';
+  return 'pending';
+}
+
+function registrationRecordKey(row) {
+  if (typeof kpRecordKey === 'function') return kpRecordKey(row || {}, 'id');
+  var raw = String((row && (row.firebaseKey || row.id || row.requestId || row.timestamp || row.createdAt || row.name || row.childName || row.studentName)) || ('request_' + Date.now()));
+  return raw.replace(/[.#$\[\]\/]/g, '_').replace(/\s+/g, '_');
+}
+
+// Save registration requests only in the current record-based Firebase shape.
 async function saveFormRowRemoteAware(formRow) {
   try {
-    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ طلب التسجيل...');
-    let remoteData = null;
-    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
-    if (fetchRes.ok) remoteData = await fetchRes.json();
-    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
-    const arr = Array.isArray(remoteData.kp_form_rows) ? remoteData.kp_form_rows : [];
-    const ts = formRow && formRow.timestamp;
-    const updated = arr.filter(function(r){ return !(r && r.timestamp === ts); });
-    updated.push(formRow);
-    const newSavedAt = new Date().toISOString();
-    const res = await fetch(FB_URL + '.json', {
-      method: 'PATCH',
+    if (typeof showSyncBadge === 'function') showSyncBadge('Saving registration request...');
+    var folder = registrationFolderFromStatus(formRow && formRow.status);
+    var key = registrationRecordKey(formRow);
+    var payload = Object.assign({}, formRow || {}, { firebaseKey:key, status:folder });
+    var newSavedAt = new Date().toISOString();
+    var res = await fetch(FB_URL + '/registrationRequests/' + folder + '/' + encodeURIComponent(key) + '.json', {
+      method: 'PUT',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        kp_form_rows: updated,
-        savedAt: newSavedAt
-      })
+      body: JSON.stringify(payload)
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    // ✅ حفظ savedAt محلياً حتى لا يتسبب stream event الخاص بكتابتنا في إعادة تحميل كامل
     try { lastSavedAt = newSavedAt; localStorage.setItem('kp_last_synced_at', lastSavedAt); } catch(_e) {}
-    // ✅ تذكّر القرار محلياً للحماية من race conditions مع syncFromGoogleSheets أو loadFromFirebase
     rememberLocalFormDecision(formRow, newSavedAt);
     pruneOldLocalDecisions();
-    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ الطلب');
+    if (typeof showSyncBadge === 'function') showSyncBadge('Registration request saved');
     return true;
   } catch (e) {
     console.error('saveFormRowRemoteAware failed:', e);
-    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط');
+    if (typeof showSyncBadge === 'function') showSyncBadge('Failed to save registration request');
     try { autoSave(); } catch(_e) {}
     return false;
   }
 }
 
-// حفظ مجموعة صفوف نماذج دفعة واحدة (للاستيراد من Google Sheets)
+// Save multiple registration requests in one Firebase patch.
 async function saveFormRowsBatchRemoteAware(formRows) {
   if (!Array.isArray(formRows) || !formRows.length) return true;
   try {
-    if (typeof showSyncBadge === 'function') showSyncBadge('⏳ جاري حفظ ' + formRows.length + ' طلب...');
-    let remoteData = null;
-    const fetchRes = await fetch(FB_URL + '.json', { cache: 'no-store' });
-    if (fetchRes.ok) remoteData = await fetchRes.json();
-    if (!remoteData || typeof remoteData !== 'object') remoteData = {};
-    const arr = Array.isArray(remoteData.kp_form_rows) ? remoteData.kp_form_rows : [];
-    const incomingTs = new Set(formRows.map(function(r){ return r && r.timestamp; }).filter(Boolean));
-    const merged = arr.filter(function(r){ return !(r && incomingTs.has(r.timestamp)); }).concat(formRows);
-    const newSavedAt = new Date().toISOString();
-    const res = await fetch(FB_URL + '.json', {
+    if (typeof showSyncBadge === 'function') showSyncBadge('Saving ' + formRows.length + ' registration requests...');
+    var updates = {};
+    var newSavedAt = new Date().toISOString();
+    formRows.forEach(function(row){
+      if (!row) return;
+      var folder = registrationFolderFromStatus(row.status);
+      var key = registrationRecordKey(row);
+      updates['registrationRequests/' + folder + '/' + key] = Object.assign({}, row, { firebaseKey:key, status:folder });
+    });
+    updates.savedAt = newSavedAt;
+    var res = await fetch(FB_URL + '.json', {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        kp_form_rows: merged,
-        savedAt: newSavedAt
-      })
+      body: JSON.stringify(updates)
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    // ✅ حفظ savedAt محلياً حتى لا يعيد التحميل الكامل
     try { lastSavedAt = newSavedAt; localStorage.setItem('kp_last_synced_at', lastSavedAt); } catch(_e) {}
-    // ✅ تذكّر القرارات (المعتمدة/المرفوضة فقط) محلياً
-    formRows.forEach(function(r){
-      if (r && r.status && r.status !== 'pending') rememberLocalFormDecision(r, newSavedAt);
-    });
+    formRows.forEach(function(r){ if (r && r.status && r.status !== 'pending') rememberLocalFormDecision(r, newSavedAt); });
     pruneOldLocalDecisions();
-    if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم حفظ ' + formRows.length + ' طلب');
+    if (typeof showSyncBadge === 'function') showSyncBadge('Registration requests saved');
     return true;
   } catch (e) {
     console.error('saveFormRowsBatchRemoteAware failed:', e);
-    if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ محفوظ محلياً فقط');
+    if (typeof showSyncBadge === 'function') showSyncBadge('Failed to save registration requests');
     try { autoSave(); } catch(_e) {}
     return false;
   }
@@ -6008,7 +6002,7 @@ let PAYMENT_MATCH_CACHE_STAMP = '';
 function normalizeArabicName(str){
   return String(str||'')
     .toLowerCase()
-    .replace(/[ً-ٰٟ]/g,'')
+    .replace(/[\u064B-\u065F\u0670]/g,'')
     .replace(/[إأآٱا]/g,'ا')
     .replace(/ة/g,'ه')
     .replace(/ى/g,'ي')
@@ -8499,7 +8493,7 @@ let importParsedData = null;
 function buildFullBackupSnapshot() {
   // كل مفاتيح localStorage التي يحتاجها النظام - تُحفظ كاملة لتطابق الاستعادة
   var lsKeys = [
-    'kp_users', 'kp_form_rows', 'kp_classes', 'kp_nursery_settings',
+    'kp_users', 'kp_classes', 'kp_nursery_settings',
     'kp_students_data', 'kp_payments_data', 'kp_expenses_data',
     'kp_renewals_data', 'kp_attlog_data',
     'kp_deleted_students', 'kp_deleted_payments', 'kp_deleted_expenses',
@@ -8536,7 +8530,6 @@ function buildFullBackupSnapshot() {
     CLASSES: CLASSES,
     nurserySettings: nurserySettings,
     kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
-    kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]'),
     // إضافة v3.0: لقطة كاملة لكل localStorage
     localStorageSnapshot: lsSnapshot
   };
@@ -8740,8 +8733,7 @@ async function restoreBackup(event) {
       if (backup.tombstones) { tombstones = backup.tombstones; localStorage.setItem('kp_tombstones', JSON.stringify(tombstones)); }
       if (backup.CLASSES) Object.assign(CLASSES, backup.CLASSES);
       if (backup.nurserySettings) Object.assign(nurserySettings, backup.nurserySettings);
-      if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(backup.kp_users));
-      if (backup.kp_form_rows) { syncedFormRows = backup.kp_form_rows; _saveFormRowsSlim(syncedFormRows); }
+      if (backup.kp_users) localStorage.setItem('kp_users', JSON.stringify(kpArrayFromFirebaseSection(backup.kp_users)));
 
       // ===== المرحلة 2: تنظيف الكاش القديم قبل تطبيق اللقطة الكاملة =====
       // هذا يضمن عدم بقاء بيانات قديمة من الجلسة الحالية
@@ -10742,8 +10734,6 @@ async function archiveFirebaseRegistrationRequest(r, status) {
 // لذلك أضيف هنا تشخيص مباشر يظهر هل الطلب وصل إلى Firebase أو Google Sheets.
 // ============================================================
 (function(){
-  var KP_ROOT_FB_URL = String(FB_URL || '').replace(/\/nursery_data\/?$/, '');
-
   function kpSafeText2(v){ return String(v == null ? '' : v).trim(); }
   function kpSourceKey(row){
     row = row || {};
@@ -10806,9 +10796,6 @@ async function archiveFirebaseRegistrationRequest(r, status) {
     }
 
     await checkJson('nursery_data/registrationRequests/pending', FB_URL + '/registrationRequests/pending.json');
-    await checkJson('registrationRequests/pending', KP_ROOT_FB_URL + '/registrationRequests/pending.json');
-    await checkJson('nursery_data/kp_form_rows', FB_URL + '/kp_form_rows.json');
-    await checkJson('kp_form_rows', KP_ROOT_FB_URL + '/kp_form_rows.json');
 
     try {
       var res = await fetch(SHEETS_URL + '&headers=1&ts=' + Date.now(), {cache:'no-store'});
@@ -10852,7 +10839,6 @@ function getAllData() {
     nurserySettings: cleanSettings,
     renewals,
     kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
-    kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]'),
   };
 }
 
@@ -11506,8 +11492,7 @@ async function pushToFirebase() {
         CLASSES: (CLASSES && typeof CLASSES === 'object' && !Array.isArray(CLASSES)) ? CLASSES : {},
         nurserySettings: cleanSettings,
         renewals: kpMapFromArray(sanitizeEntityArray(renewals || []), 'id'),
-        kp_users: JSON.parse(localStorage.getItem('kp_users') || '[]'),
-        kp_form_rows: JSON.parse(localStorage.getItem('kp_form_rows') || '[]'),
+        kp_users: kpMapFromArray(JSON.parse(localStorage.getItem('kp_users') || '[]'), 'username'),
         deletedStudents: kpMapFromArray(sanitizeEntityArray(typeof deletedStudents !== 'undefined' ? deletedStudents : []), 'id'),
         deletedPayments: kpMapFromArray(sanitizeEntityArray(typeof deletedPayments !== 'undefined' ? deletedPayments : []), 'id'),
         deletedExpenses: kpMapFromArray(sanitizeEntityArray(typeof deletedExpenses !== 'undefined' ? deletedExpenses : []), 'id'),
@@ -11631,24 +11616,6 @@ async function pushToFirebase() {
       mergedTombstones.classes
     );
 
-    // دمج سجلات النماذج (بدون تكرار بناءً على timestamp)
-    const localFormRows = JSON.parse(localStorage.getItem('kp_form_rows') || '[]');
-    const remoteFormRows = (remoteData && Array.isArray(remoteData.kp_form_rows)) ? remoteData.kp_form_rows : [];
-    const formRowsMap = {};
-    function pickPreferredFormRow(a, b) {
-      if (!a) return b;
-      if (!b) return a;
-      const aTime = formRowUpdatedAtValue(a);
-      const bTime = formRowUpdatedAtValue(b);
-      if (aTime !== bTime) return aTime > bTime ? a : b;
-      const aRank = formRowStatusRank(a.status);
-      const bRank = formRowStatusRank(b.status);
-      if (aRank !== bRank) return aRank > bRank ? a : b;
-      return Object.assign({}, a, b);
-    }
-    remoteFormRows.forEach(function(r){ if(r && r.timestamp) formRowsMap[r.timestamp] = pickPreferredFormRow(formRowsMap[r.timestamp], r); });
-    localFormRows.forEach(function(r){ if(r && r.timestamp) formRowsMap[r.timestamp] = pickPreferredFormRow(formRowsMap[r.timestamp], r); });
-    const mergedFormRows = Object.values(formRowsMap);
 
     // دمج سلة المحذوفات — احترم tombstones والمُستعادين
     // ✅ FIX: نقل تعريف mergeDeletedByKey للأعلى واستخدامه للطلاب أيضاً
@@ -11750,8 +11717,7 @@ async function pushToFirebase() {
       CLASSES:         CLASSES,
       nurserySettings: cleanSettings,
       renewals:        kpMapFromArray(renewals, 'id'),
-      kp_users:        JSON.parse(localStorage.getItem('kp_users') || '[]'),
-      kp_form_rows:    mergedFormRows,
+      kp_users:        kpMapFromArray(JSON.parse(localStorage.getItem('kp_users') || '[]'), 'username'),
       deletedStudents: kpMapFromArray(mergedDeleted, 'id'),
       deletedPayments: kpMapFromArray(mergedDeletedPayments, 'id'),
       deletedExpenses: kpMapFromArray(mergedDeletedExpenses, 'id'),
@@ -11776,7 +11742,6 @@ async function pushToFirebase() {
       nurserySettings: mergedData.nurserySettings,
       renewals:        mergedData.renewals,
       kp_users:        mergedData.kp_users,
-      kp_form_rows:    mergedData.kp_form_rows,
       deletedStudents: mergedData.deletedStudents,
       deletedPayments: mergedData.deletedPayments,
       deletedExpenses: mergedData.deletedExpenses,
@@ -12070,22 +12035,12 @@ async function loadFromFirebase() {
     applyTombstones();
     cleanupDeletedBuckets();
     if (data.nurserySettings) Object.assign(nurserySettings, data.nurserySettings);
-    if (data.kp_users && data.kp_users.length) {
-      localStorage.setItem('kp_users', JSON.stringify(data.kp_users));
+    if (data.kp_users) {
+      localStorage.setItem('kp_users', JSON.stringify(kpArrayFromFirebaseSection(data.kp_users)));
       // ✅ إذا صفحة الإعدادات مفتوحة، أعد رسم قائمة المستخدمين لتعكس التغييرات من الأجهزة الأخرى
       if (typeof renderAdminUsers === 'function') {
         try { renderAdminUsers(); } catch(_e){}
       }
-    }
-    if (Array.isArray(data.kp_form_rows)) {
-      // ✅ تطبيق القرارات المحلية الحديثة (قبول/رفض) قبل التطبيق على الواجهة
-      // — حماية ضد الـ stream events التي تعيد كتابة الحالة كـ pending
-      var incomingFormRows = data.kp_form_rows;
-      if (typeof applyLocalDecisionsToFormRows === 'function') {
-        try { incomingFormRows = applyLocalDecisionsToFormRows(incomingFormRows); } catch(_e){}
-      }
-      syncedFormRows = incomingFormRows;
-      _saveFormRowsSlim(syncedFormRows);
     }
     await loadLogoFromFirebase();
     if (!logoDataUrl && nurserySettings.logoDataUrl) {
@@ -12557,11 +12512,11 @@ function formRowUpdatedAtValue(row) {
 function normalizeArabicText(s) {
   return String(s || '')
     .toLowerCase()
-    .replace(/[ً-ٰٟ]/g, '')
+    .replace(/[\u064B-\u065F\u0670]/g, '')
     .replace(/[أإآٱ]/g, 'ا')
     .replace(/[ة]/g, 'ه')
     .replace(/[ى]/g, 'ي')
-    .replace(/[^؀-ۿa-z0-9]+/gi, ' ')
+    .replace(/[^\u0600-\u06FFa-z0-9]+/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -20091,8 +20046,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       deletedClasses: clone(typeof deletedClasses !== 'undefined' ? deletedClasses : []),
       tombstones: clone(typeof tombstones !== 'undefined' ? tombstones : {}),
       restoredKeys: clone(typeof restoredKeys !== 'undefined' ? restoredKeys : {}),
-      kp_users: localJson('kp_users', []),
-      kp_form_rows: clone(typeof syncedFormRows !== 'undefined' ? syncedFormRows : localJson('kp_form_rows', []))
+      kp_users: localJson('kp_users', [])
     };
   }
   function saveBackupFile(backup){
@@ -20208,7 +20162,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   }
   function bodyLooksLikeRootPayload(body){
     if (!body || typeof body !== 'string') return false;
-    return /"students"\s*:|"payments"\s*:|"expenses"\s*:|"renewals"\s*:|"kp_form_rows"\s*:/.test(body);
+    return /"students"\s*:|"payments"\s*:|"expenses"\s*:|"renewals"\s*:/.test(body);
   }
   var nativeFetch = window.fetch;
   if (typeof nativeFetch !== 'function') return;
@@ -21137,7 +21091,6 @@ input,select,textarea,button{max-width:100%}
     var root = await readSection('');
     if (!root || typeof root !== 'object') return { total:0, migrated:0 };
     var rows = [];
-    collectRowsFromSection(root.kp_form_rows, 'pending', rows);
     var reg = root.registrationRequests;
     if (reg && typeof reg === 'object') {
       ['pending','accepted','rejected'].forEach(function(folder){ collectRowsFromSection(reg[folder], folder === 'accepted' ? 'approved' : folder, rows); });
@@ -21165,7 +21118,6 @@ input,select,textarea,button{max-width:100%}
       var merged = mergeRequestRows(existing.concat(rows));
       syncedFormRows = merged;
       window.syncedFormRows = merged;
-      localStorage.setItem('kp_form_rows', JSON.stringify(merged));
       if (typeof renderFormRequests === 'function') renderFormRequests();
       if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge();
     } catch(_e){}
@@ -23324,7 +23276,7 @@ document.addEventListener('DOMContentLoaded', function(){
   };
   async function saveRegistrationRows(rows){
     rows=Array.isArray(rows)?rows:[rows];
-    var updates={kp_form_rows:null,savedAt:new Date().toISOString(),version:3,activeDataShape:'record-based'};
+    var updates={savedAt:new Date().toISOString(),version:3,activeDataShape:'record-based'};
     rows.filter(Boolean).forEach(function(row){ var copy=Object.assign({},row); var key=requestKey(copy); var folder=requestFolder(copy.status); copy.firebaseKey=key; copy.status=folder; updates['registrationRequests/'+folder+'/'+key]=copy; });
     var res=await fetch(baseUrl()+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(updates)});
     if(!res.ok) throw new Error('HTTP '+res.status);
