@@ -23772,6 +23772,418 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
-</body>
+
+<script id="kp-registration-parent-notification-20260510">
+(function(){
+  if (window.__kpRegistrationParentNotification20260510) return;
+  window.__kpRegistrationParentNotification20260510 = true;
+
+  var PARENT_PORTAL_URL = 'https://kidsparknursery2019-ops.github.io/Parents-portal/';
+  var OTP_EMAIL_ENDPOINT = 'https://script.google.com/macros/s/AKfycbws0Cr_NO4Lmd8ZrwdNc479RfTLwaySNunwrglhF-1VpDvMpqrA43HPYzqiFZ0Ax3LIQg/exec';
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function unique(arr){ var seen={}; return (arr||[]).map(txt).filter(function(x){ var k=x.toLowerCase(); if(!x || seen[k]) return false; seen[k]=true; return true; }); }
+  function pick(row, keys){ row=row||{}; for(var i=0;i<keys.length;i++){ var v=row[keys[i]]; if(v!=null && txt(v)!=='') return v; } return ''; }
+  function parentEmails(row){
+    return unique([
+      pick(row, ['dadEmail','fatherEmail','father_email','emailFather','dadMail']),
+      pick(row, ['momEmail','motherEmail','mother_email','emailMother','momMail']),
+      pick(row, ['parentEmail','guardianEmail','email'])
+    ].join(';').split(/[;,\s]+/).filter(function(x){ return /@/.test(x); }));
+  }
+  function childName(row){ return txt(pick(row, ['name','studentName','childName','fullName','nameAr'])) || 'الطالب/ـة'; }
+  function decisionArabic(decision){ return decision === 'approved' ? 'قبول' : 'رفض'; }
+  function notificationKey(decision){ return 'registration_' + decision; }
+  function alreadySent(row, decision){
+    return txt(row && row.parentNotificationDecision) === decision && !!(row && row.parentNotificationSentAt);
+  }
+  function markNotification(row, decision, ok, detail){
+    if(!row) return;
+    row.parentNotificationDecision = decision;
+    row.parentNotificationStatus = ok ? 'sent' : 'failed';
+    row.parentNotificationMessage = txt(detail).slice(0,300);
+    if(ok) row.parentNotificationSentAt = new Date().toISOString();
+    row.parentPortalUrl = PARENT_PORTAL_URL;
+    try { if (typeof saveFormRowRemoteAware === 'function') saveFormRowRemoteAware(row); } catch(_e) {}
+    try { if (typeof archiveFirebaseRegistrationRequest === 'function') archiveFirebaseRegistrationRequest(row, decision === 'approved' ? 'approved' : 'rejected'); } catch(_e) {}
+  }
+  function buildEmail(row, decision){
+    var name = childName(row);
+    if(decision === 'approved'){
+      return {
+        subject: 'تم قبول تسجيل ' + name + ' في حضانة حديقة الأطفال',
+        body: 'السادة أولياء الأمور الكرام،\n\nيسرنا إبلاغكم بأنه تم قبول تسجيل الطالب/ـة: ' + name + '.\n\nيمكنكم الدخول إلى بوابة ولي الأمر لمتابعة ملف الطالب والمدفوعات والتقييمات وطلبات التعديل من خلال الرابط التالي:\n' + PARENT_PORTAL_URL + '\n\nمع تحيات،\nحضانة حديقة الأطفال'
+      };
+    }
+    return {
+      subject: 'تحديث بخصوص طلب تسجيل ' + name + ' في حضانة حديقة الأطفال',
+      body: 'السادة أولياء الأمور الكرام،\n\nنود إبلاغكم بأنه بعد مراجعة طلب تسجيل الطالب/ـة: ' + name + '، لم يتم قبول الطلب في الوقت الحالي.\n\nلأي استفسار يمكنكم التواصل مع إدارة الحضانة.\n\nرابط بوابة ولي الأمر:\n' + PARENT_PORTAL_URL + '\n\nمع تحيات،\nحضانة حديقة الأطفال'
+    };
+  }
+  async function sendViaGraph(toList, email){
+    if (!(typeof graphFetch === 'function' && (window.graphAccount || sessionStorage.getItem('kp_graph_connected')))) return {ok:false, skipped:true, message:'Outlook غير متصل'};
+    var payload = {
+      message: {
+        subject: email.subject,
+        body: { contentType: 'Text', content: email.body },
+        toRecipients: toList.map(function(a){ return { emailAddress: { address: a } }; })
+      },
+      saveToSentItems: true
+    };
+    await graphFetch('/me/sendMail', { method:'POST', body: JSON.stringify(payload) });
+    return {ok:true, message:'تم الإرسال عبر Outlook'};
+  }
+  async function postEndpoint(action, data){
+    var res = await fetch(OTP_EMAIL_ENDPOINT, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(Object.assign({action:action}, data)) });
+    var text = await res.text();
+    var json = null;
+    try { json = JSON.parse(text); } catch(_e) { json = { success: res.ok, message: text }; }
+    if(!res.ok || json.success === false || json.ok === false) throw new Error(json.message || ('HTTP ' + res.status));
+    return json;
+  }
+  async function sendViaAppsScript(toList, email, row, decision){
+    var data = {
+      to: toList.join(','),
+      emails: toList,
+      subject: email.subject,
+      body: email.body,
+      message: email.body,
+      studentName: childName(row),
+      decision: decision,
+      decisionArabic: decisionArabic(decision),
+      parentPortalUrl: PARENT_PORTAL_URL,
+      requestId: row && (row.firebaseKey || row.requestId || row.timestamp || row.id || '')
+    };
+    var actions = ['sendRegistrationDecisionNotification','sendParentRegistrationDecision','sendEmail'];
+    var lastErr = '';
+    for(var i=0;i<actions.length;i++){
+      try { await postEndpoint(actions[i], data); return {ok:true, message:'تم الإرسال عبر خدمة البريد'}; }
+      catch(e){ lastErr = e && e.message ? e.message : String(e); }
+    }
+    return {ok:false, message:lastErr || 'خدمة البريد لم تقبل طلب الإرسال'};
+  }
+  function openFallbackCompose(toList, email){
+    try {
+      if (typeof buildOutlookComposeUrl === 'function') {
+        window.open(buildOutlookComposeUrl(toList.join(';'), '', email.subject, email.body, ''), '_blank');
+        return true;
+      }
+    } catch(_e) {}
+    try { window.open('mailto:' + encodeURIComponent(toList.join(',')) + '?subject=' + encodeURIComponent(email.subject) + '&body=' + encodeURIComponent(email.body), '_blank'); return true; } catch(_e) {}
+    return false;
+  }
+  async function notifyParent(row, decision){
+    try {
+      if(!row || (decision !== 'approved' && decision !== 'rejected')) return;
+      if(alreadySent(row, decision)) return;
+      var toList = parentEmails(row);
+      if(!toList.length){ markNotification(row, decision, false, 'لا يوجد بريد إلكتروني لولي الأمر'); return; }
+      var email = buildEmail(row, decision);
+      var result = await sendViaGraph(toList, email);
+      if(!result.ok) result = await sendViaAppsScript(toList, email, row, decision);
+      if(result.ok){
+        markNotification(row, decision, true, result.message);
+        if(typeof showSyncBadge === 'function') showSyncBadge('✅ تم إرسال إشعار ' + decisionArabic(decision) + ' التسجيل لولي الأمر');
+        return;
+      }
+      var opened = openFallbackCompose(toList, email);
+      markNotification(row, decision, false, result.message + (opened ? ' - تم فتح رسالة جاهزة للإرسال اليدوي' : ''));
+      if(typeof showSyncBadge === 'function') showSyncBadge('⚠️ لم يتم إرسال الإشعار تلقائياً. تم تجهيز رسالة لولي الأمر.');
+    } catch(e) {
+      try { markNotification(row, decision, false, e && e.message ? e.message : String(e)); } catch(_e) {}
+      if(typeof showSyncBadge === 'function') showSyncBadge('⚠️ تعذر إرسال إشعار ولي الأمر');
+    }
+  }
+  window.kpNotifyRegistrationDecisionToParent = notifyParent;
+
+  var oldSetDecision = window.setFormRowDecision || (typeof setFormRowDecision === 'function' ? setFormRowDecision : null);
+  if(oldSetDecision && !oldSetDecision.__kpNotifyWrapped){
+    var wrapped = function(row, status, meta){
+      var out = oldSetDecision.apply(this, arguments);
+      var decision = String(status || '').toLowerCase();
+      if(decision === 'accepted') decision = 'approved';
+      if(decision === 'approved' || decision === 'rejected') setTimeout(function(){ notifyParent(row, decision); }, 900);
+      return out;
+    };
+    wrapped.__kpNotifyWrapped = true;
+    window.setFormRowDecision = setFormRowDecision = wrapped;
+  }
+})();
+</script>
+<script id="kp-registration-rejection-reasons-20260510">
+(function(){
+  if (window.__kpRegistrationRejectionReasons20260510) return;
+  window.__kpRegistrationRejectionReasons20260510 = true;
+
+  var REJECTION_REASONS = [
+    {id:'missing_docs', ar:'مستندات ناقصة', en:'Missing documents'},
+    {id:'wrong_docs', ar:'مستندات غير صحيحة / غير واضحة', en:'Wrong or unclear documents'},
+    {id:'wrong_info', ar:'بيانات غير صحيحة أو غير مطابقة', en:'Incorrect or mismatched information'},
+    {id:'parent_request', ar:'بناءً على طلب ولي الأمر', en:'Based on parent request'},
+    {id:'age_not_eligible', ar:'العمر غير مناسب حالياً', en:'Age is not currently eligible'},
+    {id:'class_full', ar:'لا توجد شواغر في الصف المطلوب', en:'No available seat in the requested class'},
+    {id:'duplicate_request', ar:'طلب مكرر', en:'Duplicate request'},
+    {id:'other', ar:'سبب آخر', en:'Other reason'}
+  ];
+  function escHtml(v){ try { if (typeof escapeHtml === 'function') return escapeHtml(v); } catch(_e){} return String(v == null ? '' : v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function clean(v){ return String(v == null ? '' : v).trim(); }
+  function reasonById(id){ for(var i=0;i<REJECTION_REASONS.length;i++) if(REJECTION_REASONS[i].id === id) return REJECTION_REASONS[i]; return null; }
+  function selectedReasonObjects(ids){ return (ids||[]).map(reasonById).filter(Boolean); }
+  window.kpRegistrationRejectionReasonLabels = function(row, lang){
+    var objs = selectedReasonObjects(row && row.rejectionReasonIds || []);
+    if(!objs.length && row && row.rejectionReason) return [row.rejectionReason];
+    return objs.map(function(r){ return lang === 'en' ? r.en : r.ar; });
+  };
+
+  function showReasonModal(row){
+    return new Promise(function(resolve){
+      var old = document.getElementById('kp-rejection-reason-ov');
+      if(old) old.remove();
+      var html = '<div class="ov on" id="kp-rejection-reason-ov" style="z-index:99999">' +
+        '<div class="mo" style="max-width:680px;width:min(680px,94vw)">' +
+          '<div class="mot">رفض طلب التسجيل</div>' +
+          '<div style="color:var(--muted);font-weight:800;margin-bottom:12px">اختاري سبب الرفض. سيتم ذكر السبب في رسالة ولي الأمر بالعربية والإنجليزية.</div>' +
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;margin-bottom:12px">' +
+            REJECTION_REASONS.map(function(r){ return '<label style="display:flex;gap:8px;align-items:flex-start;border:1.5px solid var(--border);border-radius:12px;padding:10px;background:#fff;cursor:pointer"><input type="checkbox" value="'+r.id+'" style="margin-top:4px"><span><b>'+escHtml(r.ar)+'</b><br><small dir="ltr" style="color:var(--muted)">'+escHtml(r.en)+'</small></span></label>'; }).join('') +
+          '</div>' +
+          '<label style="display:block;font-weight:900;color:var(--g1);margin-bottom:6px">ملاحظات إضافية اختيارية</label>' +
+          '<textarea id="kp-rejection-note" rows="4" style="width:100%;border:1.5px solid var(--border);border-radius:12px;padding:10px;font:inherit;resize:vertical" placeholder="اكتبي أي توضيح إضافي لولي الأمر عند الحاجة..."></textarea>' +
+          '<div id="kp-rejection-reason-error" style="display:none;color:var(--r1);font-weight:900;margin-top:8px">يرجى اختيار سبب واحد على الأقل أو كتابة ملاحظة.</div>' +
+          '<div class="row" style="justify-content:flex-end;margin-top:14px">' +
+            '<button class="btn btn-out" id="kp-rejection-cancel" type="button">إلغاء</button>' +
+            '<button class="btn btn-r" id="kp-rejection-confirm" type="button">تأكيد الرفض وإرسال الإشعار</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+      document.body.insertAdjacentHTML('beforeend', html);
+      var ov = document.getElementById('kp-rejection-reason-ov');
+      function close(value){ try{ ov.remove(); }catch(_e){} resolve(value); }
+      document.getElementById('kp-rejection-cancel').onclick = function(){ close(null); };
+      document.getElementById('kp-rejection-confirm').onclick = function(){
+        var ids = Array.from(ov.querySelectorAll('input[type="checkbox"]:checked')).map(function(x){ return x.value; });
+        var note = clean(document.getElementById('kp-rejection-note').value);
+        if(!ids.length && !note){ document.getElementById('kp-rejection-reason-error').style.display='block'; return; }
+        var labelsAr = selectedReasonObjects(ids).map(function(r){ return r.ar; });
+        var labelsEn = selectedReasonObjects(ids).map(function(r){ return r.en; });
+        close({ids:ids, labelsAr:labelsAr, labelsEn:labelsEn, note:note});
+      };
+    });
+  }
+
+  var oldReject = window.rejectFormRow || (typeof rejectFormRow === 'function' ? rejectFormRow : null);
+  window.rejectFormRow = rejectFormRow = async function(ts){
+    var row = null;
+    try { row = (typeof findRegistrationRowByToken === 'function' ? findRegistrationRowByToken(ts) : (syncedFormRows||[]).find(function(x){ return x.timestamp === ts; })); } catch(_e){}
+    if(!row) return oldReject ? oldReject.apply(this, arguments) : undefined;
+    var info = await showReasonModal(row);
+    if(!info) return;
+    row.rejectionReasonIds = info.ids;
+    row.rejectionReasonsAr = info.labelsAr;
+    row.rejectionReasonsEn = info.labelsEn;
+    row.rejectionNotes = info.note;
+    row.rejectionReason = info.labelsAr.join('، ');
+    row.rejectionReasonEnglish = info.labelsEn.join(', ');
+    row.rejectionDetailedAt = new Date().toISOString();
+    setFormRowDecision(row, 'rejected', {
+      approvedStudentId: null,
+      approvedAction: 'reject',
+      rejectionReasonIds: info.ids,
+      rejectionReasonsAr: info.labelsAr,
+      rejectionReasonsEn: info.labelsEn,
+      rejectionReason: info.labelsAr.join('، '),
+      rejectionReasonEnglish: info.labelsEn.join(', '),
+      rejectionNotes: info.note,
+      undoData: { revertTo: 'pending' }
+    });
+    try { renderFormRequests(); } catch(_e){}
+    try { if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم رفض الطلب وسيتم إشعار ولي الأمر بالسبب'); } catch(_e){}
+  };
+})();
+</script>
+
+<script id="kp-registration-bilingual-notification-20260510">
+(function(){
+  if (window.__kpRegistrationBilingualNotification20260510) return;
+  window.__kpRegistrationBilingualNotification20260510 = true;
+  var PARENT_PORTAL_URL = 'https://kidsparknursery2019-ops.github.io/Parents-portal/';
+  var OTP_EMAIL_ENDPOINT = 'https://script.google.com/macros/s/AKfycbws0Cr_NO4Lmd8ZrwdNc479RfTLwaySNunwrglhF-1VpDvMpqrA43HPYzqiFZ0Ax3LIQg/exec';
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function unique(arr){ var seen={}; return (arr||[]).map(txt).filter(function(x){ var k=x.toLowerCase(); if(!x || seen[k]) return false; seen[k]=true; return true; }); }
+  function pick(row, keys){ row=row||{}; for(var i=0;i<keys.length;i++){ var v=row[keys[i]]; if(v!=null && txt(v)!=='') return v; } return ''; }
+  function parentEmails(row){ return unique([pick(row,['dadEmail','fatherEmail','father_email','emailFather','dadMail']),pick(row,['momEmail','motherEmail','mother_email','emailMother','momMail']),pick(row,['parentEmail','guardianEmail','email'])].join(';').split(/[;,\s]+/).filter(function(x){ return /@/.test(x); })); }
+  function childName(row){ return txt(pick(row,['name','studentName','childName','fullName','nameAr'])) || 'الطالب/ـة'; }
+  function reasons(row, lang){
+    try { if (typeof window.kpRegistrationRejectionReasonLabels === 'function') { var x=window.kpRegistrationRejectionReasonLabels(row, lang); if(x && x.length) return x; } } catch(_e){}
+    var arr = lang === 'en' ? (row && row.rejectionReasonsEn) : (row && row.rejectionReasonsAr);
+    if(Array.isArray(arr) && arr.length) return arr;
+    var one = lang === 'en' ? (row && row.rejectionReasonEnglish) : (row && row.rejectionReason);
+    return one ? [one] : [];
+  }
+  function buildEmail(row, decision){
+    var name = childName(row);
+    if(decision === 'approved'){
+      return {
+        subject: 'Registration decision - Kids Park Nursery / قرار طلب التسجيل',
+        body: 'السادة أولياء الأمور الكرام،\n\nيسرنا إبلاغكم بأنه تم قبول تسجيل الطالب/ـة: ' + name + '.\n\nيمكنكم الدخول إلى بوابة ولي الأمر لمتابعة ملف الطالب والمدفوعات والتقييمات وطلبات التعديل من خلال الرابط التالي:\n' + PARENT_PORTAL_URL + '\n\nمع تحيات،\nحضانة حديقة الأطفال\n\n------------------------------\n\nDear Parent,\n\nWe are pleased to inform you that the registration for ' + name + ' has been accepted.\n\nYou can access the Parent Portal to view the student profile, payments, evaluations, and change requests using the link below:\n' + PARENT_PORTAL_URL + '\n\nRegards,\nKids Park Nursery'
+      };
+    }
+    var ar = reasons(row,'ar');
+    var en = reasons(row,'en');
+    var note = txt(row && row.rejectionNotes);
+    return {
+      subject: 'Registration decision - Kids Park Nursery / قرار طلب التسجيل',
+      body: 'السادة أولياء الأمور الكرام،\n\nنود إبلاغكم بأنه بعد مراجعة طلب تسجيل الطالب/ـة: ' + name + '، لم يتم قبول الطلب في الوقت الحالي.\n\nسبب الرفض:\n' + (ar.length ? ar.map(function(x){ return '- ' + x; }).join('\n') : '- غير محدد') + (note ? '\n\nملاحظات إضافية:\n' + note : '') + '\n\nلأي استفسار يمكنكم التواصل مع إدارة الحضانة.\n\nرابط بوابة ولي الأمر:\n' + PARENT_PORTAL_URL + '\n\nمع تحيات،\nحضانة حديقة الأطفال\n\n------------------------------\n\nDear Parent,\n\nAfter reviewing the registration request for ' + name + ', we regret to inform you that the request has not been accepted at this time.\n\nReason for rejection:\n' + (en.length ? en.map(function(x){ return '- ' + x; }).join('\n') : '- Not specified') + (note ? '\n\nAdditional notes:\n' + note : '') + '\n\nFor any questions, please contact the nursery management.\n\nParent Portal link:\n' + PARENT_PORTAL_URL + '\n\nRegards,\nKids Park Nursery'
+    };
+  }
+  async function graphSend(toList,email){
+    if (!(typeof graphFetch === 'function' && (window.graphAccount || sessionStorage.getItem('kp_graph_connected')))) return false;
+    await graphFetch('/me/sendMail',{method:'POST',body:JSON.stringify({message:{subject:email.subject,body:{contentType:'Text',content:email.body},toRecipients:toList.map(function(a){return {emailAddress:{address:a}};})},saveToSentItems:true})});
+    return true;
+  }
+  async function postEndpoint(action,data){ var r=await fetch(OTP_EMAIL_ENDPOINT,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({action:action},data))}); var t=await r.text(); var j=null; try{j=JSON.parse(t)}catch(_e){j={success:r.ok,message:t}} if(!r.ok||j.success===false||j.ok===false) throw new Error(j.message||('HTTP '+r.status)); return j; }
+  async function appScriptSend(toList,email,row,decision){
+    var data={to:toList.join(','),emails:toList,subject:email.subject,body:email.body,message:email.body,studentName:childName(row),decision:decision,parentPortalUrl:PARENT_PORTAL_URL,requestId:row&&(row.firebaseKey||row.requestId||row.timestamp||row.id||'')};
+    var actions=['sendRegistrationDecisionNotification','sendParentRegistrationDecision','sendEmail'];
+    var last='';
+    for(var i=0;i<actions.length;i++){ try{ await postEndpoint(actions[i],data); return true; }catch(e){ last=e&&e.message?e.message:String(e); } }
+    throw new Error(last || 'خدمة البريد لم تقبل الإرسال');
+  }
+  function fallback(toList,email){ try{ if(typeof buildOutlookComposeUrl === 'function'){ window.open(buildOutlookComposeUrl(toList.join(';'),' ',email.subject,email.body,''),'_blank'); return true; } }catch(_e){} try{ window.open('mailto:'+encodeURIComponent(toList.join(','))+'?subject='+encodeURIComponent(email.subject)+'&body='+encodeURIComponent(email.body),'_blank'); return true; }catch(_e){} return false; }
+  async function notify(row,decision){
+    try{
+      if(!row || (decision!=='approved' && decision!=='rejected')) return;
+      if(txt(row.parentNotificationDecision)===decision && row.parentNotificationStatus==='sent') return;
+      var toList=parentEmails(row); if(!toList.length) throw new Error('لا يوجد بريد إلكتروني لولي الأمر');
+      var email=buildEmail(row,decision);
+      var sent=false;
+      try{ sent=await graphSend(toList,email); }catch(_e){ sent=false; }
+      if(!sent) sent=await appScriptSend(toList,email,row,decision);
+      row.parentNotificationDecision=decision; row.parentNotificationStatus='sent'; row.parentNotificationSentAt=new Date().toISOString(); row.parentPortalUrl=PARENT_PORTAL_URL;
+      try{ if(typeof saveFormRowRemoteAware==='function') saveFormRowRemoteAware(row); }catch(_e){}
+      try{ if(typeof archiveFirebaseRegistrationRequest==='function') archiveFirebaseRegistrationRequest(row,decision==='approved'?'approved':'rejected'); }catch(_e){}
+      if(typeof showSyncBadge==='function') showSyncBadge('✅ تم إرسال إشعار القرار لولي الأمر بالعربية والإنجليزية');
+    }catch(e){
+      try{ var to=parentEmails(row), em=buildEmail(row,decision); fallback(to,em); row.parentNotificationDecision=decision; row.parentNotificationStatus='failed'; row.parentNotificationMessage=e&&e.message?e.message:String(e); if(typeof saveFormRowRemoteAware==='function') saveFormRowRemoteAware(row); }catch(_e){}
+      if(typeof showSyncBadge==='function') showSyncBadge('⚠️ تعذر إرسال الإشعار تلقائياً. تم تجهيز بريد يدوي.');
+    }
+  }
+  window.kpNotifyRegistrationDecisionToParent = notify;
+  var previousSet = window.setFormRowDecision || (typeof setFormRowDecision === 'function' ? setFormRowDecision : null);
+  if(previousSet && !previousSet.__kpBilingualNotifyWrapped){
+    var wrapped=function(row,status,meta){ var out=previousSet.apply(this,arguments); var d=String(status||'').toLowerCase(); if(d==='accepted') d='approved'; if(d==='approved'||d==='rejected') setTimeout(function(){ notify(row,d); },1100); return out; };
+    wrapped.__kpBilingualNotifyWrapped=true;
+    window.setFormRowDecision = setFormRowDecision = wrapped;
+  }
+})();
+</script>
+<script id="kp-registration-final-appscript-notifications-20260510">
+(function(){
+  if (window.__kpRegistrationFinalAppsScriptNotifications20260510) return;
+  window.__kpRegistrationFinalAppsScriptNotifications20260510 = true;
+  var PARENT_PORTAL_URL = 'https://kidsparknursery2019-ops.github.io/Parents-portal/';
+  var OTP_EMAIL_ENDPOINT = 'https://script.google.com/macros/s/AKfycbws0Cr_NO4Lmd8ZrwdNc479RfTLwaySNunwrglhF-1VpDvMpqrA43HPYzqiFZ0Ax3LIQg/exec';
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function pick(row, keys){ row=row||{}; for(var i=0;i<keys.length;i++){ var v=row[keys[i]]; if(v!=null && txt(v)!=='') return v; } return ''; }
+  function unique(arr){ var seen={}; return (arr||[]).map(txt).filter(function(x){ var k=x.toLowerCase(); if(!x || seen[k]) return false; seen[k]=true; return true; }); }
+  function parentEmails(row){ return unique([pick(row,['dadEmail','fatherEmail','father_email','emailFather','dadMail']),pick(row,['momEmail','motherEmail','mother_email','emailMother','momMail']),pick(row,['parentEmail','guardianEmail','email'])].join(';').split(/[;,\s]+/).filter(function(x){ return /@/.test(x); })); }
+  function childName(row){ return txt(pick(row,['name','studentName','childName','fullName','nameAr'])) || 'الطالب/ـة'; }
+  function reasons(row, lang){
+    try { if (typeof window.kpRegistrationRejectionReasonLabels === 'function') { var x = window.kpRegistrationRejectionReasonLabels(row, lang); if(x && x.length) return x; } } catch(_e){}
+    var arr = lang === 'en' ? (row && row.rejectionReasonsEn) : (row && row.rejectionReasonsAr);
+    if(Array.isArray(arr) && arr.length) return arr;
+    var one = lang === 'en' ? (row && row.rejectionReasonEnglish) : (row && row.rejectionReason);
+    return one ? [one] : [];
+  }
+  function buildEmail(row, decision){
+    var name = childName(row);
+    if(decision === 'approved'){
+      return {
+        subject: 'Registration accepted - Kids Park Nursery / تم قبول طلب التسجيل',
+        body: 'السادة أولياء الأمور الكرام،\n\nيسرنا إبلاغكم بأنه تم قبول تسجيل الطالب/ـة: ' + name + '.\n\nيمكنكم الدخول إلى بوابة ولي الأمر من خلال الرابط التالي:\n' + PARENT_PORTAL_URL + '\n\nمع تحيات،\nحضانة حديقة الأطفال\n\n------------------------------\n\nDear Parent,\n\nWe are pleased to inform you that the registration for ' + name + ' has been accepted.\n\nYou can access the Parent Portal using the link below:\n' + PARENT_PORTAL_URL + '\n\nRegards,\nKids Park Nursery'
+      };
+    }
+    var ar = reasons(row,'ar');
+    var en = reasons(row,'en');
+    var note = txt(row && row.rejectionNotes);
+    return {
+      subject: 'Registration update - Kids Park Nursery / تحديث طلب التسجيل',
+      body: 'السادة أولياء الأمور الكرام،\n\nنود إبلاغكم بأنه بعد مراجعة طلب تسجيل الطالب/ـة: ' + name + '، لم يتم قبول الطلب في الوقت الحالي.\n\nسبب الرفض:\n' + (ar.length ? ar.map(function(x){ return '- ' + x; }).join('\n') : '- غير محدد') + (note ? '\n\nملاحظات إضافية:\n' + note : '') + '\n\nلأي استفسار يمكنكم التواصل مع إدارة الحضانة.\n\nمع تحيات،\nحضانة حديقة الأطفال\n\n------------------------------\n\nDear Parent,\n\nAfter reviewing the registration request for ' + name + ', we regret to inform you that the request has not been accepted at this time.\n\nReason for rejection:\n' + (en.length ? en.map(function(x){ return '- ' + x; }).join('\n') : '- Not specified') + (note ? '\n\nAdditional notes:\n' + note : '') + '\n\nFor any questions, please contact the nursery management.\n\nRegards,\nKids Park Nursery'
+    };
+  }
+  async function postEndpoint(action, data){
+    var r = await fetch(OTP_EMAIL_ENDPOINT, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(Object.assign({action:action}, data))});
+    var t = await r.text();
+    var j = null;
+    try { j = JSON.parse(t); } catch(_e) { j = {success:r.ok, message:t}; }
+    if(!r.ok || j.success === false || j.ok === false) throw new Error(j.message || ('HTTP ' + r.status));
+    return j;
+  }
+  async function sendByAppsScript(row, decision){
+    if(!row || (decision !== 'approved' && decision !== 'rejected')) return;
+    if(txt(row.parentNotificationDecision) === decision && row.parentNotificationStatus === 'sent') return;
+    var toList = parentEmails(row);
+    if(!toList.length) throw new Error('لا يوجد بريد إلكتروني لولي الأمر');
+    var email = buildEmail(row, decision);
+    var data = {to:toList.join(','), emails:toList, subject:email.subject, body:email.body, message:email.body, studentName:childName(row), decision:decision, requestId:row.firebaseKey || row.requestId || row.timestamp || row.id || ''};
+    var actions = ['sendRegistrationDecisionNotification','sendParentRegistrationDecision','sendEmail'];
+    var last = '';
+    for(var i=0;i<actions.length;i++){
+      try { await postEndpoint(actions[i], data); row.parentNotificationDecision=decision; row.parentNotificationStatus='sent'; row.parentNotificationSentAt=new Date().toISOString(); row.parentNotificationMessage='Apps Script'; if(decision === 'approved') row.parentPortalUrl=PARENT_PORTAL_URL; try{ if(typeof saveFormRowRemoteAware === 'function') saveFormRowRemoteAware(row); }catch(_e){} return; }
+      catch(e){ last = e && e.message ? e.message : String(e); }
+    }
+    throw new Error(last || 'Apps Script لم يقبل إرسال الإشعار');
+  }
+  window.kpNotifyRegistrationDecisionToParent = async function(row, decision){
+    try { await sendByAppsScript(row, decision); if(typeof showSyncBadge === 'function') showSyncBadge('✅ تم إرسال إشعار ولي الأمر عبر Apps Script'); }
+    catch(e){ try{ row.parentNotificationDecision=decision; row.parentNotificationStatus='failed'; row.parentNotificationMessage=e&&e.message?e.message:String(e); if(typeof saveFormRowRemoteAware === 'function') saveFormRowRemoteAware(row); }catch(_e){} if(typeof showSyncBadge === 'function') showSyncBadge('⚠️ تعذر إرسال إشعار ولي الأمر عبر Apps Script'); }
+  };
+  window.setFormRowDecision = setFormRowDecision = function(r, status, meta){
+    meta = meta || {};
+    r.status = status;
+    r.decisionAt = new Date().toISOString();
+    r.rowUpdatedAt = r.decisionAt;
+    Object.keys(meta).forEach(function(k){ r[k] = meta[k]; });
+    try { if (typeof rememberLocalFormDecision === 'function') rememberLocalFormDecision(r, r.decisionAt); } catch(_e){}
+    try { if (typeof persistFormRowsAndSync === 'function') persistFormRowsAndSync(r); } catch(_e){ try{ if(typeof saveFormRowRemoteAware==='function') saveFormRowRemoteAware(r); }catch(__e){} }
+    try { if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge(); } catch(_e){}
+    try { if (typeof archiveFirebaseRegistrationRequest === 'function') archiveFirebaseRegistrationRequest(r, status); } catch(_e){}
+    var d = String(status || '').toLowerCase(); if(d === 'accepted') d = 'approved';
+    if(d === 'approved' || d === 'rejected') setTimeout(function(){ window.kpNotifyRegistrationDecisionToParent(r, d); }, 900);
+  };
+})();
+</script>
+<script id="kp-registration-rejection-form-link-option-20260510">
+(function(){
+  window.__kpRegistrationRejectionFormLinkOptionClean20260510 = true;
+  var REGISTRATION_FORM_URL = 'https://kidsparknursery2019-ops.github.io/kidspark-registration/';
+  var PARENT_PORTAL_URL = 'https://kidsparknursery2019-ops.github.io/Parents-portal/';
+  var OTP_EMAIL_ENDPOINT = 'https://script.google.com/macros/s/AKfycbws0Cr_NO4Lmd8ZrwdNc479RfTLwaySNunwrglhF-1VpDvMpqrA43HPYzqiFZ0Ax3LIQg/exec';
+  var LABELS = {title:"رفض طلب التسجيل", intro:"اختاري سبب الرفض. سيتم ذكر السبب في رسالة ولي الأمر بالعربية والإنجليزية.", notes:"ملاحظات إضافية اختيارية", placeholder:"اكتبي أي توضيح إضافي لولي الأمر عند الحاجة...", reasonErr:"يرجى اختيار سبب واحد على الأقل أو كتابة ملاحظة.", cancel:"إلغاء", confirm:"تأكيد الرفض وإرسال الإشعار", nursery:"حضانة حديقة الأطفال", reasonLabel:"سبب الرفض"};
+  var REJECTION_REASONS = [
+    {id:"missing_docs", ar:"مستندات ناقصة", en:"Missing documents"},
+    {id:"wrong_docs", ar:"مستندات غير صحيحة / غير واضحة", en:"Wrong or unclear documents"},
+    {id:"wrong_info", ar:"بيانات غير صحيحة أو غير مطابقة", en:"Incorrect or mismatched information"},
+    {id:"parent_request", ar:"بناءً على طلب ولي الأمر", en:"Based on parent request"},
+    {id:"age_not_eligible", ar:"العمر غير مناسب حالياً", en:"Age is not currently eligible"},
+    {id:"class_full", ar:"لا توجد شواغر في الصف المطلوب", en:"No available seat in the requested class"},
+    {id:"duplicate_request", ar:"طلب مكرر", en:"Duplicate request"},
+    {id:"other", ar:"سبب آخر", en:"Other reason"}
+  ];
+  function clean(v){ return String(v == null ? '' : v).trim(); }
+  function esc(v){ try { if (typeof escapeHtml === 'function') return escapeHtml(v); } catch(_e) {} return clean(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function pick(row, keys){ row=row||{}; for(var i=0;i<keys.length;i++){ var v=row[keys[i]]; if(v!=null && clean(v)!=='') return v; } return ''; }
+  function unique(arr){ var seen={}; return (arr||[]).map(clean).filter(function(x){ var k=x.toLowerCase(); if(!x || seen[k]) return false; seen[k]=true; return true; }); }
+  function parentEmails(row){ return unique([pick(row,['dadEmail','fatherEmail','father_email','emailFather','dadMail']), pick(row,['momEmail','motherEmail','mother_email','emailMother','momMail']), pick(row,['parentEmail','guardianEmail','email'])].join(';').split(/[;,\s]+/).filter(function(x){ return /@/.test(x); })); }
+  function childName(row){ return clean(pick(row,['name','studentName','childName','fullName','nameAr'])) || 'Student'; }
+  function reasonById(id){ for(var i=0;i<REJECTION_REASONS.length;i++){ if(REJECTION_REASONS[i].id === id) return REJECTION_REASONS[i]; } return null; }
+  function reasonLabels(row, lang){ var ids = row && row.rejectionReasonIds || []; var out = ids.map(reasonById).filter(Boolean).map(function(r){ return lang === 'en' ? r.en : r.ar; }); if(out.length) return out; var arr = lang === 'en' ? row && row.rejectionReasonsEn : row && row.rejectionReasonsAr; if(Array.isArray(arr) && arr.length) return arr; var one = lang === 'en' ? row && row.rejectionReasonEnglish : row && row.rejectionReason; return one ? [one] : []; }
+  function showModal(row){ return new Promise(function(resolve){ var old=document.getElementById('kp-rejection-reason-ov'); if(old) old.remove(); var html='<div class="ov on" id="kp-rejection-reason-ov" style="z-index:99999"><div class="mo" style="max-width:700px;width:min(700px,94vw)">'+ '<div class="mot">'+esc(LABELS.title)+'</div>'+ '<div style="color:var(--muted);font-weight:800;margin-bottom:12px">'+esc(LABELS.intro)+' Apps Script.</div>'+ '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;margin-bottom:12px">'+ REJECTION_REASONS.map(function(r){ return '<label style="display:flex;gap:8px;align-items:flex-start;border:1.5px solid var(--border);border-radius:12px;padding:10px;background:#fff;cursor:pointer"><input type="checkbox" value="'+r.id+'" style="margin-top:4px"><span><b>'+esc(r.ar)+'</b><br><small dir="ltr" style="color:var(--muted)">'+esc(r.en)+'</small></span></label>'; }).join('')+ '</div>'+ '<label style="display:block;border:1.5px solid var(--border);border-radius:12px;padding:10px;background:#f8fffb;margin-bottom:12px;cursor:pointer"><input type="checkbox" id="kp-rejection-include-form-link"> <b>Include registration form link for correction and resubmission</b><br><small dir="ltr" style="color:var(--muted)">https://kidsparknursery2019-ops.github.io/kidspark-registration/</small></label>'+ '<label style="display:block;font-weight:900;color:var(--g1);margin-bottom:6px">'+esc(LABELS.notes)+'</label>'+ '<textarea id="kp-rejection-note" rows="4" style="width:100%;border:1.5px solid var(--border);border-radius:12px;padding:10px;font:inherit;resize:vertical" placeholder="'+esc(LABELS.placeholder)+'"></textarea>'+ '<div id="kp-rejection-reason-error" style="display:none;color:var(--r1);font-weight:900;margin-top:8px">'+esc(LABELS.reasonErr)+'</div>'+ '<div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn btn-out" id="kp-rejection-cancel" type="button">'+esc(LABELS.cancel)+'</button><button class="btn btn-r" id="kp-rejection-confirm" type="button">'+esc(LABELS.confirm)+'</button></div>'+ '</div></div>'; document.body.insertAdjacentHTML('beforeend', html); var ov=document.getElementById('kp-rejection-reason-ov'); function close(v){ try{ov.remove();}catch(_e){} resolve(v); } document.getElementById('kp-rejection-cancel').onclick=function(){ close(null); }; document.getElementById('kp-rejection-confirm').onclick=function(){ var ids=Array.from(ov.querySelectorAll('input[type="checkbox"]:checked')).map(function(x){ return x.value; }).filter(function(x){ return x !== 'on'; }); var note=clean(document.getElementById('kp-rejection-note').value); var includeLink=!!document.getElementById('kp-rejection-include-form-link').checked; if(!ids.length && !note){ document.getElementById('kp-rejection-reason-error').style.display='block'; return; } var labelsAr=ids.map(reasonById).filter(Boolean).map(function(r){return r.ar;}); var labelsEn=ids.map(reasonById).filter(Boolean).map(function(r){return r.en;}); close({ids:ids, labelsAr:labelsAr, labelsEn:labelsEn, note:note, includeRegistrationFormLink:includeLink}); }; }); }
+  window.rejectFormRow = rejectFormRow = async function(ts){ var row=null; try{ row=(typeof findRegistrationRowByToken==='function'?findRegistrationRowByToken(ts):(syncedFormRows||[]).find(function(x){return x.timestamp===ts;})); }catch(_e){} if(!row) return; var info=await showModal(row); if(!info) return; row.rejectionReasonIds=info.ids; row.rejectionReasonsAr=info.labelsAr; row.rejectionReasonsEn=info.labelsEn; row.rejectionReason=info.labelsAr.join('? '); row.rejectionReasonEnglish=info.labelsEn.join(', '); row.rejectionNotes=info.note; row.includeRegistrationFormLink=!!info.includeRegistrationFormLink; row.registrationFormUrl=info.includeRegistrationFormLink ? REGISTRATION_FORM_URL : ''; setFormRowDecision(row,'rejected',{approvedStudentId:null,approvedAction:'reject',rejectionReasonIds:info.ids,rejectionReasonsAr:info.labelsAr,rejectionReasonsEn:info.labelsEn,rejectionReason:row.rejectionReason,rejectionReasonEnglish:row.rejectionReasonEnglish,rejectionNotes:info.note,includeRegistrationFormLink:!!info.includeRegistrationFormLink,registrationFormUrl:row.registrationFormUrl,undoData:{revertTo:'pending'}}); try{ renderFormRequests(); }catch(_e){} try{ if(typeof showSyncBadge==='function') showSyncBadge(LABELS.title); }catch(_e){} };
+  function buildEmail(row, decision){ var name=childName(row); if(decision==='approved') return {subject:'Registration accepted - Kids Park Nursery', body:LABELS.nursery+'\n\n'+name+'\n\nRegistration accepted.\n\nParent Portal:\n'+PARENT_PORTAL_URL+'\n\nDear Parent,\n\nWe are pleased to inform you that the registration for '+name+' has been accepted.\n\nYou can access the Parent Portal using the link below:\n'+PARENT_PORTAL_URL+'\n\nRegards,\nKids Park Nursery'}; var ar=reasonLabels(row,'ar'), en=reasonLabels(row,'en'), note=clean(row&&row.rejectionNotes), include=!!(row&&row.includeRegistrationFormLink), link=clean(row&&row.registrationFormUrl)||REGISTRATION_FORM_URL; return {subject:'Registration update - Kids Park Nursery', body:LABELS.title+'\n\n'+name+'\n\n'+LABELS.reasonLabel+':\n'+(ar.length?ar.map(function(x){return '- '+x;}).join('\n'):'-')+(note?'\n\n'+LABELS.notes+':\n'+note:'')+(include?'\n\nInclude registration form link for correction and resubmission:\n'+link:'')+'\n\n'+LABELS.nursery+'\n\n------------------------------\n\nDear Parent,\n\nAfter reviewing the registration request for '+name+', we regret to inform you that the request has not been accepted at this time.\n\nReason for rejection:\n'+(en.length?en.map(function(x){return '- '+x;}).join('\n'):'- Not specified')+(note?'\n\nAdditional notes:\n'+note:'')+(include?'\n\nYou can modify and resubmit the registration request using the link below:\n'+link:'')+'\n\nFor any questions, please contact the nursery management.\n\nRegards,\nKids Park Nursery'}; }
+  async function postEndpoint(action,data){ var payload = JSON.stringify(Object.assign({action:action},data)); try { var r=await fetch(OTP_EMAIL_ENDPOINT,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:payload}); var t=await r.text(); var j=null; try{j=JSON.parse(t)}catch(_e){j={success:r.ok,message:t}} if(!r.ok||j.success===false||j.ok===false) throw new Error(j.message||('HTTP '+r.status)); return j; } catch (err) { if (String(err && err.message || err).toLowerCase().indexOf('failed to fetch') >= 0 || String(err && err.name || '').toLowerCase().indexOf('typeerror') >= 0) { await fetch(OTP_EMAIL_ENDPOINT,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:payload}); return {success:true, opaque:true}; } throw err; } }
+  async function sendByAppsScript(row, decision){ if(!row || (decision!=='approved' && decision!=='rejected')) return; if(clean(row.parentNotificationDecision)===decision && row.parentNotificationStatus==='sent') return; var toList=parentEmails(row); if(!toList.length) throw new Error('Missing parent email'); var email=buildEmail(row,decision); var data={to:toList.join(','),emails:toList,subject:email.subject,body:email.body,message:email.body,studentName:childName(row),decision:decision,includeRegistrationFormLink:!!row.includeRegistrationFormLink,registrationFormUrl:row.registrationFormUrl||'',requestId:row.firebaseKey||row.requestId||row.timestamp||row.id||''}; var actions=['sendRegistrationDecisionNotification','sendParentRegistrationDecision','sendEmail']; var last=''; for(var i=0;i<actions.length;i++){ try{ await postEndpoint(actions[i],data); row.parentNotificationDecision=decision; row.parentNotificationStatus='sent'; row.parentNotificationSentAt=new Date().toISOString(); row.parentNotificationMessage='Apps Script'; if(decision==='approved') row.parentPortalUrl=PARENT_PORTAL_URL; try{ if(typeof saveFormRowRemoteAware==='function') saveFormRowRemoteAware(row); }catch(_e){} return; }catch(e){ last=e&&e.message?e.message:String(e); } } throw new Error(last||'Apps Script email failed'); }
+  window.kpNotifyRegistrationDecisionToParent = async function(row, decision){ try{ await sendByAppsScript(row,decision); if(typeof showSyncBadge==='function') showSyncBadge('Parent notification sent'); }catch(e){ try{ row.parentNotificationDecision=decision; row.parentNotificationStatus='failed'; row.parentNotificationMessage=e&&e.message?e.message:String(e); if(typeof saveFormRowRemoteAware==='function') saveFormRowRemoteAware(row); }catch(_e){} if(typeof showSyncBadge==='function') showSyncBadge('Parent notification failed'); } };
+})();
+</script></body>
 </html>
 
