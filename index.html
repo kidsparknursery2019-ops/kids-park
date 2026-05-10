@@ -76,6 +76,14 @@ document.addEventListener('click', function(e) {
 // Independent receipt verification URL (Netlify) - QR will not point to the system URL
 window.KP_VERIFY_BASE_URL = 'https://kids-park-nursery-receipt-verificatio.netlify.app/';
 </script>
+<style id="kp-startup-anti-flash-20260510">
+body.kp-booting .hdr,
+body.kp-booting .wrap,
+body.kp-booting .topbar,
+body.kp-booting .side,
+body.kp-booting .main{visibility:hidden!important}
+body.kp-booting #login-screen{display:none!important}
+</style>
 <style>
 :root{
   /* 🎨 ألوان طفولية مرحة ومشرقة — original tokens preserved for compatibility */
@@ -1866,7 +1874,7 @@ body.kp-evaluator #pg-eval{display:block!important}
 
 </style>
 </head>
-<body>
+<body class="kp-booting">
 
 <!-- PRINT AREA -->
 <div id="receipt-print-area"></div>
@@ -2687,7 +2695,7 @@ body.kp-evaluator #pg-eval{display:block!important}
         <input type="file" id="ren-file" accept="image/*,application/pdf" onchange="previewRenewalFile()">
         <div id="ren-file-preview" style="margin-top:7px;font-size:12px;color:var(--muted);line-height:1.7"></div>
         <div id="ren-file-current" style="margin-top:4px;font-size:12px;color:var(--muted);line-height:1.7"></div>
-        <small style="color:var(--muted)">يمكن رفع صورة أو PDF. يفضّل أن لا يتجاوز الملف 2MB.</small>
+        <small style="color:var(--muted)">يمكن رفع صورة أو PDF. يفضّل أن لا يتجاوز الملف 5MB.</small>
       </div>
     </div>
     <div class="mof">
@@ -5853,7 +5861,9 @@ function printStudentsSelectedReport(){
       .moe-grid th:nth-child(15),.moe-grid td:nth-child(15){width:58px}
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
-    <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script></body></html>`);
+    <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script>
+
+</body></html>`);
     w.document.close();
     return;
   }
@@ -9170,6 +9180,9 @@ function closeAll(){document.querySelectorAll('.ov').forEach(o=>o.classList.remo
 // ============================================================
 // AUTH & SESSION
 // ============================================================
+function kpFinishBoot(){
+  try { document.body.classList.remove('kp-booting'); } catch(_e) {}
+}
 let currentUser = null;
 let logoDataUrl = '';
 let nurserySettings = {
@@ -9188,7 +9201,7 @@ let nurserySettings = {
 let worksheetImages = JSON.parse(localStorage.getItem('ws_images')||'{}');
 
 async function doLogin() {
-  const user = document.getElementById('login-user').value.trim();
+  const user = document.getElementById('login-user').value.trim().toLowerCase();
   const pass = document.getElementById('login-pass').value;
   const err = document.getElementById('login-err');
   err.textContent = '';
@@ -9206,7 +9219,7 @@ async function doLogin() {
     users = [{username:'admin', password:'admin123', role:'admin', name:'المدير'}];
     localStorage.setItem('kp_users', JSON.stringify(users));
   }
-  const found = users.find(u => u.username === user && u.password === pass);
+  const found = users.find(u => String(u.username || '').trim().toLowerCase() === user && u.password === pass);
   if (!found) { err.textContent = 'اسم المستخدم أو كلمة السر غلط'; return; }
   if (found.disabled === true) {
     err.textContent = '🚫 هذا الحساب معطّل. يرجى مراجعة الإدارة.';
@@ -9326,6 +9339,7 @@ function applyLogin() {
   } else {
     renderDash();
   }
+  kpFinishBoot();
   if (bulkApprovedNow > 0) {
     setTimeout(function(){ alert('✅ تم اعتماد ' + bulkApprovedNow + ' عملية ربط بين السندات وملفات الطلاب'); }, 300);
   }
@@ -9381,6 +9395,7 @@ function doLogout() {
   if (attBar) attBar.querySelectorAll('button').forEach(function(b){ b.style.display = ''; });
   sessionStorage.removeItem('kp_session');
   document.getElementById('login-screen').style.display = 'flex';
+  kpFinishBoot();
   const sb2 = document.getElementById('btn-save-cloud');
   if (sb2) sb2.style.display = 'none';
   const nb2 = document.getElementById('notif-btn');
@@ -9401,7 +9416,7 @@ function isCurrentUserDisabledLocal(){
   if (currentUser.disabled === true) return true;
   try {
     var localUsers = JSON.parse(localStorage.getItem('kp_users') || '[]');
-    var latest = localUsers.find(function(u){ return u && u.username === currentUser.username; });
+    var latest = localUsers.find(function(u){ return u && String(u.username || '').trim().toLowerCase() === String(currentUser.username || '').trim().toLowerCase(); });
     return !!(latest && latest.disabled === true);
   } catch(_e) {
     return false;
@@ -9414,6 +9429,7 @@ function forceLogoutDisabledUser(){
   document.body.classList.remove('kp-admin', 'kp-teacher');
   var login = document.getElementById('login-screen');
   if (login) login.style.display = 'flex';
+  kpFinishBoot();
   var ub = document.getElementById('user-badge');
   if (ub) ub.style.display = 'none';
   var err = document.getElementById('login-err');
@@ -9426,7 +9442,7 @@ async function checkCurrentUserDisabledRemote(){
   try {
     var result = await loadUsersFromFirebase();
     var usersRemote = Array.isArray(result.users) ? result.users : [];
-    var latest = usersRemote.find(function(u){ return u && u.username === currentUser.username; });
+    var latest = usersRemote.find(function(u){ return u && String(u.username || '').trim().toLowerCase() === String(currentUser.username || '').trim().toLowerCase(); });
     if (latest && latest.disabled === true) {
       localStorage.setItem('kp_users', JSON.stringify(usersRemote));
       forceLogoutDisabledUser();
@@ -9447,7 +9463,7 @@ function checkSession() {
     applyLogin();
     if (typeof checkCurrentUserDisabledRemote === 'function') setTimeout(checkCurrentUserDisabledRemote, 500);
   }
-  else document.getElementById('login-screen').style.display = 'flex';
+  else { document.getElementById('login-screen').style.display = 'flex'; kpFinishBoot(); }
 }
 
 // ============================================================
@@ -9545,7 +9561,7 @@ function changePassword() {
   const newP = document.getElementById('cp-new').value;
   const conf = document.getElementById('cp-confirm').value;
   const users = JSON.parse(localStorage.getItem('kp_users') || '[]');
-  const me = users.find(u => u.username === currentUser.username);
+  const me = users.find(u => String(u.username || '').trim().toLowerCase() === String(currentUser.username || '').trim().toLowerCase());
   if(!me || me.password !== oldP) return alert('كلمة السر الحالية غلط');
   if(newP.length < 4) return alert('كلمة السر الجديدة قصيرة جداً (4 أحرف على الأقل)');
   if(newP !== conf) return alert('تأكيد كلمة السر ما يطابق');
@@ -9683,7 +9699,7 @@ function renderAdminUsers() {
     if (canEditThisUser) actions += '<button class="btn btn-b btn-sm" onclick=\'openEditUser(' + jsArg(u.username) + ')\'>\u270F\uFE0F ' + T('\u062A\u0639\u062F\u064A\u0644 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A') + '</button>';
     else actions += '<span class="kp-user-badge protected">\uD83D\uDD12 ' + T('\u0645\u062D\u0645\u064A') + '</span>';
     if (isTeacherLike) actions += '<button class="btn btn-out btn-sm" onclick=\'openEditUserClasses(' + jsArg(u.username) + ')\'>\uD83D\uDCDA ' + T('\u0627\u0644\u0641\u0635\u0648\u0644') + '</button>';
-    if (!isPrimaryAdmin && (!currentUser || currentUser.username !== u.username)) actions += '<button class="btn ' + (disabled ? 'btn-g' : 'btn-y') + ' btn-sm" onclick=\'toggleUserStatus(' + jsArg(u.username) + ')\'>' + (disabled ? '\uD83D\uDFE2 ' + T('\u062A\u0641\u0639\u064A\u0644') : '\uD83D\uDD34 ' + T('\u062A\u0639\u0637\u064A\u0644')) + '</button>';
+    if (!isPrimaryAdmin && (!currentUser || String(currentUser.username || '').trim().toLowerCase() !== String(u.username || '').trim().toLowerCase())) actions += '<button class="btn ' + (disabled ? 'btn-g' : 'btn-y') + ' btn-sm" onclick=\'toggleUserStatus(' + jsArg(u.username) + ')\'>' + (disabled ? '\uD83D\uDFE2 ' + T('\u062A\u0641\u0639\u064A\u0644') : '\uD83D\uDD34 ' + T('\u062A\u0639\u0637\u064A\u0644')) + '</button>';
     if (!isPrimaryAdmin) actions += '<button class="btn btn-r btn-sm" onclick=\'deleteUser(' + jsArg(u.username) + ')\'>\uD83D\uDDD1 ' + T('\u062D\u0630\u0641') + '</button>';
     return '<article class="kp-user-card ' + (disabled ? 'is-disabled ' : '') + (isPrimaryAdmin ? 'is-protected' : '') + '" data-user-card data-search="' + esc(searchText) + '">'
       + '<div class="kp-user-main">'
@@ -9831,7 +9847,7 @@ async function submitAddUser(){
   } catch(_e) {
     users = JSON.parse(localStorage.getItem('kp_users') || '[]');
   }
-  if (users.find(function(u){ return u.username === user; })) return alert('اسم المستخدم موجود مسبقاً');
+  if (users.find(function(u){ return String(u.username || '').trim().toLowerCase() === String(user || '').trim().toLowerCase(); })) return alert('اسم المستخدم موجود مسبقاً');
   var record = { username: user, password: pass, role: role, name: name, disabled: false, mustChangePassword: true };
   if (role === 'teacher' || role === 'evaluator') record.classes = classes;
   users.push(record);
@@ -9847,7 +9863,7 @@ async function submitAddUser(){
 function openEditUser(username){
   if (currentUser?.role !== 'admin') return alert('للمدير فقط');
   var users = JSON.parse(localStorage.getItem('kp_users') || '[]');
-  var u = users.find(function(x){ return x.username === username; });
+  var u = users.find(function(x){ return String(x.username || '').trim().toLowerCase() === String(username || '').trim().toLowerCase(); });
   if (!u) return alert('المستخدم غير موجود');
   if (isPrimaryAdminUser(u) && !canCurrentUserManagePrimaryAdmin()) return alert('❌ لا يمكن تعديل حساب المستخدم admin');
 
@@ -9934,7 +9950,7 @@ function openEditUser(username){
       usersNow = JSON.parse(localStorage.getItem('kp_users') || '[]');
     }
 
-    var idx = usersNow.findIndex(function(x){ return x.username === originalUsername; });
+    var idx = usersNow.findIndex(function(x){ return String(x.username || '').trim().toLowerCase() === String(originalUsername || '').trim().toLowerCase(); });
     if (idx === -1) return alert('المستخدم غير موجود على الخادم. اعملي تحديث وجربي مرة ثانية.');
     if (isPrimaryAdminUser(usersNow[idx]) && !canCurrentUserManagePrimaryAdmin()) return alert('❌ لا يمكن تعديل حساب المستخدم admin');
 
@@ -9951,7 +9967,7 @@ function openEditUser(username){
     usersNow[idx] = updated;
     localStorage.setItem('kp_users', JSON.stringify(usersNow));
 
-    if (currentUser && currentUser.username === originalUsername) {
+    if (currentUser && String(currentUser.username || '').trim().toLowerCase() === String(originalUsername || '').trim().toLowerCase()) {
       currentUser = Object.assign({}, currentUser, updated);
       sessionStorage.setItem('kp_session', JSON.stringify(currentUser));
       applyLogin();
@@ -9976,7 +9992,7 @@ function toggleEditUserClasses(){
 function openEditUserClasses(username){
   if (currentUser?.role !== 'admin') return alert('للمدير فقط');
   var users = JSON.parse(localStorage.getItem('kp_users') || '[]');
-  var u = users.find(function(x){ return x.username === username; });
+  var u = users.find(function(x){ return String(x.username || '').trim().toLowerCase() === String(username || '').trim().toLowerCase(); });
   if (!u) return alert('المستخدم غير موجود');
   if (u.role !== 'teacher') return alert('هذا الخيار للمعلمات فقط');
   var ov = document.getElementById('edit-user-classes-overlay');
@@ -10019,7 +10035,7 @@ function openEditUserClasses(username){
     } catch(_e) {
       usersNow = JSON.parse(localStorage.getItem('kp_users') || '[]');
     }
-    var idx = usersNow.findIndex(function(x){ return x.username === username; });
+    var idx = usersNow.findIndex(function(x){ return String(x.username || '').trim().toLowerCase() === String(username || '').trim().toLowerCase(); });
     if (idx === -1) return alert('المستخدم غير موجود');
     usersNow[idx].classes = picked;
     localStorage.setItem('kp_users', JSON.stringify(usersNow));
@@ -10035,7 +10051,7 @@ function openEditUserClasses(username){
 async function toggleUserStatus(username) {
   if (currentUser?.role !== 'admin') return alert('للمدير فقط');
   if (isPrimaryAdminUser(username)) return alert('❌ لا يمكن تعطيل الحساب الرئيسي');
-  if (currentUser && currentUser.username === username) return alert('❌ لا يمكنك تعطيل حسابك الحالي');
+  if (currentUser && String(currentUser.username || '').trim().toLowerCase() === String(username || '').trim().toLowerCase()) return alert('❌ لا يمكنك تعطيل حسابك الحالي');
 
   let usersNow;
   try {
@@ -10045,7 +10061,7 @@ async function toggleUserStatus(username) {
     usersNow = JSON.parse(localStorage.getItem('kp_users') || '[]');
   }
 
-  var idx = usersNow.findIndex(function(x){ return x.username === username; });
+  var idx = usersNow.findIndex(function(x){ return String(x.username || '').trim().toLowerCase() === String(username || '').trim().toLowerCase(); });
   if (idx === -1) return alert('المستخدم غير موجود');
 
   usersNow[idx].disabled = !(usersNow[idx].disabled === true);
@@ -10075,7 +10091,7 @@ async function deleteUser(username) {
   } catch(_e) {
     users = JSON.parse(localStorage.getItem('kp_users') || '[]');
   }
-  users = users.filter(u => u.username !== username);
+  users = users.filter(u => String(u.username || '').trim().toLowerCase() !== String(username || '').trim().toLowerCase());
   localStorage.setItem('kp_users', JSON.stringify(users));
   renderAdminUsers();
   const ok = await saveUsersToFirebase(users);
@@ -13246,9 +13262,9 @@ function previewRenewalFile() {
   const file = input && input.files && input.files[0];
   if (!preview) return;
   if (!file) { preview.innerHTML = ''; return; }
-  const maxBytes = 2 * 1024 * 1024;
+  const maxBytes = 5 * 1024 * 1024;
   if (file.size > maxBytes) {
-    alert('حجم الملف كبير. الرجاء رفع ملف لا يتجاوز 2MB حتى لا يثقل قاعدة البيانات.');
+    alert('حجم الملف كبير. الرجاء رفع ملف لا يتجاوز 5MB حتى لا يثقل قاعدة البيانات.');
     input.value = '';
     preview.innerHTML = '';
     return;
@@ -13275,8 +13291,8 @@ function readRenewalFileInput() {
     const input = document.getElementById('ren-file');
     const file = input && input.files && input.files[0];
     if (!file) return resolve(null);
-    const maxBytes = 2 * 1024 * 1024;
-    if (file.size > maxBytes) return reject(new Error('حجم الملف كبير. الرجاء رفع ملف لا يتجاوز 2MB.'));
+    const maxBytes = 5 * 1024 * 1024;
+    if (file.size > maxBytes) return reject(new Error('حجم الملف كبير. الرجاء رفع ملف لا يتجاوز 5MB.'));
     const reader = new FileReader();
     reader.onload = function(e) {
       resolve({ name: file.name, type: file.type || '', size: file.size || 0, data: e.target.result });
@@ -13604,9 +13620,9 @@ function previewRenewalFile() {
   const file = input && input.files && input.files[0];
   if (!preview) return;
   if (!file) { preview.innerHTML = ''; return; }
-  const maxBytes = 2 * 1024 * 1024;
+  const maxBytes = 5 * 1024 * 1024;
   if (file.size > maxBytes) {
-    alert('حجم الملف كبير. الرجاء رفع ملف لا يتجاوز 2MB حتى لا يثقل قاعدة البيانات.');
+    alert('حجم الملف كبير. الرجاء رفع ملف لا يتجاوز 5MB حتى لا يثقل قاعدة البيانات.');
     input.value = '';
     preview.innerHTML = '';
     return;
@@ -13633,8 +13649,8 @@ function readRenewalFileInput() {
     const input = document.getElementById('ren-file');
     const file = input && input.files && input.files[0];
     if (!file) return resolve(null);
-    const maxBytes = 2 * 1024 * 1024;
-    if (file.size > maxBytes) return reject(new Error('حجم الملف كبير. الرجاء رفع ملف لا يتجاوز 2MB.'));
+    const maxBytes = 5 * 1024 * 1024;
+    if (file.size > maxBytes) return reject(new Error('حجم الملف كبير. الرجاء رفع ملف لا يتجاوز 5MB.'));
     const reader = new FileReader();
     reader.onload = function(e) {
       resolve({ name: file.name, type: file.type || '', size: file.size || 0, data: e.target.result });
@@ -21770,7 +21786,7 @@ function injectEvaluationsPage(){
       + '.kp-eval-card-opt:has(input:checked){border-color:#1a4a82;background:#e3f2fd;color:#0d47a1}'
       + '.kp-eval-card-opt input:disabled{cursor:not-allowed}'
       + '.kp-eval-card-opt:has(input:disabled){opacity:0.6;cursor:not-allowed;background:#f5f5f5}'
-      + '@media (max-width: 900px), (pointer: coarse){'
+      + '@media(max-width:900px){'
       + '  /* MOBILE / TOUCH — flip the layout: cards visible, table hidden.'
       + '     We use BOTH a viewport width check and a pointer-coarse check'
       + '     because some Android devices report css-pixel widths over 720px'
@@ -23366,3 +23382,75 @@ document.addEventListener('DOMContentLoaded', function(){
 
 </body>
 </html>
+<script id="kp-manager-secure-doc-change-requests-20260510">
+(function(){
+  var DOC_FIELDS = {imgChildPhoto:true,imgEmiratesId:true,imgPassport:true,imgBirthCert:true,imgVaccination:true,imgResidency:true,imgGuardianId:true,imgGuardianPass:true,imgDadId:true,imgDadPassport:true,imgChildPassport:true,imgFatherEmiratesId:true,imgFatherId:true,imgFatherPassport:true,imgMedical:true,imgMotherId:true,imgMotherPassport:true};
+  function baseUrl(){ return 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data'; }
+  function norm(v){ return String(v == null ? '' : v).trim(); }
+  function keyOf(record, prefix){ return (typeof kpRecordKey === 'function') ? kpRecordKey(record, prefix || 'k') : (record && (record.__key || record.firebaseKey || record.key || ((prefix||'k') + '_' + (record.id || Date.now())))); }
+  function mapField(k,c){
+    var f = c && (c.field || c.systemField || c.key);
+    if (f && DOC_FIELDS[f]) return f;
+    if (DOC_FIELDS[k]) return k;
+    var map = {name:'name',nameEn:'nameEn',dob:'dob',bpl:'bpl',gender:'gender',nationality:'nationality',address:'address',phone:'phone',motherPhone:'motherPhone',guardianPhone:'guardianPhone',email:'email',guardian:'guardian',parentName:'guardian',parentEmail:'email',class:'class',className:'class',health:'health',medicalStatus:'health',notes:'notes',note:'notes'};
+    return map[f] || map[k] || f || k;
+  }
+  async function loadRequestById(id){
+    var res = await fetch(baseUrl() + '/studentChangeRequests.json?ts=' + Date.now(), {cache:'no-store'});
+    if (!res.ok) throw new Error('???? ????? ????? ????? ????????');
+    var node = await res.json() || {};
+    var found = null;
+    Object.keys(node || {}).some(function(group){
+      var item = node[group];
+      if (item && typeof item === 'object' && String(item.id || item.requestId || item.__key || '') === String(id)) { found = Object.assign({__key:group}, item); return true; }
+      if (item && typeof item === 'object') return Object.keys(item).some(function(k){ var r=item[k]; if(r && typeof r === 'object' && String(r.id || r.requestId || k) === String(id)){ found = Object.assign({__group:group,__key:k}, r); return true; } return false; });
+      return false;
+    });
+    return found;
+  }
+  async function patchRequestStatus(r,status){
+    var payload = Object.assign({}, r, {status:status, updatedAt:new Date().toISOString(), approvedAt: status==='approved' ? new Date().toISOString() : r.approvedAt});
+    delete payload.__group; delete payload.__key;
+    var paths = [];
+    if (r.__group && r.__key) paths.push('/studentChangeRequests/' + encodeURIComponent(r.__group) + '/' + encodeURIComponent(r.__key));
+    if (r.__key && !r.__group) paths.push('/studentChangeRequests/' + encodeURIComponent(r.__key));
+    if (r.id) paths.push('/studentChangeRequests/' + encodeURIComponent(status) + '/' + encodeURIComponent(r.id));
+    await Promise.all(paths.map(function(p){ return fetch(baseUrl()+p+'.json', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}); }));
+  }
+  window.kpApproveStudentChangeRequest = async function(id){
+    try{
+      var r = await loadRequestById(id);
+      if(!r) return alert('?? ??? ?????? ??? ??? ????? ????????.');
+      var studentId = norm(r.studentId || r.stuId || r.childId);
+      var studentName = norm(r.studentName || r.name);
+      var list = Array.isArray(window.students) ? window.students : [];
+      var idx = list.findIndex(function(s){ return studentId && norm(s.id) === studentId; });
+      if(idx < 0 && studentName) idx = list.findIndex(function(s){ return norm(s.name) === studentName || norm(s.nameEn) === studentName; });
+      if(idx < 0) return alert('?? ??? ?????? ??? ?????? ??????? ???? ?????.');
+      var stu = Object.assign({}, list[idx]);
+      Object.keys(r.changes || {}).forEach(function(k){
+        var c = r.changes[k] || {};
+        var dest = mapField(k,c);
+        if(!dest) return;
+        if(c.isAttachment && c.fileData) {
+          stu[dest] = c.fileData;
+          if(c.fileName) stu[dest + 'Name'] = c.fileName;
+          if(c.fileType) stu[dest + 'Type'] = c.fileType;
+          if(c.fileSize) stu[dest + 'Size'] = c.fileSize;
+        } else {
+          stu[dest] = c.newValue;
+        }
+      });
+      stu.updatedAt = new Date().toISOString();
+      list[idx] = stu;
+      window.students = list;
+      if (typeof saveRecordRemoteAware === 'function') await saveRecordRemoteAware('students', stu, keyOf(stu,'stu'));
+      if (typeof saveToLocalStorage === 'function') saveToLocalStorage();
+      await patchRequestStatus(r, 'approved');
+      if (typeof renderStudents === 'function') renderStudents();
+      if (typeof kpLoadStudentChangeRequests === 'function') kpLoadStudentChangeRequests();
+      if (typeof showToast === 'function') showToast('?? ?????? ??? ????? ???????? ?????? ??? ??????.'); else alert('?? ?????? ??? ????? ???????? ?????? ??? ??????.');
+    }catch(e){ console.error(e); alert('???? ?????? ??? ????? ????????: ' + (e && e.message ? e.message : e)); }
+  };
+})();
+</script>
