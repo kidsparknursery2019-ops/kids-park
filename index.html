@@ -5600,15 +5600,15 @@ function renderStudents(){
   const cls=(document.getElementById('stu-cls')||{}).value || '';
   const gen=(document.getElementById('stu-gen')||{}).value || '';
   const statusFilter=(document.getElementById('stu-status-filter')||{}).value || 'active';
-  let f=students.filter(s=>(!q||String(s.name||'').includes(q)||String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q)||String(s.dad||'').includes(q)||String(s.mom||'').includes(q)||String(getStudentIdentity(s)||'').includes(q)||String(s.internalNote||'').includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen)&&(statusFilter==='all'||(statusFilter==='left'?!isActiveStudent(s):isActiveStudent(s)))).map(function(s){
-    return Object.assign({}, s, { healthSummary: getStudentHealthSummary(s), studentStatus: getStudentOperationalStatus(s) });
+  let f=students.filter(s=>(!q||String(s.name||'').includes(q)||String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q)||String(s.dad||'').includes(q)||String(s.mom||'').includes(q)||String(s.dadEmail||'').toLowerCase().includes(q)||String(s.momEmail||'').toLowerCase().includes(q)||String(getStudentIdentity(s)||'').includes(q)||String(s.internalNote||'').includes(q))&&(!cls||s.cls===cls)&&(!gen||s.gen===gen)&&(statusFilter==='all'||(statusFilter==='left'?!isActiveStudent(s):isActiveStudent(s)))).map(function(s){
+    return Object.assign({}, s, { healthSummary: getStudentHealthSummary(s), studentStatus: getStudentOperationalStatus(s), parentEmail: [s.dadEmail, s.momEmail].filter(function(v){ return String(v||'').trim(); }).join(' / ') });
   });
   if (tableSortState['stu-table']) f = applyTableSort('stu-table', f);
   const stuTheadEl = document.getElementById('stu-thead');
   if (stuTheadEl) stuTheadEl.innerHTML = sortableHead('stu-table', [
     ['id','#'], ['name','اسم الطالب'], ['nameEn','الاسم الإنجليزي'], ['idNo','رقم الهوية'], ['internalNote','ملاحظات داخلية'], ['healthSummary','الحالة الصحية'], ['dob','تاريخ الميلاد'], ['gen','الجنس'],
     ['nat','الجنسية'], ['cls','الفصل'], ['studentStatus','حالة الطالب'], ['dad','اسم الأب'], ['dph','هاتف الأب'],
-    ['mph','هاتف الأم'], ['addr','العنوان'], ['','إجراءات']
+    ['parentEmail','إيميل ولي الأمر'], ['mph','هاتف الأم'], ['addr','العنوان'], ['','إجراءات']
   ]);
   const statusTitle = statusFilter === 'left' ? 'الطلاب الذين تركوا' : (statusFilter === 'all' ? 'كل الطلاب' : 'الطلاب الموجودون');
   document.getElementById('stu-count').textContent=statusTitle + ` (${f.length})`;
@@ -5630,8 +5630,8 @@ function renderStudents(){
       <td>${formatNationalityWithFlag(s.nat)}</td>
       <td><span class="b bg">${CLASSES[s.cls]?.emoji||''} ${s.cls}</span></td>
       <td>${getStudentStatusBadge(s)}</td>
-      <td>${s.dad}</td><td dir="ltr">${s.dph}</td><td dir="ltr">${s.mph}</td>
-      <td style="font-size:12px">${s.addr}</td>
+      <td>${escapeHtml(s.dad||'—')}</td><td dir="ltr">${escapeHtml(s.dph||'—')}</td><td dir="ltr" style="font-size:12px;line-height:1.7">${[s.dadEmail, s.momEmail].filter(function(v){ return String(v||'').trim(); }).map(function(v){ return escapeHtml(v); }).join('<br>') || '—'}</td><td dir="ltr">${escapeHtml(s.mph||'—')}</td>
+      <td style="font-size:12px">${escapeHtml(s.addr||'—')}</td>
       <td>
         <button class="btn btn-out btn-sm" onclick="viewStudentProfile(${s.id})" title="عرض الملف الكامل">👁</button><button class="btn btn-out btn-sm" onclick="editStudent(${s.id})" title="تعديل">✏️</button><button class="btn btn-y btn-sm" onclick="quickEditStudentHealth(${s.id})" title="تعديل الحالة الصحية">⚕️</button>
         ${isActiveStudent(s) ? `<button class="btn btn-b btn-sm" onclick="setStudentOperationalStatus(${s.id},'left')" title="وضع الطالب ترك بدون حذف بياناته">🚪 ترك</button>` : `<button class="btn btn-g btn-sm" onclick="setStudentOperationalStatus(${s.id},'active')" title="إرجاع الطالب لقائمة الموجودين">↩️ إرجاع</button>`}
@@ -5657,7 +5657,7 @@ function getStudentsFilteredForPrint(){
   const gen=document.getElementById('stu-gen')?.value||'';
   const statusFilter=document.getElementById('stu-status-filter')?.value||'active';
   return students.filter(s =>
-    (!q || String(s.name||'').includes(q) || String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q) || String(s.dad||'').includes(q) || String(s.mom||'').includes(q) || String(getStudentIdentity(s)||'').includes(q) || String(s.internalNote||'').includes(q)) &&
+    (!q || String(s.name||'').includes(q) || String(getStudentEnglishDisplayName(s)||'').toLowerCase().includes(q) || String(s.dad||'').includes(q) || String(s.mom||'').includes(q) || String(s.dadEmail||'').toLowerCase().includes(q) || String(s.momEmail||'').toLowerCase().includes(q) || String(getStudentIdentity(s)||'').includes(q) || String(s.internalNote||'').includes(q)) &&
     (!cls || s.cls===cls) &&
     (!gen || s.gen===gen) &&
     (statusFilter==='all' || (statusFilter==='left' ? !isActiveStudent(s) : isActiveStudent(s)))
