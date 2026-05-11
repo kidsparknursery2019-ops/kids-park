@@ -5944,6 +5944,7 @@ function printStudentsSelectedReport(){
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
     <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script>
 
+
 </body></html>`);
     w.document.close();
     return;
@@ -24391,31 +24392,20 @@ document.addEventListener('DOMContentLoaded', function(){
         keys.forEach(function(k){ updates['registrationRequests/' + f + '/' + k] = null; });
       });
 
-      // Keep the user action fast: save the selected decision first, then do the
-      // heavier duplicate cleanup in the background after the UI has responded.
-      function queueDecisionCleanup(savedPayload, selectedFolder, identity, knownKeys){
-        setTimeout(async function(){
-          try {
-            var cleanup = {};
-            for (var ci = 0; ci < REG_FOLDERS.length; ci++) {
-              var cf = REG_FOLDERS[ci];
-              var remote = await readRegistrationFolder(cf);
-              Object.keys(remote || {}).forEach(function(k){
-                var r = remote[k];
-                if (!r || typeof r !== 'object') return;
-                var same = requestIdentity(r) === identity || knownKeys.indexOf(safeKey(k)) !== -1 || candidateKeys(r).some(function(rk){ return knownKeys.indexOf(rk) !== -1; });
-                if (!same) return;
-                if (cf !== selectedFolder || safeKey(k) !== savedPayload.firebaseKey) cleanup['registrationRequests/' + cf + '/' + safeKey(k)] = null;
-              });
-            }
-            if (Object.keys(cleanup).length) await fetch(base() + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cleanup) });
-          } catch(cleanupError) {
-            try { console.warn('Registration background cleanup skipped', cleanupError); } catch(_e) {}
+      for (var i = 0; i < REG_FOLDERS.length; i++) {
+        var f = REG_FOLDERS[i];
+        var remote = await readRegistrationFolder(f);
+        Object.keys(remote || {}).forEach(function(k){
+          var r = remote[k];
+          if (!r || typeof r !== 'object') return;
+          if (requestIdentity(r) === id || keys.indexOf(safeKey(k)) !== -1 || candidateKeys(r).some(function(rk){ return keys.indexOf(rk) !== -1; })) {
+            if (f !== folder || safeKey(k) !== payload.firebaseKey) updates['registrationRequests/' + f + '/' + safeKey(k)] = null;
+            applyNotificationFields(row, r);
+            applyNotificationFields(payload, r);
           }
-        }, 1200);
+        });
       }
 
-      queueDecisionCleanup(payload, folder, id, keys);
       updates['registrationRequests/' + folder + '/' + payload.firebaseKey] = Object.assign({}, payload, row);
       updates.savedAt = new Date().toISOString();
       updates.version = 3;
@@ -24856,143 +24846,6 @@ document.addEventListener('DOMContentLoaded', function(){
     openAcceptChoice(row, matches);
   };
   try { startApproveFlow = window.startApproveFlow; } catch(_e) {}
-})();
-</script>
-
-
-<script id="kp-performance-sync-governor-20260511">
-(function(){
-  if (window.__kpPerformanceSyncGovernor20260511) return;
-  window.__kpPerformanceSyncGovernor20260511 = true;
-
-  var state = {
-    lastFullLoad: 0,
-    lastRegistrationSync: 0,
-    fullLoadInFlight: null,
-    registrationSyncInFlight: null,
-    autoTimer: null
-  };
-  var FULL_LOAD_MIN_MS = 20000;
-  var REGISTRATION_SYNC_MIN_MS = 20000;
-  var AUTO_REGISTRATION_SYNC_MS = 300000;
-
-  function now(){ return Date.now(); }
-  function activeElementLooksManual(){
-    try {
-      var el = document.activeElement;
-      var text = ((el && (el.id || el.name || el.textContent || el.value)) || '').toString().toLowerCase();
-      return /sync|refresh|update|firebase|cloud/.test(text);
-    } catch(_e) { return false; }
-  }
-  function clearKnownTimer(name){
-    try {
-      if (name === 'firebasePollInterval' && typeof firebasePollInterval !== 'undefined' && firebasePollInterval) { clearInterval(firebasePollInterval); firebasePollInterval = null; }
-    } catch(_e) {}
-    try {
-      if (name === 'autoSyncTimer' && typeof autoSyncTimer !== 'undefined' && autoSyncTimer) { clearInterval(autoSyncTimer); autoSyncTimer = null; }
-    } catch(_e) {}
-    try {
-      if (name === 'liveTimer' && typeof liveTimer !== 'undefined' && liveTimer) { clearInterval(liveTimer); liveTimer = null; }
-    } catch(_e) {}
-    try {
-      if (window[name]) { clearInterval(window[name]); window[name] = null; }
-    } catch(_e) {}
-  }
-  function stopNoisyTimers(){
-    clearKnownTimer('firebasePollInterval');
-    clearKnownTimer('autoSyncTimer');
-    clearKnownTimer('liveTimer');
-    if (state.autoTimer) { clearInterval(state.autoTimer); state.autoTimer = null; }
-  }
-
-  var originalLoadFromFirebase = window.loadFromFirebase || (typeof loadFromFirebase === 'function' ? loadFromFirebase : null);
-  if (typeof originalLoadFromFirebase === 'function' && !originalLoadFromFirebase.__kpGovernorWrapped) {
-    var governedLoadFromFirebase = function(options){
-      options = options || {};
-      var force = options.force === true || activeElementLooksManual();
-      if (state.fullLoadInFlight) return state.fullLoadInFlight;
-      if (!force && state.lastFullLoad && now() - state.lastFullLoad < FULL_LOAD_MIN_MS) {
-        return Promise.resolve({ success:true, skipped:true, reason:'recent-full-load' });
-      }
-      state.fullLoadInFlight = Promise.resolve(originalLoadFromFirebase.apply(this, arguments)).then(function(result){
-        state.lastFullLoad = now();
-        return result;
-      }).finally(function(){ state.fullLoadInFlight = null; });
-      return state.fullLoadInFlight;
-    };
-    governedLoadFromFirebase.__kpGovernorWrapped = true;
-    governedLoadFromFirebase.__kpOriginal = originalLoadFromFirebase;
-    window.loadFromFirebase = governedLoadFromFirebase;
-    try { loadFromFirebase = governedLoadFromFirebase; } catch(_e) {}
-  }
-
-  var originalCheckForUpdates = window.checkForUpdates || (typeof checkForUpdates === 'function' ? checkForUpdates : null);
-  if (typeof originalCheckForUpdates === 'function' && !originalCheckForUpdates.__kpGovernorWrapped) {
-    var governedCheckForUpdates = function(force){
-      if (force === true || activeElementLooksManual()) return originalCheckForUpdates.apply(this, arguments);
-      if (state.fullLoadInFlight || (state.lastFullLoad && now() - state.lastFullLoad < FULL_LOAD_MIN_MS)) {
-        return Promise.resolve({ success:true, skipped:true, reason:'recent-check' });
-      }
-      return originalCheckForUpdates.apply(this, arguments);
-    };
-    governedCheckForUpdates.__kpGovernorWrapped = true;
-    governedCheckForUpdates.__kpOriginal = originalCheckForUpdates;
-    window.checkForUpdates = governedCheckForUpdates;
-    try { checkForUpdates = governedCheckForUpdates; } catch(_e) {}
-  }
-
-  var originalRegistrationSync = window.syncRegistrationRequestsFromFirebase || (typeof syncRegistrationRequestsFromFirebase === 'function' ? syncRegistrationRequestsFromFirebase : null);
-  if (typeof originalRegistrationSync === 'function' && !originalRegistrationSync.__kpGovernorWrapped) {
-    var governedRegistrationSync = function(options){
-      options = options || {};
-      var manual = options.force === true || options.manual === true || activeElementLooksManual() || options.silent !== true;
-      if (state.registrationSyncInFlight) return state.registrationSyncInFlight;
-      if (!manual && state.lastRegistrationSync && now() - state.lastRegistrationSync < REGISTRATION_SYNC_MIN_MS) {
-        return Promise.resolve({ success:true, skipped:true, reason:'recent-registration-sync' });
-      }
-      state.registrationSyncInFlight = Promise.resolve(originalRegistrationSync.apply(this, arguments)).then(function(result){
-        state.lastRegistrationSync = now();
-        return result;
-      }).finally(function(){ state.registrationSyncInFlight = null; });
-      return state.registrationSyncInFlight;
-    };
-    governedRegistrationSync.__kpGovernorWrapped = true;
-    governedRegistrationSync.__kpOriginal = originalRegistrationSync;
-    window.syncRegistrationRequestsFromFirebase = governedRegistrationSync;
-    try { syncRegistrationRequestsFromFirebase = governedRegistrationSync; } catch(_e) {}
-  }
-
-  window.startAutoSync = function(){
-    stopNoisyTimers();
-    setTimeout(function(){
-      try {
-        if (typeof window.syncRegistrationRequestsFromFirebase === 'function') window.syncRegistrationRequestsFromFirebase({ silent:true });
-      } catch(_e) {}
-    }, 15000);
-    state.autoTimer = setInterval(function(){
-      try {
-        if (typeof window.syncRegistrationRequestsFromFirebase === 'function') window.syncRegistrationRequestsFromFirebase({ silent:true });
-      } catch(_e) {}
-    }, AUTO_REGISTRATION_SYNC_MS);
-    try { autoSyncTimer = state.autoTimer; } catch(_e) {}
-    return state.autoTimer;
-  };
-  try { startAutoSync = window.startAutoSync; } catch(_e) {}
-
-  window.kpSyncGovernorStatus = function(){
-    return {
-      active:true,
-      fullLoadInFlight:!!state.fullLoadInFlight,
-      registrationSyncInFlight:!!state.registrationSyncInFlight,
-      secondsSinceFullLoad: state.lastFullLoad ? Math.round((now() - state.lastFullLoad) / 1000) : null,
-      secondsSinceRegistrationSync: state.lastRegistrationSync ? Math.round((now() - state.lastRegistrationSync) / 1000) : null
-    };
-  };
-
-  setTimeout(function(){
-    stopNoisyTimers();
-    try { if (typeof currentUser !== 'undefined' && currentUser && typeof window.startAutoSync === 'function') window.startAutoSync(); } catch(_e) {}
-  }, 1200);
 })();
 </script>
 
