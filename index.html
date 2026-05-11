@@ -24199,85 +24199,28 @@ document.addEventListener('DOMContentLoaded', function(){
   window.kpNotifyRegistrationDecisionToParent = async function(row, decision){ try{ await sendByAppsScript(row,decision); if(typeof showSyncBadge==='function') showSyncBadge('Parent notification sent'); }catch(e){ try{ row.parentNotificationDecision=decision; row.parentNotificationStatus='failed'; row.parentNotificationMessage=e&&e.message?e.message:String(e); if(typeof saveFormRowRemoteAware==='function') saveFormRowRemoteAware(row); }catch(_e){} if(typeof showSyncBadge==='function') showSyncBadge('Parent notification failed'); } };
 })();
 </script>
-<script id="kp-recent-stability-fixes-20260511">
+
+
+<script id="kp-final-registration-attendance-authority-20260511">
 (function(){
-  if (window.__kpRecentStabilityFixes20260511) return;
-  window.__kpRecentStabilityFixes20260511 = true;
+  if (window.__kpFinalRegistrationAttendanceAuthority20260511) return;
+  window.__kpFinalRegistrationAttendanceAuthority20260511 = true;
+
+  var REG_FOLDERS = ['pending','accepted','rejected'];
+  var decisionLocks = {};
+  var notificationLocks = {};
 
   function txt(v){ return String(v == null ? '' : v).trim(); }
-  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); }
+  function base(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data').replace(/\/+$/, ''); }
   function safeKey(v){
     v = txt(v);
     if (!v) return '';
     try { if (typeof kpSafeFirebaseKey === 'function') return kpSafeFirebaseKey(v); } catch(_e) {}
     return v.replace(/[.#$\[\]\/\s]/g, '_').slice(0, 180);
   }
-  function stripEmoji(v){ return txt(v).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, ''); }
-  function cleanClass(v){ return stripEmoji(v).replace(/\s+/g, ' ').trim(); }
-  function rawClassList(value){
-    if (!value) return [];
-    if (Array.isArray(value)) return value;
-    if (typeof value === 'string') return value.split(/[?,;|\n]+/);
-    if (typeof value === 'object') return Object.keys(value).map(function(k){ return value[k]; });
-    return [];
-  }
-  function normalizedTeacherClasses(user){
-    var all = Object.keys((typeof CLASSES !== 'undefined' && CLASSES) ? CLASSES : {});
-    var byClean = {};
-    all.forEach(function(cls){ byClean[cleanClass(cls)] = cls; });
-    var out = [];
-    rawClassList(user && user.classes).forEach(function(item){
-      var val = txt(item);
-      if (!val) return;
-      var n = cleanClass(val);
-      var match = all.indexOf(val) !== -1 ? val : (byClean[n] || all.find(function(cls){
-        var cn = cleanClass(cls);
-        return cn === n || (n && cn.indexOf(n) !== -1) || (cn && n.indexOf(cn) !== -1);
-      }));
-      if (match && out.indexOf(match) === -1) out.push(match);
-    });
-    return out;
-  }
-  function installAttendanceClassFix(){
-    window.kpNormalizeAttendanceTakerClasses = normalizedTeacherClasses;
-    window.teacherAllowedClasses = function(){
-      if (!(typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'teacher')) return null;
-      return normalizedTeacherClasses(currentUser);
-    };
-    try { teacherAllowedClasses = window.teacherAllowedClasses; } catch(_e) {}
-    window.teacherCanAccessClass = function(className){
-      if (!(typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'teacher')) return true;
-      return normalizedTeacherClasses(currentUser).indexOf(className) !== -1;
-    };
-    try { teacherCanAccessClass = window.teacherCanAccessClass; } catch(_e) {}
-    var oldLoadUsers = window.loadUsersFromFirebase || (typeof loadUsersFromFirebase === 'function' ? loadUsersFromFirebase : null);
-    if (typeof oldLoadUsers === 'function' && !oldLoadUsers.__kpClassNormalizerWrapped) {
-      var wrappedLoadUsers = async function(){
-        var result = await oldLoadUsers.apply(this, arguments);
-        try {
-          var users = result && Array.isArray(result.users) ? result.users : JSON.parse(localStorage.getItem('kp_users') || '[]');
-          var changed = false;
-          users.forEach(function(u){
-            if (u && u.role === 'teacher') {
-              var normalized = normalizedTeacherClasses(u);
-              if (JSON.stringify(u.classes || []) !== JSON.stringify(normalized)) {
-                u.classes = normalized;
-                changed = true;
-              }
-            }
-          });
-          if (changed) localStorage.setItem('kp_users', JSON.stringify(users));
-          if (result && Array.isArray(result.users)) result.users = users;
-        } catch(_e) {}
-        return result;
-      };
-      wrappedLoadUsers.__kpClassNormalizerWrapped = true;
-      window.loadUsersFromFirebase = wrappedLoadUsers;
-      try { loadUsersFromFirebase = wrappedLoadUsers; } catch(_e) {}
-    }
-  }
-
-  var REG_FOLDERS = ['pending', 'accepted', 'rejected'];
+  function digits(v){ return txt(v).replace(/\D+/g, ''); }
+  function simple(v){ return txt(v).toLowerCase().replace(/[\u064B-\u065F\u0670]/g, '').replace(/[^\u0600-\u06FFa-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function hash(str){ str = txt(str); var h = 5381; for (var i = 0; i < str.length; i++) h = ((h << 5) + h) ^ str.charCodeAt(i); return (h >>> 0).toString(36); }
   function folderFromStatus(status){
     var s = txt(status || 'pending').toLowerCase();
     if (s === 'approved' || s === 'accepted' || s === 'approve' || s === 'accept') return 'accepted';
@@ -24285,181 +24228,452 @@ document.addEventListener('DOMContentLoaded', function(){
     return 'pending';
   }
   function statusFromFolder(folder){ return folder === 'accepted' ? 'approved' : (folder === 'rejected' ? 'rejected' : 'pending'); }
-  function digits(v){ return txt(v).replace(/\D+/g, ''); }
-  function simple(v){ return txt(v).toLowerCase().replace(/[\u064B-\u065F\u0670]/g, '').replace(/[^\u0600-\u06FFa-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
-  function hash(str){ str = txt(str); var h = 5381; for (var i = 0; i < str.length; i++) h = ((h << 5) + h) ^ str.charCodeAt(i); return (h >>> 0).toString(36); }
   function requestIdentity(row){
     row = row || {};
     var eid = digits(row.emiratesId || row.idNo || row.identityNo || row.nationalId);
     if (eid) return 'eid:' + eid;
-    var pass = simple(row.passport || row.passportNo || row.childPassport);
+    var pass = simple(row.passport || row.passportNo || row.childPassport || row.imgPassport || row.imgChildPassport);
     if (pass) return 'pass:' + pass;
-    var name = simple(row.name || row.childName || row.studentName || [row.firstName, row.familyName].filter(Boolean).join(' '));
+    var name = simple(row.name || row.childName || row.studentName || row.fullName || [row.firstName, row.familyName].filter(Boolean).join(' '));
+    var nameEn = simple(row.nameEn || row.childNameEn || row.childEnglishName || row.englishName);
     var dob = txt(row.dob || row.dateOfBirth || row.birthDate);
     var phone = digits(row.dadMob || row.momMob || row.dph || row.mph || row.phone || row.fatherPhone || row.motherPhone);
-    if (name || dob || phone) return 'child:' + hash([name, dob, phone].join('|'));
-    return 'key:' + safeKey(row.firebaseKey || row._fbKey || row.requestId || row.id || row.key || row.timestamp || row.createdAt || JSON.stringify(row).slice(0, 200));
+    if (name || nameEn || dob || phone) return 'child:' + hash([name, nameEn, dob, phone].join('|'));
+    return 'key:' + safeKey(row.firebaseKey || row._fbKey || row.requestId || row.id || row.key || row.timestamp || row.createdAt || row.submittedAt || JSON.stringify(row).slice(0, 240));
   }
   function candidateKeys(row){
     row = row || {};
     var raw = [row.firebaseKey, row._fbKey, row.requestId, row.id, row.key, row.timestamp, row.submittedAt, row.createdAt, row.formTimestamp, 'req_' + hash(requestIdentity(row))];
-    var seen = {};
-    raw.forEach(function(k){ k = safeKey(k); if (k) seen[k] = true; });
-    return Object.keys(seen);
+    var out = {};
+    raw.forEach(function(k){ k = safeKey(k); if (k) out[k] = true; });
+    return Object.keys(out);
   }
-  function normalizeDecisionRecord(row, folder){
-    var key = safeKey(row.firebaseKey || row._fbKey || row.requestId || row.id || row.timestamp || ('req_' + hash(requestIdentity(row))));
-    var now = new Date().toISOString();
-    var copy = Object.assign({}, row, {
-      firebaseKey: key,
-      _fbKey: key,
-      requestId: row.requestId || key,
-      status: statusFromFolder(folder),
-      rowUpdatedAt: now,
-      decisionAt: folder === 'pending' ? '' : (row.decisionAt || now),
-      sourcePath: 'nursery_data/registrationRequests/' + folder
+  function requestKey(row){
+    row = row || {};
+    return safeKey(row.firebaseKey || row._fbKey || row.requestId || row.key || row.timestamp || row.submittedAt || row.createdAt || ('req_' + hash(requestIdentity(row))));
+  }
+  function applyNotificationFields(target, source){
+    if (!target || !source) return;
+    ['parentNotificationDecision','parentNotificationStatus','parentNotificationSentAt','parentNotificationMessage','parentPortalUrl'].forEach(function(k){
+      if (source[k] != null && txt(source[k]) !== '') target[k] = source[k];
     });
-    if (folder === 'accepted') copy.approvedAt = copy.approvedAt || now;
-    if (folder === 'rejected') copy.rejectedAt = copy.rejectedAt || now;
-    if (folder === 'pending') { copy.approvedAt = ''; copy.rejectedAt = ''; }
-    return copy;
   }
-  async function readRegFolder(folder){
-    var b = baseUrl();
-    if (!b) return {};
+  async function readRegistrationFolder(folder){
     try {
-      var res = await fetch(b + '/registrationRequests/' + folder + '.json?moveClean=' + Date.now(), { cache: 'no-store' });
+      var res = await fetch(base() + '/registrationRequests/' + folder + '.json?ts=' + Date.now(), { cache:'no-store' });
       if (!res.ok) return {};
       var data = await res.json();
       return data && typeof data === 'object' ? data : {};
     } catch(_e) { return {}; }
   }
-  function removeLocalDecisionDuplicates(row, targetFolder){
+  function normalizeDecisionRecord(row, folder){
+    var now = new Date().toISOString();
+    var key = requestKey(row);
+    var copy = Object.assign({}, row, {
+      firebaseKey:key,
+      _fbKey:key,
+      requestId:row.requestId || key,
+      status:statusFromFolder(folder),
+      rowUpdatedAt:now,
+      sourcePath:'nursery_data/registrationRequests/' + folder
+    });
+    if (folder === 'pending') {
+      copy.decisionAt = '';
+      copy.approvedAt = '';
+      copy.rejectedAt = '';
+    } else {
+      copy.decisionAt = copy.decisionAt || now;
+      if (folder === 'accepted') copy.approvedAt = copy.approvedAt || now;
+      if (folder === 'rejected') copy.rejectedAt = copy.rejectedAt || now;
+    }
+    return copy;
+  }
+  function replaceLocalDecisionRow(row, folder){
     try {
-      if (!Array.isArray(window.syncedFormRows) && !Array.isArray(syncedFormRows)) return;
-      var rows = Array.isArray(window.syncedFormRows) ? window.syncedFormRows : syncedFormRows;
+      var rows = Array.isArray(window.syncedFormRows) ? window.syncedFormRows : (Array.isArray(syncedFormRows) ? syncedFormRows : []);
       var id = requestIdentity(row);
       var keys = candidateKeys(row);
       rows = rows.filter(function(r){
         if (!r) return false;
         var same = requestIdentity(r) === id || candidateKeys(r).some(function(k){ return keys.indexOf(k) !== -1; });
-        return !same || folderFromStatus(r.status) === targetFolder;
+        return !same;
       });
-      if (!rows.some(function(r){ return requestIdentity(r) === id && folderFromStatus(r.status) === targetFolder; })) rows.push(row);
+      rows.push(row);
       window.syncedFormRows = rows;
       try { syncedFormRows = rows; } catch(_e) {}
+      try { if (typeof _saveFormRowsSlim === 'function') _saveFormRowsSlim(rows); else localStorage.setItem('kp_form_rows', JSON.stringify(rows)); } catch(_e) {}
     } catch(_e) {}
   }
-  window.kpMoveRegistrationRequestToDecision = async function(row, status){
+  async function saveRegistrationDecision(row, status, extraUpdates){
     if (!row) return false;
     var folder = folderFromStatus(status || row.status);
-    var b = baseUrl();
-    if (!b) return false;
-    var payload = normalizeDecisionRecord(row, folder);
-    Object.assign(row, payload);
-    var updates = {};
-    updates['registrationRequests/' + folder + '/' + payload.firebaseKey] = payload;
-    REG_FOLDERS.forEach(function(f){
-      if (f === folder) return;
-      candidateKeys(row).forEach(function(k){ updates['registrationRequests/' + f + '/' + k] = null; });
-    });
     var id = requestIdentity(row);
-    for (var i = 0; i < REG_FOLDERS.length; i++) {
-      var f = REG_FOLDERS[i];
-      if (f === folder) continue;
-      var folderData = await readRegFolder(f);
-      Object.keys(folderData || {}).forEach(function(k){
-        var r = folderData[k];
-        if (r && typeof r === 'object' && requestIdentity(r) === id) updates['registrationRequests/' + f + '/' + k] = null;
-      });
-    }
-    updates.savedAt = new Date().toISOString();
-    updates.version = 3;
-    updates.activeDataShape = 'record-based';
-    var res = await fetch(b + '.json', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    removeLocalDecisionDuplicates(row, folder);
-    try { if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge(); } catch(_e) {}
-    try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e) {}
-    return true;
-  };
-  function installRegistrationDecisionFix(){
-    var oldArchive = window.archiveFirebaseRegistrationRequest || (typeof archiveFirebaseRegistrationRequest === 'function' ? archiveFirebaseRegistrationRequest : null);
-    if (typeof oldArchive === 'function' && oldArchive.__kpDecisionMoveWrapped) return;
-    var wrappedArchive = async function(row, status){
-      try { return await window.kpMoveRegistrationRequestToDecision(row, status || (row && row.status)); }
-      catch(e) {
-        console.error('kpMoveRegistrationRequestToDecision failed:', e);
-        if (oldArchive) return oldArchive.apply(this, arguments);
-        return false;
-      }
-    };
-    wrappedArchive.__kpDecisionMoveWrapped = true;
-    window.archiveFirebaseRegistrationRequest = wrappedArchive;
-    try { archiveFirebaseRegistrationRequest = wrappedArchive; } catch(_e) {}
+    var lockKey = id + ':' + folder;
+    if (decisionLocks[lockKey]) return decisionLocks[lockKey];
+    decisionLocks[lockKey] = (async function(){
+      var b = base();
+      if (!b) throw new Error('Firebase URL is missing');
+      var payload = normalizeDecisionRecord(row, folder);
+      Object.assign(row, payload);
 
-    var oldSetDecision = window.setFormRowDecision || (typeof setFormRowDecision === 'function' ? setFormRowDecision : null);
-    if (typeof oldSetDecision === 'function' && !oldSetDecision.__kpDecisionMoveWrapped) {
-      var wrappedSetDecision = function(row, status, meta){
-        var out = oldSetDecision.apply(this, arguments);
-        if (row && folderFromStatus(status || row.status) !== 'pending') {
-          setTimeout(function(){
-            window.kpMoveRegistrationRequestToDecision(row, status || row.status).catch(function(e){
-              console.error('registration decision cleanup failed:', e);
-              try { if (typeof showSyncBadge === 'function') showSyncBadge('Registration decision was saved locally but Firebase cleanup needs retry.'); } catch(_e) {}
-            });
-          }, 150);
-        }
-        return out;
-      };
-      wrappedSetDecision.__kpDecisionMoveWrapped = true;
-      window.setFormRowDecision = wrappedSetDecision;
-      try { setFormRowDecision = wrappedSetDecision; } catch(_e) {}
-    }
-  }
-  function installPendingDedupeFix(){
-    window.kpDedupeRegistrationRowsForDisplay = function(){
-      try {
-        if (!Array.isArray(window.syncedFormRows) && !Array.isArray(syncedFormRows)) return;
-        var rows = Array.isArray(window.syncedFormRows) ? window.syncedFormRows : syncedFormRows;
-        var decided = {};
-        rows.forEach(function(r){ if (r && folderFromStatus(r.status) !== 'pending') decided[requestIdentity(r)] = true; });
-        var seen = {};
-        rows = rows.filter(function(r){
-          if (!r) return false;
-          var id = requestIdentity(r);
-          var f = folderFromStatus(r.status);
-          if (f === 'pending' && decided[id]) return false;
-          var key = f + ':' + id;
-          if (seen[key]) return false;
-          seen[key] = true;
-          return true;
+      var updates = Object.assign({}, extraUpdates || {});
+      updates['registrationRequests/' + folder + '/' + payload.firebaseKey] = payload;
+      var keys = candidateKeys(row);
+
+      REG_FOLDERS.forEach(function(f){
+        if (f === folder) return;
+        keys.forEach(function(k){ updates['registrationRequests/' + f + '/' + k] = null; });
+      });
+
+      for (var i = 0; i < REG_FOLDERS.length; i++) {
+        var f = REG_FOLDERS[i];
+        var remote = await readRegistrationFolder(f);
+        Object.keys(remote || {}).forEach(function(k){
+          var r = remote[k];
+          if (!r || typeof r !== 'object') return;
+          if (requestIdentity(r) === id || keys.indexOf(safeKey(k)) !== -1 || candidateKeys(r).some(function(rk){ return keys.indexOf(rk) !== -1; })) {
+            if (f !== folder || safeKey(k) !== payload.firebaseKey) updates['registrationRequests/' + f + '/' + safeKey(k)] = null;
+            applyNotificationFields(row, r);
+            applyNotificationFields(payload, r);
+          }
         });
-        window.syncedFormRows = rows;
-        try { syncedFormRows = rows; } catch(_e) {}
-      } catch(_e) {}
-    };
-    var oldRender = window.renderFormRequests || (typeof renderFormRequests === 'function' ? renderFormRequests : null);
-    if (typeof oldRender === 'function' && !oldRender.__kpPendingDedupeWrapped) {
-      var wrappedRender = function(){
-        try { window.kpDedupeRegistrationRowsForDisplay(); } catch(_e) {}
-        return oldRender.apply(this, arguments);
-      };
-      wrappedRender.__kpPendingDedupeWrapped = true;
-      window.renderFormRequests = wrappedRender;
-      try { renderFormRequests = wrappedRender; } catch(_e) {}
+      }
+
+      updates['registrationRequests/' + folder + '/' + payload.firebaseKey] = Object.assign({}, payload, row);
+      updates.savedAt = new Date().toISOString();
+      updates.version = 3;
+      updates.activeDataShape = 'record-based';
+
+      var res = await fetch(b + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      replaceLocalDecisionRow(row, folder);
+      try { if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge(); } catch(_e) {}
+      try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e) {}
+      try { if (typeof renderStudents === 'function') renderStudents(); } catch(_e) {}
+      try { if (typeof renderDash === 'function') renderDash(); } catch(_e) {}
+      return true;
+    })();
+    try { return await decisionLocks[lockKey]; }
+    finally { delete decisionLocks[lockKey]; }
+  }
+  function decisionForMail(status){ var f = folderFromStatus(status); return f === 'accepted' ? 'approved' : (f === 'rejected' ? 'rejected' : 'pending'); }
+  async function notifyParentOnce(row, decision){
+    decision = decisionForMail(decision);
+    if (!row || (decision !== 'approved' && decision !== 'rejected')) return;
+    var id = requestIdentity(row) + ':' + decision;
+    if (notificationLocks[id]) return notificationLocks[id];
+    if (txt(row.parentNotificationDecision) === decision && txt(row.parentNotificationStatus).toLowerCase() === 'sent') return;
+    notificationLocks[id] = (async function(){
+      row.parentNotificationDecision = decision;
+      row.parentNotificationStatus = 'sending';
+      try {
+        if (typeof window.kpNotifyRegistrationDecisionToParent === 'function') {
+          await window.kpNotifyRegistrationDecisionToParent(row, decision);
+        }
+        if (txt(row.parentNotificationStatus).toLowerCase() !== 'failed') {
+          row.parentNotificationDecision = decision;
+          row.parentNotificationStatus = 'sent';
+          row.parentNotificationSentAt = row.parentNotificationSentAt || new Date().toISOString();
+          await saveRegistrationDecision(row, decision === 'approved' ? 'approved' : 'rejected', {});
+        }
+      } catch(e) {
+        row.parentNotificationDecision = decision;
+        row.parentNotificationStatus = 'failed';
+        row.parentNotificationMessage = e && e.message ? e.message : String(e);
+        try { await saveRegistrationDecision(row, decision === 'approved' ? 'approved' : 'rejected', {}); } catch(_e) {}
+      }
+    })();
+    try { await notificationLocks[id]; }
+    finally { delete notificationLocks[id]; }
+  }
+  function studentKey(record){
+    try { if (typeof kpRecordKey === 'function') return kpRecordKey(record, 'id'); } catch(_e) {}
+    return safeKey(record && record.id);
+  }
+  async function saveStudentRecord(record){
+    var key = studentKey(record);
+    record.firebaseKey = key;
+    var updates = {};
+    updates['students/' + key] = record;
+    updates['deletedStudents/' + key] = null;
+    return updates;
+  }
+
+  window.setFormRowDecision = async function(row, status, meta){
+    if (!row) return false;
+    meta = meta || {};
+    var folder = folderFromStatus(status);
+    var now = new Date().toISOString();
+    Object.assign(row, meta, { status:statusFromFolder(folder), decisionAt: folder === 'pending' ? '' : now, rowUpdatedAt:now });
+    if (folder === 'accepted') row.approvedAt = row.approvedAt || now;
+    if (folder === 'rejected') row.rejectedAt = row.rejectedAt || now;
+    try { if (typeof rememberLocalFormDecision === 'function') rememberLocalFormDecision(row, row.rowUpdatedAt); } catch(_e) {}
+    try {
+      var ok = await saveRegistrationDecision(row, status, {});
+      if (ok) await notifyParentOnce(row, status);
+      return ok;
+    } catch(e) {
+      if (typeof window.kpShowFirebaseFailure === 'function') window.kpShowFirebaseFailure('registration decision', e, { alert:true, record:row });
+      else alert('Registration decision was not saved to Firebase: ' + (e && e.message ? e.message : e));
+      return false;
     }
+  };
+  try { setFormRowDecision = window.setFormRowDecision; } catch(_e) {}
+
+  window.archiveFirebaseRegistrationRequest = async function(row, status){
+    try { return await saveRegistrationDecision(row, status || (row && row.status) || 'pending', {}); }
+    catch(e) { console.error('archive registration request failed:', e); return false; }
+  };
+  try { archiveFirebaseRegistrationRequest = window.archiveFirebaseRegistrationRequest; } catch(_e) {}
+
+  window.performApproveNew = async function(row, options){
+    options = options || {};
+    if (!row || folderFromStatus(row.status) !== 'pending') return false;
+    if (!options.skipConfirm && window.kpConfirmAsync) {
+      var okConfirm = await window.kpConfirmAsync('Approve registration request', row, 'Do you want to approve this request and add the student to the system?', { okText:'Approve request' });
+      if (!okConfirm) return false;
+    }
+    var newStudent = buildStudentFromFormRow(row, getSafeNextStudentId());
+    var now = new Date().toISOString();
+    Object.assign(row, { status:'approved', decisionAt:now, rowUpdatedAt:now, approvedAt:now, approvedStudentId:newStudent.id, approvedAction:'new', undoData:{ createdStudentId:newStudent.id } });
+    if (!Array.isArray(students)) students = [];
+    students.push(newStudent);
+    try { nextStuId = getSafeNextStudentId(); } catch(_e) {}
+    var updates = await saveStudentRecord(newStudent);
+    try {
+      var saved = await saveRegistrationDecision(row, 'approved', updates);
+      if (!saved) throw new Error('Save returned false');
+      await notifyParentOnce(row, 'approved');
+      try { if (typeof showSyncBadge === 'function') showSyncBadge('?? ???? ????? ????? ?? ??????? ???????'); } catch(_e) {}
+      return true;
+    } catch(e) {
+      students = students.filter(function(s){ return String(s && s.id) !== String(newStudent.id); });
+      if (typeof window.kpShowFirebaseFailure === 'function') window.kpShowFirebaseFailure('approve registration request', e, { alert:true, record:row });
+      else alert('Registration approval was not saved to Firebase: ' + (e && e.message ? e.message : e));
+      return false;
+    }
+  };
+  try { performApproveNew = window.performApproveNew; } catch(_e) {}
+
+  window.performApproveMerge = async function(row, studentId, options){
+    options = options || {};
+    if (!row || folderFromStatus(row.status) !== 'pending') return false;
+    if (!options.skipConfirm && window.kpConfirmAsync) {
+      var okConfirm = await window.kpConfirmAsync('Approve and merge registration request', row, 'Do you want to approve this request and merge it with the existing student profile?', { okText:'Approve and merge' });
+      if (!okConfirm) return false;
+    }
+    var idx = (Array.isArray(students) ? students : []).findIndex(function(s){ return String(s && s.id) === String(studentId); });
+    if (idx < 0) { alert('Student record was not found.'); return false; }
+    var before = JSON.parse(JSON.stringify(students[idx]));
+    students[idx] = mergeStudentWithFormData(students[idx], row);
+    var merged = students[idx];
+    var now = new Date().toISOString();
+    Object.assign(row, { status:'approved', decisionAt:now, rowUpdatedAt:now, approvedAt:now, approvedStudentId:studentId, approvedAction:'merge', undoData:{ mergedStudentId:studentId, previousStudent:before } });
+    var updates = await saveStudentRecord(merged);
+    try {
+      var saved = await saveRegistrationDecision(row, 'approved', updates);
+      if (!saved) throw new Error('Save returned false');
+      await notifyParentOnce(row, 'approved');
+      try { if (typeof showSyncBadge === 'function') showSyncBadge('?? ???? ????? ????? ????? ?? ??????? ???????'); } catch(_e) {}
+      return true;
+    } catch(e) {
+      students[idx] = before;
+      if (typeof window.kpShowFirebaseFailure === 'function') window.kpShowFirebaseFailure('approve and merge registration request', e, { alert:true, record:row });
+      else alert('Registration merge was not saved to Firebase: ' + (e && e.message ? e.message : e));
+      return false;
+    }
+  };
+  try { performApproveMerge = window.performApproveMerge; } catch(_e) {}
+
+  function normalizeClassToken(v){ return txt(v).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '').replace(/\s+/g, ' ').trim(); }
+  function rawClassValues(value){
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') return value.split(/[?,;|\n]+/);
+    if (typeof value === 'object') return Object.keys(value).map(function(k){ return value[k]; });
+    return [];
   }
-  function installAll(){
-    installAttendanceClassFix();
-    installRegistrationDecisionFix();
-    installPendingDedupeFix();
+  function isTeacherRole(user){ var r = txt(user && user.role).toLowerCase(); return r === 'teacher' || r === 'attendance' || r === 'attendance_taker' || r === 'attendance-taker'; }
+  function normalizedClassesForUser(user){
+    var all = Object.keys((typeof CLASSES !== 'undefined' && CLASSES) ? CLASSES : {});
+    var byClean = {};
+    all.forEach(function(cls){ byClean[normalizeClassToken(cls)] = cls; });
+    var raw = [];
+    ['classes','class','assignedClasses','allowedClasses','classNames','cls'].forEach(function(k){ raw = raw.concat(rawClassValues(user && user[k])); });
+    var out = [];
+    raw.forEach(function(item){
+      var val = txt(item);
+      if (!val) return;
+      var n = normalizeClassToken(val);
+      var match = all.indexOf(val) !== -1 ? val : (byClean[n] || all.find(function(cls){ var cn = normalizeClassToken(cls); return cn === n || (n && cn.indexOf(n) !== -1) || (cn && n.indexOf(cn) !== -1); }));
+      if (match && out.indexOf(match) === -1) out.push(match);
+    });
+    return out;
   }
-  installAll();
-  setTimeout(installAll, 500);
-  document.addEventListener('DOMContentLoaded', installAll);
+  function normalizeCurrentAttendanceUser(){
+    try {
+      if (typeof currentUser !== 'undefined' && currentUser && isTeacherRole(currentUser)) {
+        currentUser.role = 'teacher';
+        currentUser.classes = normalizedClassesForUser(currentUser);
+        sessionStorage.setItem('kp_session', JSON.stringify(currentUser));
+      }
+    } catch(_e) {}
+  }
+  window.teacherAllowedClasses = function(){
+    if (!(typeof currentUser !== 'undefined' && currentUser && isTeacherRole(currentUser))) return null;
+    normalizeCurrentAttendanceUser();
+    return Array.isArray(currentUser.classes) ? currentUser.classes.slice() : [];
+  };
+  try { teacherAllowedClasses = window.teacherAllowedClasses; } catch(_e) {}
+  window.teacherCanAccessClass = function(className){
+    if (!(typeof currentUser !== 'undefined' && currentUser && isTeacherRole(currentUser))) return true;
+    return window.teacherAllowedClasses().indexOf(className) !== -1;
+  };
+  try { teacherCanAccessClass = window.teacherCanAccessClass; } catch(_e) {}
+
+  var oldLoadUsers = window.loadUsersFromFirebase || (typeof loadUsersFromFirebase === 'function' ? loadUsersFromFirebase : null);
+  if (typeof oldLoadUsers === 'function' && !oldLoadUsers.__kpFinalAttendanceWrapped) {
+    var wrappedLoadUsers = async function(){
+      var result = await oldLoadUsers.apply(this, arguments);
+      try {
+        var users = result && Array.isArray(result.users) ? result.users : JSON.parse(localStorage.getItem('kp_users') || '[]');
+        users.forEach(function(u){ if (u && isTeacherRole(u)) { u.role = 'teacher'; u.classes = normalizedClassesForUser(u); } });
+        localStorage.setItem('kp_users', JSON.stringify(users));
+        if (result && Array.isArray(result.users)) result.users = users;
+        normalizeCurrentAttendanceUser();
+      } catch(_e) {}
+      return result;
+    };
+    wrappedLoadUsers.__kpFinalAttendanceWrapped = true;
+    window.loadUsersFromFirebase = wrappedLoadUsers;
+    try { loadUsersFromFirebase = wrappedLoadUsers; } catch(_e) {}
+  }
+  var oldApplyLogin = window.applyLogin || (typeof applyLogin === 'function' ? applyLogin : null);
+  if (typeof oldApplyLogin === 'function' && !oldApplyLogin.__kpFinalAttendanceWrapped) {
+    var wrappedApplyLogin = function(){
+      normalizeCurrentAttendanceUser();
+      var out = oldApplyLogin.apply(this, arguments);
+      normalizeCurrentAttendanceUser();
+      if (currentUser && currentUser.role === 'teacher') setTimeout(function(){ try { if (typeof renderAtt === 'function') renderAtt(); } catch(_e) {} }, 250);
+      return out;
+    };
+    wrappedApplyLogin.__kpFinalAttendanceWrapped = true;
+    window.applyLogin = wrappedApplyLogin;
+    try { applyLogin = wrappedApplyLogin; } catch(_e) {}
+  }
 })();
 </script>
+
+
+
+<script id="kp-stop-registration-resurrection-20260511">
+(function(){
+  if (window.__kpStopRegistrationResurrection20260511) return;
+  window.__kpStopRegistrationResurrection20260511 = true;
+
+  var FOLDERS = ['pending','accepted','rejected'];
+  var cleaning = false;
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function base(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data').replace(/\/+$/, ''); }
+  function safeKey(v){ v = txt(v); if (!v) return ''; try { if (typeof kpSafeFirebaseKey === 'function') return kpSafeFirebaseKey(v); } catch(_e) {} return v.replace(/[.#$\[\]\/\s]/g, '_').slice(0,180); }
+  function digits(v){ return txt(v).replace(/\D+/g,''); }
+  function simple(v){ return txt(v).toLowerCase().replace(/[\u064B-\u065F\u0670]/g,'').replace(/[^\u0600-\u06FFa-z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
+  function hash(s){ s=txt(s); var h=5381; for(var i=0;i<s.length;i++) h=((h<<5)+h)^s.charCodeAt(i); return (h>>>0).toString(36); }
+  function folder(status){ var s=txt(status||'pending').toLowerCase(); if(s==='approved'||s==='accepted'||s==='approve'||s==='accept') return 'accepted'; if(s==='rejected'||s==='reject') return 'rejected'; return 'pending'; }
+  function statusFromFolder(f){ return f === 'accepted' ? 'approved' : (f === 'rejected' ? 'rejected' : 'pending'); }
+  function identity(row){
+    row=row||{};
+    var eid=digits(row.emiratesId||row.idNo||row.identityNo||row.nationalId); if(eid) return 'eid:'+eid;
+    var pass=simple(row.passport||row.passportNo||row.childPassport); if(pass) return 'pass:'+pass;
+    var ts=txt(row.timestamp||row.formTimestamp||row.submittedAt||row.createdAt); if(ts) return 'ts:'+hash(ts);
+    var name=simple(row.name||row.childName||row.studentName||row.fullName||[row.firstName,row.familyName].filter(Boolean).join(' '));
+    var nameEn=simple(row.nameEn||row.childNameEn||row.childEnglishName||row.englishName);
+    var dob=txt(row.dob||row.dateOfBirth||row.birthDate);
+    var phone=digits(row.dadMob||row.momMob||row.dph||row.mph||row.phone||row.fatherPhone||row.motherPhone);
+    if(name||nameEn||dob||phone) return 'child:'+hash([name,nameEn,dob,phone].join('|'));
+    return 'key:'+safeKey(row.firebaseKey||row._fbKey||row.requestId||row.id||row.key||JSON.stringify(row).slice(0,180));
+  }
+  function rowKey(row){ return safeKey(row && (row.firebaseKey||row._fbKey||row.requestId||row.key||row.timestamp||row.submittedAt||row.createdAt||row.id)); }
+  function time(row){ var fields=['rowUpdatedAt','decisionAt','approvedAt','rejectedAt','updatedAt','submittedAt','createdAt','timestamp']; for(var i=0;i<fields.length;i++){ var t=Date.parse(row&&row[fields[i]]); if(!isNaN(t)) return t; } return 0; }
+  function normalize(row, key, f){ row = row && typeof row === 'object' ? Object.assign({}, row) : {}; row.firebaseKey = rowKey(row) || safeKey(key) || ('req_'+hash(identity(row))); row._fbKey = row.firebaseKey; row.requestId = row.requestId || row.firebaseKey; row.status = statusFromFolder(f || folder(row.status)); return row; }
+  function dedupeRows(rows){
+    var decided={}, best={};
+    (rows||[]).forEach(function(r){ if(!r) return; var id=identity(r); if(folder(r.status)!=='pending') decided[id]=true; var old=best[id]; if(!old){ best[id]=r; return; } var rf=folder(r.status), of=folder(old.status); if(of==='pending' && rf!=='pending') best[id]=r; else if((of==='pending')===(rf==='pending') && time(r)>=time(old)) best[id]=r; });
+    return (rows||[]).filter(function(r){ if(!r) return false; var id=identity(r); if(folder(r.status)==='pending' && decided[id]) return false; return best[id] === r; });
+  }
+  function applyLocalDedupe(){
+    try {
+      var rows = Array.isArray(window.syncedFormRows) ? window.syncedFormRows : (Array.isArray(syncedFormRows) ? syncedFormRows : []);
+      var clean = dedupeRows(rows);
+      if (clean.length !== rows.length) {
+        window.syncedFormRows = clean;
+        try { syncedFormRows = clean; } catch(_e) {}
+        try { if (typeof _saveFormRowsSlim === 'function') _saveFormRowsSlim(clean); else localStorage.setItem('kp_form_rows', JSON.stringify(clean)); } catch(_e) {}
+      }
+      return clean;
+    } catch(_e) { return []; }
+  }
+  async function readFolder(f){
+    try { var res=await fetch(base()+'/registrationRequests/'+f+'.json?antiResurrect='+Date.now(), {cache:'no-store'}); if(!res.ok) return {}; var data=await res.json(); return data&&typeof data==='object'?data:{}; }
+    catch(_e){ return {}; }
+  }
+  async function cleanRemotePendingDuplicates(){
+    if (cleaning) return;
+    cleaning = true;
+    try {
+      var remote = {pending:{}, accepted:{}, rejected:{}};
+      for (var i=0;i<FOLDERS.length;i++) remote[FOLDERS[i]] = await readFolder(FOLDERS[i]);
+      var decided = {};
+      ['accepted','rejected'].forEach(function(f){ Object.keys(remote[f]||{}).forEach(function(k){ var r=normalize(remote[f][k], k, f); decided[identity(r)] = { folder:f, row:r }; }); });
+      var updates = {};
+      var removed = false;
+      Object.keys(remote.pending||{}).forEach(function(k){
+        var r = normalize(remote.pending[k], k, 'pending');
+        var d = decided[identity(r)];
+        if (d) {
+          updates['registrationRequests/pending/' + safeKey(k)] = null;
+          updates['registrationRequests/pending/' + r.firebaseKey] = null;
+          removed = true;
+        }
+      });
+      if (removed) {
+        updates.savedAt = new Date().toISOString();
+        updates.version = 3;
+        updates.activeDataShape = 'record-based';
+        var res = await fetch(base()+'.json', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates)});
+        if (!res.ok) throw new Error('HTTP '+res.status);
+      }
+    } catch(e) { console.warn('registration anti-resurrection cleanup failed:', e && e.message ? e.message : e); }
+    finally { cleaning = false; }
+  }
+  function scheduleRemoteCleanup(){ setTimeout(function(){ cleanRemotePendingDuplicates().then(function(){ applyLocalDedupe(); try{ if(typeof updateFormsNavBadge==='function') updateFormsNavBadge(); }catch(_e){} }); }, 50); }
+
+  var oldRender = window.renderFormRequests || (typeof renderFormRequests === 'function' ? renderFormRequests : null);
+  if (typeof oldRender === 'function' && !oldRender.__kpAntiResurrectionWrapped) {
+    var wrappedRender = function(){ applyLocalDedupe(); var out = oldRender.apply(this, arguments); scheduleRemoteCleanup(); return out; };
+    wrappedRender.__kpAntiResurrectionWrapped = true;
+    window.renderFormRequests = wrappedRender;
+    try { renderFormRequests = wrappedRender; } catch(_e) {}
+  }
+  var oldSync = window.syncRegistrationRequestsFromFirebase || (typeof syncRegistrationRequestsFromFirebase === 'function' ? syncRegistrationRequestsFromFirebase : null);
+  if (typeof oldSync === 'function' && !oldSync.__kpAntiResurrectionWrapped) {
+    var wrappedSync = async function(){ var out = await oldSync.apply(this, arguments); applyLocalDedupe(); await cleanRemotePendingDuplicates(); applyLocalDedupe(); try{ if(typeof updateFormsNavBadge==='function') updateFormsNavBadge(); }catch(_e){} return out; };
+    wrappedSync.__kpAntiResurrectionWrapped = true;
+    window.syncRegistrationRequestsFromFirebase = wrappedSync;
+    try { syncRegistrationRequestsFromFirebase = wrappedSync; } catch(_e) {}
+  }
+  var oldLoad = window.loadFromFirebase || (typeof loadFromFirebase === 'function' ? loadFromFirebase : null);
+  if (typeof oldLoad === 'function' && !oldLoad.__kpAntiResurrectionWrapped) {
+    var wrappedLoad = async function(){ var out = await oldLoad.apply(this, arguments); applyLocalDedupe(); scheduleRemoteCleanup(); return out; };
+    wrappedLoad.__kpAntiResurrectionWrapped = true;
+    window.loadFromFirebase = wrappedLoad;
+    try { loadFromFirebase = wrappedLoad; } catch(_e) {}
+  }
+  applyLocalDedupe();
+  scheduleRemoteCleanup();
+})();
+</script>
+
 </body>
 
 </html>
