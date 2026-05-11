@@ -3245,11 +3245,56 @@ var attendanceLocks = JSON.parse(localStorage.getItem('kp_attendance_locks') || 
 if (!attendanceLocks || typeof attendanceLocks !== 'object' || Array.isArray(attendanceLocks)) attendanceLocks = {};
 
 function isTeacher(){
-  return !!(typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'teacher');
+  return !!(typeof currentUser !== 'undefined' && currentUser && String(currentUser.role || '').toLowerCase() === 'teacher');
+}
+function kpNormalizeClassNameForAccess(value){
+  return String(value == null ? '' : value)
+    .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function kpRawClassValuesForAccess(value){
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') return value.split(/[?,;|\n]+/);
+  if (typeof value === 'object') {
+    return Object.keys(value).map(function(k){
+      var v = value[k];
+      if (v === true || v === 'true' || v === 1 || v === '1' || v == null || v === '') return k;
+      return v;
+    });
+  }
+  return [];
+}
+function kpNormalizeTeacherClassList(user){
+  var all = Object.keys((typeof CLASSES !== 'undefined' && CLASSES) ? CLASSES : {});
+  var byClean = {};
+  all.forEach(function(cls){ byClean[kpNormalizeClassNameForAccess(cls)] = cls; });
+  var raw = [];
+  ['classes','class','assignedClasses','allowedClasses','classNames','cls'].forEach(function(field){
+    raw = raw.concat(kpRawClassValuesForAccess(user && user[field]));
+  });
+  var out = [];
+  raw.forEach(function(item){
+    var val = String(item == null ? '' : item).trim();
+    if (!val || val === 'true' || val === 'false') return;
+    var clean = kpNormalizeClassNameForAccess(val);
+    var match = all.indexOf(val) !== -1 ? val : (byClean[clean] || all.find(function(cls){
+      var c = kpNormalizeClassNameForAccess(cls);
+      return c === clean || (clean && c.indexOf(clean) !== -1) || (c && clean.indexOf(c) !== -1);
+    }));
+    if (match && out.indexOf(match) === -1) out.push(match);
+  });
+  return out;
 }
 function teacherAllowedClasses(){
   if (!isTeacher()) return null; // null means "no restriction"
-  return Array.isArray(currentUser.classes) ? currentUser.classes.slice() : [];
+  var normalized = kpNormalizeTeacherClassList(currentUser);
+  if (currentUser && JSON.stringify(currentUser.classes || []) !== JSON.stringify(normalized)) {
+    currentUser.classes = normalized;
+    try { sessionStorage.setItem('kp_session', JSON.stringify(currentUser)); } catch(_e) {}
+  }
+  return normalized;
 }
 function teacherCanAccessClass(className){
   if (!isTeacher()) return true; // admin/staff: always
@@ -24490,7 +24535,7 @@ document.addEventListener('DOMContentLoaded', function(){
     if (!value) return [];
     if (Array.isArray(value)) return value;
     if (typeof value === 'string') return value.split(/[?,;|\n]+/);
-    if (typeof value === 'object') return Object.keys(value).map(function(k){ return value[k]; });
+    if (typeof value === 'object') return Object.keys(value).map(function(k){ var v = value[k]; return (v === true || v === 'true' || v === 1 || v === '1' || v == null || v === '') ? k : v; });
     return [];
   }
   function isTeacherRole(user){ var r = txt(user && user.role).toLowerCase(); return r === 'teacher' || r === 'attendance' || r === 'attendance_taker' || r === 'attendance-taker'; }
@@ -24566,111 +24611,53 @@ document.addEventListener('DOMContentLoaded', function(){
 
 
 
-<script id="kp-stop-registration-resurrection-20260511">
-(function(){
-  if (window.__kpStopRegistrationResurrection20260511) return;
-  window.__kpStopRegistrationResurrection20260511 = true;
 
-  var FOLDERS = ['pending','accepted','rejected'];
-  var cleaning = false;
+
+<script id="kp-light-registration-local-dedupe-20260511">
+(function(){
+  if (window.__kpLightRegistrationLocalDedupe20260511) return;
+  window.__kpLightRegistrationLocalDedupe20260511 = true;
   function txt(v){ return String(v == null ? '' : v).trim(); }
-  function base(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : 'https://kids-park-nursery-default-rtdb.firebaseio.com/nursery_data').replace(/\/+$/, ''); }
-  function safeKey(v){ v = txt(v); if (!v) return ''; try { if (typeof kpSafeFirebaseKey === 'function') return kpSafeFirebaseKey(v); } catch(_e) {} return v.replace(/[.#$\[\]\/\s]/g, '_').slice(0,180); }
+  function folder(status){ var s=txt(status||'pending').toLowerCase(); if(s==='approved'||s==='accepted'||s==='approve'||s==='accept') return 'accepted'; if(s==='rejected'||s==='reject') return 'rejected'; return 'pending'; }
   function digits(v){ return txt(v).replace(/\D+/g,''); }
   function simple(v){ return txt(v).toLowerCase().replace(/[\u064B-\u065F\u0670]/g,'').replace(/[^\u0600-\u06FFa-z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
   function hash(s){ s=txt(s); var h=5381; for(var i=0;i<s.length;i++) h=((h<<5)+h)^s.charCodeAt(i); return (h>>>0).toString(36); }
-  function folder(status){ var s=txt(status||'pending').toLowerCase(); if(s==='approved'||s==='accepted'||s==='approve'||s==='accept') return 'accepted'; if(s==='rejected'||s==='reject') return 'rejected'; return 'pending'; }
-  function statusFromFolder(f){ return f === 'accepted' ? 'approved' : (f === 'rejected' ? 'rejected' : 'pending'); }
-  function identity(row){
-    row=row||{};
-    var eid=digits(row.emiratesId||row.idNo||row.identityNo||row.nationalId); if(eid) return 'eid:'+eid;
-    var pass=simple(row.passport||row.passportNo||row.childPassport); if(pass) return 'pass:'+pass;
-    var ts=txt(row.timestamp||row.formTimestamp||row.submittedAt||row.createdAt); if(ts) return 'ts:'+hash(ts);
-    var name=simple(row.name||row.childName||row.studentName||row.fullName||[row.firstName,row.familyName].filter(Boolean).join(' '));
-    var nameEn=simple(row.nameEn||row.childNameEn||row.childEnglishName||row.englishName);
-    var dob=txt(row.dob||row.dateOfBirth||row.birthDate);
-    var phone=digits(row.dadMob||row.momMob||row.dph||row.mph||row.phone||row.fatherPhone||row.motherPhone);
-    if(name||nameEn||dob||phone) return 'child:'+hash([name,nameEn,dob,phone].join('|'));
-    return 'key:'+safeKey(row.firebaseKey||row._fbKey||row.requestId||row.id||row.key||JSON.stringify(row).slice(0,180));
+  function identity(r){
+    r=r||{};
+    var eid=digits(r.emiratesId||r.idNo||r.identityNo||r.nationalId); if(eid) return 'eid:'+eid;
+    var ts=txt(r.timestamp||r.formTimestamp||r.submittedAt||r.createdAt); if(ts) return 'ts:'+hash(ts);
+    var name=simple(r.name||r.childName||r.studentName||[r.firstName,r.familyName].filter(Boolean).join(' '));
+    var dob=txt(r.dob||r.dateOfBirth||r.birthDate);
+    var phone=digits(r.dadMob||r.momMob||r.dph||r.mph||r.phone);
+    return 'child:'+hash([name,dob,phone].join('|'));
   }
-  function rowKey(row){ return safeKey(row && (row.firebaseKey||row._fbKey||row.requestId||row.key||row.timestamp||row.submittedAt||row.createdAt||row.id)); }
-  function time(row){ var fields=['rowUpdatedAt','decisionAt','approvedAt','rejectedAt','updatedAt','submittedAt','createdAt','timestamp']; for(var i=0;i<fields.length;i++){ var t=Date.parse(row&&row[fields[i]]); if(!isNaN(t)) return t; } return 0; }
-  function normalize(row, key, f){ row = row && typeof row === 'object' ? Object.assign({}, row) : {}; row.firebaseKey = rowKey(row) || safeKey(key) || ('req_'+hash(identity(row))); row._fbKey = row.firebaseKey; row.requestId = row.requestId || row.firebaseKey; row.status = statusFromFolder(f || folder(row.status)); return row; }
-  function dedupeRows(rows){
-    var decided={}, best={};
-    (rows||[]).forEach(function(r){ if(!r) return; var id=identity(r); if(folder(r.status)!=='pending') decided[id]=true; var old=best[id]; if(!old){ best[id]=r; return; } var rf=folder(r.status), of=folder(old.status); if(of==='pending' && rf!=='pending') best[id]=r; else if((of==='pending')===(rf==='pending') && time(r)>=time(old)) best[id]=r; });
-    return (rows||[]).filter(function(r){ if(!r) return false; var id=identity(r); if(folder(r.status)==='pending' && decided[id]) return false; return best[id] === r; });
-  }
-  function applyLocalDedupe(){
+  function dedupeLocal(){
     try {
       var rows = Array.isArray(window.syncedFormRows) ? window.syncedFormRows : (Array.isArray(syncedFormRows) ? syncedFormRows : []);
-      var clean = dedupeRows(rows);
-      if (clean.length !== rows.length) {
-        window.syncedFormRows = clean;
-        try { syncedFormRows = clean; } catch(_e) {}
-        try { if (typeof _saveFormRowsSlim === 'function') _saveFormRowsSlim(clean); else localStorage.setItem('kp_form_rows', JSON.stringify(clean)); } catch(_e) {}
-      }
-      return clean;
-    } catch(_e) { return []; }
-  }
-  async function readFolder(f){
-    try { var res=await fetch(base()+'/registrationRequests/'+f+'.json?antiResurrect='+Date.now(), {cache:'no-store'}); if(!res.ok) return {}; var data=await res.json(); return data&&typeof data==='object'?data:{}; }
-    catch(_e){ return {}; }
-  }
-  async function cleanRemotePendingDuplicates(){
-    if (cleaning) return;
-    cleaning = true;
-    try {
-      var remote = {pending:{}, accepted:{}, rejected:{}};
-      for (var i=0;i<FOLDERS.length;i++) remote[FOLDERS[i]] = await readFolder(FOLDERS[i]);
       var decided = {};
-      ['accepted','rejected'].forEach(function(f){ Object.keys(remote[f]||{}).forEach(function(k){ var r=normalize(remote[f][k], k, f); decided[identity(r)] = { folder:f, row:r }; }); });
-      var updates = {};
-      var removed = false;
-      Object.keys(remote.pending||{}).forEach(function(k){
-        var r = normalize(remote.pending[k], k, 'pending');
-        var d = decided[identity(r)];
-        if (d) {
-          updates['registrationRequests/pending/' + safeKey(k)] = null;
-          updates['registrationRequests/pending/' + r.firebaseKey] = null;
-          removed = true;
-        }
+      rows.forEach(function(r){ if(r && folder(r.status) !== 'pending') decided[identity(r)] = true; });
+      var seen = {};
+      var clean = rows.filter(function(r){
+        if(!r) return false;
+        var f = folder(r.status);
+        var id = identity(r);
+        if(f === 'pending' && decided[id]) return false;
+        var key = f + ':' + id;
+        if(seen[key]) return false;
+        seen[key] = true;
+        return true;
       });
-      if (removed) {
-        updates.savedAt = new Date().toISOString();
-        updates.version = 3;
-        updates.activeDataShape = 'record-based';
-        var res = await fetch(base()+'.json', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates)});
-        if (!res.ok) throw new Error('HTTP '+res.status);
-      }
-    } catch(e) { console.warn('registration anti-resurrection cleanup failed:', e && e.message ? e.message : e); }
-    finally { cleaning = false; }
+      if(clean.length !== rows.length){ window.syncedFormRows = clean; try{ syncedFormRows = clean; }catch(_e){} try{ if(typeof _saveFormRowsSlim === 'function') _saveFormRowsSlim(clean); }catch(_e){} }
+    } catch(_e) {}
   }
-  function scheduleRemoteCleanup(){ setTimeout(function(){ cleanRemotePendingDuplicates().then(function(){ applyLocalDedupe(); try{ if(typeof updateFormsNavBadge==='function') updateFormsNavBadge(); }catch(_e){} }); }, 50); }
-
   var oldRender = window.renderFormRequests || (typeof renderFormRequests === 'function' ? renderFormRequests : null);
-  if (typeof oldRender === 'function' && !oldRender.__kpAntiResurrectionWrapped) {
-    var wrappedRender = function(){ applyLocalDedupe(); var out = oldRender.apply(this, arguments); scheduleRemoteCleanup(); return out; };
-    wrappedRender.__kpAntiResurrectionWrapped = true;
-    window.renderFormRequests = wrappedRender;
-    try { renderFormRequests = wrappedRender; } catch(_e) {}
+  if(typeof oldRender === 'function' && !oldRender.__kpLightLocalDedupeWrapped){
+    var wrapped = function(){ dedupeLocal(); return oldRender.apply(this, arguments); };
+    wrapped.__kpLightLocalDedupeWrapped = true;
+    window.renderFormRequests = wrapped;
+    try { renderFormRequests = wrapped; } catch(_e) {}
   }
-  var oldSync = window.syncRegistrationRequestsFromFirebase || (typeof syncRegistrationRequestsFromFirebase === 'function' ? syncRegistrationRequestsFromFirebase : null);
-  if (typeof oldSync === 'function' && !oldSync.__kpAntiResurrectionWrapped) {
-    var wrappedSync = async function(){ var out = await oldSync.apply(this, arguments); applyLocalDedupe(); await cleanRemotePendingDuplicates(); applyLocalDedupe(); try{ if(typeof updateFormsNavBadge==='function') updateFormsNavBadge(); }catch(_e){} return out; };
-    wrappedSync.__kpAntiResurrectionWrapped = true;
-    window.syncRegistrationRequestsFromFirebase = wrappedSync;
-    try { syncRegistrationRequestsFromFirebase = wrappedSync; } catch(_e) {}
-  }
-  var oldLoad = window.loadFromFirebase || (typeof loadFromFirebase === 'function' ? loadFromFirebase : null);
-  if (typeof oldLoad === 'function' && !oldLoad.__kpAntiResurrectionWrapped) {
-    var wrappedLoad = async function(){ var out = await oldLoad.apply(this, arguments); applyLocalDedupe(); scheduleRemoteCleanup(); return out; };
-    wrappedLoad.__kpAntiResurrectionWrapped = true;
-    window.loadFromFirebase = wrappedLoad;
-    try { loadFromFirebase = wrappedLoad; } catch(_e) {}
-  }
-  applyLocalDedupe();
-  scheduleRemoteCleanup();
+  dedupeLocal();
 })();
 </script>
 
