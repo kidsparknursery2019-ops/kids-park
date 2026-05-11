@@ -5944,7 +5944,6 @@ function printStudentsSelectedReport(){
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
     <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script>
 
-
 </body></html>`);
     w.document.close();
     return;
@@ -6961,7 +6960,7 @@ async function saveStudent(){
     imgDadPassport:v('ns-img-dad-passport'), imgFatherPassport:v('ns-img-dad-passport'), imgGuardianPass:v('ns-img-dad-passport'),
     extraAttachments:v('ns-extra-attachments'),
     imgChildPhotoName:(document.getElementById('ns-img-child-photo')||{}).title||'', imgEmiratesIdName:(document.getElementById('ns-img-emirates-id')||{}).title||'', imgPassportName:(document.getElementById('ns-img-passport')||{}).title||'', imgBirthCertName:(document.getElementById('ns-img-birth-cert')||{}).title||'', imgVaccinationName:(document.getElementById('ns-img-vaccination')||{}).title||'', imgResidencyName:(document.getElementById('ns-img-residency')||{}).title||'', imgDadIdName:(document.getElementById('ns-img-dad-id')||{}).title||'', imgDadPassportName:(document.getElementById('ns-img-dad-passport')||{}).title||'',
-    note:v('ns-note'), notes:v('ns-note'), internalNote:v('ns-internal-note'),
+    note:v('ns-note'), notes:v('ns-note'), internalNote:v('ns-internal-note'), internal_note:v('ns-internal-note'), internalNotes:v('ns-internal-note'),
     sub_end:(document.getElementById('ns-sub-end')||{}).value||'',updatedAt:new Date().toISOString()
   };
   let savedRecord;
@@ -6979,13 +6978,17 @@ async function saveStudent(){
   }
   resetPaymentMatchCache();
   persistCoreDataToLocalStorage();
+  var remoteSaved = true;
+  if (savedRecord) {
+    remoteSaved = await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:savedRecord, keyField:'id', label:'student'});
+  }
+  if (!remoteSaved) {
+    alert('\u0644\u0645 \u064a\u062a\u0645 \u062d\u0641\u0638 \u0628\u064a\u0627\u0646\u0627\u062a \u0627\u0644\u0637\u0627\u0644\u0628 \u0639\u0644\u0649 Firebase. \u064a\u0631\u062c\u0649 \u0627\u0644\u062a\u0623\u0643\u062f \u0645\u0646 \u0627\u0644\u0627\u062a\u0635\u0627\u0644 \u0648\u0627\u0644\u0645\u062d\u0627\u0648\u0644\u0629 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649 \u0642\u0628\u0644 \u0625\u063a\u0644\u0627\u0642 \u0647\u0630\u0647 \u0627\u0644\u0646\u0627\u0641\u0630\u0629.');
+    return;
+  }
   closeAll();renderStudents();renderDash();
   if(typeof renderPayments==='function') renderPayments(); if(typeof renderReceipts==='function') renderReceipts();
-  // ✅ حفظ فردي بدل autoSave (ما بيكتب فوق تغييرات المستخدمين الآخرين)
-  if (savedRecord) {
-    await saveRecordRemoteAware({type:'students', activeArrayName:'students', record:savedRecord, keyField:'id', label:'الطالب'});
-  }
-  alert(`✅ تم ${editingStuId?'تعديل':'إضافة'} الطالب "${name}" بنجاح`);
+  alert('\u062a\u0645 \u062d\u0641\u0638 \u0628\u064a\u0627\u0646\u0627\u062a \u0627\u0644\u0637\u0627\u0644\u0628 ' + name + ' \u0639\u0644\u0649 Firebase \u0628\u0646\u062c\u0627\u062d.');
 }
 
 async function delStudent(id){
@@ -24392,20 +24395,31 @@ document.addEventListener('DOMContentLoaded', function(){
         keys.forEach(function(k){ updates['registrationRequests/' + f + '/' + k] = null; });
       });
 
-      for (var i = 0; i < REG_FOLDERS.length; i++) {
-        var f = REG_FOLDERS[i];
-        var remote = await readRegistrationFolder(f);
-        Object.keys(remote || {}).forEach(function(k){
-          var r = remote[k];
-          if (!r || typeof r !== 'object') return;
-          if (requestIdentity(r) === id || keys.indexOf(safeKey(k)) !== -1 || candidateKeys(r).some(function(rk){ return keys.indexOf(rk) !== -1; })) {
-            if (f !== folder || safeKey(k) !== payload.firebaseKey) updates['registrationRequests/' + f + '/' + safeKey(k)] = null;
-            applyNotificationFields(row, r);
-            applyNotificationFields(payload, r);
+      // Keep the user action fast: save the selected decision first, then do the
+      // heavier duplicate cleanup in the background after the UI has responded.
+      function queueDecisionCleanup(savedPayload, selectedFolder, identity, knownKeys){
+        setTimeout(async function(){
+          try {
+            var cleanup = {};
+            for (var ci = 0; ci < REG_FOLDERS.length; ci++) {
+              var cf = REG_FOLDERS[ci];
+              var remote = await readRegistrationFolder(cf);
+              Object.keys(remote || {}).forEach(function(k){
+                var r = remote[k];
+                if (!r || typeof r !== 'object') return;
+                var same = requestIdentity(r) === identity || knownKeys.indexOf(safeKey(k)) !== -1 || candidateKeys(r).some(function(rk){ return knownKeys.indexOf(rk) !== -1; });
+                if (!same) return;
+                if (cf !== selectedFolder || safeKey(k) !== savedPayload.firebaseKey) cleanup['registrationRequests/' + cf + '/' + safeKey(k)] = null;
+              });
+            }
+            if (Object.keys(cleanup).length) await fetch(base() + '.json', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cleanup) });
+          } catch(cleanupError) {
+            try { console.warn('Registration background cleanup skipped', cleanupError); } catch(_e) {}
           }
-        });
+        }, 1200);
       }
 
+      queueDecisionCleanup(payload, folder, id, keys);
       updates['registrationRequests/' + folder + '/' + payload.firebaseKey] = Object.assign({}, payload, row);
       updates.savedAt = new Date().toISOString();
       updates.version = 3;
@@ -24846,6 +24860,231 @@ document.addEventListener('DOMContentLoaded', function(){
     openAcceptChoice(row, matches);
   };
   try { startApproveFlow = window.startApproveFlow; } catch(_e) {}
+})();
+</script>
+
+
+
+
+<script id="kp-performance-sync-governor-20260511">
+(function(){
+  if (window.__kpPerformanceSyncGovernor20260511) return;
+  window.__kpPerformanceSyncGovernor20260511 = true;
+
+  var state = { registrationSyncInFlight:null, lastRegistrationSync:0, autoTimer:null };
+  var REGISTRATION_SYNC_MIN_MS = 15000;
+  var AUTO_REGISTRATION_SYNC_MS = 300000;
+
+  function now(){ return Date.now(); }
+  function clearKnownTimer(name){
+    try { if (name === 'firebasePollInterval' && typeof firebasePollInterval !== 'undefined' && firebasePollInterval) { clearInterval(firebasePollInterval); firebasePollInterval = null; } } catch(_e) {}
+    try { if (name === 'autoSyncTimer' && typeof autoSyncTimer !== 'undefined' && autoSyncTimer) { clearInterval(autoSyncTimer); autoSyncTimer = null; } } catch(_e) {}
+    try { if (name === 'liveTimer' && typeof liveTimer !== 'undefined' && liveTimer) { clearInterval(liveTimer); liveTimer = null; } } catch(_e) {}
+    try { if (window[name]) { clearInterval(window[name]); window[name] = null; } } catch(_e) {}
+  }
+  function stopNoisyTimers(){
+    clearKnownTimer('firebasePollInterval');
+    clearKnownTimer('autoSyncTimer');
+    clearKnownTimer('liveTimer');
+    if (state.autoTimer) { clearInterval(state.autoTimer); state.autoTimer = null; }
+  }
+
+  var originalRegistrationSync = window.syncRegistrationRequestsFromFirebase || (typeof syncRegistrationRequestsFromFirebase === 'function' ? syncRegistrationRequestsFromFirebase : null);
+  if (typeof originalRegistrationSync === 'function' && !originalRegistrationSync.__kpGovernorWrapped) {
+    var governedRegistrationSync = function(options){
+      options = options || {};
+      var manual = options.force === true || options.manual === true || options.silent !== true;
+      if (state.registrationSyncInFlight) return state.registrationSyncInFlight;
+      if (!manual && state.lastRegistrationSync && now() - state.lastRegistrationSync < REGISTRATION_SYNC_MIN_MS) {
+        return Promise.resolve({ success:true, skipped:true, reason:'recent-registration-sync' });
+      }
+      state.registrationSyncInFlight = Promise.resolve(originalRegistrationSync.apply(this, arguments)).then(function(result){
+        state.lastRegistrationSync = now();
+        return result;
+      }).finally(function(){ state.registrationSyncInFlight = null; });
+      return state.registrationSyncInFlight;
+    };
+    governedRegistrationSync.__kpGovernorWrapped = true;
+    governedRegistrationSync.__kpOriginal = originalRegistrationSync;
+    window.syncRegistrationRequestsFromFirebase = governedRegistrationSync;
+    try { syncRegistrationRequestsFromFirebase = governedRegistrationSync; } catch(_e) {}
+  }
+
+  window.startAutoSync = function(){
+    stopNoisyTimers();
+    setTimeout(function(){ try { if (typeof window.syncRegistrationRequestsFromFirebase === 'function') window.syncRegistrationRequestsFromFirebase({ silent:true }); } catch(_e) {} }, 15000);
+    state.autoTimer = setInterval(function(){ try { if (typeof window.syncRegistrationRequestsFromFirebase === 'function') window.syncRegistrationRequestsFromFirebase({ silent:true }); } catch(_e) {} }, AUTO_REGISTRATION_SYNC_MS);
+    try { autoSyncTimer = state.autoTimer; } catch(_e) {}
+    return state.autoTimer;
+  };
+  try { startAutoSync = window.startAutoSync; } catch(_e) {}
+
+  window.kpSyncGovernorStatus = function(){
+    return { active:true, fullLoadThrottling:false, registrationSyncInFlight:!!state.registrationSyncInFlight, secondsSinceRegistrationSync: state.lastRegistrationSync ? Math.round((now() - state.lastRegistrationSync) / 1000) : null };
+  };
+
+  setTimeout(function(){ stopNoisyTimers(); try { if (typeof currentUser !== 'undefined' && currentUser && typeof window.startAutoSync === 'function') window.startAutoSync(); } catch(_e) {} }, 1200);
+})();
+</script>
+
+
+<script id="kp-student-save-readback-verifier-20260511">
+(function(){
+  if (window.__kpStudentSaveReadbackVerifier20260511) return;
+  window.__kpStudentSaveReadbackVerifier20260511 = true;
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); }
+  function keyFor(record, keyField){
+    try { if (typeof kpRecordKey === 'function') return kpRecordKey(record, keyField || 'id'); } catch(_e) {}
+    try { if (typeof kpSafeFirebaseKey === 'function') return kpSafeFirebaseKey(record && record[keyField || 'id']); } catch(_e) {}
+    return 'k_' + txt(record && record[keyField || 'id']).replace(/[.#$\[\]\/\s]/g, '_');
+  }
+  var previousSaveRecordRemoteAware = window.saveRecordRemoteAware || (typeof saveRecordRemoteAware === 'function' ? saveRecordRemoteAware : null);
+  if (typeof previousSaveRecordRemoteAware !== 'function' || previousSaveRecordRemoteAware.__kpStudentReadbackWrapped) return;
+  var wrapped = async function(config){
+    var result = await previousSaveRecordRemoteAware.apply(this, arguments);
+    config = config || {};
+    var type = config.type || config.activeArrayName;
+    if (result === false || type !== 'students') return result;
+    var record = config.record || {};
+    var key = keyFor(record, config.keyField || 'id');
+    var base = baseUrl();
+    if (!base || !key) return false;
+    try {
+      var res = await fetch(base + '/students/' + encodeURIComponent(key) + '.json?verify=' + Date.now(), { cache:'no-store' });
+      if (!res.ok) return false;
+      var saved = await res.json();
+      if (!saved || typeof saved !== 'object') return false;
+      var expectedId = txt(record[config.keyField || 'id']);
+      var savedId = txt(saved[config.keyField || 'id']);
+      return expectedId === '' || savedId === '' || expectedId === savedId;
+    } catch(e) {
+      try { console.warn('Student Firebase readback failed', e); } catch(_e) {}
+      return false;
+    }
+  };
+  wrapped.__kpStudentReadbackWrapped = true;
+  wrapped.__kpOriginal = previousSaveRecordRemoteAware;
+  window.saveRecordRemoteAware = wrapped;
+  try { saveRecordRemoteAware = wrapped; } catch(_e) {}
+})();
+</script>
+
+
+<script id="kp-student-internal-note-canonical-20260511">
+(function(){
+  if (window.__kpStudentInternalNoteCanonical20260511) return;
+  window.__kpStudentInternalNoteCanonical20260511 = true;
+
+  var NOTE_KEYS = ['internalNote','internal_note','internalNotes','privateNote','private_note','staffNote','staff_note','adminNote','admin_note','officeNote','office_note','notesInternal'];
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); }
+  function sameId(a,b){
+    try { return (typeof normKey === 'function') ? normKey(a) === normKey(b) : txt(a) === txt(b); }
+    catch(_e){ return txt(a) === txt(b); }
+  }
+  function stamp(record){
+    record = record || {};
+    var t = Date.parse(record.updatedAt || record.savedAt || record.modifiedAt || record.rowUpdatedAt || record.createdAt || '');
+    if (!isNaN(t)) return t;
+    return parseInt(record.version || 0, 10) || 0;
+  }
+  function getNote(record){
+    record = record || {};
+    for (var i=0;i<NOTE_KEYS.length;i++) {
+      var value = txt(record[NOTE_KEYS[i]]);
+      if (value) return value;
+    }
+    return '';
+  }
+  function normalizeNote(record){
+    if (!record || typeof record !== 'object') return record;
+    var note = getNote(record);
+    if (note) {
+      record.internalNote = note;
+      record.internal_note = note;
+      record.internalNotes = note;
+    }
+    return record;
+  }
+  function toArray(section){
+    if (!section) return [];
+    if (typeof kpArrayFromFirebaseSection === 'function') return kpArrayFromFirebaseSection(section).map(normalizeNote);
+    if (Array.isArray(section)) return section.filter(Boolean).map(normalizeNote);
+    if (typeof section === 'object') return Object.keys(section).map(function(k){ var v=section[k]; if (v && typeof v === 'object' && v.id == null) v.id = k; return v; }).filter(Boolean).map(normalizeNote);
+    return [];
+  }
+  function applyRemoteStudents(remoteStudents){
+    if (!Array.isArray(remoteStudents) || !remoteStudents.length) return false;
+    if (!Array.isArray(students)) students = [];
+    var changed = false;
+    remoteStudents.forEach(function(remote){
+      if (!remote || remote.id == null) return;
+      normalizeNote(remote);
+      var idx = students.findIndex(function(local){ return local && sameId(local.id, remote.id); });
+      if (idx < 0) {
+        students.push(remote);
+        changed = true;
+        return;
+      }
+      var local = normalizeNote(students[idx]);
+      var remoteStamp = stamp(remote);
+      var localStamp = stamp(local);
+      var remoteNote = getNote(remote);
+      var localNote = getNote(local);
+      if (remoteStamp > localStamp || (remoteStamp === localStamp && remoteNote && remoteNote !== localNote)) {
+        students[idx] = Object.assign({}, local, remote);
+        changed = true;
+      }
+    });
+    if (changed) {
+      try { persistCoreDataToLocalStorage(); } catch(_e) {}
+      try { if (typeof renderStudents === 'function') renderStudents(); } catch(_e) {}
+      try { if (typeof renderDash === 'function') renderDash(); } catch(_e) {}
+    }
+    return changed;
+  }
+  async function overlayRemoteStudents(){
+    var base = baseUrl();
+    if (!base) return false;
+    try {
+      var res = await fetch(base + '/students.json?studentOverlay=' + Date.now(), { cache:'no-store' });
+      if (!res.ok) return false;
+      var remote = toArray(await res.json());
+      return applyRemoteStudents(remote);
+    } catch(e) {
+      try { console.warn('student overlay skipped', e); } catch(_e) {}
+      return false;
+    }
+  }
+
+  var previousSaveRecord = window.saveRecordRemoteAware || (typeof saveRecordRemoteAware === 'function' ? saveRecordRemoteAware : null);
+  if (typeof previousSaveRecord === 'function' && !previousSaveRecord.__kpStudentNoteCanonicalWrapped) {
+    var wrappedSave = async function(config){
+      config = config || {};
+      if ((config.type || config.activeArrayName) === 'students' && config.record) normalizeNote(config.record);
+      return previousSaveRecord.apply(this, arguments);
+    };
+    wrappedSave.__kpStudentNoteCanonicalWrapped = true;
+    wrappedSave.__kpOriginal = previousSaveRecord;
+    window.saveRecordRemoteAware = wrappedSave;
+    try { saveRecordRemoteAware = wrappedSave; } catch(_e) {}
+  }
+
+  var previousLoad = window.loadFromFirebase || (typeof loadFromFirebase === 'function' ? loadFromFirebase : null);
+  if (typeof previousLoad === 'function' && !previousLoad.__kpStudentNoteOverlayWrapped) {
+    var wrappedLoad = async function(){
+      var result = await previousLoad.apply(this, arguments);
+      await overlayRemoteStudents();
+      return result;
+    };
+    wrappedLoad.__kpStudentNoteOverlayWrapped = true;
+    wrappedLoad.__kpOriginal = previousLoad;
+    window.loadFromFirebase = wrappedLoad;
+    try { loadFromFirebase = wrappedLoad; } catch(_e) {}
+  }
+
+  window.kpRefreshStudentsFromFirebase = overlayRemoteStudents;
 })();
 </script>
 
