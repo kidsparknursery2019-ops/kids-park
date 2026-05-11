@@ -24796,11 +24796,11 @@ document.addEventListener('DOMContentLoaded', function(){
       var sid = Number(selected.value);
       var target = (Array.isArray(students) ? students : []).find(function(s){ return Number(s && s.id) === sid; });
       if (!target) { alert(L.notFound); return; }
+      ov.classList.remove('on');
       if (window.kpConfirmAsync) {
         var ok = await window.kpConfirmAsync(L.confirmTitle, target, L.confirmMsgPrefix + (target.name || sid) + L.confirmMsgSuffix, { okText:L.confirmOk });
-        if (!ok) return;
+        if (!ok) { ov.classList.add('on'); return; }
       }
-      ov.classList.remove('on');
       await performApproveMerge(row, sid, { skipConfirm:true, manualLink:true });
       try { closeAll(); } catch(_e) {}
     };
