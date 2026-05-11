@@ -5877,6 +5877,284 @@ function printStudentsSelectedReport(){
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
     <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script>
 
+
+<script id="kp-attendance-taker-class-normalizer-20260511">
+(function(){
+  if (window.__kpAttendanceTakerClassNormalizer20260511) return;
+  window.__kpAttendanceTakerClassNormalizer20260511 = true;
+
+  function clean(v){ return String(v == null ? '' : v).trim(); }
+  function normalizeName(v){
+    return clean(v)
+      .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  function rawClassList(value){
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') return value.split(/[?,;|\n]+/);
+    if (typeof value === 'object') {
+      return Object.keys(value).map(function(k){ return value[k]; });
+    }
+    return [];
+  }
+  function normalizedUserClasses(user){
+    var raw = rawClassList(user && user.classes);
+    var all = Object.keys((typeof CLASSES !== 'undefined' && CLASSES) ? CLASSES : {});
+    var byNorm = {};
+    all.forEach(function(cls){ byNorm[normalizeName(cls)] = cls; });
+    var out = [];
+    raw.forEach(function(item){
+      var val = clean(item);
+      if (!val) return;
+      var n = normalizeName(val);
+      var exact = all.indexOf(val) !== -1 ? val : null;
+      var matched = exact || byNorm[n] || all.find(function(cls){ return normalizeName(cls) === n || n.indexOf(normalizeName(cls)) !== -1 || normalizeName(cls).indexOf(n) !== -1; });
+      if (matched && out.indexOf(matched) === -1) out.push(matched);
+    });
+    return out;
+  }
+
+  window.kpNormalizeAttendanceTakerClasses = normalizedUserClasses;
+
+  window.teacherAllowedClasses = function(){
+    if (!(typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'teacher')) return null;
+    return normalizedUserClasses(currentUser);
+  };
+  try { teacherAllowedClasses = window.teacherAllowedClasses; } catch(_e) {}
+
+  window.teacherCanAccessClass = function(className){
+    if (!(typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'teacher')) return true;
+    var allowed = normalizedUserClasses(currentUser);
+    return allowed.indexOf(className) !== -1;
+  };
+  try { teacherCanAccessClass = window.teacherCanAccessClass; } catch(_e) {}
+
+  // Normalize user records loaded from Firebase/localStorage so the session keeps the clean list.
+  var oldLoadUsers = window.loadUsersFromFirebase || (typeof loadUsersFromFirebase === 'function' ? loadUsersFromFirebase : null);
+  if (typeof oldLoadUsers === 'function' && !oldLoadUsers.__kpClassNormalizerWrapped) {
+    var wrappedLoadUsers = async function(){
+      var result = await oldLoadUsers.apply(this, arguments);
+      try {
+        var users = result && Array.isArray(result.users) ? result.users : JSON.parse(localStorage.getItem('kp_users') || '[]');
+        var changed = false;
+        users.forEach(function(u){
+          if (u && u.role === 'teacher') {
+            var normalized = normalizedUserClasses(u);
+            if (JSON.stringify(u.classes || []) !== JSON.stringify(normalized)) { u.classes = normalized; changed = true; }
+          }
+        });
+        if (changed) localStorage.setItem('kp_users', JSON.stringify(users));
+        if (result && Array.isArray(result.users)) result.users = users;
+      } catch(_e) {}
+      return result;
+    };
+    wrappedLoadUsers.__kpClassNormalizerWrapped = true;
+    window.loadUsersFromFirebase = wrappedLoadUsers;
+    try { loadUsersFromFirebase = wrappedLoadUsers; } catch(_e) {}
+  }
+})();
+</script>
+
+<script id="kp-registration-decision-move-cleanup-20260511">
+(function(){
+  if (window.__kpRegistrationDecisionMoveCleanup20260511) return;
+  window.__kpRegistrationDecisionMoveCleanup20260511 = true;
+
+  var FOLDERS = ['pending','accepted','rejected'];
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function base(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); }
+  function safeKey(v){
+    v = txt(v);
+    if (!v) return '';
+    try { return (typeof kpSafeFirebaseKey === 'function') ? kpSafeFirebaseKey(v) : v.replace(/[.#$\[\]\/\s]/g,'_').slice(0,180); }
+    catch(_e){ return v.replace(/[.#$\[\]\/\s]/g,'_').slice(0,180); }
+  }
+  function folderFromStatus(status){
+    var s = txt(status || 'pending').toLowerCase();
+    if (s === 'approved' || s === 'accepted' || s === 'approve' || s === 'accept') return 'accepted';
+    if (s === 'rejected' || s === 'reject') return 'rejected';
+    return 'pending';
+  }
+  function statusFromFolder(folder){ return folder === 'accepted' ? 'approved' : (folder === 'rejected' ? 'rejected' : 'pending'); }
+  function digits(v){ return txt(v).replace(/\D+/g,''); }
+  function simple(v){ return txt(v).toLowerCase().replace(/[\u064B-\u065F\u0670]/g,'').replace(/[^\u0600-\u06FFa-z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
+  function hash(str){ str=txt(str); var h=5381; for(var i=0;i<str.length;i++) h=((h<<5)+h)^str.charCodeAt(i); return (h>>>0).toString(36); }
+  function identity(row){
+    row = row || {};
+    var eid = digits(row.emiratesId || row.idNo || row.identityNo || row.nationalId);
+    if (eid) return 'eid:' + eid;
+    var pass = simple(row.passport || row.passportNo || row.childPassport);
+    if (pass) return 'pass:' + pass;
+    var name = simple(row.name || row.childName || row.studentName || [row.firstName,row.familyName].filter(Boolean).join(' '));
+    var dob = txt(row.dob || row.dateOfBirth || row.birthDate);
+    var phone = digits(row.dadMob || row.momMob || row.dph || row.mph || row.phone || row.fatherPhone || row.motherPhone);
+    var ts = txt(row.timestamp || row.submittedAt || row.createdAt || row.formTimestamp);
+    if (name || dob || phone) return 'child:' + hash([name,dob,phone].join('|'));
+    if (ts) return 'ts:' + hash(ts);
+    return 'key:' + safeKey(row.firebaseKey || row._fbKey || row.requestId || row.id || row.key);
+  }
+  function candidateKeys(row){
+    row = row || {};
+    var raw = [row.firebaseKey,row._fbKey,row.requestId,row.id,row.key,row.timestamp,row.submittedAt,row.createdAt,row.formTimestamp,'req_' + hash(identity(row))];
+    var seen = {};
+    raw.forEach(function(k){ k = safeKey(k); if (k) seen[k] = true; });
+    return Object.keys(seen);
+  }
+  function normalizeRecord(row, folder){
+    var key = safeKey(row.firebaseKey || row._fbKey || row.requestId || row.id || row.timestamp || ('req_' + hash(identity(row))));
+    var now = new Date().toISOString();
+    var copy = Object.assign({}, row, {
+      firebaseKey: key,
+      _fbKey: key,
+      requestId: row.requestId || key,
+      status: statusFromFolder(folder),
+      rowUpdatedAt: now,
+      decisionAt: folder === 'pending' ? '' : (row.decisionAt || now),
+      sourcePath: 'nursery_data/registrationRequests/' + folder
+    });
+    if (folder === 'accepted') copy.approvedAt = copy.approvedAt || now;
+    if (folder === 'rejected') copy.rejectedAt = copy.rejectedAt || now;
+    if (folder === 'pending') { copy.approvedAt = ''; copy.rejectedAt = ''; }
+    return copy;
+  }
+  async function readFolder(folder){
+    var b = base();
+    if (!b) return {};
+    try {
+      var res = await fetch(b + '/registrationRequests/' + folder + '.json?moveClean=' + Date.now(), {cache:'no-store'});
+      if (!res.ok) return {};
+      var data = await res.json();
+      return data && typeof data === 'object' ? data : {};
+    } catch(_e){ return {}; }
+  }
+  function removeLocalPendingDuplicates(row, targetFolder){
+    try {
+      if (!Array.isArray(syncedFormRows)) return;
+      var id = identity(row);
+      var keys = candidateKeys(row);
+      syncedFormRows = syncedFormRows.filter(function(r){
+        if (!r) return false;
+        var same = identity(r) === id || candidateKeys(r).some(function(k){ return keys.indexOf(k) !== -1; });
+        if (!same) return true;
+        return folderFromStatus(r.status) === targetFolder;
+      });
+      var existing = syncedFormRows.find(function(r){ return identity(r) === id; });
+      if (!existing) syncedFormRows.push(row);
+      window.syncedFormRows = syncedFormRows;
+    } catch(_e){}
+  }
+
+  window.kpMoveRegistrationRequestToDecision = async function(row, status){
+    if (!row) return false;
+    var folder = folderFromStatus(status || row.status);
+    var b = base();
+    if (!b) return false;
+    var payload = normalizeRecord(row, folder);
+    Object.assign(row, payload);
+    var updates = {};
+    updates['registrationRequests/' + folder + '/' + payload.firebaseKey] = payload;
+
+    // Delete known candidate keys from all non-target folders.
+    FOLDERS.forEach(function(f){
+      if (f === folder) return;
+      candidateKeys(row).forEach(function(k){ updates['registrationRequests/' + f + '/' + k] = null; });
+    });
+
+    // Also read folders and remove older records that match by child identity, even if the key is different.
+    var id = identity(row);
+    for (var i=0;i<FOLDERS.length;i++) {
+      var f = FOLDERS[i];
+      if (f === folder) continue;
+      var data = await readFolder(f);
+      Object.keys(data || {}).forEach(function(k){
+        var r = data[k];
+        if (r && typeof r === 'object' && identity(r) === id) updates['registrationRequests/' + f + '/' + k] = null;
+      });
+    }
+
+    updates.savedAt = new Date().toISOString();
+    updates.version = 3;
+    updates.activeDataShape = 'record-based';
+    var res = await fetch(b + '.json', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates)});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    removeLocalPendingDuplicates(row, folder);
+    try { if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge(); } catch(_e){}
+    try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e){}
+    return true;
+  };
+
+  var oldArchive = window.archiveFirebaseRegistrationRequest || (typeof archiveFirebaseRegistrationRequest === 'function' ? archiveFirebaseRegistrationRequest : null);
+  window.archiveFirebaseRegistrationRequest = async function(row, status){
+    try { return await window.kpMoveRegistrationRequestToDecision(row, status || row && row.status); }
+    catch(e){ console.error('kpMoveRegistrationRequestToDecision failed:', e); if (oldArchive) return oldArchive.apply(this, arguments); return false; }
+  };
+  try { archiveFirebaseRegistrationRequest = window.archiveFirebaseRegistrationRequest; } catch(_e){}
+
+  var oldSetDecision = window.setFormRowDecision || (typeof setFormRowDecision === 'function' ? setFormRowDecision : null);
+  if (typeof oldSetDecision === 'function') {
+    window.setFormRowDecision = function(row, status, meta){
+      var out = oldSetDecision.apply(this, arguments);
+      if (row && folderFromStatus(status || row.status) !== 'pending') {
+        setTimeout(function(){
+          window.kpMoveRegistrationRequestToDecision(row, status || row.status).catch(function(e){
+            console.error('registration decision cleanup failed:', e);
+            try { if (typeof showSyncBadge === 'function') showSyncBadge('???? ??? ??? ??????? ?? ??????? ???????'); } catch(_e){}
+          });
+        }, 150);
+      }
+      return out;
+    };
+    try { setFormRowDecision = window.setFormRowDecision; } catch(_e){}
+  }
+})();
+</script>
+
+<script id="kp-registration-pending-dedupe-render-20260511">
+(function(){
+  if (window.__kpRegistrationPendingDedupeRender20260511) return;
+  window.__kpRegistrationPendingDedupeRender20260511 = true;
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function digits(v){ return txt(v).replace(/\D+/g,''); }
+  function simple(v){ return txt(v).toLowerCase().replace(/[\u064B-\u065F\u0670]/g,'').replace(/[^\u0600-\u06FFa-z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
+  function hash(str){ str=txt(str); var h=5381; for(var i=0;i<str.length;i++) h=((h<<5)+h)^str.charCodeAt(i); return (h>>>0).toString(36); }
+  function folder(status){ var s=txt(status||'pending').toLowerCase(); if(s==='approved'||s==='accepted'||s==='approve'||s==='accept') return 'accepted'; if(s==='rejected'||s==='reject') return 'rejected'; return 'pending'; }
+  function identity(row){
+    row=row||{}; var eid=digits(row.emiratesId||row.idNo||row.identityNo||row.nationalId); if(eid) return 'eid:'+eid;
+    var pass=simple(row.passport||row.passportNo||row.childPassport); if(pass) return 'pass:'+pass;
+    var name=simple(row.name||row.childName||row.studentName||[row.firstName,row.familyName].filter(Boolean).join(' '));
+    var dob=txt(row.dob||row.dateOfBirth||row.birthDate); var phone=digits(row.dadMob||row.momMob||row.dph||row.mph||row.phone);
+    if(name||dob||phone) return 'child:'+hash([name,dob,phone].join('|'));
+    return 'key:'+txt(row.firebaseKey||row._fbKey||row.requestId||row.id||row.timestamp);
+  }
+  window.kpDedupeRegistrationRowsForDisplay = function(){
+    try {
+      if (!Array.isArray(syncedFormRows)) return;
+      var decided = {};
+      syncedFormRows.forEach(function(r){ if (r && folder(r.status) !== 'pending') decided[identity(r)] = true; });
+      var seen = {};
+      syncedFormRows = syncedFormRows.filter(function(r){
+        if (!r) return false;
+        var id = identity(r);
+        if (folder(r.status) === 'pending' && decided[id]) return false;
+        var key = folder(r.status) + ':' + id;
+        if (seen[key]) return false;
+        seen[key] = true;
+        return true;
+      });
+      window.syncedFormRows = syncedFormRows;
+    } catch(_e){}
+  };
+  var oldRender = window.renderFormRequests || (typeof renderFormRequests === 'function' ? renderFormRequests : null);
+  if (typeof oldRender === 'function' && !oldRender.__kpPendingDedupeWrapped) {
+    var wrapped = function(){ try { window.kpDedupeRegistrationRowsForDisplay(); } catch(_e){} return oldRender.apply(this, arguments); };
+    wrapped.__kpPendingDedupeWrapped = true;
+    window.renderFormRequests = wrapped;
+    try { renderFormRequests = wrapped; } catch(_e){}
+  }
+})();
+</script>
 </body></html>`);
     w.document.close();
     return;
