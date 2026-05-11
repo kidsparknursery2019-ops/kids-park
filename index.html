@@ -8536,7 +8536,7 @@ function buildFullBackupSnapshot() {
   var lsKeys = [
     'kp_users', 'kp_classes', 'kp_nursery_settings',
     'kp_students_data', 'kp_payments_data', 'kp_expenses_data',
-    'kp_renewals_data', 'kp_attlog_data',
+    'kp_renewals_data', 'kp_attlog_data', 'kp_evaluations',
     'kp_deleted_students', 'kp_deleted_payments', 'kp_deleted_expenses',
     'kp_deleted_renewals', 'kp_deleted_classes',
     'kp_tombstones',
@@ -8561,6 +8561,7 @@ function buildFullBackupSnapshot() {
     payments: payments,
     expenses: expenses,
     renewals: renewals,
+    evaluations: (Array.isArray(window.evaluations) ? window.evaluations : []),
     attLog: attLog,
     deletedStudents: (typeof deletedStudents !== 'undefined' ? deletedStudents : []),
     deletedPayments: (typeof deletedPayments !== 'undefined' ? deletedPayments : []),
@@ -8747,7 +8748,7 @@ async function restoreBackup(event) {
         return [];
       }
 
-      ['students','payments','expenses','renewals','deletedStudents','deletedPayments','deletedExpenses','deletedRenewals','deletedClasses','kp_users','kp_form_rows'].forEach(function(k){
+      ['students','payments','expenses','renewals','evaluations','deletedStudents','deletedPayments','deletedExpenses','deletedRenewals','deletedClasses','kp_users','kp_form_rows'].forEach(function(k){
         if (backup[k] != null && !Array.isArray(backup[k])) {
           backup[k] = toArrayMaybe(backup[k]);
         }
@@ -8765,6 +8766,7 @@ async function restoreBackup(event) {
       if (backup.payments) payments = backup.payments;
       if (backup.expenses) expenses = backup.expenses;
       if (backup.renewals) renewals = backup.renewals;
+      if (backup.evaluations) { window.evaluations = backup.evaluations; try { localStorage.setItem('kp_evaluations', JSON.stringify(window.evaluations || [])); } catch(_e){} }
       if (backup.attLog) attLog = backup.attLog;
       if (backup.deletedStudents) { deletedStudents = backup.deletedStudents; _safeSetSlim('kp_deleted_students', deletedStudents); }
       if (backup.deletedPayments) { deletedPayments = backup.deletedPayments; _safeSetSlim('kp_deleted_payments', deletedPayments); }
@@ -11598,6 +11600,7 @@ async function pushToFirebase() {
         CLASSES: (CLASSES && typeof CLASSES === 'object' && !Array.isArray(CLASSES)) ? CLASSES : {},
         nurserySettings: cleanSettings,
         renewals: kpMapFromArray(sanitizeEntityArray(renewals || []), 'id'),
+        evaluations: kpMapFromArray(sanitizeEntityArray(Array.isArray(window.evaluations) ? window.evaluations : []), 'id'),
         kp_users: kpMapFromArray(JSON.parse(localStorage.getItem('kp_users') || '[]'), 'username'),
         deletedStudents: kpMapFromArray(sanitizeEntityArray(typeof deletedStudents !== 'undefined' ? deletedStudents : []), 'id'),
         deletedPayments: kpMapFromArray(sanitizeEntityArray(typeof deletedPayments !== 'undefined' ? deletedPayments : []), 'id'),
@@ -20141,6 +20144,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       payments: clone(typeof payments !== 'undefined' ? payments : []),
       expenses: clone(typeof expenses !== 'undefined' ? expenses : []),
       renewals: clone(typeof renewals !== 'undefined' ? renewals : []),
+      evaluations: clone(Array.isArray(window.evaluations) ? window.evaluations : []),
       attLog: clone(typeof attLog !== 'undefined' ? attLog : {}),
       attendanceLocks: clone(typeof attendanceLocks !== 'undefined' ? attendanceLocks : {}),
       CLASSES: clone(typeof CLASSES !== 'undefined' ? CLASSES : {}),
@@ -20184,7 +20188,9 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       });
       [
         'registrationRequests',
+        'studentChangeRequests',
         'renewalAttachments',
+        'evaluations',
         'restoredKeys',
         'tombstones',
         'deletedStudents',
@@ -20225,7 +20231,9 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   window.__kpPreserveRegistrationRequestsOnRootSaves20260505 = true;
   var CRITICAL_SECTIONS = [
     'registrationRequests',
+    'studentChangeRequests',
     'renewalAttachments',
+    'evaluations',
     'attendanceLocks',
     'adminMigrations',
     'restoredKeys',
@@ -21699,9 +21707,14 @@ window.loadEvaluationsFromFirebase = async function(){
         arr.push(rec);
       });
     }
-    window.evaluations = arr;
+    if (arr.length || !(window.evaluations || []).length) {
+      window.evaluations = arr;
+      persistEvaluationsLocal();
+      return arr;
+    }
+    // If Firebase returns empty while this device has evaluations, keep the local cache instead of making them disappear.
     persistEvaluationsLocal();
-    return arr;
+    return window.evaluations || [];
   } catch(e) {
     console.warn('loadEvaluationsFromFirebase failed:', e);
     return window.evaluations || [];
