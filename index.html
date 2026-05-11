@@ -3275,9 +3275,11 @@ function kpNormalizeTeacherClassList(user){
     raw = raw.concat(kpRawClassValuesForAccess(user && user[field]));
   });
   var out = [];
+  var rawClean = [];
   raw.forEach(function(item){
     var val = String(item == null ? '' : item).trim();
     if (!val || val === 'true' || val === 'false') return;
+    if (rawClean.indexOf(val) === -1) rawClean.push(val);
     var clean = kpNormalizeClassNameForAccess(val);
     var match = all.indexOf(val) !== -1 ? val : (byClean[clean] || all.find(function(cls){
       var c = kpNormalizeClassNameForAccess(cls);
@@ -3285,12 +3287,32 @@ function kpNormalizeTeacherClassList(user){
     }));
     if (match && out.indexOf(match) === -1) out.push(match);
   });
+  // If CLASSES is not loaded yet, never erase the saved class assignment.
+  if (!all.length && rawClean.length) return rawClean;
+  // If there were saved classes but no exact match yet, keep them until CLASSES finishes loading.
+  if (!out.length && rawClean.length) return rawClean;
   return out;
 }
 function teacherAllowedClasses(){
   if (!isTeacher()) return null; // null means "no restriction"
+  var before = Array.isArray(currentUser.classes) ? currentUser.classes.slice() : [];
+  if (!before.length) {
+    try {
+      var users = JSON.parse(localStorage.getItem('kp_users') || '[]');
+      var uname = String(currentUser.username || '').trim().toLowerCase();
+      var fresh = users.find(function(u){ return String(u && u.username || '').trim().toLowerCase() === uname; });
+      if (fresh) {
+        ['classes','class','assignedClasses','allowedClasses','classNames','cls'].forEach(function(field){
+          var vals = kpRawClassValuesForAccess(fresh[field]);
+          vals.forEach(function(v){ v = String(v == null ? '' : v).trim(); if (v && before.indexOf(v) === -1) before.push(v); });
+        });
+        if (before.length) currentUser.classes = before;
+      }
+    } catch(_e) {}
+  }
   var normalized = kpNormalizeTeacherClassList(currentUser);
-  if (currentUser && JSON.stringify(currentUser.classes || []) !== JSON.stringify(normalized)) {
+  if (!normalized.length && before.length) normalized = before;
+  if (currentUser && normalized.length && JSON.stringify(currentUser.classes || []) !== JSON.stringify(normalized)) {
     currentUser.classes = normalized;
     try { sessionStorage.setItem('kp_session', JSON.stringify(currentUser)); } catch(_e) {}
   }
@@ -24546,20 +24568,38 @@ document.addEventListener('DOMContentLoaded', function(){
     var raw = [];
     ['classes','class','assignedClasses','allowedClasses','classNames','cls'].forEach(function(k){ raw = raw.concat(rawClassValues(user && user[k])); });
     var out = [];
+    var rawClean = [];
     raw.forEach(function(item){
       var val = txt(item);
-      if (!val) return;
+      if (!val || val === 'true' || val === 'false') return;
+      if (rawClean.indexOf(val) === -1) rawClean.push(val);
       var n = normalizeClassToken(val);
       var match = all.indexOf(val) !== -1 ? val : (byClean[n] || all.find(function(cls){ var cn = normalizeClassToken(cls); return cn === n || (n && cn.indexOf(n) !== -1) || (cn && n.indexOf(cn) !== -1); }));
       if (match && out.indexOf(match) === -1) out.push(match);
     });
+    if (!all.length && rawClean.length) return rawClean;
+    if (!out.length && rawClean.length) return rawClean;
     return out;
   }
   function normalizeCurrentAttendanceUser(){
     try {
       if (typeof currentUser !== 'undefined' && currentUser && isTeacherRole(currentUser)) {
+        var before = Array.isArray(currentUser.classes) ? currentUser.classes.slice() : [];
+        if (!before.length) {
+          try {
+            var users = JSON.parse(localStorage.getItem('kp_users') || '[]');
+            var uname = txt(currentUser.username).toLowerCase();
+            var fresh = users.find(function(u){ return txt(u && u.username).toLowerCase() === uname; });
+            if (fresh) {
+              ['classes','class','assignedClasses','allowedClasses','classNames','cls'].forEach(function(field){
+                rawClassValues(fresh[field]).forEach(function(v){ v = txt(v); if (v && before.indexOf(v) === -1) before.push(v); });
+              });
+            }
+          } catch(__e) {}
+        }
+        var next = normalizedClassesForUser(Object.assign({}, currentUser, { classes: before.length ? before : currentUser.classes }));
         currentUser.role = 'teacher';
-        currentUser.classes = normalizedClassesForUser(currentUser);
+        currentUser.classes = next.length ? next : before;
         sessionStorage.setItem('kp_session', JSON.stringify(currentUser));
       }
     } catch(_e) {}
@@ -24572,7 +24612,8 @@ document.addEventListener('DOMContentLoaded', function(){
   try { teacherAllowedClasses = window.teacherAllowedClasses; } catch(_e) {}
   window.teacherCanAccessClass = function(className){
     if (!(typeof currentUser !== 'undefined' && currentUser && isTeacherRole(currentUser))) return true;
-    return window.teacherAllowedClasses().indexOf(className) !== -1;
+    var wanted = normalizeClassToken(className);
+    return window.teacherAllowedClasses().some(function(c){ return c === className || normalizeClassToken(c) === wanted; });
   };
   try { teacherCanAccessClass = window.teacherCanAccessClass; } catch(_e) {}
 
@@ -24582,7 +24623,7 @@ document.addEventListener('DOMContentLoaded', function(){
       var result = await oldLoadUsers.apply(this, arguments);
       try {
         var users = result && Array.isArray(result.users) ? result.users : JSON.parse(localStorage.getItem('kp_users') || '[]');
-        users.forEach(function(u){ if (u && isTeacherRole(u)) { u.role = 'teacher'; u.classes = normalizedClassesForUser(u); } });
+        users.forEach(function(u){ if (u && isTeacherRole(u)) { var before = Array.isArray(u.classes) ? u.classes.slice() : []; var next = normalizedClassesForUser(u); u.role = 'teacher'; u.classes = next.length ? next : before; } });
         localStorage.setItem('kp_users', JSON.stringify(users));
         if (result && Array.isArray(result.users)) result.users = users;
         normalizeCurrentAttendanceUser();
