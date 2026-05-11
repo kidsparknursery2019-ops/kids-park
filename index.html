@@ -5877,6 +5877,187 @@ function printStudentsSelectedReport(){
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet"></head><body>${pages}
     <script>window.onload=()=>{setTimeout(()=>window.print(),300)}<\/script>
 
+
+<script>
+/* KP EVALUATION PERSISTENCE SAFETY 2026-05-11 */
+(function(){
+  if (window.__kpEvaluationPersistenceSafety20260511) return;
+  window.__kpEvaluationPersistenceSafety20260511 = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function fbBase(){
+    try { return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); } catch(_e){ return ''; }
+  }
+  function rootJsonUrl(){ var b = fbBase(); return b ? b + '.json' : ''; }
+  function isRootFirebaseUrl(input){
+    var url = '';
+    try { url = typeof input === 'string' ? input : (input && input.url) || ''; } catch(_e){}
+    var root = rootJsonUrl();
+    return !!(url && root && url.split('?')[0] === root);
+  }
+  function methodOf(init){ return txt((init && init.method) || 'GET').toUpperCase(); }
+  function bodyLooksLikeRootPayload(body){
+    return typeof body === 'string' && /"students"\s*:|"payments"\s*:|"expenses"\s*:|"renewals"\s*:/.test(body);
+  }
+  function arrayFromFirebaseNode(node){
+    if (!node) return [];
+    if (Array.isArray(node)) return node.filter(function(x){ return x && typeof x === 'object'; });
+    if (typeof node === 'object') {
+      return Object.keys(node).map(function(k){
+        var v = node[k];
+        if (!v || typeof v !== 'object') return null;
+        if (!v.firebaseKey) v.firebaseKey = k;
+        if (!v.id) v.id = k;
+        return v;
+      }).filter(Boolean);
+    }
+    return [];
+  }
+  function evalKey(e){ return txt(e && (e.id || e.firebaseKey || e.requestId || [e.studentId,e.quarter,e.formId,e.academicYear].join('_'))); }
+  function evalTime(e){
+    var t = Date.parse((e && (e.updatedAt || e.submittedAt || e.approvedAt || e.createdAt)) || '');
+    return isNaN(t) ? 0 : t;
+  }
+  function mergeEvaluations(localArr, remoteArr){
+    var map = {};
+    (Array.isArray(localArr) ? localArr : []).forEach(function(e){ var k = evalKey(e); if (k) map[k] = e; });
+    (Array.isArray(remoteArr) ? remoteArr : []).forEach(function(e){
+      var k = evalKey(e); if (!k) return;
+      if (!map[k] || evalTime(e) >= evalTime(map[k])) map[k] = e;
+    });
+    return Object.keys(map).map(function(k){ return map[k]; });
+  }
+  function persist(){
+    try { localStorage.setItem('kp_evaluations', JSON.stringify(window.evaluations || [])); } catch(_e){}
+  }
+  async function fetchRemoteRoot(){
+    var root = rootJsonUrl();
+    if (!root) return null;
+    try {
+      var res = await window.fetch(root + '?kpEvalProtect=' + Date.now(), { cache:'no-store' });
+      if (!res.ok) return null;
+      var data = await res.json();
+      return data && typeof data === 'object' ? data : null;
+    } catch(_e){ return null; }
+  }
+
+  // Protect /evaluations during old full-root saves.
+  var priorFetch = window.fetch;
+  if (typeof priorFetch === 'function' && !priorFetch.__kpEvalProtectWrapped) {
+    var wrappedFetch = async function(input, init){
+      try {
+        var method = methodOf(init);
+        if ((method === 'PUT' || method === 'PATCH') && isRootFirebaseUrl(input) && init && bodyLooksLikeRootPayload(init.body)) {
+          var payload = JSON.parse(init.body);
+          if (payload && typeof payload === 'object' && !Object.prototype.hasOwnProperty.call(payload, 'evaluations')) {
+            var current = await fetchRemoteRoot();
+            var source = current && current.evaluations !== undefined ? current.evaluations : (window.evaluations || []);
+            if (source !== undefined) {
+              payload.evaluations = source;
+              payload.evaluationsPreservedAt = new Date().toISOString();
+              init = Object.assign({}, init, { body: JSON.stringify(payload) });
+              try { console.warn('[KP] Preserved evaluations during root Firebase save'); } catch(_e){}
+            }
+          }
+        }
+      } catch(_e){}
+      return priorFetch.apply(this, arguments.length ? [input, init] : arguments);
+    };
+    wrappedFetch.__kpEvalProtectWrapped = true;
+    window.fetch = wrappedFetch;
+  }
+
+  // Make evaluation loading additive and safe: remote records merge in, but an empty remote read cannot erase local records.
+  window.loadEvaluationsFromFirebase = async function(){
+    try {
+      var root = await fetchRemoteRoot();
+      var remote = arrayFromFirebaseNode(root && root.evaluations);
+      var local = Array.isArray(window.evaluations) ? window.evaluations : [];
+      if (!remote.length && local.length) {
+        persist();
+        try { if (typeof window.kpEvalRenderManagerList === 'function') window.kpEvalRenderManagerList(); } catch(_e){}
+        try { if (typeof showSyncBadge === 'function') showSyncBadge('?? ???????? ?????????? ??????? ???? ???? ???? ?????? ????'); } catch(_e){}
+        return local;
+      }
+      var tombs = [];
+      try { if (tombstones && Array.isArray(tombstones.evaluations)) tombs = tombstones.evaluations.map(String); } catch(_e){}
+      var merged = mergeEvaluations(local, remote).filter(function(e){ return tombs.indexOf(String(e.id || e.firebaseKey || '')) === -1; });
+      window.evaluations = merged;
+      persist();
+      try { if (typeof window.kpEvalRenderManagerList === 'function') window.kpEvalRenderManagerList(); } catch(_e){}
+      return merged;
+    } catch(e) {
+      console.warn('safe loadEvaluationsFromFirebase failed:', e);
+      return window.evaluations || [];
+    }
+  };
+
+  // Include evaluations in all backup snapshots that use buildFullBackupSnapshot.
+  var oldBuild = window.buildFullBackupSnapshot || (typeof buildFullBackupSnapshot === 'function' ? buildFullBackupSnapshot : null);
+  if (typeof oldBuild === 'function' && !oldBuild.__kpEvalBackupWrapped) {
+    var wrappedBuild = function(){
+      var backup = oldBuild.apply(this, arguments) || {};
+      backup.evaluations = Array.isArray(window.evaluations) ? window.evaluations.slice() : [];
+      if (backup.__localFallback && typeof backup.__localFallback === 'object') {
+        backup.__localFallback.evaluations = backup.evaluations;
+      }
+      if (backup.localStorageSnapshot && typeof backup.localStorageSnapshot === 'object') {
+        try { backup.localStorageSnapshot.kp_evaluations = JSON.stringify(backup.evaluations); } catch(_e){}
+      }
+      return backup;
+    };
+    wrappedBuild.__kpEvalBackupWrapped = true;
+    window.buildFullBackupSnapshot = wrappedBuild;
+    try { buildFullBackupSnapshot = wrappedBuild; } catch(_e){}
+  }
+
+  // If a restore file contains evaluations, restore them too.
+  window.kpRestoreEvaluationsFromBackup = function(backup){
+    var arr = arrayFromFirebaseNode(backup && backup.evaluations);
+    if (!arr.length && backup && backup.__localFallback) arr = arrayFromFirebaseNode(backup.__localFallback.evaluations);
+    if (!arr.length && backup && backup.localStorageSnapshot && backup.localStorageSnapshot.kp_evaluations) {
+      try { arr = JSON.parse(backup.localStorageSnapshot.kp_evaluations) || []; } catch(_e){}
+    }
+    if (arr.length) { window.evaluations = arr; persist(); return true; }
+    return false;
+  };
+})();
+</script>
+
+<script>
+/* KP EVALUATION RESTORE HOOK 2026-05-11 */
+(function(){
+  if (window.__kpEvaluationRestoreHook20260511) return;
+  window.__kpEvaluationRestoreHook20260511 = true;
+  var oldRestore = window.restoreBackup || (typeof restoreBackup === 'function' ? restoreBackup : null);
+  if (typeof oldRestore !== 'function') return;
+  async function readBackupFile(event){
+    try {
+      var file = event && event.target && event.target.files && event.target.files[0];
+      if (!file || typeof file.text !== 'function') return null;
+      return JSON.parse(await file.text());
+    } catch(_e){ return null; }
+  }
+  var wrappedRestore = function(event){
+    var backupPromise = readBackupFile(event);
+    var result = oldRestore.apply(this, arguments);
+    Promise.resolve(backupPromise).then(function(backup){
+      if (!backup) return;
+      setTimeout(function(){
+        try {
+          if (typeof window.kpRestoreEvaluationsFromBackup === 'function' && window.kpRestoreEvaluationsFromBackup(backup)) {
+            if (typeof window.kpEvalRenderManagerList === 'function') window.kpEvalRenderManagerList();
+            if (typeof showSyncBadge === 'function') showSyncBadge('??? ??????? ????????? ?? ?????? ??????????');
+          }
+        } catch(_e){}
+      }, 1500);
+    });
+    return result;
+  };
+  window.restoreBackup = wrappedRestore;
+  try { restoreBackup = wrappedRestore; } catch(_e){}
+})();
+</script>
 </body></html>`);
     w.document.close();
     return;
@@ -24185,5 +24366,139 @@ document.addEventListener('DOMContentLoaded', function(){
   window.kpNotifyRegistrationDecisionToParent = async function(row, decision){ try{ await sendByAppsScript(row,decision); if(typeof showSyncBadge==='function') showSyncBadge('Parent notification sent'); }catch(e){ try{ row.parentNotificationDecision=decision; row.parentNotificationStatus='failed'; row.parentNotificationMessage=e&&e.message?e.message:String(e); if(typeof saveFormRowRemoteAware==='function') saveFormRowRemoteAware(row); }catch(_e){} if(typeof showSyncBadge==='function') showSyncBadge('Parent notification failed'); } };
 })();
 </script></body>
+
+<script>
+/* KP FINAL CRITICAL DATA GUARD 2026-05-11 */
+(function(){
+  if (window.__kpFinalCriticalDataGuard20260511) return;
+  window.__kpFinalCriticalDataGuard20260511 = true;
+
+  var PROTECTED = [
+    'registrationRequests',
+    'studentChangeRequests',
+    'renewalAttachments',
+    'attendanceLocks',
+    'adminMigrations',
+    'evaluations',
+    'restoredKeys',
+    'tombstones',
+    'deletedStudents',
+    'deletedPayments',
+    'deletedExpenses',
+    'deletedRenewals',
+    'deletedClasses'
+  ];
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function base(){ try { return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); } catch(_e){ return ''; } }
+  function rootUrl(){ var b = base(); return b ? b + '.json' : ''; }
+  function isRoot(input){
+    var u = '';
+    try { u = typeof input === 'string' ? input : (input && input.url) || ''; } catch(_e){}
+    var r = rootUrl();
+    return !!(u && r && u.split('?')[0] === r);
+  }
+  function method(init){ return txt((init && init.method) || 'GET').toUpperCase(); }
+  function rootPayload(body){ return typeof body === 'string' && /"students"\s*:|"payments"\s*:|"expenses"\s*:|"renewals"\s*:/.test(body); }
+  function clone(v){ try { return JSON.parse(JSON.stringify(v)); } catch(_e){ return v; } }
+  function arrayFromNode(node){
+    if (!node) return [];
+    if (Array.isArray(node)) return node.filter(Boolean);
+    if (typeof node === 'object') return Object.keys(node).map(function(k){ var v=node[k]; if (v && typeof v === 'object') { if (!v.firebaseKey) v.firebaseKey=k; if (!v.id) v.id=k; } return v; }).filter(Boolean);
+    return [];
+  }
+  function localProtectedValue(key){
+    if (key === 'evaluations') return Array.isArray(window.evaluations) ? window.evaluations : arrayFromNode(localStorage.getItem('kp_evaluations') ? JSON.parse(localStorage.getItem('kp_evaluations')) : []);
+    if (key === 'studentChangeRequests') return undefined;
+    try { if (key === 'attendanceLocks' && typeof attendanceLocks !== 'undefined') return attendanceLocks; } catch(_e){}
+    try { if (key === 'restoredKeys' && typeof restoredKeys !== 'undefined') return restoredKeys; } catch(_e){}
+    try { if (key === 'tombstones' && typeof tombstones !== 'undefined') return tombstones; } catch(_e){}
+    try { if (key === 'deletedStudents' && typeof deletedStudents !== 'undefined') return deletedStudents; } catch(_e){}
+    try { if (key === 'deletedPayments' && typeof deletedPayments !== 'undefined') return deletedPayments; } catch(_e){}
+    try { if (key === 'deletedExpenses' && typeof deletedExpenses !== 'undefined') return deletedExpenses; } catch(_e){}
+    try { if (key === 'deletedRenewals' && typeof deletedRenewals !== 'undefined') return deletedRenewals; } catch(_e){}
+    try { if (key === 'deletedClasses' && typeof deletedClasses !== 'undefined') return deletedClasses; } catch(_e){}
+    return undefined;
+  }
+  async function fetchRoot(){
+    var r = rootUrl();
+    if (!r) return null;
+    try { var res = await nativeFetch(r + '?criticalGuard=' + Date.now(), {cache:'no-store'}); if (!res.ok) return null; var d = await res.json(); return d && typeof d === 'object' ? d : null; } catch(_e){ return null; }
+  }
+
+  var nativeFetch = window.fetch;
+  if (typeof nativeFetch === 'function' && !nativeFetch.__kpFinalCriticalGuardWrapped) {
+    var wrappedFetch = async function(input, init){
+      try {
+        var m = method(init);
+        if ((m === 'PUT' || m === 'PATCH') && isRoot(input) && init && rootPayload(init.body)) {
+          var payload = JSON.parse(init.body);
+          if (payload && typeof payload === 'object') {
+            var needs = PROTECTED.filter(function(k){ return !Object.prototype.hasOwnProperty.call(payload, k); });
+            if (needs.length) {
+              var remote = await fetchRoot();
+              var preserved = [];
+              needs.forEach(function(k){
+                var v = remote && remote[k] !== undefined ? remote[k] : localProtectedValue(k);
+                if (v !== undefined) { payload[k] = v; preserved.push(k); }
+              });
+              if (preserved.length) {
+                payload.criticalSectionsPreservedAt = new Date().toISOString();
+                payload.criticalSectionsPreserved = payload.criticalSectionsPreserved || {};
+                if (Array.isArray(payload.criticalSectionsPreserved)) {
+                  var old = payload.criticalSectionsPreserved;
+                  payload.criticalSectionsPreserved = {};
+                  old.forEach(function(k){ payload.criticalSectionsPreserved[k] = true; });
+                }
+                preserved.forEach(function(k){ payload.criticalSectionsPreserved[k] = true; });
+                init = Object.assign({}, init, { body: JSON.stringify(payload) });
+                try { console.warn('[KP] Final guard preserved critical sections:', preserved.join(', ')); } catch(_e){}
+              }
+            }
+          }
+        }
+      } catch(_e){}
+      return nativeFetch.apply(this, arguments.length ? [input, init] : arguments);
+    };
+    wrappedFetch.__kpFinalCriticalGuardWrapped = true;
+    window.fetch = wrappedFetch;
+  }
+
+  function enrichBackup(backup){
+    backup = backup || {};
+    var localEvals = Array.isArray(window.evaluations) ? clone(window.evaluations) : [];
+    if (backup.evaluations === undefined && localEvals.length) backup.evaluations = localEvals;
+    if (backup.__localFallback && typeof backup.__localFallback === 'object' && backup.__localFallback.evaluations === undefined) backup.__localFallback.evaluations = localEvals;
+    if (!backup.localStorageSnapshot || typeof backup.localStorageSnapshot !== 'object') backup.localStorageSnapshot = {};
+    try { if (localEvals.length) backup.localStorageSnapshot.kp_evaluations = JSON.stringify(localEvals); } catch(_e){}
+    return backup;
+  }
+
+  var oldBuild = window.buildFullBackupSnapshot || (typeof buildFullBackupSnapshot === 'function' ? buildFullBackupSnapshot : null);
+  if (typeof oldBuild === 'function' && !oldBuild.__kpFinalCriticalBackupWrapped) {
+    var wrappedBuild = function(){ return enrichBackup(oldBuild.apply(this, arguments)); };
+    wrappedBuild.__kpFinalCriticalBackupWrapped = true;
+    window.buildFullBackupSnapshot = wrappedBuild;
+    try { buildFullBackupSnapshot = wrappedBuild; } catch(_e){}
+  }
+
+  // Keep evaluation local cache alive if Firebase temporarily returns empty.
+  var oldLoadEval = window.loadEvaluationsFromFirebase;
+  if (typeof oldLoadEval === 'function' && !oldLoadEval.__kpFinalCriticalEvalLoadWrapped) {
+    var wrappedLoadEval = async function(){
+      var before = Array.isArray(window.evaluations) ? window.evaluations.slice() : [];
+      var result = await oldLoadEval.apply(this, arguments);
+      if ((!Array.isArray(result) || !result.length) && before.length) {
+        window.evaluations = before;
+        try { localStorage.setItem('kp_evaluations', JSON.stringify(before)); } catch(_e){}
+        return before;
+      }
+      return result;
+    };
+    wrappedLoadEval.__kpFinalCriticalEvalLoadWrapped = true;
+    window.loadEvaluationsFromFirebase = wrappedLoadEval;
+  }
+})();
+</script>
 </html>
 
