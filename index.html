@@ -25088,6 +25088,81 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
+
+<script id="kp-system-write-readback-verifier-20260512">
+(function(){
+  if (window.__kpSystemWriteReadbackVerifier20260512) return;
+  window.__kpSystemWriteReadbackVerifier20260512 = true;
+
+  var SECTIONS = {
+    payments: { activeArrayName:'payments', keyField:'id' },
+    expenses: { activeArrayName:'expenses', keyField:'id' },
+    renewals: { activeArrayName:'renewals', keyField:'id' }
+  };
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); }
+  function same(a,b){
+    try { return (typeof normKey === 'function') ? normKey(a) === normKey(b) : txt(a) === txt(b); }
+    catch(_e){ return txt(a) === txt(b); }
+  }
+  function keyFor(record, keyField){
+    try { if (typeof kpRecordKey === 'function') return kpRecordKey(record, keyField || 'id'); } catch(_e) {}
+    try { if (typeof kpSafeFirebaseKey === 'function') return kpSafeFirebaseKey(record && record[keyField || 'id']); } catch(_e) {}
+    return 'k_' + txt(record && record[keyField || 'id']).replace(/[.#$\[\]\/\s]/g, '_');
+  }
+  async function readBack(section, record, keyField){
+    var base = baseUrl();
+    var key = keyFor(record, keyField);
+    if (!base || !section || !key) return false;
+    var res = await Promise.race([
+      fetch(base + '/' + section + '/' + encodeURIComponent(key) + '.json?verify=' + Date.now(), { cache:'no-store' }),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('Firebase verification timeout')); }, 9000); })
+    ]);
+    if (!res.ok) return false;
+    var saved = await res.json();
+    if (!saved || typeof saved !== 'object') return false;
+    var expectedId = record && record[keyField || 'id'];
+    var savedId = saved && saved[keyField || 'id'];
+    return expectedId == null || savedId == null || same(expectedId, savedId);
+  }
+
+  var previousSave = window.saveRecordRemoteAware || (typeof saveRecordRemoteAware === 'function' ? saveRecordRemoteAware : null);
+  if (typeof previousSave !== 'function' || previousSave.__kpSystemReadbackWrapped) return;
+
+  var wrapped = async function(config){
+    config = config || {};
+    var result = await previousSave.apply(this, arguments);
+    var type = config.type || config.activeArrayName;
+    var info = SECTIONS[type];
+    if (result === false || !info || !config.record) return result;
+    try {
+      var ok = await readBack(info.activeArrayName, config.record, config.keyField || info.keyField);
+      if (!ok) {
+        if (typeof window.kpShowFirebaseFailure === 'function') {
+          window.kpShowFirebaseFailure(config.label || type || 'record', new Error('Firebase did not confirm the saved record during verification.'), { alert:true, record:config.record });
+        }
+        return false;
+      }
+      return true;
+    } catch(e) {
+      if (typeof window.kpShowFirebaseFailure === 'function') {
+        window.kpShowFirebaseFailure(config.label || type || 'record', e, { alert:true, record:config.record });
+      }
+      return false;
+    }
+  };
+  wrapped.__kpSystemReadbackWrapped = true;
+  wrapped.__kpOriginal = previousSave;
+  window.saveRecordRemoteAware = wrapped;
+  try { saveRecordRemoteAware = wrapped; } catch(_e) {}
+
+  window.kpWriteVerificationStatus = function(){
+    return { enabled:true, verifiedSections:['students','payments','expenses','renewals'], note:'students use the existing student verifier; this layer verifies payments, expenses and renewals.' };
+  };
+})();
+</script>
+
 </body>
 
 </html>
