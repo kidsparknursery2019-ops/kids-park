@@ -14633,7 +14633,7 @@ async function readOutlookMessage(i){
 
 async function openOutlookMessageFull(i){
   try{ await readOutlookMessage(i); openSelectedEmailFull(); }
-  catch(e){ setEmailStatus('???? ??? ??????? ?????: '+(e.message||e),'err'); }
+  catch(e){ setEmailStatus('تعذر فتح الرسالة كاملة: '+(e.message||e),'err'); }
 }
 function ensureEmailFullReader(){
   let ov=document.getElementById('email-full-reader-overlay');
@@ -14857,7 +14857,7 @@ async function improveEmailWithMistral(isTest) {
         subjectMsg = ' وتمت إضافة عنوان مقترح: "' + suggestedSubject + '"';
       } else if (currentSubject !== suggestedSubject) {
         // إذا الذكاء اقترح عنواناً مختلفاً والمستخدم وضع عنواناً قبله، نسأل
-        const replace = await window.kpConfirmAsync('استبدال عنوان البريد', suggestedSubject, 'اقترحَ الذكاء الاصطناعي عنواناً جديداً:\n\n"' + suggestedSubject + '"\n\nهل تريدين استبدال العنوان الحالي به؟\n\nالحالي: "' + currentSubject + '"', { okText: '???????' });
+      const replace = await window.kpConfirmAsync('استبدال عنوان البريد', suggestedSubject, 'اقترحَ الذكاء الاصطناعي عنواناً جديداً:\n\n"' + suggestedSubject + '"\n\nهل تريدين استبدال العنوان الحالي به؟\n\nالحالي: "' + currentSubject + '"', { okText: 'استبدال' });
         if (replace) {
           subjEl.value = suggestedSubject;
           subjectMsg = ' وتم استبدال العنوان بالعنوان المقترح.';
@@ -24263,7 +24263,7 @@ document.addEventListener('DOMContentLoaded', function(){
   function reasonById(id){ for(var i=0;i<REJECTION_REASONS.length;i++){ if(REJECTION_REASONS[i].id === id) return REJECTION_REASONS[i]; } return null; }
   function reasonLabels(row, lang){ var ids = row && row.rejectionReasonIds || []; var out = ids.map(reasonById).filter(Boolean).map(function(r){ return lang === 'en' ? r.en : r.ar; }); if(out.length) return out; var arr = lang === 'en' ? row && row.rejectionReasonsEn : row && row.rejectionReasonsAr; if(Array.isArray(arr) && arr.length) return arr; var one = lang === 'en' ? row && row.rejectionReasonEnglish : row && row.rejectionReason; return one ? [one] : []; }
   function showModal(row){ return new Promise(function(resolve){ var old=document.getElementById('kp-rejection-reason-ov'); if(old) old.remove(); var html='<div class="ov on" id="kp-rejection-reason-ov" style="z-index:99999"><div class="mo" style="max-width:700px;width:min(700px,94vw)">'+ '<div class="mot">'+esc(LABELS.title)+'</div>'+ '<div style="color:var(--muted);font-weight:800;margin-bottom:12px">'+esc(LABELS.intro)+' Apps Script.</div>'+ '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;margin-bottom:12px">'+ REJECTION_REASONS.map(function(r){ return '<label style="display:flex;gap:8px;align-items:flex-start;border:1.5px solid var(--border);border-radius:12px;padding:10px;background:#fff;cursor:pointer"><input type="checkbox" value="'+r.id+'" style="margin-top:4px"><span><b>'+esc(r.ar)+'</b><br><small dir="ltr" style="color:var(--muted)">'+esc(r.en)+'</small></span></label>'; }).join('')+ '</div>'+ '<label style="display:block;border:1.5px solid var(--border);border-radius:12px;padding:10px;background:#f8fffb;margin-bottom:12px;cursor:pointer"><input type="checkbox" id="kp-rejection-include-form-link"> <b>Include registration form link for correction and resubmission</b><br><small dir="ltr" style="color:var(--muted)">https://kidsparknursery2019-ops.github.io/kidspark-registration/</small></label>'+ '<label style="display:block;font-weight:900;color:var(--g1);margin-bottom:6px">'+esc(LABELS.notes)+'</label>'+ '<textarea id="kp-rejection-note" rows="4" style="width:100%;border:1.5px solid var(--border);border-radius:12px;padding:10px;font:inherit;resize:vertical" placeholder="'+esc(LABELS.placeholder)+'"></textarea>'+ '<div id="kp-rejection-reason-error" style="display:none;color:var(--r1);font-weight:900;margin-top:8px">'+esc(LABELS.reasonErr)+'</div>'+ '<div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn btn-out" id="kp-rejection-cancel" type="button">'+esc(LABELS.cancel)+'</button><button class="btn btn-r" id="kp-rejection-confirm" type="button">'+esc(LABELS.confirm)+'</button></div>'+ '</div></div>'; document.body.insertAdjacentHTML('beforeend', html); var ov=document.getElementById('kp-rejection-reason-ov'); function close(v){ try{ov.remove();}catch(_e){} resolve(v); } document.getElementById('kp-rejection-cancel').onclick=function(){ close(null); }; document.getElementById('kp-rejection-confirm').onclick=function(){ var ids=Array.from(ov.querySelectorAll('input[type="checkbox"]:checked')).map(function(x){ return x.value; }).filter(function(x){ return x !== 'on'; }); var note=clean(document.getElementById('kp-rejection-note').value); var includeLink=!!document.getElementById('kp-rejection-include-form-link').checked; if(!ids.length && !note){ document.getElementById('kp-rejection-reason-error').style.display='block'; return; } var labelsAr=ids.map(reasonById).filter(Boolean).map(function(r){return r.ar;}); var labelsEn=ids.map(reasonById).filter(Boolean).map(function(r){return r.en;}); close({ids:ids, labelsAr:labelsAr, labelsEn:labelsEn, note:note, includeRegistrationFormLink:includeLink}); }; }); }
-  window.rejectFormRow = rejectFormRow = async function(ts){ var row=null; try{ row=(typeof findRegistrationRowByToken==='function'?findRegistrationRowByToken(ts):(syncedFormRows||[]).find(function(x){return x.timestamp===ts;})); }catch(_e){} if(!row) return; var info=await showModal(row); if(!info) return; row.rejectionReasonIds=info.ids; row.rejectionReasonsAr=info.labelsAr; row.rejectionReasonsEn=info.labelsEn; row.rejectionReason=info.labelsAr.join('? '); row.rejectionReasonEnglish=info.labelsEn.join(', '); row.rejectionNotes=info.note; row.includeRegistrationFormLink=!!info.includeRegistrationFormLink; row.registrationFormUrl=info.includeRegistrationFormLink ? REGISTRATION_FORM_URL : ''; setFormRowDecision(row,'rejected',{approvedStudentId:null,approvedAction:'reject',rejectionReasonIds:info.ids,rejectionReasonsAr:info.labelsAr,rejectionReasonsEn:info.labelsEn,rejectionReason:row.rejectionReason,rejectionReasonEnglish:row.rejectionReasonEnglish,rejectionNotes:info.note,includeRegistrationFormLink:!!info.includeRegistrationFormLink,registrationFormUrl:row.registrationFormUrl,undoData:{revertTo:'pending'}}); try{ renderFormRequests(); }catch(_e){} try{ if(typeof showSyncBadge==='function') showSyncBadge(LABELS.title); }catch(_e){} };
+  window.rejectFormRow = rejectFormRow = async function(ts){ var row=null; try{ row=(typeof findRegistrationRowByToken==='function'?findRegistrationRowByToken(ts):(syncedFormRows||[]).find(function(x){return x.timestamp===ts;})); }catch(_e){} if(!row) return; var info=await showModal(row); if(!info) return; row.rejectionReasonIds=info.ids; row.rejectionReasonsAr=info.labelsAr; row.rejectionReasonsEn=info.labelsEn; row.rejectionReason=info.labelsAr.join('، '); row.rejectionReasonEnglish=info.labelsEn.join(', '); row.rejectionNotes=info.note; row.includeRegistrationFormLink=!!info.includeRegistrationFormLink; row.registrationFormUrl=info.includeRegistrationFormLink ? REGISTRATION_FORM_URL : ''; setFormRowDecision(row,'rejected',{approvedStudentId:null,approvedAction:'reject',rejectionReasonIds:info.ids,rejectionReasonsAr:info.labelsAr,rejectionReasonsEn:info.labelsEn,rejectionReason:row.rejectionReason,rejectionReasonEnglish:row.rejectionReasonEnglish,rejectionNotes:info.note,includeRegistrationFormLink:!!info.includeRegistrationFormLink,registrationFormUrl:row.registrationFormUrl,undoData:{revertTo:'pending'}}); try{ renderFormRequests(); }catch(_e){} try{ if(typeof showSyncBadge==='function') showSyncBadge(LABELS.title); }catch(_e){} };
   function buildEmail(row, decision){ var name=childName(row); if(decision==='approved') return {subject:'Registration accepted - Kids Park Nursery', body:LABELS.nursery+'\n\n'+name+'\n\nRegistration accepted.\n\nParent Portal:\n'+PARENT_PORTAL_URL+'\n\nDear Parent,\n\nWe are pleased to inform you that the registration for '+name+' has been accepted.\n\nYou can access the Parent Portal using the link below:\n'+PARENT_PORTAL_URL+'\n\nRegards,\nKids Park Nursery'}; var ar=reasonLabels(row,'ar'), en=reasonLabels(row,'en'), note=clean(row&&row.rejectionNotes), include=!!(row&&row.includeRegistrationFormLink), link=clean(row&&row.registrationFormUrl)||REGISTRATION_FORM_URL; return {subject:'Registration update - Kids Park Nursery', body:LABELS.title+'\n\n'+name+'\n\n'+LABELS.reasonLabel+':\n'+(ar.length?ar.map(function(x){return '- '+x;}).join('\n'):'-')+(note?'\n\n'+LABELS.notes+':\n'+note:'')+(include?'\n\nInclude registration form link for correction and resubmission:\n'+link:'')+'\n\n'+LABELS.nursery+'\n\n------------------------------\n\nDear Parent,\n\nAfter reviewing the registration request for '+name+', we regret to inform you that the request has not been accepted at this time.\n\nReason for rejection:\n'+(en.length?en.map(function(x){return '- '+x;}).join('\n'):'- Not specified')+(note?'\n\nAdditional notes:\n'+note:'')+(include?'\n\nYou can modify and resubmit the registration request using the link below:\n'+link:'')+'\n\nFor any questions, please contact the nursery management.\n\nRegards,\nKids Park Nursery'}; }
   async function postEndpoint(action,data){ var payload = JSON.stringify(Object.assign({action:action},data)); try { var r=await fetch(OTP_EMAIL_ENDPOINT,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:payload}); var t=await r.text(); var j=null; try{j=JSON.parse(t)}catch(_e){j={success:r.ok,message:t}} if(!r.ok||j.success===false||j.ok===false) throw new Error(j.message||('HTTP '+r.status)); return j; } catch (err) { if (String(err && err.message || err).toLowerCase().indexOf('failed to fetch') >= 0 || String(err && err.name || '').toLowerCase().indexOf('typeerror') >= 0) { await fetch(OTP_EMAIL_ENDPOINT,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:payload}); return {success:true, opaque:true}; } throw err; } }
   async function sendByAppsScript(row, decision){ if(!row || (decision!=='approved' && decision!=='rejected')) return; if(clean(row.parentNotificationDecision)===decision && row.parentNotificationStatus==='sent') return; var toList=parentEmails(row); if(!toList.length) throw new Error('Missing parent email'); var email=buildEmail(row,decision); var data={to:toList.join(','),emails:toList,subject:email.subject,body:email.body,message:email.body,studentName:childName(row),decision:decision,includeRegistrationFormLink:!!row.includeRegistrationFormLink,registrationFormUrl:row.registrationFormUrl||'',requestId:row.firebaseKey||row.requestId||row.timestamp||row.id||''}; var actions=['sendRegistrationDecisionNotification','sendParentRegistrationDecision','sendEmail']; var last=''; for(var i=0;i<actions.length;i++){ try{ await postEndpoint(actions[i],data); row.parentNotificationDecision=decision; row.parentNotificationStatus='sent'; row.parentNotificationSentAt=new Date().toISOString(); row.parentNotificationMessage='Apps Script'; if(decision==='approved') row.parentPortalUrl=PARENT_PORTAL_URL; try{ if(typeof saveFormRowRemoteAware==='function') saveFormRowRemoteAware(row); }catch(_e){} return; }catch(e){ last=e&&e.message?e.message:String(e); } } throw new Error(last||'Apps Script email failed'); }
@@ -24526,7 +24526,7 @@ document.addEventListener('DOMContentLoaded', function(){
       var saved = await saveRegistrationDecision(row, 'approved', updates);
       if (!saved) throw new Error('Save returned false');
       await notifyParentOnce(row, 'approved');
-      try { if (typeof showSyncBadge === 'function') showSyncBadge('?? ???? ????? ????? ?? ??????? ???????'); } catch(_e) {}
+      try { if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم اعتماد طلب التسجيل وإضافة الطالب'); } catch(_e) {}
       return true;
     } catch(e) {
       students = students.filter(function(s){ return String(s && s.id) !== String(newStudent.id); });
@@ -24556,7 +24556,7 @@ document.addEventListener('DOMContentLoaded', function(){
       var saved = await saveRegistrationDecision(row, 'approved', updates);
       if (!saved) throw new Error('Save returned false');
       await notifyParentOnce(row, 'approved');
-      try { if (typeof showSyncBadge === 'function') showSyncBadge('?? ???? ????? ????? ????? ?? ??????? ???????'); } catch(_e) {}
+      try { if (typeof showSyncBadge === 'function') showSyncBadge('✅ تم اعتماد طلب التسجيل ودمجه مع الطالب الحالي'); } catch(_e) {}
       return true;
     } catch(e) {
       students[idx] = before;
@@ -25225,7 +25225,7 @@ document.addEventListener('DOMContentLoaded', function(){
       if (isDangerousFullArrayRootWrite(url, init || {})) {
         var err = new Error('Blocked unsafe full-array Firebase root write. Use per-record saves or explicit verified restore.');
         console.error('[KP Safety Shield]', err.message, url);
-        message('?? ??? ??? ???? ???? ?? ???? ????? ??????. ?????? ????? ?????? ?? ????????? ???????.');
+        message('تم منع حفظ جماعي غير آمن في قاعدة البيانات. استخدمي الحفظ الفردي أو الاستعادة المؤكدة.');
         return Promise.reject(err);
       }
       return nativeFetch(input, init);
@@ -25341,7 +25341,7 @@ document.addEventListener('DOMContentLoaded', function(){
     var failureWrapped = function(action, error, options){
       var label = String(action || '').toLowerCase();
       if (label === 'expense date' || label === 'payment date') {
-        try { if (typeof showSyncBadge === 'function') showSyncBadge('???? ??? ????? ????? ???? ??????. ????? ??????? Review dates ??????.'); } catch(_e) {}
+        try { if (typeof showSyncBadge === 'function') showSyncBadge('تعذر حفظ تنظيف تاريخ تلقائي. راجعي زر Review dates يدوياً.'); } catch(_e) {}
         try { console.warn('[KP] background date cleanup save skipped/failed:', error && (error.message || error), options && options.record); } catch(_e) {}
         return 'quiet-background-date-cleanup';
       }
@@ -25358,7 +25358,49 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
+<script id="kp-runtime-resilience-20260512">
+(function(){
+  if (window.__kpRuntimeResilience20260512) return;
+  window.__kpRuntimeResilience20260512 = true;
+
+  function textOf(reason){
+    if (!reason) return '';
+    if (typeof reason === 'string') return reason;
+    return String(reason.message || reason.name || reason.statusText || reason);
+  }
+  function isExpectedAsyncFailure(message){
+    return /failed to fetch|networkerror|load failed|timeout|offline|msal|firebase|quotaexceeded|script error/i.test(message || '');
+  }
+  function notify(message){
+    var now = Date.now();
+    if (window.__kpLastRuntimeNoticeAt && now - window.__kpLastRuntimeNoticeAt < 4000) return;
+    window.__kpLastRuntimeNoticeAt = now;
+    try {
+      if (typeof showSyncBadge === 'function') showSyncBadge(message);
+      else if (typeof kpToast === 'function') kpToast(message, 'warn');
+    } catch(_e) {}
+  }
+
+  window.addEventListener('unhandledrejection', function(event){
+    var message = textOf(event && event.reason);
+    if (!message) return;
+    if (isExpectedAsyncFailure(message)) {
+      try { event.preventDefault(); } catch(_e) {}
+      notify('⚠️ تعذر إكمال عملية اتصال. تم الاحتفاظ بالعمل محلياً عند الإمكان.');
+      try { console.warn('[KP handled async]', message); } catch(_e) {}
+      return;
+    }
+    try { console.error('[KP unhandled async]', event.reason || message); } catch(_e) {}
+  });
+
+  window.addEventListener('error', function(event){
+    var message = textOf(event && (event.error || event.message));
+    if (!message || message === 'Script error.') return;
+    try { console.error('[KP runtime error]', message); } catch(_e) {}
+  });
+})();
+</script>
+
 </body>
 
 </html>
-
