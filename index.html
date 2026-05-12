@@ -18906,7 +18906,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
     window.applyLogin = function(){
       var r=oldApplyLogin.apply(this, arguments);
       setTimeout(function(){ ensureUserPasswordButton(); attachExpenseCategorySmartness(); updateRenewalEmailButton(); if(currentUser && (currentUser.mustChangePassword || currentUser.forcePasswordChange)) window.openChangePasswordModal(true); }, 250);
-      setTimeout(function(){ if (typeof window.kpNormalizeFinancialDates === 'function') window.kpNormalizeFinancialDates({silent:true, persist:true}); }, 2500);
+      setTimeout(function(){ if (typeof window.kpNormalizeFinancialDates === 'function') window.kpNormalizeFinancialDates({silent:true, persist:false}); }, 2500);
       return r;
     };
     window.applyLogin.__kpUxWrapped = true;
@@ -18920,7 +18920,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   }
   var oldLoadFromFirebase = window.loadFromFirebase;
   if (typeof oldLoadFromFirebase === 'function' && !oldLoadFromFirebase.__kpDatesWrapped) {
-    window.loadFromFirebase = async function(){ var r=await oldLoadFromFirebase.apply(this, arguments); setTimeout(function(){ window.kpNormalizeFinancialDates({silent:true, persist:true}); }, 600); return r; };
+    window.loadFromFirebase = async function(){ var r=await oldLoadFromFirebase.apply(this, arguments); setTimeout(function(){ window.kpNormalizeFinancialDates({silent:true, persist:false}); }, 600); return r; };
     window.loadFromFirebase.__kpDatesWrapped = true;
     try { loadFromFirebase = window.loadFromFirebase; } catch(_e){}
   }
@@ -25307,6 +25307,53 @@ document.addEventListener('DOMContentLoaded', function(){
       blockFullArrayRootWrites:SAFETY.blockFullArrayRootWrites,
       protectNewerFirebaseRecords:SAFETY.protectNewerFirebaseRecords
     };
+  };
+})();
+</script>
+
+
+<script id="kp-quiet-background-date-cleanup-20260512">
+(function(){
+  if (window.__kpQuietBackgroundDateCleanup20260512) return;
+  window.__kpQuietBackgroundDateCleanup20260512 = true;
+
+  function isDateCleanupConfig(config){
+    var label = String((config && config.label) || '').toLowerCase();
+    return label === 'expense date' || label === 'payment date';
+  }
+
+  var previousSave = window.saveRecordRemoteAware || (typeof saveRecordRemoteAware === 'function' ? saveRecordRemoteAware : null);
+  if (typeof previousSave === 'function' && !previousSave.__kpQuietDateCleanupWrapped) {
+    var wrapped = async function(config){
+      if (isDateCleanupConfig(config)) {
+        config = Object.assign({}, config || {}, { __backgroundDateCleanup:true, __skipBlockingVerification:true });
+      }
+      return previousSave.apply(this, arguments);
+    };
+    wrapped.__kpQuietDateCleanupWrapped = true;
+    wrapped.__kpOriginal = previousSave;
+    window.saveRecordRemoteAware = wrapped;
+    try { saveRecordRemoteAware = wrapped; } catch(_e) {}
+  }
+
+  var previousFailure = window.kpShowFirebaseFailure;
+  if (typeof previousFailure === 'function' && !previousFailure.__kpQuietDateCleanupWrapped) {
+    var failureWrapped = function(action, error, options){
+      var label = String(action || '').toLowerCase();
+      if (label === 'expense date' || label === 'payment date') {
+        try { if (typeof showSyncBadge === 'function') showSyncBadge('???? ??? ????? ????? ???? ??????. ????? ??????? Review dates ??????.'); } catch(_e) {}
+        try { console.warn('[KP] background date cleanup save skipped/failed:', error && (error.message || error), options && options.record); } catch(_e) {}
+        return 'quiet-background-date-cleanup';
+      }
+      return previousFailure.apply(this, arguments);
+    };
+    failureWrapped.__kpQuietDateCleanupWrapped = true;
+    failureWrapped.__kpOriginal = previousFailure;
+    window.kpShowFirebaseFailure = failureWrapped;
+  }
+
+  window.kpDateCleanupSafetyStatus = function(){
+    return { automaticPersistence:false, backgroundPopups:false, manualReviewButton:'Review dates' };
   };
 })();
 </script>
