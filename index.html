@@ -20965,8 +20965,9 @@ input,select,textarea,button{max-width:100%}
   var previousLoadFromFirebase = window.loadFromFirebase || (typeof loadFromFirebase === 'function' ? loadFromFirebase : null);
   if (typeof previousLoadFromFirebase === 'function') {
     window.loadFromFirebase = async function(){
-      var readable = await cloudLooksReadable();
-      if (readable) clearLocalRuntimeBeforeCloudLoad();
+      // Safety: never clear local/runtime data before a full Firebase load succeeds.
+      // The previous pre-clear could make data disappear for a user if Firebase was slow,
+      // partial, or blocked during login.
       return previousLoadFromFirebase.apply(this, arguments);
     };
     try { loadFromFirebase = window.loadFromFirebase; } catch(_e){}
@@ -25159,6 +25160,153 @@ document.addEventListener('DOMContentLoaded', function(){
 
   window.kpWriteVerificationStatus = function(){
     return { enabled:true, verifiedSections:['students','payments','expenses','renewals'], note:'students use the existing student verifier; this layer verifies payments, expenses and renewals.' };
+  };
+})();
+</script>
+
+
+<script id="kp-sync-safety-shield-20260512">
+(function(){
+  if (window.__kpSyncSafetyShield20260512) return;
+  window.__kpSyncSafetyShield20260512 = true;
+
+  var SAFETY = {
+    blockAutoBulkLinkingOnLogin: true,
+    blockAutomaticMigrationWrites: true,
+    blockFullArrayRootWrites: true,
+    protectNewerFirebaseRecords: true
+  };
+  var rootUrlPattern = /\/nursery_data\.json(?:\?|$)/;
+  var protectedSections = {
+    students:{ path:'students', keyField:'id' },
+    payments:{ path:'payments', keyField:'id' },
+    expenses:{ path:'expenses', keyField:'id' },
+    renewals:{ path:'renewals', keyField:'id' }
+  };
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); }
+  function same(a,b){
+    try { return (typeof normKey === 'function') ? normKey(a) === normKey(b) : txt(a) === txt(b); }
+    catch(_e){ return txt(a) === txt(b); }
+  }
+  function keyFor(record, keyField){
+    try { if (typeof kpRecordKey === 'function') return kpRecordKey(record, keyField || 'id'); } catch(_e) {}
+    try { if (typeof kpSafeFirebaseKey === 'function') return kpSafeFirebaseKey(record && record[keyField || 'id']); } catch(_e) {}
+    return 'k_' + txt(record && record[keyField || 'id']).replace(/[.#$\[\]\/\s]/g, '_');
+  }
+  function stamp(record){
+    record = record || {};
+    var t = Date.parse(record.updatedAt || record.savedAt || record.modifiedAt || record.rowUpdatedAt || record.createdAt || '');
+    return isNaN(t) ? 0 : t;
+  }
+  function message(text){
+    try { if (typeof showSyncBadge === 'function') showSyncBadge(text); } catch(_e) {}
+    try { if (typeof kpToast === 'function') kpToast(text, 'warn'); } catch(_e) {}
+  }
+  function isDangerousFullArrayRootWrite(url, init){
+    if (!SAFETY.blockFullArrayRootWrites || !rootUrlPattern.test(url)) return false;
+    var method = String((init && init.method) || 'GET').toUpperCase();
+    if (method !== 'PUT' && method !== 'PATCH') return false;
+    if (!init || typeof init.body !== 'string') return false;
+    try {
+      var body = JSON.parse(init.body);
+      if (!body || typeof body !== 'object') return false;
+      if (body.__allowFullSnapshotWrite === true) return false;
+      return ['students','payments','expenses','renewals'].some(function(k){ return Array.isArray(body[k]); });
+    } catch(_e) { return false; }
+  }
+
+  var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+  if (nativeFetch && !window.__kpSyncSafetyFetchGuard20260512) {
+    window.__kpSyncSafetyFetchGuard20260512 = true;
+    window.fetch = function(input, init){
+      var url = typeof input === 'string' ? input : (input && input.url) || '';
+      if (isDangerousFullArrayRootWrite(url, init || {})) {
+        var err = new Error('Blocked unsafe full-array Firebase root write. Use per-record saves or explicit verified restore.');
+        console.error('[KP Safety Shield]', err.message, url);
+        message('?? ??? ??? ???? ???? ?? ???? ????? ??????. ?????? ????? ?????? ?? ????????? ???????.');
+        return Promise.reject(err);
+      }
+      return nativeFetch(input, init);
+    };
+  }
+
+  var oldBulk = window.runOneTimeBulkMatchApproval || (typeof runOneTimeBulkMatchApproval === 'function' ? runOneTimeBulkMatchApproval : null);
+  if (typeof oldBulk === 'function') {
+    window.runOneTimeBulkMatchApproval = function(){
+      console.warn('[KP Safety Shield] Automatic payment linkage on login is disabled. Use manual approval.');
+      return 0;
+    };
+    try { runOneTimeBulkMatchApproval = window.runOneTimeBulkMatchApproval; } catch(_e) {}
+  }
+
+  var oldRepair = window.kpRepairFirebaseSystemShape;
+  if (typeof oldRepair === 'function' && !oldRepair.__kpSafetyWrapped) {
+    var wrappedRepair = function(options){
+      options = options || {};
+      if (SAFETY.blockAutomaticMigrationWrites && options.manual !== true && options.allowSafetyRepair !== true) {
+        console.warn('[KP Safety Shield] Automatic Firebase shape repair skipped.');
+        return Promise.resolve({ ok:true, skipped:true, reason:'safety-shield-auto-repair-blocked' });
+      }
+      return oldRepair.apply(this, arguments);
+    };
+    wrappedRepair.__kpSafetyWrapped = true;
+    wrappedRepair.__kpOriginal = oldRepair;
+    window.kpRepairFirebaseSystemShape = wrappedRepair;
+  }
+
+  async function readRemoteRecord(type, record, keyField){
+    var cfg = protectedSections[type];
+    var base = baseUrl();
+    if (!cfg || !base || !record) return null;
+    var key = keyFor(record, keyField || cfg.keyField);
+    if (!key) return null;
+    try {
+      var res = await Promise.race([
+        fetch(base + '/' + cfg.path + '/' + encodeURIComponent(key) + '.json?safety=' + Date.now(), { cache:'no-store' }),
+        new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('remote read timeout')); }, 9000); })
+      ]);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch(_e) { return null; }
+  }
+
+  var previousSave = window.saveRecordRemoteAware || (typeof saveRecordRemoteAware === 'function' ? saveRecordRemoteAware : null);
+  if (typeof previousSave === 'function' && !previousSave.__kpSafetyConflictWrapped) {
+    var safeSave = async function(config){
+      config = config || {};
+      var type = config.type || config.activeArrayName;
+      var cfg = protectedSections[type];
+      if (SAFETY.protectNewerFirebaseRecords && cfg && config.record) {
+        var remote = await readRemoteRecord(type, config.record, config.keyField || cfg.keyField);
+        var remoteStamp = stamp(remote);
+        var localStamp = stamp(config.record);
+        var remoteId = remote && remote[cfg.keyField];
+        var localId = config.record && config.record[cfg.keyField];
+        if (remote && same(remoteId, localId) && remoteStamp && localStamp && remoteStamp > localStamp + 2000) {
+          var err = new Error('Firebase has a newer version of this record. Refresh before saving to avoid overwriting newer work.');
+          if (typeof window.kpShowFirebaseFailure === 'function') window.kpShowFirebaseFailure(config.label || type || 'record', err, { alert:true, record:config.record });
+          else alert(err.message);
+          return false;
+        }
+      }
+      return previousSave.apply(this, arguments);
+    };
+    safeSave.__kpSafetyConflictWrapped = true;
+    safeSave.__kpOriginal = previousSave;
+    window.saveRecordRemoteAware = safeSave;
+    try { saveRecordRemoteAware = safeSave; } catch(_e) {}
+  }
+
+  window.kpSyncSafetyStatus = function(){
+    return {
+      active:true,
+      blockAutoBulkLinkingOnLogin:SAFETY.blockAutoBulkLinkingOnLogin,
+      blockAutomaticMigrationWrites:SAFETY.blockAutomaticMigrationWrites,
+      blockFullArrayRootWrites:SAFETY.blockFullArrayRootWrites,
+      protectNewerFirebaseRecords:SAFETY.protectNewerFirebaseRecords
+    };
   };
 })();
 </script>
