@@ -25845,6 +25845,120 @@ document.addEventListener('DOMContentLoaded', function(){
 </script>
 
 
+<script id="kp-incremental-registration-sync-20260513">
+(function(){
+  if (window.__kpIncrementalRegistrationSync20260513) return;
+  window.__kpIncrementalRegistrationSync20260513 = true;
+
+  var FOLDERS = ['pending','accepted','rejected'];
+  var LAST_KEY = 'kp_registration_last_incremental_sync_at';
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function base(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); }
+  function safeKey(v){ return txt(v).replace(/[.#$\[\]\/]/g, '_').replace(/\s+/g, '_'); }
+  function statusFromFolder(folder){ return folder === 'accepted' ? 'approved' : (folder === 'rejected' ? 'rejected' : 'pending'); }
+  function rowTime(row){
+    if (typeof formRowUpdatedAtValue === 'function') return formRowUpdatedAtValue(row);
+    return Date.parse((row && (row.rowUpdatedAt || row.decisionAt || row.updatedAt || row.approvedAt || row.rejectedAt || row.submittedAt || row.timestamp)) || '') || 0;
+  }
+  function rowIdentity(row){
+    row = row || {};
+    return safeKey(row.firebaseKey || row._fbKey || row.requestId || row.id || row.timestamp || row.submittedAt || row.createdAt || row.emiratesId || row.name || row.childName);
+  }
+  function normalize(row, key, folder){
+    row = Object.assign({}, row || {});
+    row.firebaseKey = safeKey(row.firebaseKey || row._fbKey || row.requestId || key || row.timestamp || row.submittedAt || row.createdAt || row.name);
+    row._fbKey = row.firebaseKey;
+    row.requestId = row.requestId || row.firebaseKey;
+    row.status = statusFromFolder(folder || row.status || 'pending');
+    row.rowUpdatedAt = row.rowUpdatedAt || row.decisionAt || row.updatedAt || row.approvedAt || row.rejectedAt || row.submittedAt || row.timestamp || new Date().toISOString();
+    row.sourcePath = 'nursery_data/registrationRequests/' + (folder || 'pending');
+    if (typeof normalizeParentRegistrationRow === 'function') {
+      try { row = Object.assign(row, normalizeParentRegistrationRow(row, row.firebaseKey)); } catch(_e) {}
+      row.status = statusFromFolder(folder || row.status || 'pending');
+    }
+    return row;
+  }
+  async function fetchChangedFolder(folder, sinceIso){
+    var url = base() + '/registrationRequests/' + folder + '.json?orderBy=' + encodeURIComponent(JSON.stringify('rowUpdatedAt')) + '&startAt=' + encodeURIComponent(JSON.stringify(sinceIso || '')) + '&ts=' + Date.now();
+    var res = await fetch(url, { cache:'no-store' });
+    if (!res.ok) throw new Error(folder + ' HTTP ' + res.status);
+    var data = await res.json();
+    var rows = [];
+    if (data && typeof data === 'object') {
+      Object.keys(data).forEach(function(key){ rows.push(normalize(data[key], key, folder)); });
+    }
+    return rows;
+  }
+  function mergeRows(existing, incoming){
+    var map = {};
+    (Array.isArray(existing) ? existing : []).forEach(function(row){ if (row) map[rowIdentity(row)] = row; });
+    (Array.isArray(incoming) ? incoming : []).forEach(function(row){
+      if (!row) return;
+      var id = rowIdentity(row);
+      var old = map[id];
+      map[id] = !old || rowTime(row) >= rowTime(old) ? Object.assign({}, old || {}, row) : old;
+    });
+    return Object.keys(map).map(function(k){ return map[k]; });
+  }
+  function saveRows(rows){
+    window.syncedFormRows = rows;
+    try { syncedFormRows = rows; } catch(_e) {}
+    try { if (typeof _saveFormRowsSlim === 'function') _saveFormRowsSlim(rows); else localStorage.setItem('kp_form_rows', JSON.stringify(rows)); } catch(_e) {}
+  }
+  function render(){
+    try { if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge(); } catch(_e) {}
+    try { if (typeof renderFormRequests === 'function') renderFormRequests(); } catch(_e) {}
+  }
+
+  window.kpSyncRegistrationRequestsIncremental = async function(options){
+    options = options || {};
+    var since = localStorage.getItem(LAST_KEY) || localStorage.getItem('kp_last_synced_at') || '';
+    if (!since || options.force === true || options.manual === true) return false;
+    try {
+      var batches = await Promise.all(FOLDERS.map(function(folder){ return fetchChangedFolder(folder, since); }));
+      var changed = [];
+      batches.forEach(function(rows){ changed = changed.concat(rows || []); });
+      if (!changed.length) {
+        localStorage.setItem(LAST_KEY, new Date().toISOString());
+        return true;
+      }
+      var current = Array.isArray(window.syncedFormRows) ? window.syncedFormRows : (Array.isArray(syncedFormRows) ? syncedFormRows : []);
+      var merged = mergeRows(current, changed);
+      if (typeof applyLocalDecisionsToFormRows === 'function') {
+        try { merged = applyLocalDecisionsToFormRows(merged); } catch(_e) {}
+      }
+      saveRows(merged);
+      render();
+      localStorage.setItem(LAST_KEY, new Date().toISOString());
+      if (!options.silent && typeof showSyncBadge === 'function') showSyncBadge('\u062a\u0645 \u062a\u062d\u062f\u064a\u062b \u0637\u0644\u0628\u0627\u062a \u0627\u0644\u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u0645\u062a\u063a\u064a\u0631\u0629 \u0641\u0642\u0637');
+      return true;
+    } catch(e) {
+      console.warn('Incremental registration sync failed; falling back to full registration sync:', e);
+      return false;
+    }
+  };
+
+  var previousSync = window.syncRegistrationRequestsFromFirebase || (typeof syncRegistrationRequestsFromFirebase === 'function' ? syncRegistrationRequestsFromFirebase : null);
+  if (previousSync && !previousSync.__kpIncrementalRegistrationWrapped) {
+    var wrapped = async function(options){
+      options = options || {};
+      var manual = options.force === true || options.manual === true || options.silent !== true;
+      if (!manual && typeof window.kpSyncRegistrationRequestsIncremental === 'function') {
+        var ok = await window.kpSyncRegistrationRequestsIncremental(options);
+        if (ok) return { success:true, incremental:true };
+      }
+      var result = await previousSync.apply(this, arguments);
+      try { localStorage.setItem(LAST_KEY, new Date().toISOString()); } catch(_e) {}
+      return result;
+    };
+    wrapped.__kpIncrementalRegistrationWrapped = true;
+    wrapped.__kpOriginal = previousSync;
+    window.syncRegistrationRequestsFromFirebase = wrapped;
+    try { syncRegistrationRequestsFromFirebase = wrapped; } catch(_e) {}
+  }
+})();
+</script>
 <script id="kp-incremental-firebase-sync-20260513">
 (function(){
   if (window.__kpIncrementalFirebaseSync20260513) return;
