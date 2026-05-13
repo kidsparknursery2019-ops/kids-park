@@ -1981,13 +1981,11 @@ body.kp-evaluator #pg-eval{display:block!important}
     <div class="nav on"  onclick="go('dash')">     <span class="ni">📊</span><span>لوحة التحكم</span></div>
     <div class="nav"     onclick="go('students')"> <span class="ni">👶</span><span>الطلاب</span></div>
     <div class="nav"     onclick="go('att')">      <span class="ni">✅</span><span>الحضور</span></div>
-    <div class="nav"     onclick="go('payments')"> <span class="ni">💰</span><span>المدفوعات</span></div>
-    <div class="nav"     onclick="go('expenses')"> <span class="ni">🧾</span><span>المصاريف</span></div>
+    <div class="nav" id="nav-finance" onclick="go('finreport')"> <span class="ni">💰</span><span>المالية</span></div>
     <div class="nav"     onclick="go('receipts')" style="display:none"> <span class="ni">📄</span><span>سندات القبض</span></div>
     <div class="side-sep"></div>
     <div class="nav" id="nav-forms" onclick="go('forms')">      <span class="ni">📋</span><span>طلبات التسجيل</span><span id="forms-nav-badge" class="nav-badge" style="display:none">0</span></div>
     <div class="nav" id="nav-renewals" onclick="go('renewals')">   <span class="ni">🔔</span><span>التجديدات</span><span id="renewals-nav-badge" class="nav-badge" style="display:none">0</span></div>
-    <div class="nav"     onclick="go('finreport')"> <span class="ni">📈</span><span>التقارير المالية</span></div>
     <div class="nav" id="nav-deleted" onclick="go('otherdeleted')" style="display:none"><span class="ni">👶</span><span>الطلاب المحذوفون</span><span id="legacy-del-students-nav-badge" class="nav-badge" style="display:none">0</span></div>
     <div class="nav" id="nav-other-deleted" onclick="go('otherdeleted')">    <span class="ni">🗂️</span><span>سلة المحذوفات</span><span id="del-students-nav-badge" class="nav-badge" style="display:none">0</span></div>
     <div class="side-sep"></div>
@@ -2391,7 +2389,7 @@ body.kp-evaluator #pg-eval{display:block!important}
         <!-- FINANCIAL REPORT PAGE -->
     <div class="pg" id="pg-finreport">
       <div class="pt">
-        📈 التقارير المالية
+        💰 المالية
         <button class="btn btn-out btn-sm no-print" onclick="printFinancialReport()">🖨 طباعة التقرير</button>
         <button class="btn btn-out btn-sm no-print" onclick="kpExportElementToPdf(document.getElementById('fr-results'), {title:'التقرير المالي'})" title="تصدير PDF">📄 PDF</button>
       </div>
@@ -5590,11 +5588,71 @@ function getStudentIdentity(s){
 }
 
 function getDismissedStudentAlerts(){
-  try { return JSON.parse(localStorage.getItem('kp_dismissed_student_alerts') || '{}') || {}; } catch(e) { return {}; }
+  const out = {};
+  function mergeMap(src){
+    if (!src || typeof src !== 'object' || Array.isArray(src)) return;
+    Object.keys(src).forEach(function(k){ if (src[k]) out[k] = true; });
+  }
+  try { mergeMap(JSON.parse(localStorage.getItem('kp_dismissed_student_alerts') || '{}') || {}); } catch(e) {}
+  try {
+    if (nurserySettings && typeof nurserySettings === 'object') {
+      mergeMap(nurserySettings.kpDismissedStudentAlerts);
+      if (nurserySettings.dismissedStudentAlerts && typeof nurserySettings.dismissedStudentAlerts === 'object') {
+        mergeMap(nurserySettings.dismissedStudentAlerts.studentRegistrationExpiry);
+      }
+    }
+  } catch(e) {}
+  return out;
 }
 
 function setDismissedStudentAlerts(map){
-  localStorage.setItem('kp_dismissed_student_alerts', JSON.stringify(map || {}));
+  map = (map && typeof map === 'object') ? map : {};
+  try { localStorage.setItem('kp_dismissed_student_alerts', JSON.stringify(map)); } catch(e) {}
+  try {
+    if (nurserySettings && typeof nurserySettings === 'object') {
+      nurserySettings.kpDismissedStudentAlerts = Object.assign({}, map);
+      nurserySettings.dismissedStudentAlerts = nurserySettings.dismissedStudentAlerts && typeof nurserySettings.dismissedStudentAlerts === 'object' ? nurserySettings.dismissedStudentAlerts : {};
+      nurserySettings.dismissedStudentAlerts.studentRegistrationExpiry = Object.assign({}, map);
+      const cleanSettings = Object.assign({}, nurserySettings);
+      delete cleanSettings.logoDataUrl;
+      localStorage.setItem('kp_settings', JSON.stringify(cleanSettings));
+    }
+  } catch(e) {}
+}
+
+async function syncDismissedStudentAlertsToFirebase(){
+  // حفظ إخفاء تذكيرات انتهاء التسجيل في Firebase بدون لمس savedAt العام.
+  // السبب: savedAt يشغل المزامنة الكاملة/التزايدية لكل النظام، واستخدامه لتغيير بسيط مثل الإخفاء قد يجعل شريط المزامنة يعلق.
+  const map = getDismissedStudentAlerts();
+  setDismissedStudentAlerts(map);
+  try {
+    if (typeof FB_URL === 'undefined' || !FB_URL) return false;
+    const updatedAt = new Date().toISOString();
+    const payload = {
+      kpDismissedStudentAlerts: map,
+      dismissedStudentAlerts: Object.assign({}, (nurserySettings && nurserySettings.dismissedStudentAlerts) || {}, {
+        studentRegistrationExpiry: map
+      }),
+      kpDismissedStudentAlertsUpdatedAt: updatedAt
+    };
+    // مهلة قصيرة حتى لا يعلق Promise في حال ضعف الاتصال. الإخفاء يبقى محلياً حتى لو فشل الحفظ السحابي.
+    var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = controller ? setTimeout(function(){ try { controller.abort(); } catch(_e) {} }, 8000) : null;
+    const res = await fetch(FB_URL + '/nurserySettings.json', {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload),
+      signal: controller ? controller.signal : undefined
+    });
+    if (timer) clearTimeout(timer);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    // لا نستخدم showSyncBadge هنا حتى لا نغيّر kp_last_synced_at الخاص بمزامنة البيانات الأساسية.
+    return true;
+  } catch(e) {
+    console.warn('Dismissed student alert sync failed:', e && e.message ? e.message : e);
+    // لا تغيّر حالة المزامنة العامة؛ الإخفاء محفوظ محلياً وسيظهر مخفياً على هذا الجهاز.
+    return false;
+  }
 }
 
 function getStudentRegistrationExpiry(s){
@@ -7779,8 +7837,8 @@ function openAddPay(){
 }
 
 function openEditPay(id){
-  const p = payments.find(x=>x.id===id); if(!p) return;
-  editingPayId = id;
+  const p = payments.find(function(x){ return normKey(x && x.id) === normKey(id); }); if(!p) return;
+  editingPayId = p.id;
   document.getElementById('np-who').value   = p.who;
   document.getElementById('np-amt').value   = p.amt;
   const amtWordsEl = document.getElementById('np-amtwords');
@@ -7805,7 +7863,7 @@ function openEditPay(id){
   if (stuidEl) stuidEl.value = p.stuId || '';
   if (searchEl) {
     if (p.stuId) {
-      const s = students.find(function(x){ return x.id === p.stuId; });
+      const s = students.find(function(x){ return normKey(x && x.id) === normKey(p.stuId); });
       if (s) searchEl.value = '#' + s.id + ' - ' + s.name;
       else searchEl.value = '';
     } else searchEl.value = '';
@@ -12299,9 +12357,42 @@ function handleFirebaseStreamEvent(evt) {
   if (!payload) return;
   const path = payload.path || '';
   const data = payload.data;
+
+  // مزامنة مباشرة وخفيفة لإخفاء تذكيرات الدفع بدون تشغيل savedAt العام.
+  // هذا يجعل زر الإخفاء يظهر عند كل المستخدمين عبر EventSource، ولا يعلق مزامنة النظام الأساسية.
+  try {
+    if (path === '/nurserySettings/kpDismissedStudentAlerts' && data && typeof data === 'object') {
+      nurserySettings = nurserySettings && typeof nurserySettings === 'object' ? nurserySettings : {};
+      nurserySettings.kpDismissedStudentAlerts = data;
+      nurserySettings.dismissedStudentAlerts = nurserySettings.dismissedStudentAlerts && typeof nurserySettings.dismissedStudentAlerts === 'object' ? nurserySettings.dismissedStudentAlerts : {};
+      nurserySettings.dismissedStudentAlerts.studentRegistrationExpiry = data;
+      setDismissedStudentAlerts(data);
+      if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
+      return;
+    }
+    if (path === '/nurserySettings/dismissedStudentAlerts/studentRegistrationExpiry' && data && typeof data === 'object') {
+      nurserySettings = nurserySettings && typeof nurserySettings === 'object' ? nurserySettings : {};
+      nurserySettings.kpDismissedStudentAlerts = data;
+      nurserySettings.dismissedStudentAlerts = nurserySettings.dismissedStudentAlerts && typeof nurserySettings.dismissedStudentAlerts === 'object' ? nurserySettings.dismissedStudentAlerts : {};
+      nurserySettings.dismissedStudentAlerts.studentRegistrationExpiry = data;
+      setDismissedStudentAlerts(data);
+      if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
+      return;
+    }
+    if (path === '/nurserySettings' && data && typeof data === 'object' && (data.kpDismissedStudentAlerts || (data.dismissedStudentAlerts && data.dismissedStudentAlerts.studentRegistrationExpiry))) {
+      nurserySettings = nurserySettings && typeof nurserySettings === 'object' ? nurserySettings : {};
+      Object.assign(nurserySettings, data);
+      var alertMap = data.kpDismissedStudentAlerts || (data.dismissedStudentAlerts && data.dismissedStudentAlerts.studentRegistrationExpiry) || {};
+      if (alertMap && typeof alertMap === 'object') setDismissedStudentAlerts(alertMap);
+      if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications();
+      return;
+    }
+  } catch(_e) {}
+
   let incomingSavedAt = '';
   if (path === '/savedAt' && data) incomingSavedAt = data;
   else if ((path === '/' || path === '') && data && data.savedAt) incomingSavedAt = data.savedAt;
+  if (!incomingSavedAt) return;
   if (incomingSavedAt && incomingSavedAt === lastSavedAt) return;
   clearTimeout(firebaseStreamReloadTimer);
   firebaseStreamReloadTimer = setTimeout(async function(){
@@ -12317,7 +12408,10 @@ function handleFirebaseStreamEvent(evt) {
         if (incomingSavedAt) lastSavedAt = incomingSavedAt;
       }
       showSyncBadge(usedIncremental ? '🔄 تم تحديث التغييرات فقط' : '🔄 تحديث مباشر من Firebase');
-    } catch(e) {}
+    } catch(e) {
+      console.warn('Realtime sync event failed:', e && e.message ? e.message : e);
+      if (typeof showSyncBadge === 'function') showSyncBadge('⚠️ تعذر تحديث المزامنة المباشرة');
+    }
   }, 600);
 }
 
@@ -14050,11 +14144,32 @@ function updateNotifications() {
   }).join('');
 }
 
-function dismissStudentAlert(id, alertKey) {
-  const map = getDismissedStudentAlerts();
-  map[alertKey] = true;
-  setDismissedStudentAlerts(map);
-  updateRegExpiryNotifications();
+function dismissStudentAlert(id, alertKey, ev) {
+  // Hide a student/payment registration expiry reminder locally first, then sync safely to Firebase.
+  if (ev) {
+    try { ev.stopPropagation(); ev.preventDefault(); } catch(_e) {}
+  }
+  var key = String(alertKey || '');
+  if (!key) return false;
+
+  var map = {};
+  try { map = getDismissedStudentAlerts(); } catch(_e) { map = {}; }
+  map[key] = true;
+
+  try { setDismissedStudentAlerts(map); } catch(_e) {
+    try { localStorage.setItem('kp_dismissed_student_alerts', JSON.stringify(map)); } catch(__e) {}
+  }
+
+  try { updateRegExpiryNotifications(); } catch(_e) {}
+
+  // Fire-and-forget: never block the UI or the main sync if Firebase is slow/unavailable.
+  try {
+    var syncResult = syncDismissedStudentAlertsToFirebase && syncDismissedStudentAlertsToFirebase();
+    if (syncResult && typeof syncResult.catch === 'function') {
+      syncResult.catch(function(e){ console.warn('Dismiss reminder cloud sync failed:', e && e.message ? e.message : e); });
+    }
+  } catch(e) { console.warn('Dismiss reminder cloud sync failed:', e && e.message ? e.message : e); }
+  return false;
 }
 
 function goToAlert(type, id) {
@@ -14091,27 +14206,116 @@ function toggleNotifPanel() {
   if (willOpen) setTimeout(function(){ kpPositionNotifPanel(panel, btn); }, 0);
 }
 
+function findPaymentForStudentExpiryReminder(student, regExpiry) {
+  if (!student || !Array.isArray(payments)) return null;
+  const sid = String((student && student.id) || '');
+  const targetExpiry = normalizeDate(regExpiry || '');
+  if (!sid || !targetExpiry) return null;
+
+  const candidates = payments.filter(function(p){
+    if (!p) return false;
+    if (String(p.stuId || '') !== sid) return false;
+    return normalizeDate(p.sub_end || '') === targetExpiry;
+  }).sort(function(a,b){
+    const da = normalizeDate((a && a.date) || '');
+    const db = normalizeDate((b && b.date) || '');
+    if (db !== da) return db.localeCompare(da);
+    return (Number((b && b.id) || 0) - Number((a && a.id) || 0));
+  });
+
+  return candidates.length ? candidates[0] : null;
+}
+
+function openReminderReceipt(paymentId) {
+  // Payment reminder should open the linked receipt EDIT screen, not the view-only receipt screen.
+  var payList = Array.isArray(payments) ? payments : [];
+  var p = payList.find(function(x){ return normKey(x && x.id) === normKey(paymentId); });
+  var editId = p ? p.id : paymentId;
+  var opened = false;
+
+  function ensurePaymentsTab(){
+    try {
+      // After grouping financial pages, the real visible page is finreport with an internal payments tab.
+      if (typeof go === 'function') go('finreport');
+    } catch(_e) {
+      try { if (typeof go === 'function') go('payments'); } catch(__e) {}
+    }
+    try { if (typeof window.kpSetFinancialTab === 'function') window.kpSetFinancialTab('payments'); } catch(_e) {}
+    try { if (typeof renderPayments === 'function') renderPayments(); } catch(_e) {}
+  }
+
+  function isEditModalOpen(){
+    var mo = document.getElementById('mo-pay');
+    return !!(mo && mo.classList && mo.classList.contains('on'));
+  }
+
+  function attemptOpen(){
+    if (opened) return;
+    ensurePaymentsTab();
+    try {
+      if (typeof openEditPay === 'function') {
+        openEditPay(editId);
+        if (isEditModalOpen()) { opened = true; return; }
+        // Extra fallback for old records where id type changed between number/string.
+        if (p && normKey(p.id) !== normKey(editId)) {
+          openEditPay(p.id);
+          if (isEditModalOpen()) { opened = true; return; }
+        }
+      }
+      // Last fallback only if the edit function is unavailable.
+      if (typeof openEditPay !== 'function' && typeof openReceiptDetail === 'function') {
+        openReceiptDetail(editId);
+        opened = true;
+      }
+    } catch(e) {
+      console.warn('Unable to open reminder receipt edit screen:', e && e.message ? e.message : e);
+    }
+  }
+
+  attemptOpen();
+  setTimeout(attemptOpen, 250);
+  setTimeout(attemptOpen, 700);
+}
+
 function updateRegExpiryNotifications() {
   const alerts = [];
   const dismissedStudentAlerts = getDismissedStudentAlerts();
+  const studentList = Array.isArray(students) ? students : [];
+  const paymentList = Array.isArray(payments) ? payments : [];
 
-  students.forEach(s => {
+  function htmlEsc(v){
+    try { if (typeof escapeHtml === 'function') return escapeHtml(v); } catch(_e) {}
+    return String(v == null ? '' : v)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;');
+  }
+  function attr(v){ return htmlEsc(v).replace(/`/g,'&#96;'); }
+
+  studentList.forEach(s => {
     const regExpiry = getStudentRegistrationExpiry(s);
     if (!regExpiry) return;
     const days = getRenDays(regExpiry);
     if (days === null || Number.isNaN(days)) return;
     const alertKey = String((s && s.id) || '') + '|' + String(regExpiry || '');
     if (dismissedStudentAlerts[alertKey]) return;
+    const linkedReminderPayment = findPaymentForStudentExpiryReminder(s, regExpiry);
+    const alertType = linkedReminderPayment ? 'payment' : 'student';
+    const alertId = linkedReminderPayment ? linkedReminderPayment.id : s.id;
+    const receiptSuffix = linkedReminderPayment ? ' (سند #' + linkedReminderPayment.id + ')' : '';
+    const alertIcon = linkedReminderPayment ? '💰' : '👶';
     if (days < 0) {
-      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'انتهى تسجيله منذ ' + Math.abs(days) + ' يوم', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:regExpiry });
+      alerts.push({ type:alertType, id:alertId, icon:alertIcon, title:s.name, sub:'انتهى تسجيله منذ ' + Math.abs(days) + ' يوم' + receiptSuffix, days, urgent:true, alertKey:alertKey, sub_end:regExpiry, studentId:s.id, paymentId:linkedReminderPayment ? linkedReminderPayment.id : '' });
     } else if (days <= 7) {
-      alerts.push({ type:'student', id:s.id, icon:'👶', title:s.name, sub:'ينتهي تسجيله خلال ' + days + ' يوم', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:regExpiry });
+      alerts.push({ type:alertType, id:alertId, icon:alertIcon, title:s.name, sub:'ينتهي تسجيله خلال ' + days + ' يوم' + receiptSuffix, days, urgent:true, alertKey:alertKey, sub_end:regExpiry, studentId:s.id, paymentId:linkedReminderPayment ? linkedReminderPayment.id : '' });
     }
   });
 
   // تنبيهات من تواريخ انتهاء التسجيل في المدفوعات (للدفعات غير المربوطة بطالب أو المربوطة)
   const seenPayAlertKeys = new Set();
-  (typeof payments !== 'undefined' ? payments : []).forEach(function(p) {
+  paymentList.forEach(function(p) {
     if (!p || !p.sub_end) return;
     const days = getRenDays(p.sub_end);
     if (days === null || Number.isNaN(days)) return;
@@ -14119,8 +14323,8 @@ function updateRegExpiryNotifications() {
 
     // إذا الدفعة مربوطة بطالب، الطالب سيظهر بالفعل من قسم الطلاب — تجنب التكرار
     if (p.stuId) {
-      const s = students.find(function(x){ return x.id === p.stuId; });
-      if (s && getStudentRegistrationExpiry(s) === p.sub_end) return;
+      const s = studentList.find(function(x){ return normKey(x && x.id) === normKey(p.stuId); });
+      if (s && normalizeDate(getStudentRegistrationExpiry(s)) === normalizeDate(p.sub_end)) return;
     }
 
     const alertKey = 'pay|' + String(p.id) + '|' + String(p.sub_end);
@@ -14130,9 +14334,9 @@ function updateRegExpiryNotifications() {
 
     const label = p.who ? p.who : ('سند #' + p.id);
     if (days < 0) {
-      alerts.push({ type:'payment', id:p.id, icon:'💰', title:label, sub:'انتهى تسجيله منذ ' + Math.abs(days) + ' يوم (سند #' + p.id + ')', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:p.sub_end });
+      alerts.push({ type:'payment', id:p.id, icon:'💰', title:label, sub:'انتهى تسجيله منذ ' + Math.abs(days) + ' يوم (سند #' + p.id + ')', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:p.sub_end, paymentId:p.id, studentId:p.stuId || '' });
     } else {
-      alerts.push({ type:'payment', id:p.id, icon:'💰', title:label, sub:'ينتهي تسجيله خلال ' + days + ' يوم (سند #' + p.id + ')', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:p.sub_end });
+      alerts.push({ type:'payment', id:p.id, icon:'💰', title:label, sub:'ينتهي تسجيله خلال ' + days + ' يوم (سند #' + p.id + ')', days, urgent:true, dismissible:true, alertKey:alertKey, sub_end:p.sub_end, paymentId:p.id, studentId:p.stuId || '' });
     }
   });
 
@@ -14161,31 +14365,89 @@ function updateRegExpiryNotifications() {
   body.innerHTML = alerts.map(a => {
     const color = a.days < 0 ? '#e74c3c' : '#e67e22';
     const daysText = a.days < 0 ? 'منتهية' : a.days + ' يوم';
-    const dismissBtn = a.dismissible
-      ? '<button class="btn btn-out btn-sm" style="padding:2px 8px;font-size:11px" onclick="dismissStudentAlert(' + a.id + ',\'' + String(a.alertKey || '').replace(/'/g, "&#39;") + '\');event.stopPropagation();">إخفاء</button>'
-      : '';
-    return '<div class="notif-item" onclick="goToRegAlert(\'' + a.type + '\',' + a.id + ')">' +
-      '<div class="notif-item-icon">' + a.icon + '</div>' +
+    const alertId = a.type === 'payment' ? (a.paymentId || a.id) : a.id;
+    return '<div class="notif-item kp-reg-alert-item" role="button" tabindex="0"' +
+      ' data-alert-type="' + attr(a.type) + '"' +
+      ' data-alert-id="' + attr(alertId) + '"' +
+      ' data-payment-id="' + attr(a.paymentId || '') + '"' +
+      ' data-student-id="' + attr(a.studentId || '') + '"' +
+      ' data-alert-key="' + attr(a.alertKey || '') + '">' +
+      '<div class="notif-item-icon">' + htmlEsc(a.icon) + '</div>' +
       '<div style="flex:1;min-width:0">' +
-        '<div class="notif-item-title">' + a.title + '</div>' +
-        '<div class="notif-item-sub">' + a.sub + '</div>' +
+        '<div class="notif-item-title">' + htmlEsc(a.title) + '</div>' +
+        '<div class="notif-item-sub">' + htmlEsc(a.sub) + '</div>' +
       '</div>' +
-      dismissBtn +
-      '<div style="font-size:12px;font-weight:700;color:' + color + ';flex-shrink:0">' + daysText + '</div>' +
+      '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">' +
+        '<div style="font-size:12px;font-weight:700;color:' + color + ';flex-shrink:0">' + daysText + '</div>' +
+        '<button type="button" class="btn btn-out btn-sm kp-reg-alert-hide" style="box-shadow:none;padding:5px 10px;font-size:11px">إخفاء</button>' +
+      '</div>' +
     '</div>';
   }).join('');
 }
 
-function goToRegAlert(type, id) {
-  toggleRegNotifPanel();
-  if (type === 'payment') {
-    go('payments');
-    setTimeout(function(){ openEditPay(id); }, 300);
+function goToRegAlert(type, id, paymentId, studentId) {
+  var panel = document.getElementById('reg-notif-panel');
+  if (panel) panel.classList.remove('open');
+
+  if (String(type) === 'payment') {
+    openReminderReceipt(paymentId || id);
   } else {
     go('students');
-    setTimeout(function(){ editStudent(id); }, 300);
+    setTimeout(function(){ editStudent(studentId || id); }, 300);
   }
 }
+
+(function installRegExpiryNotificationDelegation(){
+  if (window.__kpRegExpiryNotificationDelegationV3) return;
+  window.__kpRegExpiryNotificationDelegationV3 = true;
+
+  function insideRegPanel(el){
+    var panel = document.getElementById('reg-notif-panel');
+    return !!(panel && el && panel.contains(el));
+  }
+
+  document.addEventListener('click', function(ev){
+    var target = ev.target;
+    if (!target || !target.closest) return;
+
+    var hideBtn = target.closest('.kp-reg-alert-hide');
+    if (hideBtn && insideRegPanel(hideBtn)) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var itemForHide = hideBtn.closest('.kp-reg-alert-item');
+      if (itemForHide) {
+        dismissStudentAlert(itemForHide.getAttribute('data-student-id') || itemForHide.getAttribute('data-alert-id') || '', itemForHide.getAttribute('data-alert-key') || '', ev);
+      }
+      return;
+    }
+
+    var item = target.closest('.kp-reg-alert-item');
+    if (!item || !insideRegPanel(item)) return;
+    if (target.closest('button,a,input,select,textarea,label')) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+    goToRegAlert(
+      item.getAttribute('data-alert-type') || '',
+      item.getAttribute('data-alert-id') || '',
+      item.getAttribute('data-payment-id') || '',
+      item.getAttribute('data-student-id') || ''
+    );
+  }, true);
+
+  document.addEventListener('keydown', function(ev){
+    var target = ev.target;
+    if (!target || !target.classList || !target.classList.contains('kp-reg-alert-item') || !insideRegPanel(target)) return;
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    ev.preventDefault();
+    goToRegAlert(
+      target.getAttribute('data-alert-type') || '',
+      target.getAttribute('data-alert-id') || '',
+      target.getAttribute('data-payment-id') || '',
+      target.getAttribute('data-student-id') || ''
+    );
+  });
+})();
 
 function toggleRegNotifPanel() {
   if (currentUser && currentUser.role === 'teacher') return;
@@ -26166,6 +26428,139 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
+<script id="kp-financial-tabs-dashboard-shortcuts-20260513">
+(function(){
+  if (window.__kpFinancialTabsDashboardShortcuts20260513) return;
+  window.__kpFinancialTabsDashboardShortcuts20260513 = true;
+
+  function byId(id){ return document.getElementById(id); }
+
+  function ensureStyle(){
+    if (byId('kp-fin-tabs-style')) return;
+    var style = document.createElement('style');
+    style.id = 'kp-fin-tabs-style';
+    style.textContent = [
+      '.kp-dash-shortcuts{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px 0;padding:10px 12px;background:linear-gradient(135deg,#ffffff,#f0fbf4);border:1.5px solid var(--border);border-radius:14px}',
+      '.kp-dash-shortcuts .kp-dash-shortcuts-title{font-size:12px;font-weight:900;color:var(--muted);margin-left:4px}',
+      '.kp-fin-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px 0;padding:10px;background:#fff;border:1.5px solid var(--border);border-radius:14px}',
+      '.kp-fin-tab{border:1.5px solid var(--border);background:#fff;color:var(--g1);font-weight:900;border-radius:10px;padding:8px 14px;cursor:pointer;font-family:Tajawal,sans-serif}',
+      '.kp-fin-tab.on{background:linear-gradient(135deg,#dff7e8,#f4fff8);border-color:var(--g1);box-shadow:0 6px 16px rgba(46,160,95,.12)}',
+      '.kp-fin-tab-panel{display:none}',
+      '.kp-fin-tab-panel.on{display:block}',
+      '#kp-fin-payments-panel #pg-payments,#kp-fin-expenses-panel #pg-expenses{display:block!important}'
+    ].join('\n');
+    document.head.appendChild(style);
+  }
+
+  function addDashboardShortcuts(){
+    var dash = byId('pg-dash');
+    if (!dash || byId('kp-dash-shortcuts')) return;
+    var after = dash.querySelector('.pt');
+    var box = document.createElement('div');
+    box.id = 'kp-dash-shortcuts';
+    box.className = 'kp-dash-shortcuts no-print';
+    box.innerHTML =
+      '<span class="kp-dash-shortcuts-title">\u0625\u0636\u0627\u0641\u0629 \u0633\u0631\u064a\u0639\u0629:</span>'+
+      '<button type="button" class="btn btn-g btn-sm" onclick="openAddPay()">\uff0b \u062f\u0641\u0639\u0629</button>'+
+      '<button type="button" class="btn btn-r btn-sm" onclick="openAddExp()">\uff0b \u0645\u0635\u0631\u0648\u0641</button>'+
+      '<button type="button" class="btn btn-b btn-sm" onclick="openAddStudent()">\uff0b \u0637\u0627\u0644\u0628</button>';
+    if (after && after.parentNode) after.parentNode.insertBefore(box, after.nextSibling);
+    else dash.insertBefore(box, dash.firstChild);
+  }
+
+  function makePanel(id){
+    var p = document.createElement('div');
+    p.id = id;
+    p.className = 'kp-fin-tab-panel';
+    return p;
+  }
+
+  function setupFinancialTabs(){
+    var fin = byId('pg-finreport');
+    var pay = byId('pg-payments');
+    var exp = byId('pg-expenses');
+    if (!fin || !pay || !exp || byId('kp-fin-tabs')) return;
+
+    var reportPanel = makePanel('kp-fin-report-panel');
+    while (fin.firstChild) reportPanel.appendChild(fin.firstChild);
+
+    var tabs = document.createElement('div');
+    tabs.id = 'kp-fin-tabs';
+    tabs.className = 'kp-fin-tabs no-print';
+    tabs.innerHTML =
+      '<button type="button" class="kp-fin-tab" data-tab="report" onclick="kpSetFinancialTab(\'report\')">\ud83d\udcc8 \u0627\u0644\u062a\u0642\u0631\u064a\u0631 \u0627\u0644\u0645\u0627\u0644\u064a</button>'+
+      '<button type="button" class="kp-fin-tab" data-tab="payments" onclick="kpSetFinancialTab(\'payments\')">\ud83d\udcb0 \u0627\u0644\u0645\u062f\u0641\u0648\u0639\u0627\u062a</button>'+
+      '<button type="button" class="kp-fin-tab" data-tab="expenses" onclick="kpSetFinancialTab(\'expenses\')">\ud83e\uddfe \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641</button>';
+
+    var payPanel = makePanel('kp-fin-payments-panel');
+    var expPanel = makePanel('kp-fin-expenses-panel');
+
+    pay.classList.remove('pg','on');
+    exp.classList.remove('pg','on');
+    payPanel.appendChild(pay);
+    expPanel.appendChild(exp);
+
+    fin.appendChild(tabs);
+    fin.appendChild(reportPanel);
+    fin.appendChild(payPanel);
+    fin.appendChild(expPanel);
+
+    window.kpSetFinancialTab = function(tab){
+      tab = tab || 'report';
+      ['report','payments','expenses'].forEach(function(name){
+        var panel = byId('kp-fin-' + name + '-panel');
+        if (panel) panel.classList.toggle('on', name === tab);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('#kp-fin-tabs .kp-fin-tab'), function(btn){
+        btn.classList.toggle('on', btn.getAttribute('data-tab') === tab);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.nav'), function(nav){ nav.classList.remove('on'); });
+      var financeNav = byId('nav-finance');
+      if (!financeNav) {
+        Array.prototype.some.call(document.querySelectorAll('.nav'), function(nav){
+          if (nav.getAttribute('onclick') === "go('finreport')") { financeNav = nav; return true; }
+          return false;
+        });
+      }
+      if (financeNav) financeNav.classList.add('on');
+      try {
+        if (tab === 'report' && typeof renderFinReport === 'function') renderFinReport();
+        if (tab === 'payments' && typeof renderPayments === 'function') renderPayments();
+        if (tab === 'expenses' && typeof renderExpenses === 'function') renderExpenses();
+      } catch(_e) {}
+    };
+
+    window.kpSetFinancialTab('report');
+  }
+
+  function wrapGo(){
+    if (typeof window.go !== 'function' || window.go.__kpFinancialTabsWrapped) return;
+    var previousGo = window.go;
+    var wrapped = function(page){
+      if (page === 'payments' || page === 'expenses') {
+        previousGo.call(this, 'finreport');
+        if (typeof window.kpSetFinancialTab === 'function') window.kpSetFinancialTab(page);
+        return;
+      }
+      previousGo.apply(this, arguments);
+      if (page === 'finreport' && typeof window.kpSetFinancialTab === 'function') window.kpSetFinancialTab('report');
+    };
+    wrapped.__kpFinancialTabsWrapped = true;
+    window.go = wrapped;
+    try { go = wrapped; } catch(_e) {}
+  }
+
+  function init(){
+    ensureStyle();
+    addDashboardShortcuts();
+    setupFinancialTabs();
+    wrapGo();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
 </body>
 
 </html>
