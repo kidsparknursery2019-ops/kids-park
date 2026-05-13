@@ -25358,6 +25358,110 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
+<script id="kp-registration-class-required-20260513">
+(function(){
+  if (window.__kpRegistrationClassRequired20260513) return;
+  window.__kpRegistrationClassRequired20260513 = true;
+
+  function txt(v){ return String(v == null ? '' : v).trim(); }
+  function esc(v){
+    try { if (typeof escapeHtml === 'function') return escapeHtml(v); } catch(_e) {}
+    return txt(v).replace(/[&<>"']/g, function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; });
+  }
+  function requestName(row){
+    return txt(row && (row.name || row.childName || row.studentName || row.fullName || [row.firstName, row.familyName].filter(Boolean).join(' '))) || 'طلب التسجيل';
+  }
+  function classNames(){
+    try { return Object.keys((typeof CLASSES !== 'undefined' && CLASSES) ? CLASSES : {}); } catch(_e) { return []; }
+  }
+  function classLabel(cls){
+    try { return ((CLASSES[cls] && CLASSES[cls].emoji) ? CLASSES[cls].emoji + ' ' : '') + cls; } catch(_e) { return cls; }
+  }
+
+  window.kpChooseRegistrationClass = function(row){
+    return new Promise(function(resolve){
+      var classes = classNames();
+      if (!classes.length) {
+        alert('لا توجد فصول مضافة في النظام. أضيفي فصلًا من صفحة الإدارة أولًا.');
+        resolve(null);
+        return;
+      }
+
+      var old = document.getElementById('kp-registration-class-ov');
+      if (old) old.remove();
+
+      var current = txt(row && (row.cls || row.className || row.class || row.requestedClass));
+      var hasCurrent = classes.indexOf(current) !== -1;
+      var options = '<option value="">اختاري الفصل</option>' + classes.map(function(cls){
+        return '<option value="' + esc(cls) + '"' + (hasCurrent && cls === current ? ' selected' : '') + '>' + esc(classLabel(cls)) + '</option>';
+      }).join('');
+
+      var ov = document.createElement('div');
+      ov.id = 'kp-registration-class-ov';
+      ov.className = 'ov on';
+      ov.style.zIndex = '100002';
+      ov.innerHTML =
+        '<div class="mo" style="max-width:520px;width:min(520px,94vw)">' +
+          '<div class="mot">تحديد فصل الطالب</div>' +
+          '<div style="font-weight:900;color:var(--g1);font-size:16px;margin-bottom:8px">' + esc(requestName(row)) + '</div>' +
+          '<div style="color:var(--muted);font-weight:800;margin-bottom:12px">اختاري الفصل قبل قبول الطلب وإضافة الطالب إلى السجل.</div>' +
+          '<div class="fl" style="margin-bottom:10px">' +
+            '<label>الفصل *</label>' +
+            '<select id="kp-registration-class-select" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-family:Tajawal,sans-serif;font-size:14px">' + options + '</select>' +
+          '</div>' +
+          '<div id="kp-registration-class-error" style="display:none;color:var(--r1);font-weight:900;font-size:13px;margin-top:6px">يرجى اختيار الفصل.</div>' +
+          '<div class="mof" style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:14px">' +
+            '<button class="btn btn-out" id="kp-registration-class-cancel" type="button">إلغاء</button>' +
+            '<button class="btn btn-g" id="kp-registration-class-confirm" type="button">متابعة القبول</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(ov);
+
+      function close(value){
+        try { ov.remove(); } catch(_e) {}
+        resolve(value);
+      }
+      var sel = document.getElementById('kp-registration-class-select');
+      var err = document.getElementById('kp-registration-class-error');
+      document.getElementById('kp-registration-class-cancel').onclick = function(){ close(null); };
+      document.getElementById('kp-registration-class-confirm').onclick = function(){
+        var chosen = txt(sel && sel.value);
+        if (!chosen) {
+          if (err) err.style.display = 'block';
+          if (sel) sel.focus();
+          return;
+        }
+        close(chosen);
+      };
+      if (sel) {
+        sel.onchange = function(){ if (err) err.style.display = 'none'; };
+        setTimeout(function(){ try { sel.focus(); } catch(_e) {} }, 80);
+      }
+    });
+  };
+
+  var previousApproveNew = window.performApproveNew || (typeof performApproveNew === 'function' ? performApproveNew : null);
+  if (typeof previousApproveNew === 'function' && !previousApproveNew.__kpClassRequiredWrapped) {
+    var wrappedApproveNew = async function(row, options){
+      options = options || {};
+      if (!row) return false;
+      if (!options.__classConfirmed) {
+        var chosenClass = await window.kpChooseRegistrationClass(row);
+        if (!chosenClass) return false;
+        row.cls = chosenClass;
+        row.className = chosenClass;
+        row.requestedClass = chosenClass;
+      }
+      return previousApproveNew.call(this, row, Object.assign({}, options, { __classConfirmed:true }));
+    };
+    wrappedApproveNew.__kpClassRequiredWrapped = true;
+    wrappedApproveNew.__kpOriginal = previousApproveNew;
+    window.performApproveNew = wrappedApproveNew;
+    try { performApproveNew = wrappedApproveNew; } catch(_e) {}
+  }
+})();
+</script>
+
 <script id="kp-runtime-resilience-20260512">
 (function(){
   if (window.__kpRuntimeResilience20260512) return;
