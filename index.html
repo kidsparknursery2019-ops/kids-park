@@ -5440,14 +5440,15 @@ function updateDashIncome() {
 
 function renderDash(){
   sanitizeCoreData();
+  const dashboardStudents = (typeof getActiveStudents === 'function') ? getActiveStudents() : (Array.isArray(students) ? students : []);
   const map={};
-  students.forEach(s=>{map[s.cls]=(map[s.cls]||0)+1;});
+  dashboardStudents.forEach(s=>{map[s.cls]=(map[s.cls]||0)+1;});
   document.getElementById('cls-table').innerHTML=Object.keys(CLASSES).map(c=>`
     <tr><td>${CLASSES[c].emoji} ${c}</td><td><b>${map[c]||0}</b> طالب</td><td>${CLASSES[c].teacher||'—'}</td></tr>`).join('');
-  document.getElementById('s-total').textContent=students.length;
+  document.getElementById('s-total').textContent=dashboardStudents.length;
   const today=new Date().toISOString().slice(0,10);
   let p=0,a=0;
-  students.forEach(s=>{const v=attLog[today+'_'+s.id];if(v==='present')p++;if(v==='absent')a++;});
+  dashboardStudents.forEach(s=>{const v=attLog[today+'_'+s.id];if(v==='present')p++;if(v==='absent')a++;});
   document.getElementById('s-present').textContent=p||'—';
   document.getElementById('s-absent').textContent=a||'—';
     // الإيرادات وآخر المدفوعات
@@ -12323,23 +12324,13 @@ loadFromFirebase = async function() {
 let syncPollCounter = 0;
 
 function startFirebaseRealtimeListener() {
-  // Firebase Realtime Database REST streaming: بديل آمن عن onSnapshot بدون تغيير SDK.
-  // عند أي تغيير من جهاز آخر، نعيد القراءة ونرسم الواجهات بدون ضغط Refresh يدوي.
-  if (firebaseStream || !currentUser || typeof EventSource === 'undefined') return;
-  try {
-    firebaseStream = new EventSource(FB_URL + '.json');
-    firebaseStream.addEventListener('open', function(){ firebaseStreamReady = true; });
-    firebaseStream.addEventListener('put', handleFirebaseStreamEvent);
-    firebaseStream.addEventListener('patch', handleFirebaseStreamEvent);
-    firebaseStream.onerror = function(){
-      firebaseStreamReady = false;
-      try { firebaseStream.close(); } catch(_) {}
-      firebaseStream = null;
-      if (currentUser) setTimeout(startFirebaseRealtimeListener, 10000);
-    };
-  } catch(e) {
-    firebaseStream = null;
-    firebaseStreamReady = false;
+  // Data saver mode: avoid opening a whole-database Firebase REST stream.
+  // The savedAt checker below keeps users updated and loads only changed records when possible.
+  try { if (firebaseStream) firebaseStream.close(); } catch(_) {}
+  firebaseStream = null;
+  firebaseStreamReady = false;
+  if (currentUser && typeof checkForUpdates === 'function') {
+    setTimeout(function(){ try { checkForUpdates(); } catch(_) {} }, 1200);
   }
 }
 
@@ -17895,8 +17886,14 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       }
       if (remoteSavedAt !== lastSeenSavedAt) {
         lastSeenSavedAt = remoteSavedAt;
-        await window.loadFromFirebase();
-        try { if (typeof refreshAllViewsAfterSync === 'function') refreshAllViewsAfterSync(); } catch(_e){}
+        if (typeof window.checkForUpdates === 'function') {
+          await window.checkForUpdates();
+        } else if (typeof checkForUpdates === 'function') {
+          await checkForUpdates();
+        } else {
+          await window.loadFromFirebase();
+          try { if (typeof refreshAllViewsAfterSync === 'function') refreshAllViewsAfterSync(); } catch(_e){}
+        }
         showOk('Updated from Firebase');
       }
     } catch(e) {
@@ -18182,7 +18179,10 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
           if (loadQueued) {
             loadQueued = false;
             setTimeout(function(){
-              try { window.loadFromFirebase(); } catch(_e){}
+              try {
+                if (typeof window.checkForUpdates === 'function') window.checkForUpdates();
+                else if (typeof checkForUpdates === 'function') checkForUpdates();
+              } catch(_e){}
             }, LOAD_REFRESH_GAP_MS);
           }
         });
@@ -18210,13 +18210,13 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
   document.addEventListener('visibilitychange', function(){
     if (!document.hidden) setTimeout(function(){
       try { window.startAutoSync(); } catch(_e){}
-      try { if (typeof window.loadFromFirebase === 'function') window.loadFromFirebase(); } catch(_e){}
+      try { if (typeof window.checkForUpdates === 'function') window.checkForUpdates(); else if (typeof checkForUpdates === 'function') checkForUpdates(); } catch(_e){}
     }, 300);
   });
   window.addEventListener('online', function(){
     setTimeout(function(){
       try { window.startAutoSync(); } catch(_e){}
-      try { if (typeof window.loadFromFirebase === 'function') window.loadFromFirebase(); } catch(_e){}
+      try { if (typeof window.checkForUpdates === 'function') window.checkForUpdates(); else if (typeof checkForUpdates === 'function') checkForUpdates(); } catch(_e){}
     }, 300);
   });
 
