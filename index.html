@@ -26562,6 +26562,62 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
+
+<script id="kp-sidebar-active-startup-fix-20260526">
+(function(){
+  'use strict';
+  if (window.__kpSidebarActiveStartupFix20260526) return;
+  window.__kpSidebarActiveStartupFix20260526 = true;
+
+  function navTarget(nav){
+    var onclick = nav && nav.getAttribute ? (nav.getAttribute('onclick') || '') : '';
+    var match = onclick.match(/go(['"]([^'"]+)['"])/);
+    return match ? match[1] : '';
+  }
+
+  function normalizePage(page){
+    if (page === 'finance') return 'finreport';
+    return page || 'dash';
+  }
+
+  function getVisiblePage(){
+    var page = document.querySelector('.pg.on');
+    if (!page || !page.id) return 'dash';
+    return normalizePage(page.id.replace(/^pg-/, ''));
+  }
+
+  function syncSidebarActive(page){
+    page = normalizePage(page || getVisiblePage());
+    document.querySelectorAll('.side .nav').forEach(function(nav){ nav.classList.remove('on'); });
+    var matched = null;
+    document.querySelectorAll('.side .nav').forEach(function(nav){
+      var target = normalizePage(navTarget(nav));
+      if (!matched && target === page && nav.style.display !== 'none') matched = nav;
+    });
+    if (!matched && page === 'dash') matched = Array.prototype.slice.call(document.querySelectorAll('.side .nav')).find(function(nav){ return navTarget(nav) === 'dash'; }) || null;
+    if (matched) matched.classList.add('on');
+  }
+
+  var previousGo = window.go;
+  if (typeof previousGo === 'function' && !previousGo.__kpSidebarActiveStartupFixed) {
+    var wrapped = function(page){
+      var result = previousGo.apply(this, arguments);
+      setTimeout(function(){ syncSidebarActive(page); }, 0);
+      return result;
+    };
+    wrapped.__kpSidebarActiveStartupFixed = true;
+    window.go = wrapped;
+    try { go = wrapped; } catch(_e) {}
+  }
+
+  function bootFix(){ syncSidebarActive(getVisiblePage()); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootFix);
+  else bootFix();
+  setTimeout(bootFix, 250);
+  setTimeout(bootFix, 1500);
+})();
+</script>
+
 <script id="kp-performance-lite-status-20260519">
 (function(){
   window.kpPerformancePatchStatus = function(){
