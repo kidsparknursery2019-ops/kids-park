@@ -20564,6 +20564,157 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
 })();
 </script>
 
+<script id="kp-daily-backup-confirm-if-changed-20260530">
+(function(){
+  'use strict';
+  if (window.__kpDailyBackupConfirmIfChanged20260530) return;
+  window.__kpDailyBackupConfirmIfChanged20260530 = true;
+
+  var LAST_FIREBASE_BACKUP_KEY = 'kp_last_backup_firebase_saved_at';
+  var LAST_PROMPT_DATE_KEY = 'kp_last_auto_backup_prompt_date';
+  var LAST_SKIP_FIREBASE_KEY = 'kp_last_auto_backup_skipped_saved_at';
+
+  function todayKey(){
+    var now = new Date();
+    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  }
+
+  function isBackupAllowedUser(){
+    try {
+      if (typeof currentUser === 'undefined' || !currentUser) return false;
+      var role = String(currentUser.role || '').toLowerCase();
+      var username = String(currentUser.username || '').toLowerCase();
+      return role === 'admin' || role === 'manager' || username === 'admin';
+    } catch(_e) {
+      return false;
+    }
+  }
+
+  async function fetchFirebaseSavedAt(){
+    try {
+      if (typeof FB_URL === 'undefined' || !FB_URL || navigator.onLine === false) return '';
+      var res = await fetch(FB_URL + '/savedAt.json?ts=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) return '';
+      var savedAt = await res.json();
+      return savedAt ? String(savedAt) : '';
+    } catch(_e) {
+      return '';
+    }
+  }
+
+  function knownFirebaseSavedAt(){
+    try {
+      if (typeof lastSavedAt !== 'undefined' && lastSavedAt) return String(lastSavedAt);
+    } catch(_e) {}
+    try { return localStorage.getItem('kp_last_synced_at') || ''; } catch(_e) { return ''; }
+  }
+
+  async function askDownloadBackup(remoteSavedAt){
+    var message =
+      'توجد تغييرات جديدة في Firebase منذ آخر نسخة احتياطية.\n\n' +
+      'هل تريد تحميل نسخة احتياطية كاملة الآن؟';
+    if (window.kpConfirmAsync) return await window.kpConfirmAsync(null, null, message);
+    return confirm(message);
+  }
+
+  async function runConfirmedBackup(remoteSavedAt){
+    if (typeof window.downloadBackup === 'function') {
+      await Promise.resolve(window.downloadBackup());
+    } else if (typeof performAutoBackup === 'function') {
+      performAutoBackup(false);
+    }
+    try {
+      if (remoteSavedAt) localStorage.setItem(LAST_FIREBASE_BACKUP_KEY, remoteSavedAt);
+      localStorage.setItem(LAST_PROMPT_DATE_KEY, todayKey());
+    } catch(_e) {}
+    if (typeof updateAutoBackupUI === 'function') {
+      try { updateAutoBackupUI(); } catch(_e) {}
+    }
+  }
+
+  var previousDownloadBackup = window.downloadBackup;
+  if (typeof previousDownloadBackup === 'function' && !previousDownloadBackup.__kpBackupSavedAtWrapped) {
+    var wrappedDownloadBackup = async function(){
+      var beforeSavedAt = await fetchFirebaseSavedAt();
+      var result = await Promise.resolve(previousDownloadBackup.apply(this, arguments));
+      try {
+        var afterSavedAt = await fetchFirebaseSavedAt();
+        var savedAt = afterSavedAt || beforeSavedAt || knownFirebaseSavedAt();
+        if (savedAt) localStorage.setItem(LAST_FIREBASE_BACKUP_KEY, savedAt);
+      } catch(_e) {}
+      return result;
+    };
+    wrappedDownloadBackup.__kpComplete = previousDownloadBackup.__kpComplete;
+    wrappedDownloadBackup.__kpBackupSavedAtWrapped = true;
+    window.downloadBackup = wrappedDownloadBackup;
+    try { downloadBackup = wrappedDownloadBackup; } catch(_e) {}
+  }
+
+  window.checkAndRunDailyBackup = async function(){
+    if (window.__kpDailyBackupCheckedThisSession) return;
+    window.__kpDailyBackupCheckedThisSession = true;
+
+    if (!isBackupAllowedUser()) return;
+    if (localStorage.getItem('kp_auto_backup_enabled') === 'false') return;
+
+    var today = todayKey();
+    var remoteSavedAt = await fetchFirebaseSavedAt();
+    if (!remoteSavedAt) remoteSavedAt = knownFirebaseSavedAt();
+    if (!remoteSavedAt) return;
+
+    var lastBackedUp = localStorage.getItem(LAST_FIREBASE_BACKUP_KEY) || '';
+    var lastBackupDate = localStorage.getItem('kp_last_auto_backup_v3') || '';
+    var lastManualDate = localStorage.getItem('kp_last_manual_backup') || '';
+
+    if ((lastBackupDate === today || lastManualDate === today) && !lastBackedUp) {
+      localStorage.setItem(LAST_FIREBASE_BACKUP_KEY, remoteSavedAt);
+      return;
+    }
+
+    if (lastBackedUp && remoteSavedAt === lastBackedUp) return;
+
+    var skippedSavedAt = localStorage.getItem(LAST_SKIP_FIREBASE_KEY) || '';
+    var promptedToday = localStorage.getItem(LAST_PROMPT_DATE_KEY) === today;
+    if (promptedToday && skippedSavedAt === remoteSavedAt) return;
+
+    setTimeout(async function(){
+      try {
+        var ok = await askDownloadBackup(remoteSavedAt);
+        localStorage.setItem(LAST_PROMPT_DATE_KEY, today);
+        if (ok) {
+          await runConfirmedBackup(remoteSavedAt);
+        } else {
+          localStorage.setItem(LAST_SKIP_FIREBASE_KEY, remoteSavedAt);
+          if (typeof showSyncBadge === 'function') showSyncBadge('تم تخطي النسخة الاحتياطية اليومية');
+        }
+      } catch(e) {
+        console.error('Daily backup confirmation failed:', e);
+      }
+    }, 3000);
+  };
+  try { checkAndRunDailyBackup = window.checkAndRunDailyBackup; } catch(_e) {}
+
+  var previousUpdateAutoBackupUI = window.updateAutoBackupUI || (typeof updateAutoBackupUI === 'function' ? updateAutoBackupUI : null);
+  if (typeof previousUpdateAutoBackupUI === 'function' && !previousUpdateAutoBackupUI.__kpSavedAtInfoWrapped) {
+    var wrappedUpdateAutoBackupUI = function(){
+      var result = previousUpdateAutoBackupUI.apply(this, arguments);
+      try {
+        var el = document.getElementById('auto-backup-status');
+        if (el && !document.getElementById('kp-backup-change-status')) {
+          var savedAt = localStorage.getItem(LAST_FIREBASE_BACKUP_KEY) || '';
+          var label = savedAt ? new Date(savedAt).toLocaleString('ar-AE') : 'لم يتم تسجيل نسخة بعد';
+          el.insertAdjacentHTML('beforeend', '<div id="kp-backup-change-status" style="font-size:12px;color:#666"><b>آخر تغيير محفوظ من Firebase:</b> ' + label + '</div>');
+        }
+      } catch(_e) {}
+      return result;
+    };
+    wrappedUpdateAutoBackupUI.__kpSavedAtInfoWrapped = true;
+    window.updateAutoBackupUI = wrappedUpdateAutoBackupUI;
+    try { updateAutoBackupUI = wrappedUpdateAutoBackupUI; } catch(_e) {}
+  }
+})();
+</script>
+
 <script>
 /* KP PRESERVE CRITICAL SECTIONS ON ROOT SAVES 2026-05-05 */
 (function(){
