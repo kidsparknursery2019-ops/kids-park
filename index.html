@@ -26579,6 +26579,1022 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
+<script id="kp-dashboard-fast-firebase-first-20260530">
+(function(){
+  'use strict';
+  if (window.__kpDashboardFastFirebaseFirst20260530) return;
+  window.__kpDashboardFastFirebaseFirst20260530 = true;
+
+  function sectionToArray(section){
+    if (!section) return [];
+    if (Array.isArray(section)) return section.filter(Boolean);
+    if (typeof kpArrayFromFirebaseSection === 'function') return kpArrayFromFirebaseSection(section);
+    return Object.keys(section).map(function(key){
+      var item = section[key];
+      if (item && typeof item === 'object' && item.firebaseKey == null) item.firebaseKey = key;
+      return item;
+    }).filter(Boolean);
+  }
+
+  async function fetchSection(path){
+    if (typeof FB_URL === 'undefined' || !FB_URL) return null;
+    var res = await fetch(FB_URL + '/' + path + '.json?ts=' + Date.now(), { cache:'no-store' });
+    if (!res.ok) throw new Error(path + ' HTTP ' + res.status);
+    return await res.json();
+  }
+
+  function studentIsActive(student){
+    if (typeof isActiveStudent === 'function') return isActiveStudent(student);
+    if (!student || typeof student !== 'object') return false;
+    var raw = String(student.studentStatus || student.status || student.state || '').trim().toLowerCase();
+    if (student.left === true || student.inactive === true || student.withdrawn === true) return false;
+    return ['left','inactive','withdrawn','ترك','منسحب','غير موجود'].indexOf(raw) === -1;
+  }
+
+  function dateYear(value){
+    if (typeof getDateYear === 'function') return getDateYear(value);
+    var year = parseInt(String(value || '').slice(0, 4), 10);
+    return isNaN(year) ? 0 : year;
+  }
+
+  function money(value){
+    return (+value || 0).toLocaleString();
+  }
+
+  function renderFinanceSummary(paymentsList, expensesList, year){
+    var yearNum = parseInt(year, 10) || new Date().getFullYear();
+    var income = 0, expensesTotal = 0, incomeCount = 0, expenseCount = 0;
+    paymentsList.forEach(function(payment){
+      if (!payment || !payment.date || dateYear(payment.date) !== yearNum) return;
+      income += +payment.amt || 0;
+      incomeCount++;
+    });
+    expensesList.forEach(function(expense){
+      var d = expense && (expense.exp_date || expense.date || '');
+      if (!d || dateYear(d) !== yearNum) return;
+      expensesTotal += +expense.amt || 0;
+      expenseCount++;
+    });
+    var net = income - expensesTotal;
+    var incomeEl = document.getElementById('s-income');
+    var expenseEl = document.getElementById('s-expenses');
+    var netEl = document.getElementById('s-net');
+    var incomeCountEl = document.getElementById('s-income-count');
+    var expenseCountEl = document.getElementById('s-expenses-count');
+    var yearTotalEl = document.getElementById('dash-year-total');
+    if (incomeEl) incomeEl.textContent = money(income) + ' د.إ';
+    if (expenseEl) expenseEl.textContent = money(expensesTotal) + ' د.إ';
+    if (netEl) netEl.textContent = money(net) + ' د.إ';
+    if (incomeCountEl) incomeCountEl.textContent = incomeCount + ' سند';
+    if (expenseCountEl) expenseCountEl.textContent = expenseCount + ' مصروف';
+    if (yearTotalEl) yearTotalEl.textContent = 'سنة ' + yearNum + ' - ' + incomeCount + ' سند - ' + expenseCount + ' مصروف';
+  }
+
+  function renderClasses(activeStudents, classesData){
+    var table = document.getElementById('cls-table');
+    if (!table) return;
+    var classes = classesData && typeof classesData === 'object' ? classesData : (typeof CLASSES !== 'undefined' ? CLASSES : {});
+    var map = {};
+    activeStudents.forEach(function(student){ map[student.cls] = (map[student.cls] || 0) + 1; });
+    table.innerHTML = Object.keys(classes).map(function(className){
+      var cls = classes[className] || {};
+      return '<tr><td>' + (cls.emoji || '') + ' ' + className + '</td><td><b>' + (map[className] || 0) + '</b> طالب</td><td>' + (cls.teacher || '—') + '</td></tr>';
+    }).join('');
+  }
+
+  function renderRecentPayments(paymentsList, year){
+    var recent = document.getElementById('recent-pay');
+    if (!recent) return;
+    var yearNum = parseInt(year, 10) || new Date().getFullYear();
+    var rows = paymentsList
+      .filter(function(payment){ return payment && payment.date && dateYear(payment.date) === yearNum; })
+      .sort(function(a, b){ return String(b.date || '').localeCompare(String(a.date || '')); })
+      .slice(0, 8);
+    recent.innerHTML = rows.map(function(payment){
+      return '<tr><td>' + (payment.id || '') + '</td><td>' + (payment.who || '') + '</td><td><b>' + money(payment.amt) + ' د.إ</b></td><td style="font-size:12px">' + (payment.desc || '') + '</td><td>' + (payment.date || '') + '</td></tr>';
+    }).join('') || '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">لا توجد بيانات في ' + yearNum + '</td></tr>';
+  }
+
+  function renderChartPlaceholder(paymentsList, expensesList, year){
+    var title = document.getElementById('finance-chart-title');
+    var summary = document.getElementById('finance-chart-summary');
+    var chart = document.getElementById('finance-chart');
+    var yearNum = parseInt(year, 10) || new Date().getFullYear();
+    var monthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+    var totals = {};
+    for (var i = 1; i <= 12; i++) totals[String(i).padStart(2, '0')] = { inc:0, exp:0 };
+    paymentsList.forEach(function(payment){
+      if (!payment || !payment.date || dateYear(payment.date) !== yearNum) return;
+      var m = String(payment.date).slice(5, 7);
+      if (totals[m]) totals[m].inc += +payment.amt || 0;
+    });
+    expensesList.forEach(function(expense){
+      var d = expense && (expense.exp_date || expense.date || '');
+      if (!d || dateYear(d) !== yearNum) return;
+      var m = String(d).slice(5, 7);
+      if (totals[m]) totals[m].exp += +expense.amt || 0;
+    });
+    var income = Object.keys(totals).reduce(function(sum, key){ return sum + totals[key].inc; }, 0);
+    var exp = Object.keys(totals).reduce(function(sum, key){ return sum + totals[key].exp; }, 0);
+    if (title) title.textContent = '📊 الإيرادات والمصروفات الشهرية - سنة ' + yearNum;
+    if (summary) {
+      summary.innerHTML =
+        '<span>💰 الإيرادات: <span style="color:#27ae60">' + money(income) + ' د.إ</span></span>' +
+        '<span>🧾 المصروفات: <span style="color:#e67e22">' + money(exp) + ' د.إ</span></span>' +
+        '<span>📈 الصافي: <span style="color:' + (income-exp>=0?'#27ae60':'#e74c3c') + '">' + money(income-exp) + ' د.إ</span></span>';
+    }
+    if (chart) {
+      var max = Math.max.apply(null, Object.keys(totals).map(function(k){ return Math.max(totals[k].inc, totals[k].exp); }).concat([1]));
+      chart.innerHTML = '<div style="display:flex;gap:12px;align-items:flex-end;min-height:180px;overflow-x:auto;padding:12px 8px;direction:ltr">' +
+        Object.keys(totals).map(function(k, idx){
+          var incH = Math.max(4, Math.round((totals[k].inc / max) * 140));
+          var expH = Math.max(4, Math.round((totals[k].exp / max) * 140));
+          return '<div style="min-width:58px;text-align:center;direction:rtl"><div style="height:145px;display:flex;align-items:flex-end;justify-content:center;gap:4px"><span title="إيرادات" style="display:inline-block;width:18px;height:' + incH + 'px;background:#27ae60;border-radius:5px"></span><span title="مصروفات" style="display:inline-block;width:18px;height:' + expH + 'px;background:#e67e22;border-radius:5px"></span></div><div style="font-weight:900;color:#1e6b3f;font-size:12px">' + monthNames[idx] + '</div></div>';
+        }).join('') + '</div>';
+    }
+  }
+
+  window.kpLoadDashboardFromFirebaseFirst = async function(){
+    if (window.__kpDashboardFastFirebaseRunning || navigator.onLine === false) return false;
+    window.__kpDashboardFastFirebaseRunning = true;
+    try {
+      var remoteSavedAt = '';
+      try {
+        var savedAtRes = await fetch(FB_URL + '/savedAt.json?ts=' + Date.now(), { cache:'no-store' });
+        if (savedAtRes.ok) remoteSavedAt = await savedAtRes.json();
+        remoteSavedAt = remoteSavedAt ? String(remoteSavedAt) : '';
+      } catch(_savedAtError) {}
+      var localSavedAt = '';
+      try {
+        localSavedAt = (typeof lastSavedAt !== 'undefined' && lastSavedAt) ? String(lastSavedAt) : (localStorage.getItem('kp_last_synced_at') || '');
+      } catch(_localSavedAtError) {}
+      if (remoteSavedAt && localSavedAt && remoteSavedAt === localSavedAt) {
+        window.__kpDashboardCloudPending = false;
+        try { if (typeof renderDash === 'function') renderDash(); } catch(_renderError) {}
+        return true;
+      }
+
+      var selectedYear = parseInt((document.getElementById('dash-year-filter') || {}).value, 10) || new Date().getFullYear();
+      var results = await Promise.all([
+        fetchSection('students'),
+        fetchSection('payments'),
+        fetchSection('expenses'),
+        fetchSection('attLog'),
+        fetchSection('CLASSES')
+      ]);
+      var cloudStudents = sectionToArray(results[0]);
+      var cloudPayments = sectionToArray(results[1]);
+      var cloudExpenses = sectionToArray(results[2]);
+      var cloudAttLog = results[3] && typeof results[3] === 'object' ? results[3] : {};
+      var cloudClasses = results[4] && typeof results[4] === 'object' ? results[4] : (typeof CLASSES !== 'undefined' ? CLASSES : {});
+      window.__kpDashboardStudentCloudSnapshot = {
+        students: cloudStudents,
+        attLog: cloudAttLog,
+        classes: cloudClasses,
+        savedAt: remoteSavedAt || '',
+        createdAt: Date.now()
+      };
+      window.__kpDashboardStudentSnapshotActive = true;
+      var activeStudents = cloudStudents.filter(studentIsActive);
+      var today = new Date().toISOString().slice(0, 10);
+      var present = 0, absent = 0;
+      activeStudents.forEach(function(student){
+        var value = cloudAttLog[today + '_' + student.id];
+        if (value === 'present') present++;
+        if (value === 'absent') absent++;
+      });
+
+      var totalEl = document.getElementById('s-total');
+      var presentEl = document.getElementById('s-present');
+      var absentEl = document.getElementById('s-absent');
+      if (totalEl) totalEl.textContent = activeStudents.length;
+      if (presentEl) presentEl.textContent = present || '—';
+      if (absentEl) absentEl.textContent = absent || '—';
+      renderClasses(activeStudents, cloudClasses);
+      renderFinanceSummary(cloudPayments, cloudExpenses, selectedYear);
+      renderRecentPayments(cloudPayments, selectedYear);
+      renderChartPlaceholder(cloudPayments, cloudExpenses, selectedYear);
+      window.__kpDashboardCloudPending = false;
+      return true;
+    } catch(e) {
+      console.warn('[KP] dashboard-first Firebase load failed:', e && e.message ? e.message : e);
+      return false;
+    } finally {
+      window.__kpDashboardFastFirebaseRunning = false;
+    }
+  };
+
+  var previousLoadFromFirebase = window.loadFromFirebase || (typeof loadFromFirebase === 'function' ? loadFromFirebase : null);
+  if (previousLoadFromFirebase && !previousLoadFromFirebase.__kpDashboardFastFirebaseFirstWrapped) {
+    var wrappedLoad = async function(){
+      try { setTimeout(function(){ window.kpLoadDashboardFromFirebaseFirst(); }, 0); } catch(_e) {}
+      try {
+        return await previousLoadFromFirebase.apply(this, arguments);
+      } finally {
+        window.__kpDashboardStudentSnapshotActive = false;
+      }
+    };
+    wrappedLoad.__kpDashboardFastFirebaseFirstWrapped = true;
+    window.loadFromFirebase = wrappedLoad;
+    try { loadFromFirebase = wrappedLoad; } catch(_e) {}
+  }
+})();
+</script>
+
+<script id="kp-dashboard-finance-cloud-gate-20260530">
+(function(){
+  'use strict';
+  if (window.__kpDashboardFinanceCloudGate20260530) return;
+  window.__kpDashboardFinanceCloudGate20260530 = true;
+
+  var LOADING = '\u062c\u0627\u0631\u064a \u0627\u0644\u062a\u062d\u0645\u064a\u0644';
+  var financePending = false;
+  var financeRunning = null;
+  var cloudPayments = null;
+  var cloudExpenses = null;
+
+  function setText(id, value){
+    var el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function maskFinance(){
+    window.__kpDashboardFinancePending = true;
+    setText('s-income', LOADING);
+    setText('s-expenses', LOADING);
+    setText('s-net', LOADING);
+    setText('s-income-count', '');
+    setText('s-expenses-count', '');
+    setText('dash-year-total', LOADING);
+    setText('finance-chart-title', LOADING);
+    var summary = document.getElementById('finance-chart-summary');
+    if (summary) summary.innerHTML = '<span style="color:var(--muted);font-weight:900;">' + LOADING + '</span>';
+    var chart = document.getElementById('finance-chart');
+    if (chart) chart.innerHTML = '<div style="text-align:center;padding:36px 10px;color:var(--muted);font-weight:900;">' + LOADING + '</div>';
+    var recent = document.getElementById('recent-pay');
+    if (recent) recent.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--muted);font-weight:900;">' + LOADING + '</td></tr>';
+  }
+
+  function sectionToArray(section){
+    if (!section) return [];
+    if (Array.isArray(section)) return section.filter(Boolean);
+    if (typeof kpArrayFromFirebaseSection === 'function') return kpArrayFromFirebaseSection(section);
+    return Object.keys(section).map(function(key){
+      var item = section[key];
+      if (item && typeof item === 'object' && item.firebaseKey == null) item.firebaseKey = key;
+      return item;
+    }).filter(Boolean);
+  }
+
+  function dateYear(value){
+    if (typeof getDateYear === 'function') return getDateYear(value);
+    var year = parseInt(String(value || '').slice(0, 4), 10);
+    return isNaN(year) ? 0 : year;
+  }
+
+  function money(value){ return (+value || 0).toLocaleString(); }
+
+  function chartAmountLabel(value){
+    var n = +value || 0;
+    if (n >= 1000000) return (n / 1000000).toFixed(n % 1000000 ? 1 : 0) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(n % 1000 ? 1 : 0) + 'K';
+    return n ? n.toLocaleString() : '';
+  }
+
+  function receiptNo(item){
+    var raw = item && (item.id != null ? item.id : (item.receiptNo || item.receiptNumber || item.number || 0));
+    var n = parseInt(String(raw).replace(/[^0-9]/g, ''), 10);
+    return isNaN(n) ? 0 : n;
+  }
+
+  function monthKey(value){
+    var normalized = '';
+    try {
+      if (typeof normalizeDate === 'function') normalized = normalizeDate(value) || '';
+    } catch(_e) {}
+    var raw = normalized || String(value || '');
+    var match = raw.match(/^\d{4}-(\d{1,2})-/);
+    if (match) return String(match[1]).padStart(2, '0');
+    return String(raw).slice(5, 7);
+  }
+
+  function renderFinanceChartFromCloud(pays, exps, year){
+    var chartEl = document.getElementById('finance-chart');
+    if (!chartEl) return;
+
+    var chartData = {};
+    var monthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+    for (var m = 1; m <= 12; m++) {
+      var key = String(m).padStart(2, '0');
+      chartData[key] = { label: monthNames[m - 1], inc: 0, exp: 0 };
+    }
+
+    pays.forEach(function(payment){
+      if (!payment || !payment.date || dateYear(payment.date) !== year) return;
+      var m = monthKey(payment.date);
+      if (chartData[m]) chartData[m].inc += (+payment.amt || 0);
+    });
+    exps.forEach(function(expense){
+      var d = expense && (expense.exp_date || expense.date || '');
+      if (!d || dateYear(d) !== year) return;
+      var m = monthKey(d);
+      if (chartData[m]) chartData[m].exp += (+expense.amt || 0);
+    });
+
+    var chartKeys = Object.keys(chartData).sort();
+    var maxV = Math.max.apply(null, chartKeys.map(function(k){ return Math.max(chartData[k].inc, chartData[k].exp); }).concat([1]));
+    if (maxV <= 1 && !chartKeys.some(function(k){ return chartData[k].inc || chartData[k].exp; })) {
+      chartEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);font-size:14px">📭 لا توجد بيانات مالية</div>';
+      return;
+    }
+
+    var W = Math.max(chartKeys.length * 70, 600);
+    var H = 280;
+    var padTop = 30, padBottom = 50, padLeft = 60, padRight = 20;
+    var chartW = W - padLeft - padRight;
+    var chartH = H - padTop - padBottom;
+    var barGroupW = chartW / chartKeys.length;
+    var barW = Math.min(28, barGroupW / 3);
+
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;direction:ltr;display:block" xmlns="http://www.w3.org/2000/svg">';
+    svg += '<defs><linearGradient id="incGradCloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2ecc71" /><stop offset="100%" stop-color="#27ae60" /></linearGradient><linearGradient id="expGradCloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f39c12" /><stop offset="100%" stop-color="#e67e22" /></linearGradient></defs>';
+
+    for (var i = 0; i <= 5; i++) {
+      var y = padTop + (chartH * i / 5);
+      var val = maxV * (1 - i / 5);
+      svg += '<line x1="' + padLeft + '" y1="' + y + '" x2="' + (W - padRight) + '" y2="' + y + '" stroke="#e8e8e8" stroke-width="1" />';
+      svg += '<text x="' + (padLeft - 8) + '" y="' + (y + 4) + '" text-anchor="end" font-size="10" fill="#888" font-family="Tajawal">' + (val >= 1000 ? (val / 1000).toFixed(0) + 'K' : val.toFixed(0)) + '</text>';
+    }
+
+    chartKeys.forEach(function(k, i){
+      var d = chartData[k];
+      var groupX = padLeft + i * barGroupW + (barGroupW - barW * 2 - 4) / 2;
+      var incH = d.inc > 0 ? Math.max(2, (d.inc / maxV) * chartH) : 0;
+      var expH = d.exp > 0 ? Math.max(2, (d.exp / maxV) * chartH) : 0;
+      var incY = padTop + chartH - incH;
+      var expY = padTop + chartH - expH;
+      var labelY = padTop + chartH + 18;
+      var net = d.inc - d.exp;
+      var incLabel = chartAmountLabel(d.inc);
+      var expLabel = chartAmountLabel(d.exp);
+      svg += '<rect x="' + groupX + '" y="' + incY + '" width="' + barW + '" height="' + incH + '" rx="3" fill="url(#incGradCloud)"><title>' + d.label + ' - إيرادات: ' + d.inc.toLocaleString() + ' د.إ</title></rect>';
+      svg += '<rect x="' + (groupX + barW + 4) + '" y="' + expY + '" width="' + barW + '" height="' + expH + '" rx="3" fill="url(#expGradCloud)"><title>' + d.label + ' - مصروفات: ' + d.exp.toLocaleString() + ' د.إ</title></rect>';
+      if (incLabel) {
+        if (incH >= 36) svg += '<text x="' + (groupX + barW / 2) + '" y="' + (incY + incH / 2) + '" text-anchor="middle" dominant-baseline="middle" font-size="9" font-weight="900" fill="#fff" font-family="Tajawal" transform="rotate(-90 ' + (groupX + barW / 2) + ' ' + (incY + incH / 2) + ')">' + incLabel + '</text>';
+        else svg += '<text x="' + (groupX + barW / 2) + '" y="' + Math.max(12, incY - 4) + '" text-anchor="middle" font-size="9" font-weight="900" fill="#27ae60" font-family="Tajawal">' + incLabel + '</text>';
+      }
+      if (expLabel) {
+        if (expH >= 36) svg += '<text x="' + (groupX + barW + 4 + barW / 2) + '" y="' + (expY + expH / 2) + '" text-anchor="middle" dominant-baseline="middle" font-size="9" font-weight="900" fill="#fff" font-family="Tajawal" transform="rotate(-90 ' + (groupX + barW + 4 + barW / 2) + ' ' + (expY + expH / 2) + ')">' + expLabel + '</text>';
+        else svg += '<text x="' + (groupX + barW + 4 + barW / 2) + '" y="' + Math.max(12, expY - 4) + '" text-anchor="middle" font-size="9" font-weight="900" fill="#e67e22" font-family="Tajawal">' + expLabel + '</text>';
+      }
+      svg += '<text x="' + (groupX + barW + 2) + '" y="' + labelY + '" text-anchor="middle" font-size="11" font-weight="600" fill="#1e6b3f" font-family="Tajawal">' + d.label + '</text>';
+      svg += '<text x="' + (groupX + barW + 2) + '" y="' + (labelY + 14) + '" text-anchor="middle" font-size="9" font-weight="700" fill="' + (net >= 0 ? '#27ae60' : '#e74c3c') + '" font-family="Tajawal">' + (net >= 0 ? '+' : '') + (net / 1000).toFixed(0) + 'K</text>';
+    });
+
+    svg += '</svg>';
+    chartEl.innerHTML = '<div style="overflow-x:auto;width:100%">' + svg + '</div>';
+  }
+
+  async function fetchFinanceSection(path){
+    var res = await fetch(FB_URL + '/' + path + '.json?ts=' + Date.now(), { cache:'no-store' });
+    if (!res.ok) throw new Error(path + ' HTTP ' + res.status);
+    return sectionToArray(await res.json());
+  }
+
+  function renderCloudFinance(){
+    var pays = Array.isArray(cloudPayments) ? cloudPayments : [];
+    var exps = Array.isArray(cloudExpenses) ? cloudExpenses : [];
+    var year = parseInt((document.getElementById('dash-year-filter') || {}).value, 10);
+    if (!year && typeof dashYear !== 'undefined') year = parseInt(dashYear, 10);
+    if (!year) year = new Date().getFullYear();
+
+    var totalInc = 0, totalExp = 0, expCount = 0;
+    var recent = [];
+    pays.forEach(function(payment){
+      if (!payment || !payment.date || dateYear(payment.date) !== year) return;
+      totalInc += +payment.amt || 0;
+      recent.push(payment);
+    });
+    exps.forEach(function(expense){
+      var d = expense && (expense.exp_date || expense.date || '');
+      if (!d || dateYear(d) !== year) return;
+      totalExp += +expense.amt || 0;
+      expCount++;
+    });
+    var net = totalInc - totalExp;
+
+    setText('s-income', pays.length ? money(totalInc) + ' د.إ' : '—');
+    setText('s-expenses', exps.length ? money(totalExp) + ' د.إ' : '—');
+    setText('s-income-count', recent.length + ' سند');
+    setText('s-expenses-count', expCount + ' مصروف');
+    setText('dash-year-total', 'سنة ' + year + ' — ' + recent.length + ' سند، ' + expCount + ' مصروف');
+    var netEl = document.getElementById('s-net');
+    if (netEl) {
+      netEl.textContent = (!pays.length && !exps.length) ? '—' : money(net) + ' د.إ';
+      netEl.style.color = net >= 0 ? '#27ae60' : '#e74c3c';
+    }
+
+    recent.sort(function(a, b){
+      var byReceipt = receiptNo(b) - receiptNo(a);
+      if (byReceipt !== 0) return byReceipt;
+      return String(b.date || '').localeCompare(String(a.date || ''));
+    });
+    var recentEl = document.getElementById('recent-pay');
+    if (recentEl) {
+      recentEl.innerHTML = recent.slice(0, 10).map(function(payment){
+        return '<tr><td><b>#' + (payment.id || '') + '</b></td><td>' + (payment.who || '') + '</td>' +
+          '<td class="fin-pos">' + money(payment.amt) + ' د.إ</td>' +
+          '<td style="font-size:12px">' + (payment.desc || '') + '</td>' +
+          '<td>' + (payment.date || '') + '</td></tr>';
+      }).join('') || '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">لا توجد بيانات في ' + year + '</td></tr>';
+    }
+
+    var title = document.getElementById('finance-chart-title');
+    if (title) title.textContent = '📊 الإيرادات والمصروفات الشهرية - سنة ' + year;
+    var summary = document.getElementById('finance-chart-summary');
+    if (summary) {
+      summary.innerHTML =
+        '<span>💰 الإيرادات: <span style="color:#27ae60">' + money(totalInc) + ' د.إ</span></span>' +
+        '<span>🧾 المصروفات: <span style="color:#e67e22">' + money(totalExp) + ' د.إ</span></span>' +
+        '<span>📈 الصافي: <span style="color:' + (net >= 0 ? '#27ae60' : '#e74c3c') + '">' + money(net) + ' د.إ</span></span>';
+    }
+
+    renderFinanceChartFromCloud(pays, exps, year);
+  }
+
+  function beginFinanceGate(){
+    if (typeof currentUser !== 'undefined' && !currentUser) return;
+    if (typeof FB_URL === 'undefined' || !FB_URL || navigator.onLine === false) return;
+    financePending = true;
+    maskFinance();
+    if (financeRunning) return financeRunning;
+    financeRunning = Promise.all([
+      fetchFinanceSection('payments'),
+      fetchFinanceSection('expenses')
+    ]).then(function(results){
+      cloudPayments = results[0];
+      cloudExpenses = results[1];
+      financePending = false;
+      window.__kpDashboardFinancePending = false;
+      renderCloudFinance();
+      return true;
+    }).catch(function(error){
+      console.warn('[KP] finance cloud gate failed:', error && error.message ? error.message : error);
+      return false;
+    }).finally(function(){
+      financeRunning = null;
+      if (!financePending) window.__kpDashboardFinancePending = false;
+    });
+    return financeRunning;
+  }
+
+  var previousUpdateDashIncome = window.updateDashIncome || (typeof updateDashIncome === 'function' ? updateDashIncome : null);
+  if (typeof previousUpdateDashIncome === 'function' && !previousUpdateDashIncome.__kpFinanceCloudGateWrapped) {
+    var wrappedUpdateDashIncome = function(){
+      if (financePending) {
+        maskFinance();
+        return;
+      }
+      if (cloudPayments && cloudExpenses) {
+        renderCloudFinance();
+        return;
+      }
+      return previousUpdateDashIncome.apply(this, arguments);
+    };
+    wrappedUpdateDashIncome.__kpFinanceCloudGateWrapped = true;
+    window.updateDashIncome = wrappedUpdateDashIncome;
+    try { updateDashIncome = wrappedUpdateDashIncome; } catch(_e) {}
+  }
+
+  var previousDashYearChanged = window.dashYearChanged || (typeof dashYearChanged === 'function' ? dashYearChanged : null);
+  if (typeof previousDashYearChanged === 'function' && !previousDashYearChanged.__kpFinanceCloudGateWrapped) {
+    var wrappedDashYearChanged = function(val){
+      var result = previousDashYearChanged.apply(this, arguments);
+      if (cloudPayments && cloudExpenses) renderCloudFinance();
+      else if (financePending) maskFinance();
+      return result;
+    };
+    wrappedDashYearChanged.__kpFinanceCloudGateWrapped = true;
+    window.dashYearChanged = wrappedDashYearChanged;
+    try { dashYearChanged = wrappedDashYearChanged; } catch(_e) {}
+  }
+
+  var previousLoadFromFirebase = window.loadFromFirebase || (typeof loadFromFirebase === 'function' ? loadFromFirebase : null);
+  if (typeof previousLoadFromFirebase === 'function' && !previousLoadFromFirebase.__kpFinanceCloudGateWrapped) {
+    var wrappedLoadFromFirebase = async function(){
+      cloudPayments = null;
+      cloudExpenses = null;
+      var financePromise = beginFinanceGate();
+      try {
+        return await previousLoadFromFirebase.apply(this, arguments);
+      } finally {
+        if (financePending && !financeRunning) {
+          financePending = false;
+          window.__kpDashboardFinancePending = false;
+          try { previousUpdateDashIncome && previousUpdateDashIncome(); } catch(_e) {}
+        }
+        if (financePromise) {
+          financePromise.then(function(ok){
+            if (!ok) {
+              financePending = false;
+              window.__kpDashboardFinancePending = false;
+              try { previousUpdateDashIncome && previousUpdateDashIncome(); } catch(_e) {}
+            }
+          });
+        }
+      }
+    };
+    wrappedLoadFromFirebase.__kpFinanceCloudGateWrapped = true;
+    window.loadFromFirebase = wrappedLoadFromFirebase;
+    try { loadFromFirebase = wrappedLoadFromFirebase; } catch(_e) {}
+  }
+
+  window.kpRefreshDashboardFinanceFromFirebase = beginFinanceGate;
+})();
+</script>
+
+<script id="kp-dashboard-stable-cloud-render-20260530">
+(function(){
+  'use strict';
+  if (window.__kpDashboardStableCloudRender20260530) return;
+  window.__kpDashboardStableCloudRender20260530 = true;
+
+  var LOADING = '\u062c\u0627\u0631\u064a \u0627\u0644\u062a\u062d\u0645\u064a\u0644';
+
+  function setText(id, value){
+    var el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function sectionStudents(){
+    var snapshot = window.__kpDashboardStudentCloudSnapshot;
+    if (window.__kpDashboardStudentSnapshotActive && snapshot && Array.isArray(snapshot.students)) {
+      return snapshot.students;
+    }
+    return Array.isArray(students) ? students : [];
+  }
+
+  function sectionAttLog(){
+    var snapshot = window.__kpDashboardStudentCloudSnapshot;
+    if (window.__kpDashboardStudentSnapshotActive && snapshot && snapshot.attLog && typeof snapshot.attLog === 'object') {
+      return snapshot.attLog;
+    }
+    return (typeof attLog !== 'undefined' && attLog && typeof attLog === 'object') ? attLog : {};
+  }
+
+  function sectionClasses(){
+    var snapshot = window.__kpDashboardStudentCloudSnapshot;
+    if (window.__kpDashboardStudentSnapshotActive && snapshot && snapshot.classes && typeof snapshot.classes === 'object') {
+      return snapshot.classes;
+    }
+    return (typeof CLASSES !== 'undefined' && CLASSES && typeof CLASSES === 'object') ? CLASSES : {};
+  }
+
+  function isActive(student){
+    if (typeof isActiveStudent === 'function') return isActiveStudent(student);
+    if (!student || typeof student !== 'object') return false;
+    var raw = String(student.studentStatus || student.status || student.state || '').trim().toLowerCase();
+    if (student.left === true || student.inactive === true || student.withdrawn === true) return false;
+    return ['left','inactive','withdrawn','ترك','منسحب','غير موجود'].indexOf(raw) === -1;
+  }
+
+  function maskFinance(){
+    setText('s-income', LOADING);
+    setText('s-expenses', LOADING);
+    setText('s-net', LOADING);
+    setText('s-income-count', '');
+    setText('s-expenses-count', '');
+    setText('dash-year-total', LOADING);
+    setText('finance-chart-title', LOADING);
+    var summary = document.getElementById('finance-chart-summary');
+    if (summary) summary.innerHTML = '<span style="color:var(--muted);font-weight:900;">' + LOADING + '</span>';
+    var chart = document.getElementById('finance-chart');
+    if (chart) chart.innerHTML = '<div style="text-align:center;padding:36px 10px;color:var(--muted);font-weight:900;">' + LOADING + '</div>';
+    var recent = document.getElementById('recent-pay');
+    if (recent) recent.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--muted);font-weight:900;">' + LOADING + '</td></tr>';
+  }
+
+  function renderStudentDashboardOnly(){
+    var activeStudents = sectionStudents().filter(isActive);
+    var classes = sectionClasses();
+    var log = sectionAttLog();
+    var map = {};
+    activeStudents.forEach(function(student){ map[student.cls] = (map[student.cls] || 0) + 1; });
+
+    var clsTable = document.getElementById('cls-table');
+    if (clsTable) {
+      clsTable.innerHTML = Object.keys(classes).map(function(className){
+        var cls = classes[className] || {};
+        return '<tr><td>' + (cls.emoji || '') + ' ' + className + '</td><td><b>' + (map[className] || 0) + '</b> طالب</td><td>' + (cls.teacher || '—') + '</td></tr>';
+      }).join('');
+    }
+
+    setText('s-total', activeStudents.length);
+    var today = new Date().toISOString().slice(0, 10);
+    var present = 0, absent = 0;
+    activeStudents.forEach(function(student){
+      var value = log[today + '_' + student.id];
+      if (value === 'present') present++;
+      if (value === 'absent') absent++;
+    });
+    setText('s-present', present || '—');
+    setText('s-absent', absent || '—');
+  }
+
+  var previousRenderDash = window.renderDash || (typeof renderDash === 'function' ? renderDash : null);
+  if (typeof previousRenderDash === 'function' && !previousRenderDash.__kpStableCloudRenderWrapped) {
+    var wrappedRenderDash = function(){
+      if (window.__kpDashboardStudentSnapshotActive || window.__kpDashboardFinancePending) {
+        renderStudentDashboardOnly();
+        if (window.__kpDashboardFinancePending) {
+          maskFinance();
+        } else if (typeof window.kpRefreshDashboardFinanceFromFirebase === 'function') {
+          try { window.kpRefreshDashboardFinanceFromFirebase(); } catch(_e) {}
+        }
+        return;
+      }
+      return previousRenderDash.apply(this, arguments);
+    };
+    wrappedRenderDash.__kpStableCloudRenderWrapped = true;
+    window.renderDash = wrappedRenderDash;
+    try { renderDash = wrappedRenderDash; } catch(_e) {}
+  }
+})();
+</script>
+
+<script id="kp-attendance-finance-stable-cloud-render-20260530">
+(function(){
+  'use strict';
+  if (window.__kpAttendanceFinanceStableCloudRender20260530) return;
+  window.__kpAttendanceFinanceStableCloudRender20260530 = true;
+
+  var LOADING = '\u062c\u0627\u0631\u064a \u0627\u0644\u062a\u062d\u0645\u064a\u0644';
+  var snapshotActive = false;
+  var snapshotRunning = null;
+  var cloud = null;
+
+  function byId(id){ return document.getElementById(id); }
+  function setText(id, value){ var el = byId(id); if (el) el.textContent = value; }
+
+  function sectionToArray(section){
+    if (!section) return [];
+    if (Array.isArray(section)) return section.filter(Boolean);
+    if (typeof kpArrayFromFirebaseSection === 'function') return kpArrayFromFirebaseSection(section);
+    return Object.keys(section).map(function(key){
+      var item = section[key];
+      if (item && typeof item === 'object' && item.firebaseKey == null) item.firebaseKey = key;
+      return item;
+    }).filter(Boolean);
+  }
+
+  async function fetchJson(path){
+    var res = await fetch(FB_URL + '/' + path + '.json?ts=' + Date.now(), { cache:'no-store' });
+    if (!res.ok) throw new Error(path + ' HTTP ' + res.status);
+    return await res.json();
+  }
+
+  function startCloudSnapshot(){
+    if (typeof currentUser !== 'undefined' && !currentUser) return null;
+    if (typeof FB_URL === 'undefined' || !FB_URL || navigator.onLine === false) return null;
+    snapshotActive = true;
+    window.__kpAttendanceFinanceSnapshotActive = true;
+    if (snapshotRunning) return snapshotRunning;
+    snapshotRunning = Promise.all([
+      fetchJson('students'),
+      fetchJson('payments'),
+      fetchJson('expenses'),
+      fetchJson('attLog'),
+      fetchJson('CLASSES'),
+      fetchJson('attendanceLocks').catch(function(){ return {}; })
+    ]).then(function(results){
+      cloud = {
+        students: sectionToArray(results[0]),
+        payments: sectionToArray(results[1]),
+        expenses: sectionToArray(results[2]),
+        attLog: results[3] && typeof results[3] === 'object' ? results[3] : {},
+        CLASSES: results[4] && typeof results[4] === 'object' ? results[4] : {},
+        attendanceLocks: results[5] && typeof results[5] === 'object' ? results[5] : {}
+      };
+      window.__kpAttendanceFinanceCloudSnapshot = cloud;
+      return cloud;
+    }).catch(function(error){
+      console.warn('[KP] attendance/finance cloud snapshot failed:', error && error.message ? error.message : error);
+      cloud = null;
+      return null;
+    }).finally(function(){
+      snapshotRunning = null;
+    });
+    return snapshotRunning;
+  }
+
+  function replaceObjectContents(target, source){
+    if (!target || typeof target !== 'object') return;
+    Object.keys(target).forEach(function(key){ delete target[key]; });
+    Object.assign(target, source || {});
+  }
+
+  function withCloudSnapshot(fn){
+    if (!cloud) return false;
+    var oldStudents = students;
+    var oldPayments = payments;
+    var oldExpenses = expenses;
+    var oldAttLog = attLog;
+    var oldAttendanceLocks = typeof attendanceLocks !== 'undefined' ? attendanceLocks : {};
+    var oldClasses = {};
+    try { Object.keys(CLASSES || {}).forEach(function(k){ oldClasses[k] = CLASSES[k]; }); } catch(_e) {}
+    try {
+      students = cloud.students || [];
+      payments = cloud.payments || [];
+      expenses = cloud.expenses || [];
+      attLog = cloud.attLog || {};
+      if (typeof attendanceLocks !== 'undefined') attendanceLocks = cloud.attendanceLocks || {};
+      replaceObjectContents(CLASSES, cloud.CLASSES || {});
+      return fn();
+    } finally {
+      students = oldStudents;
+      payments = oldPayments;
+      expenses = oldExpenses;
+      attLog = oldAttLog;
+      if (typeof attendanceLocks !== 'undefined') attendanceLocks = oldAttendanceLocks;
+      replaceObjectContents(CLASSES, oldClasses);
+    }
+  }
+
+  function maskAttendance(){
+    var grid = byId('att-grid');
+    if (grid) grid.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-weight:900">' + LOADING + '</div>';
+    setText('att-summary', LOADING);
+    var log = byId('att-log');
+    if (log) log.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:16px;color:var(--muted);font-weight:900">' + LOADING + '</td></tr>';
+  }
+
+  function maskPayments(){
+    setText('pay-total', LOADING);
+    setText('pay-count', '');
+    setText('pay-avg', '');
+    var body = byId('pay-tbody');
+    if (body) body.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:18px;color:var(--muted);font-weight:900">' + LOADING + '</td></tr>';
+  }
+
+  function maskExpenses(){
+    setText('exp-total', LOADING);
+    setText('exp-count', '');
+    setText('exp-top', LOADING);
+    var body = byId('exp-tbody');
+    if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:18px;color:var(--muted);font-weight:900">' + LOADING + '</td></tr>';
+  }
+
+  function maskFinanceReport(){
+    ['fr-inc','fr-exp','fr-net','fr-days','fin-inc','fin-exp','fin-net','fin-best'].forEach(function(id){ setText(id, LOADING); });
+    ['fr-inc-sub','fr-exp-sub','fr-net-sub'].forEach(function(id){ setText(id, ''); });
+    var ids = ['fr-inc-cats','fr-exp-cats','fr-monthly','fr-tbody','fin-tbody'];
+    ids.forEach(function(id){
+      var el = byId(id);
+      if (el) el.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted);font-weight:900">' + LOADING + '</td></tr>';
+    });
+  }
+
+  function shouldProtect(){
+    return snapshotActive && typeof currentUser !== 'undefined' && !!currentUser;
+  }
+
+  function wrapRender(name, mask){
+    var previous = window[name] || (typeof this[name] === 'function' ? this[name] : null);
+    if (typeof previous !== 'function' || previous.__kpStableCloudWrapped) return;
+    var wrapped = function(){
+      var args = arguments;
+      if (shouldProtect()) {
+        if (cloud) return withCloudSnapshot(function(){ return previous.apply(this, args); }.bind(this));
+        mask();
+        return;
+      }
+      return previous.apply(this, args);
+    };
+    wrapped.__kpStableCloudWrapped = true;
+    window[name] = wrapped;
+    try {
+      if (name === 'renderAtt') renderAtt = wrapped;
+      if (name === 'renderAttGrid') renderAttGrid = wrapped;
+      if (name === 'renderAttLog') renderAttLog = wrapped;
+      if (name === 'renderPayments') renderPayments = wrapped;
+      if (name === 'renderExpenses') renderExpenses = wrapped;
+      if (name === 'renderFinance') renderFinance = wrapped;
+      if (name === 'renderFinReport') renderFinReport = wrapped;
+      if (name === 'generateFinReport') generateFinReport = wrapped;
+    } catch(_e) {}
+  }
+
+  wrapRender('renderAtt', maskAttendance);
+  wrapRender('renderAttGrid', maskAttendance);
+  wrapRender('renderAttLog', maskAttendance);
+  wrapRender('renderPayments', maskPayments);
+  wrapRender('renderExpenses', maskExpenses);
+  wrapRender('renderFinance', maskFinanceReport);
+  wrapRender('renderFinReport', maskFinanceReport);
+  wrapRender('generateFinReport', maskFinanceReport);
+
+  var previousLoadFromFirebase = window.loadFromFirebase || (typeof loadFromFirebase === 'function' ? loadFromFirebase : null);
+  if (typeof previousLoadFromFirebase === 'function' && !previousLoadFromFirebase.__kpAttendanceFinanceStableWrapped) {
+    var wrappedLoad = async function(){
+      cloud = null;
+      var cloudPromise = startCloudSnapshot();
+      try {
+        return await previousLoadFromFirebase.apply(this, arguments);
+      } finally {
+        if (cloudPromise) {
+          cloudPromise.then(function(){
+            try {
+              if (document.getElementById('pg-att') && document.getElementById('pg-att').classList.contains('on')) {
+                if (typeof renderAtt === 'function') renderAtt();
+              }
+              if (document.getElementById('pg-finreport') && document.getElementById('pg-finreport').classList.contains('on')) {
+                if (typeof renderFinReport === 'function') renderFinReport();
+                if (typeof renderPayments === 'function') renderPayments();
+                if (typeof renderExpenses === 'function') renderExpenses();
+              }
+            } catch(_e) {}
+          });
+        }
+        snapshotActive = false;
+        window.__kpAttendanceFinanceSnapshotActive = false;
+      }
+    };
+    wrappedLoad.__kpAttendanceFinanceStableWrapped = true;
+    window.loadFromFirebase = wrappedLoad;
+    try { loadFromFirebase = wrappedLoad; } catch(_e) {}
+  }
+})();
+</script>
+
+<script id="kp-dashboard-finance-refresh-calmer-20260530">
+(function(){
+  'use strict';
+  if (window.__kpDashboardFinanceRefreshCalmer20260530) return;
+  window.__kpDashboardFinanceRefreshCalmer20260530 = true;
+
+  var LOADING = '\u062c\u0627\u0631\u064a \u0627\u0644\u062a\u062d\u0645\u064a\u0644';
+  var state = {
+    pending: false,
+    ready: false,
+    running: null,
+    maskedOnce: false,
+    lastReadyAt: 0
+  };
+
+  function byId(id){ return document.getElementById(id); }
+  function setText(id, value){ var el = byId(id); if (el) el.textContent = value; }
+
+  function maskOnce(){
+    if (state.maskedOnce) return;
+    state.maskedOnce = true;
+    setText('s-income', LOADING);
+    setText('s-expenses', LOADING);
+    setText('s-net', LOADING);
+    setText('s-income-count', '');
+    setText('s-expenses-count', '');
+    setText('dash-year-total', LOADING);
+    setText('finance-chart-title', LOADING);
+    var summary = byId('finance-chart-summary');
+    if (summary) summary.innerHTML = '<span style="color:var(--muted);font-weight:900;">' + LOADING + '</span>';
+    var chart = byId('finance-chart');
+    if (chart) chart.innerHTML = '<div style="text-align:center;padding:36px 10px;color:var(--muted);font-weight:900;">' + LOADING + '</div>';
+    var recent = byId('recent-pay');
+    if (recent) recent.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--muted);font-weight:900;">' + LOADING + '</td></tr>';
+  }
+
+  function currentPageIsDashboard(){
+    var dash = byId('pg-dash');
+    return !!(dash && dash.classList.contains('on'));
+  }
+
+  var previousRefresh = window.kpRefreshDashboardFinanceFromFirebase;
+  if (typeof previousRefresh === 'function') {
+    window.kpRefreshDashboardFinanceFromFirebase = function(options){
+      options = options || {};
+      if (state.running) return state.running;
+      if (!options.force && state.ready && Date.now() - state.lastReadyAt < 45000) return Promise.resolve(true);
+
+      state.pending = true;
+      state.ready = false;
+      window.__kpDashboardFinancePending = true;
+      if (currentPageIsDashboard()) maskOnce();
+
+      state.running = Promise.resolve(previousRefresh.apply(this, arguments))
+        .then(function(result){
+          state.ready = !!result;
+          state.lastReadyAt = Date.now();
+          return result;
+        })
+        .finally(function(){
+          state.pending = false;
+          state.running = null;
+          state.maskedOnce = false;
+          window.__kpDashboardFinancePending = false;
+        });
+      return state.running;
+    };
+  }
+
+  var previousUpdateDashIncome = window.updateDashIncome || (typeof updateDashIncome === 'function' ? updateDashIncome : null);
+  if (typeof previousUpdateDashIncome === 'function') {
+    var calmerUpdateDashIncome = function(){
+      if (state.pending || window.__kpDashboardFinancePending) {
+        if (currentPageIsDashboard()) maskOnce();
+        return;
+      }
+      return previousUpdateDashIncome.apply(this, arguments);
+    };
+    window.updateDashIncome = calmerUpdateDashIncome;
+    try { updateDashIncome = calmerUpdateDashIncome; } catch(_e) {}
+  }
+
+  var previousRenderDash = window.renderDash || (typeof renderDash === 'function' ? renderDash : null);
+  if (typeof previousRenderDash === 'function') {
+    var calmerRenderDash = function(){
+      var result = previousRenderDash.apply(this, arguments);
+      if ((state.pending || window.__kpDashboardFinancePending) && currentPageIsDashboard()) {
+        maskOnce();
+      }
+      return result;
+    };
+    window.renderDash = calmerRenderDash;
+    try { renderDash = calmerRenderDash; } catch(_e) {}
+  }
+
+  window.kpDashboardFinanceRefreshCalmerStatus = function(){
+    return {
+      installed: true,
+      pending: state.pending,
+      ready: state.ready,
+      running: !!state.running,
+      lastReadyAt: state.lastReadyAt
+    };
+  };
+})();
+</script>
+
+<script id="kp-dashboard-finance-preserve-final-redraw-20260530">
+(function(){
+  'use strict';
+  if (window.__kpDashboardFinancePreserveFinalRedraw20260530) return;
+  window.__kpDashboardFinancePreserveFinalRedraw20260530 = true;
+
+  var ids = [
+    's-income','s-expenses','s-net','s-income-count','s-expenses-count',
+    'dash-year-total','finance-chart-title','finance-chart-summary',
+    'finance-chart','recent-pay'
+  ];
+
+  function shouldPreserve(){
+    try {
+      if (window.__kpDashboardFinancePending) return false;
+      if (typeof window.kpDashboardFinanceRefreshCalmerStatus !== 'function') return false;
+      var st = window.kpDashboardFinanceRefreshCalmerStatus();
+      return !!(st && st.ready && st.lastReadyAt && Date.now() - st.lastReadyAt < 60000);
+    } catch(_e) {
+      return false;
+    }
+  }
+
+  function capture(){
+    var out = {};
+    ids.forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) out[id] = {
+        html: el.innerHTML,
+        text: el.textContent,
+        color: el.style.color || ''
+      };
+    });
+    return out;
+  }
+
+  function restore(snapshot){
+    Object.keys(snapshot || {}).forEach(function(id){
+      var el = document.getElementById(id);
+      var old = snapshot[id];
+      if (!el || !old) return;
+      el.innerHTML = old.html;
+      if (old.color) el.style.color = old.color;
+    });
+  }
+
+  var previousRenderDash = window.renderDash || (typeof renderDash === 'function' ? renderDash : null);
+  if (typeof previousRenderDash === 'function' && !previousRenderDash.__kpFinancePreserveFinalRedrawWrapped) {
+    var wrappedRenderDash = function(){
+      var snap = shouldPreserve() ? capture() : null;
+      var result = previousRenderDash.apply(this, arguments);
+      if (snap) restore(snap);
+      return result;
+    };
+    wrappedRenderDash.__kpFinancePreserveFinalRedrawWrapped = true;
+    window.renderDash = wrappedRenderDash;
+    try { renderDash = wrappedRenderDash; } catch(_e) {}
+  }
+})();
+</script>
+
+
 <script id="kp-financial-tabs-dashboard-shortcuts-20260513">
 (function(){
   if (window.__kpFinancialTabsDashboardShortcuts20260513) return;
