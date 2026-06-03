@@ -27997,20 +27997,81 @@ document.addEventListener('DOMContentLoaded', function(){
     if (!res.ok) throw new Error(path + ' HTTP ' + res.status);
     return await res.json();
   }
+  function refreshPriorityBadgesFromPriorityData(data){
+    try {
+      if (!data) return;
+      if (data.nurserySettings && typeof data.nurserySettings === 'object') {
+        nurserySettings = nurserySettings && typeof nurserySettings === 'object' ? nurserySettings : {};
+        Object.assign(nurserySettings, data.nurserySettings);
+      }
+      if (data.students !== undefined) students = sectionToArray(data.students);
+      if (data.payments !== undefined) payments = sectionToArray(data.payments);
+      if (data.renewals !== undefined) renewals = sectionToArray(data.renewals);
+      try { if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications(); } catch(_regError) {}
+      try { if (typeof updateNotifications === 'function') updateNotifications(); } catch(_renError) {}
+    } catch(e) {
+      console.warn('[KP lazy data test] priority badge refresh failed:', e && e.message ? e.message : e);
+    }
+  }
+  function refreshRenewalBadgeDirect(renewalData){
+    try {
+      var list = sectionToArray(renewalData);
+      renewals = list;
+      var count = 0;
+      list.forEach(function(r){
+        var days = (typeof getRenDays === 'function') ? getRenDays(r && r.date) : null;
+        if (days === null || Number.isNaN(days)) return;
+        if (days < 0 || days <= 60) count++;
+      });
+      var btn = document.getElementById('notif-btn');
+      var badge = document.getElementById('notif-badge-count');
+      var navBadge = document.getElementById('renewals-nav-badge');
+      if (btn) {
+        btn.style.display = 'inline-flex';
+        if (count > 0) btn.classList.add('has-alerts');
+        else btn.classList.remove('has-alerts');
+      }
+      [badge, navBadge].forEach(function(el){
+        if (!el) return;
+        if (count > 0) {
+          el.style.display = el === badge ? 'flex' : 'inline-block';
+          el.textContent = count > 99 ? '99+' : String(count);
+        } else {
+          el.style.display = 'none';
+        }
+      });
+    } catch(e) {
+      console.warn('[KP lazy data test] direct renewal badge refresh failed:', e && e.message ? e.message : e);
+    }
+  }
   async function buildLightRoot(){
     var now = Date.now();
     if (lightRootCache && now - lightRootCacheAt < 2500) return lightRootCache;
+    var renewalPromise = fetchPath('renewals').then(function(data){
+      refreshRenewalBadgeDirect(data);
+      return data;
+    }).catch(function(){ return null; });
+    var priorityPaths = [
+      'students',
+      'payments',
+      'nurserySettings'
+    ];
+    var priorityResults = await Promise.all(priorityPaths.map(function(path){
+      return fetchPath(path).catch(function(){ return null; });
+    }));
+    var data = {};
+    priorityPaths.forEach(function(path, index){ if (priorityResults[index] !== null && priorityResults[index] !== undefined) data[path] = priorityResults[index]; });
+    var renewalData = await renewalPromise;
+    if (renewalData !== null && renewalData !== undefined) data.renewals = renewalData;
+    refreshPriorityBadgesFromPriorityData(data);
+
     var paths = [
       'version',
       'savedAt',
-      'students',
-      'payments',
       'expenses',
-      'renewals',
       'attLog',
       'attendanceLocks',
       'CLASSES',
-      'nurserySettings',
       'kp_users',
       'tombstones',
       'restoredKeys',
@@ -28020,7 +28081,6 @@ document.addEventListener('DOMContentLoaded', function(){
     var results = await Promise.all(paths.map(function(path){
       return fetchPath(path).catch(function(){ return null; });
     }));
-    var data = {};
     paths.forEach(function(path, index){ if (results[index] !== null && results[index] !== undefined) data[path] = results[index]; });
     if (!data.version) data.version = 2;
     data.__kpLazyLightRoot = true;
