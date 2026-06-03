@@ -27826,6 +27826,358 @@ document.addEventListener('DOMContentLoaded', function(){
   };
 })();
 </script>
+
+<script id="kp-lazy-page-render-test-20260603">
+(function(){
+  'use strict';
+  if (window.__kpLazyPageRenderTest20260603) return;
+  window.__kpLazyPageRenderTest20260603 = true;
+
+  var dirty = {};
+  var wrappedNames = [];
+
+  var pageByRender = {
+    renderStudents: 'students',
+    renderAtt: 'att',
+    renderAttGrid: 'att',
+    renderAttLog: 'att',
+    renderPayments: 'finreport',
+    renderExpenses: 'finreport',
+    renderFinReport: 'finreport',
+    renderReceipts: 'finreport',
+    renderRenewals: 'renewals',
+    renderFormRequests: 'forms',
+    renderEmailCenter: 'email',
+    renderDeletedStudents: 'otherdeleted',
+    renderOtherDeletedItems: 'otherdeleted',
+    renderAdminUsers: 'admin',
+    renderAdminClasses: 'admin'
+  };
+
+  function normalizePage(page){
+    if (page === 'payments' || page === 'expenses' || page === 'receipts' || page === 'finance') return 'finreport';
+    if (page === 'deleted') return 'otherdeleted';
+    return page || 'dash';
+  }
+
+  function activePage(){
+    var pg = document.querySelector('.pg.on');
+    return pg && pg.id ? normalizePage(pg.id.replace(/^pg-/, '')) : 'dash';
+  }
+
+  function pageIsOpen(page){
+    page = normalizePage(page);
+    return activePage() === page;
+  }
+
+  function shouldAlwaysRun(name){
+    return name === 'renderDash' || name === 'updateNotifications';
+  }
+
+  function wrapRender(name){
+    var original = window[name] || (typeof window[name] === 'function' ? window[name] : null);
+    if (typeof original !== 'function' || original.__kpLazyRenderWrapped) return;
+    var page = pageByRender[name];
+    if (!page || shouldAlwaysRun(name)) return;
+    var wrapped = function(){
+      if (!pageIsOpen(page)) {
+        dirty[page] = true;
+        return null;
+      }
+      dirty[page] = false;
+      return original.apply(this, arguments);
+    };
+    wrapped.__kpLazyRenderWrapped = true;
+    wrapped.__kpOriginal = original;
+    window[name] = wrapped;
+    try { eval(name + ' = window["' + name + '"]'); } catch(_e) {}
+    wrappedNames.push(name);
+  }
+
+  function runOriginal(name){
+    var fn = window[name];
+    var original = fn && fn.__kpOriginal ? fn.__kpOriginal : fn;
+    if (typeof original !== 'function') return;
+    try { original(); } catch(e) { console.warn('[KP lazy test] deferred render failed:', name, e && e.message ? e.message : e); }
+  }
+
+  function renderOpenedPage(page){
+    page = normalizePage(page || activePage());
+    if (page === 'students') runOriginal('renderStudents');
+    else if (page === 'att') {
+      runOriginal('renderAtt');
+      runOriginal('renderAttGrid');
+      runOriginal('renderAttLog');
+    } else if (page === 'finreport') {
+      if (typeof window.kpSetFinancialTab === 'function') {
+        try { window.kpSetFinancialTab('report'); } catch(_e) {}
+      } else {
+        runOriginal('renderFinReport');
+      }
+    } else if (page === 'forms') runOriginal('renderFormRequests');
+    else if (page === 'renewals') runOriginal('renderRenewals');
+    else if (page === 'email') runOriginal('renderEmailCenter');
+    else if (page === 'otherdeleted') {
+      runOriginal('renderDeletedStudents');
+      runOriginal('renderOtherDeletedItems');
+    } else if (page === 'admin') {
+      runOriginal('renderAdminUsers');
+      runOriginal('renderAdminClasses');
+    }
+    dirty[page] = false;
+  }
+
+  function install(){
+    Object.keys(pageByRender).forEach(wrapRender);
+    var previousGo = window.go;
+    if (typeof previousGo === 'function' && !previousGo.__kpLazyRenderTestWrapped) {
+      var wrappedGo = function(page){
+        var result = previousGo.apply(this, arguments);
+        setTimeout(function(){ renderOpenedPage(page); }, 0);
+        return result;
+      };
+      wrappedGo.__kpLazyRenderTestWrapped = true;
+      window.go = wrappedGo;
+      try { go = wrappedGo; } catch(_e) {}
+    }
+    setTimeout(function(){ renderOpenedPage(activePage()); }, 0);
+  }
+
+  window.kpLazyRenderTestStatus = function(){
+    return {
+      enabled: true,
+      wrapped: wrappedNames.slice(),
+      dirty: Object.assign({}, dirty),
+      activePage: activePage(),
+      note: 'Test file only. Dashboard and notifications are not lazy-blocked.'
+    };
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+  else install();
+})();
+</script>
+
+<script id="kp-lazy-data-loading-test-20260603">
+(function(){
+  'use strict';
+  if (window.__kpLazyDataLoadingTest20260603) return;
+  window.__kpLazyDataLoadingTest20260603 = true;
+
+  var nativeFetch = window.fetch.bind(window);
+  var lightRootCache = null;
+  var lightRootCacheAt = 0;
+  var lazyLoaded = {
+    deleted: false,
+    renewalAttachments: false,
+    evaluations: false
+  };
+
+  function txt(v){ return String(v == null ? '' : v); }
+  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); }
+  function isRootFirebaseUrl(url){
+    var base = baseUrl();
+    if (!base || !url) return false;
+    var clean = txt(url).split('?')[0].replace(/\/+$/, '');
+    return clean === base + '.json';
+  }
+  function sectionToArray(section){
+    if (!section) return [];
+    if (Array.isArray(section)) return section.filter(Boolean);
+    if (typeof kpArrayFromFirebaseSection === 'function') return kpArrayFromFirebaseSection(section);
+    return Object.keys(section).map(function(k){
+      var v = section[k];
+      if (v && typeof v === 'object' && v.firebaseKey == null) v.firebaseKey = k;
+      return v;
+    }).filter(Boolean);
+  }
+  async function fetchPath(path){
+    var url = baseUrl() + '/' + path + '.json?ts=' + Date.now();
+    var res = await nativeFetch(url, { cache:'no-store' });
+    if (!res.ok) throw new Error(path + ' HTTP ' + res.status);
+    return await res.json();
+  }
+  async function buildLightRoot(){
+    var now = Date.now();
+    if (lightRootCache && now - lightRootCacheAt < 2500) return lightRootCache;
+    var paths = [
+      'version',
+      'savedAt',
+      'students',
+      'payments',
+      'expenses',
+      'renewals',
+      'attLog',
+      'attendanceLocks',
+      'CLASSES',
+      'nurserySettings',
+      'kp_users',
+      'tombstones',
+      'restoredKeys',
+      'registrationRequests',
+      'studentChangeRequests'
+    ];
+    var results = await Promise.all(paths.map(function(path){
+      return fetchPath(path).catch(function(){ return null; });
+    }));
+    var data = {};
+    paths.forEach(function(path, index){ if (results[index] !== null && results[index] !== undefined) data[path] = results[index]; });
+    if (!data.version) data.version = 2;
+    data.__kpLazyLightRoot = true;
+    data.__kpDeferredSections = ['deletedStudents','deletedPayments','deletedExpenses','deletedRenewals','deletedClasses','renewalAttachments','evaluations'];
+    lightRootCache = data;
+    lightRootCacheAt = now;
+    return data;
+  }
+  function responseFromJson(data){
+    return new Response(JSON.stringify(data || {}), {
+      status: 200,
+      headers: { 'Content-Type':'application/json' }
+    });
+  }
+  async function runWithLightRoot(fn, context, args){
+    var oldFetch = window.fetch;
+    window.fetch = function(input, options){
+      var method = txt(options && options.method || 'GET').toUpperCase();
+      var url = typeof input === 'string' ? input : (input && input.url);
+      if (method === 'GET' && isRootFirebaseUrl(url)) {
+        return buildLightRoot().then(responseFromJson);
+      }
+      return oldFetch.apply(this, arguments);
+    };
+    try {
+      return await fn.apply(context, args || []);
+    } finally {
+      window.fetch = oldFetch;
+    }
+  }
+
+  async function loadDeletedBuckets(){
+    if (lazyLoaded.deleted || !baseUrl()) return true;
+    try {
+      if (typeof showSyncBadge === 'function') showSyncBadge('جاري تحميل سلة المحذوفات...');
+      var results = await Promise.all([
+        fetchPath('deletedStudents').catch(function(){ return []; }),
+        fetchPath('deletedPayments').catch(function(){ return []; }),
+        fetchPath('deletedExpenses').catch(function(){ return []; }),
+        fetchPath('deletedRenewals').catch(function(){ return []; }),
+        fetchPath('deletedClasses').catch(function(){ return []; })
+      ]);
+      deletedStudents = sectionToArray(results[0]);
+      deletedPayments = sectionToArray(results[1]);
+      deletedExpenses = sectionToArray(results[2]);
+      deletedRenewals = sectionToArray(results[3]);
+      deletedClasses = sectionToArray(results[4]);
+      try { _safeSetSlim('kp_deleted_students', deletedStudents); } catch(_e) {}
+      try { _safeSetSlim('kp_deleted_payments', deletedPayments); } catch(_e) {}
+      try { _safeSetSlim('kp_deleted_expenses', deletedExpenses); } catch(_e) {}
+      try { _safeSetSlim('kp_deleted_renewals', deletedRenewals); } catch(_e) {}
+      try { _safeSetSlim('kp_deleted_classes', deletedClasses, 'key'); } catch(_e) {}
+      lazyLoaded.deleted = true;
+      if (typeof cleanupDeletedBuckets === 'function') cleanupDeletedBuckets();
+      if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
+      if (typeof renderOtherDeletedItems === 'function') renderOtherDeletedItems();
+      if (typeof showSyncBadge === 'function') showSyncBadge('تم تحميل سلة المحذوفات');
+      return true;
+    } catch(e) {
+      console.warn('[KP lazy data test] deleted buckets load failed:', e && e.message ? e.message : e);
+      if (typeof showSyncBadge === 'function') showSyncBadge('تعذر تحميل سلة المحذوفات');
+      return false;
+    }
+  }
+
+  async function loadEvaluationsIfNeeded(){
+    if (lazyLoaded.evaluations || !baseUrl()) return true;
+    try {
+      var data = await fetchPath('evaluations').catch(function(){ return []; });
+      window.evaluations = sectionToArray(data);
+      try { evaluations = window.evaluations; } catch(_e) {}
+      try { localStorage.setItem('kp_evaluations', JSON.stringify(window.evaluations || [])); } catch(_e) {}
+      lazyLoaded.evaluations = true;
+      if (typeof kpEvalRenderManagerList === 'function') kpEvalRenderManagerList();
+      return true;
+    } catch(e) {
+      console.warn('[KP lazy data test] evaluations load failed:', e && e.message ? e.message : e);
+      return false;
+    }
+  }
+
+  async function loadRenewalAttachmentsIfNeeded(){
+    if (lazyLoaded.renewalAttachments || !baseUrl()) return true;
+    try {
+      var data = await fetchPath('renewalAttachments').catch(function(){ return null; });
+      if (data && typeof attachRenewalAttachmentsFromRemote === 'function') {
+        attachRenewalAttachmentsFromRemote({ renewalAttachments:data });
+      } else if (data && typeof applyRenewalAttachments === 'function') {
+        applyRenewalAttachments({ renewalAttachments:data });
+      }
+      lazyLoaded.renewalAttachments = true;
+      try { if (typeof renderRenewals === 'function') renderRenewals(); } catch(_e) {}
+      return true;
+    } catch(e) {
+      console.warn('[KP lazy data test] renewal attachments load failed:', e && e.message ? e.message : e);
+      return false;
+    }
+  }
+
+  function wrapLoad(){
+    var previousLoad = window.loadFromFirebase || (typeof loadFromFirebase === 'function' ? loadFromFirebase : null);
+    if (typeof previousLoad !== 'function' || previousLoad.__kpLazyDataLoadingTestWrapped) return;
+    var wrapped = async function(){
+      return await runWithLightRoot(previousLoad, this, arguments);
+    };
+    wrapped.__kpLazyDataLoadingTestWrapped = true;
+    wrapped.__kpOriginal = previousLoad;
+    window.loadFromFirebase = wrapped;
+    try { loadFromFirebase = wrapped; } catch(_e) {}
+  }
+
+  function wrapGo(){
+    var previousGo = window.go;
+    if (typeof previousGo !== 'function' || previousGo.__kpLazyDataGoWrapped) return;
+    var wrapped = function(page){
+      var result = previousGo.apply(this, arguments);
+      if (page === 'otherdeleted' || page === 'deleted') {
+        setTimeout(function(){ loadDeletedBuckets(); }, 0);
+      }
+      if (page === 'eval') {
+        setTimeout(function(){ loadEvaluationsIfNeeded(); }, 0);
+      }
+      return result;
+    };
+    wrapped.__kpLazyDataGoWrapped = true;
+    window.go = wrapped;
+    try { go = wrapped; } catch(_e) {}
+  }
+
+  var previousPrintAttachment = window.printRenAttachmentById;
+  if (typeof previousPrintAttachment === 'function' && !previousPrintAttachment.__kpLazyDataAttachmentWrapped) {
+    window.printRenAttachmentById = async function(){
+      await loadRenewalAttachmentsIfNeeded();
+      return previousPrintAttachment.apply(this, arguments);
+    };
+    window.printRenAttachmentById.__kpLazyDataAttachmentWrapped = true;
+    try { printRenAttachmentById = window.printRenAttachmentById; } catch(_e) {}
+  }
+
+  window.kpLazyDataLoadingTestStatus = function(){
+    return {
+      enabled: true,
+      loaded: Object.assign({}, lazyLoaded),
+      lightRootCached: !!lightRootCache,
+      deferredSections: ['deleted buckets','renewal attachment blobs','evaluations'],
+      coreSectionsStillLoaded: ['students','payments','expenses','renewals','attLog','classes','settings','registrationRequests']
+    };
+  };
+
+  function install(){
+    wrapLoad();
+    wrapGo();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+  else install();
+})();
+</script>
 </body>
 
 </html>
