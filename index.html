@@ -28124,7 +28124,16 @@ document.addEventListener('DOMContentLoaded', function(){
     var previousLoad = window.loadFromFirebase || (typeof loadFromFirebase === 'function' ? loadFromFirebase : null);
     if (typeof previousLoad !== 'function' || previousLoad.__kpLazyDataLoadingTestWrapped) return;
     var wrapped = async function(){
-      return await runWithLightRoot(previousLoad, this, arguments);
+      var result = await runWithLightRoot(previousLoad, this, arguments);
+      setTimeout(function(){
+        try { if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications(); } catch(_e) {}
+        try { if (typeof updateNotifications === 'function') updateNotifications(); } catch(_e) {}
+        try { if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge(); } catch(_e) {}
+      }, 0);
+      setTimeout(function(){
+        try { if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications(); } catch(_e) {}
+      }, 700);
+      return result;
     };
     wrapped.__kpLazyDataLoadingTestWrapped = true;
     wrapped.__kpOriginal = previousLoad;
