@@ -2563,10 +2563,11 @@ body.kp-evaluator #pg-eval{display:block!important}
             <button class="btn btn-out" onclick="document.getElementById('restore-file').click()">⬆ استعادة من نسخة احتياطية</button>
             <button class="btn btn-out" onclick="downloadBackup()" style="background:#e3f2fd;border-color:#2196f3">📥 نسخة فورية الآن</button>
             <button class="btn btn-out" onclick="toggleAutoBackup()" style="background:#fff3cd;border-color:#f39c12">⚙️ تفعيل/إيقاف التلقائي</button>
-            <input type="file" id="restore-file" accept=".json" style="display:none" onchange="restoreBackup(event)">
+            <input type="file" id="restore-file" accept=".json,.gz,.gzip,.json.gz,application/json,application/gzip" style="display:none" onchange="restoreBackup(event)">
           </div>
           <div style="margin-top:12px;padding:10px;background:white;border-radius:8px;font-size:12px;color:var(--muted);line-height:1.8">
             <b style="color:#2e7d32">📋 ما يتم حفظه:</b> جميع الطلاب، السندات، المصاريف، التجديدات، الحضور، الفصول، الإعدادات، طلبات التسجيل، والطلاب المحذوفين.<br>
+            <b style="color:#2e7d32">🗜️ حجم النسخة:</b> يتم تحميل النسخة الكاملة بصيغة مضغوطة عند توفرها، مع استمرار دعم استعادة ملفات JSON القديمة.<br>
             <b style="color:#2196f3">Automatic backup:</b> Runs only for selected users, once per day globally, and skips when Firebase data has not changed.<br>
             <b style="color:#e67e22">💡 نصيحة:</b> انسخ ملفات النسخ الاحتياطية من مجلد Downloads إلى مجلد آمن بشكل دوري (مثل C:\\Backups).
           </div>
@@ -8834,16 +8835,25 @@ function downloadBackup() {
   alert('✅ تم تحميل النسخة الاحتياطية بنجاح\n\nاحفظها في مكان آمن (Google Drive/Dropbox)');
 }
 
+async function kpBackupTextFromFile(file) {
+  var name = String(file && file.name || '').toLowerCase();
+  var isCompressed = /\.json\.gz$|\.gz$|\.gzip$/.test(name) || String(file && file.type || '').indexOf('gzip') !== -1;
+  if (!isCompressed) return await file.text();
+  if (typeof DecompressionStream !== 'function') {
+    throw new Error('هذا المتصفح لا يدعم فك ضغط النسخة الاحتياطية. افتح النظام من Chrome/Edge حديث أو استخدم نسخة JSON غير مضغوطة.');
+  }
+  var stream = file.stream().pipeThrough(new DecompressionStream('gzip'));
+  return await new Response(stream).text();
+}
+
 async function restoreBackup(event) {
   const file = event.target.files[0];
   if (!file) return;
   if (!(await window.kpConfirmAsync(null, null, '⚠️ تحذير!\n\nاستعادة النسخة الاحتياطية ستحل محل جميع البيانات الحالية.\n\nهل أنت متأكد؟'))) {
     event.target.value = ''; return;
   }
-  const reader = new FileReader();
-  reader.onload = function(e) {
     try {
-      var backup = JSON.parse(e.target.result);
+      var backup = JSON.parse(await kpBackupTextFromFile(file));
 
       // ===== التطبيع: التعامل مع كل صيغ النسخ الاحتياطية =====
       // (1) النسخة الكاملة (legacy complete-firebase-and-local) تحتوي على __localFallback
@@ -8949,8 +8959,6 @@ async function restoreBackup(event) {
       alert('✅ تم استعادة النسخة الاحتياطية بنجاح!' + versionNote + '\n\n' + 'الطلاب: ' + (backup.students||[]).length + '\n' + 'السندات: ' + (backup.payments||[]).length + '\n' + 'المصاريف: ' + (backup.expenses||[]).length);
     } catch(err) { alert('❌ فشل قراءة الملف: ' + err.message); }
     event.target.value = '';
-  };
-  reader.readAsText(file);
 }
 
 
@@ -20499,15 +20507,28 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       kp_users: localJson('kp_users', [])
     };
   }
-  function saveBackupFile(backup){
-    var blob = new Blob([JSON.stringify(backup, null, 2)], { type:'application/json' });
+  async function saveBackupFile(backup){
+    var json = JSON.stringify(backup);
+    var compressed = false;
+    var blob;
+    try {
+      if (typeof CompressionStream === 'function') {
+        var stream = new Blob([json], { type:'application/json' }).stream().pipeThrough(new CompressionStream('gzip'));
+        blob = await new Response(stream).blob();
+        compressed = true;
+      }
+    } catch(e) {
+      console.warn('[KP] backup compression failed, using plain JSON:', e && e.message ? e.message : e);
+    }
+    if (!blob) blob = new Blob([json], { type:'application/json' });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = 'backup_حضانة_complete_' + new Date().toISOString().slice(0,10) + '.json';
+    a.download = 'backup_حضانة_complete_' + new Date().toISOString().slice(0,10) + (compressed ? '.json.gz' : '.json');
     document.body.appendChild(a);
     a.click();
     setTimeout(function(){ try { URL.revokeObjectURL(url); a.remove(); } catch(_e){} }, 1000);
+    return { compressed: compressed, bytes: blob.size, originalBytes: new Blob([json], { type:'application/json' }).size };
   }
   window.downloadBackup = async function(){
     try {
@@ -20543,7 +20564,7 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
       ].forEach(function(key){
         if (backup[key] === undefined) backup[key] = firebaseData[key] !== undefined ? firebaseData[key] : (localData[key] !== undefined ? localData[key] : {});
       });
-      saveBackupFile(backup);
+      var savedFile = await saveBackupFile(backup);
       // علّم اليوم كي لا تُطلق النسخة التلقائية مرة أخرى في نفس اليوم
       try {
         var __now = new Date();
@@ -20554,7 +20575,14 @@ function escapeHtml(x){return String(x||'').replace(/[&<>'"]/g,function(c){retur
         localStorage.setItem('kp_last_auto_backup_time', __now.toISOString());
       } catch(_e){}
       if (typeof showSyncBadge === 'function') showSyncBadge('تم تحميل النسخة الاحتياطية الكاملة');
-      alert('تم تحميل النسخة الاحتياطية الكاملة بنجاح. تشمل بيانات Firebase الحالية ونسخة محلية احتياطية داخل الملف.');
+      var sizeNote = '';
+      try {
+        if (savedFile && savedFile.compressed) {
+          var pct = savedFile.originalBytes ? Math.round((1 - savedFile.bytes / savedFile.originalBytes) * 100) : 0;
+          sizeNote = '\n\nتم ضغط الملف لتقليل الحجم' + (pct > 0 ? ' بنسبة تقريبية ' + pct + '%' : '') + '.';
+        }
+      } catch(_e) {}
+      alert('تم تحميل النسخة الاحتياطية الكاملة بنجاح. تشمل بيانات Firebase الحالية ونسخة محلية احتياطية داخل الملف.' + sizeNote);
     } catch(e) {
       console.error('[KP] complete backup failed:', e);
       alert('تعذر تجهيز النسخة الاحتياطية الكاملة: ' + (e && e.message ? e.message : e));
