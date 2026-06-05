@@ -27958,150 +27958,129 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
-<script id="kp-lazy-data-loading-test-20260603">
+<script id="kp-section-by-section-loader-test-20260605">
 (function(){
-  'use strict';
-  if (window.__kpLazyDataLoadingTest20260603) return;
-  window.__kpLazyDataLoadingTest20260603 = true;
+  if (window.kpSectionBySectionLoaderInstalled) return;
+  window.kpSectionBySectionLoaderInstalled = true;
 
-  var nativeFetch = window.fetch.bind(window);
-  var lightRootCache = null;
-  var lightRootCacheAt = 0;
-  var lazyLoaded = {
-    deleted: false,
-    renewalAttachments: false,
-    evaluations: false
+  var cache = null;
+  var cacheAt = 0;
+  var inFlight = null;
+  var stats = {
+    rootReadsIntercepted: 0,
+    sectionReads: 0,
+    estimatedBytes: 0,
+    lastLoadedAt: '',
+    lastSections: []
   };
 
   function txt(v){ return String(v == null ? '' : v); }
-  function baseUrl(){ return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); }
+  function baseUrl(){
+    try { return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); }
+    catch(_e){ return ''; }
+  }
   function isRootFirebaseUrl(url){
     var base = baseUrl();
-    if (!base || !url) return false;
-    var clean = txt(url).split('?')[0].replace(/\/+$/, '');
-    return clean === base + '.json';
-  }
-  function sectionToArray(section){
-    if (!section) return [];
-    if (Array.isArray(section)) return section.filter(Boolean);
-    if (typeof kpArrayFromFirebaseSection === 'function') return kpArrayFromFirebaseSection(section);
-    return Object.keys(section).map(function(k){
-      var v = section[k];
-      if (v && typeof v === 'object' && v.firebaseKey == null) v.firebaseKey = k;
-      return v;
-    }).filter(Boolean);
-  }
-  async function fetchPath(path){
-    var url = baseUrl() + '/' + path + '.json?ts=' + Date.now();
-    var res = await nativeFetch(url, { cache:'no-store' });
-    if (!res.ok) throw new Error(path + ' HTTP ' + res.status);
-    return await res.json();
-  }
-  function refreshPriorityBadgesFromPriorityData(data){
-    try {
-      if (!data) return;
-      if (data.nurserySettings && typeof data.nurserySettings === 'object') {
-        nurserySettings = nurserySettings && typeof nurserySettings === 'object' ? nurserySettings : {};
-        Object.assign(nurserySettings, data.nurserySettings);
-      }
-      if (data.students !== undefined) students = sectionToArray(data.students);
-      if (data.payments !== undefined) payments = sectionToArray(data.payments);
-      if (data.renewals !== undefined) renewals = sectionToArray(data.renewals);
-      try { if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications(); } catch(_regError) {}
-      try { if (typeof updateNotifications === 'function') updateNotifications(); } catch(_renError) {}
-    } catch(e) {
-      console.warn('[KP lazy data test] priority badge refresh failed:', e && e.message ? e.message : e);
-    }
-  }
-  function refreshRenewalBadgeDirect(renewalData){
-    try {
-      var list = sectionToArray(renewalData);
-      renewals = list;
-      var count = 0;
-      list.forEach(function(r){
-        var days = (typeof getRenDays === 'function') ? getRenDays(r && r.date) : null;
-        if (days === null || Number.isNaN(days)) return;
-        if (days < 0 || days <= 60) count++;
-      });
-      var btn = document.getElementById('notif-btn');
-      var badge = document.getElementById('notif-badge-count');
-      var navBadge = document.getElementById('renewals-nav-badge');
-      if (btn) {
-        btn.style.display = 'inline-flex';
-        if (count > 0) btn.classList.add('has-alerts');
-        else btn.classList.remove('has-alerts');
-      }
-      [badge, navBadge].forEach(function(el){
-        if (!el) return;
-        if (count > 0) {
-          el.style.display = el === badge ? 'flex' : 'inline-block';
-          el.textContent = count > 99 ? '99+' : String(count);
-        } else {
-          el.style.display = 'none';
-        }
-      });
-    } catch(e) {
-      console.warn('[KP lazy data test] direct renewal badge refresh failed:', e && e.message ? e.message : e);
-    }
-  }
-  async function buildLightRoot(){
-    var now = Date.now();
-    if (lightRootCache && now - lightRootCacheAt < 2500) return lightRootCache;
-    var renewalPromise = fetchPath('renewals').then(function(data){
-      refreshRenewalBadgeDirect(data);
-      return data;
-    }).catch(function(){ return null; });
-    var priorityPaths = [
-      'students',
-      'payments',
-      'nurserySettings'
-    ];
-    var priorityResults = await Promise.all(priorityPaths.map(function(path){
-      return fetchPath(path).catch(function(){ return null; });
-    }));
-    var data = {};
-    priorityPaths.forEach(function(path, index){ if (priorityResults[index] !== null && priorityResults[index] !== undefined) data[path] = priorityResults[index]; });
-    var renewalData = await renewalPromise;
-    if (renewalData !== null && renewalData !== undefined) data.renewals = renewalData;
-    refreshPriorityBadgesFromPriorityData(data);
-
-    var paths = [
-      'version',
-      'savedAt',
-      'expenses',
-      'attLog',
-      'attendanceLocks',
-      'CLASSES',
-      'kp_users',
-      'tombstones',
-      'restoredKeys',
-      'registrationRequests',
-      'studentChangeRequests'
-    ];
-    var results = await Promise.all(paths.map(function(path){
-      return fetchPath(path).catch(function(){ return null; });
-    }));
-    paths.forEach(function(path, index){ if (results[index] !== null && results[index] !== undefined) data[path] = results[index]; });
-    if (!data.version) data.version = 2;
-    data.__kpLazyLightRoot = true;
-    data.__kpDeferredSections = ['deletedStudents','deletedPayments','deletedExpenses','deletedRenewals','deletedClasses','renewalAttachments','evaluations'];
-    lightRootCache = data;
-    lightRootCacheAt = now;
-    return data;
+    var u = txt(url).split('?')[0].replace(/\/+$/, '');
+    return !!base && (u === base || u === base + '.json');
   }
   function responseFromJson(data){
     return new Response(JSON.stringify(data || {}), {
       status: 200,
-      headers: { 'Content-Type':'application/json' }
+      headers: { 'Content-Type':'application/json', 'X-KP-Section-Loader':'1' }
     });
   }
-  async function runWithLightRoot(fn, context, args){
+  function normalizeSectionName(path){
+    return txt(path).replace(/^\/+|\/+$/g, '');
+  }
+  async function fetchSection(path, options){
+    var base = baseUrl();
+    path = normalizeSectionName(path);
+    if (!base || !path) return undefined;
+    var url = base + '/' + path + '.json?sectionLoader=' + Date.now();
+    var res = await fetch(url, { cache:'no-store' });
+    stats.sectionReads++;
+    var text = await res.text();
+    stats.estimatedBytes += text.length;
+    if (!res.ok) throw new Error(path + ' HTTP ' + res.status);
+    if (!text || text === 'null') return options && Object.prototype.hasOwnProperty.call(options, 'fallback') ? options.fallback : undefined;
+    return JSON.parse(text);
+  }
+  function setDeep(root, path, value){
+    if (value === undefined) return;
+    var parts = normalizeSectionName(path).split('/');
+    var target = root;
+    for (var i=0; i<parts.length-1; i++){
+      if (!target[parts[i]] || typeof target[parts[i]] !== 'object') target[parts[i]] = {};
+      target = target[parts[i]];
+    }
+    target[parts[parts.length-1]] = value;
+  }
+  async function buildSectionRoot(force){
+    var now = Date.now();
+    if (!force && cache && now - cacheAt < 2500) return cache;
+    if (inFlight) return inFlight;
+
+    var paths = [
+      'version',
+      'migrationVersion',
+      'savedAt',
+      'migratedAt',
+      'students',
+      'payments',
+      'expenses',
+      'attLog',
+      'attendanceLocks',
+      'CLASSES',
+      'nurserySettings',
+      'renewals',
+      'kp_users',
+      'deletedStudents',
+      'deletedPayments',
+      'deletedExpenses',
+      'deletedRenewals',
+      'deletedClasses',
+      'tombstones',
+      'restoredKeys',
+      'registrationRequests',
+      'studentChangeRequests',
+      'renewalAttachments',
+      'evaluations',
+      'branding'
+    ];
+
+    stats.sectionReads = 0;
+    stats.estimatedBytes = 0;
+    stats.lastSections = paths.slice();
+    inFlight = Promise.all(paths.map(function(path){
+      return fetchSection(path, { fallback: null })
+        .then(function(value){ return { path:path, value:value }; })
+        .catch(function(error){
+          console.warn('[KP section loader test] section failed:', path, error && error.message ? error.message : error);
+          return { path:path, value:undefined, failed:true };
+        });
+    })).then(function(results){
+      var root = {};
+      results.forEach(function(item){ setDeep(root, item.path, item.value); });
+      if (!root.version) root.version = 2;
+      root.__kpSectionBySectionRoot = true;
+      root.__kpSectionBySectionLoadedAt = new Date().toISOString();
+      cache = root;
+      cacheAt = Date.now();
+      stats.lastLoadedAt = root.__kpSectionBySectionLoadedAt;
+      try { localStorage.setItem('kp_section_loader_stats', JSON.stringify(stats)); } catch(_e) {}
+      return root;
+    }).finally(function(){ inFlight = null; });
+    return inFlight;
+  }
+  async function runWithSectionRoot(fn, context, args){
     var oldFetch = window.fetch;
     window.fetch = function(input, options){
       var method = txt(options && options.method || 'GET').toUpperCase();
       var url = typeof input === 'string' ? input : (input && input.url);
       if (method === 'GET' && isRootFirebaseUrl(url)) {
-        return buildLightRoot().then(responseFromJson);
+        stats.rootReadsIntercepted++;
+        return buildSectionRoot(true).then(responseFromJson);
       }
       return oldFetch.apply(this, arguments);
     };
@@ -28111,142 +28090,573 @@ document.addEventListener('DOMContentLoaded', function(){
       window.fetch = oldFetch;
     }
   }
-
-  async function loadDeletedBuckets(){
-    if (lazyLoaded.deleted || !baseUrl()) return true;
-    try {
-      if (typeof showSyncBadge === 'function') showSyncBadge('جاري تحميل سلة المحذوفات...');
-      var results = await Promise.all([
-        fetchPath('deletedStudents').catch(function(){ return []; }),
-        fetchPath('deletedPayments').catch(function(){ return []; }),
-        fetchPath('deletedExpenses').catch(function(){ return []; }),
-        fetchPath('deletedRenewals').catch(function(){ return []; }),
-        fetchPath('deletedClasses').catch(function(){ return []; })
-      ]);
-      deletedStudents = sectionToArray(results[0]);
-      deletedPayments = sectionToArray(results[1]);
-      deletedExpenses = sectionToArray(results[2]);
-      deletedRenewals = sectionToArray(results[3]);
-      deletedClasses = sectionToArray(results[4]);
-      try { _safeSetSlim('kp_deleted_students', deletedStudents); } catch(_e) {}
-      try { _safeSetSlim('kp_deleted_payments', deletedPayments); } catch(_e) {}
-      try { _safeSetSlim('kp_deleted_expenses', deletedExpenses); } catch(_e) {}
-      try { _safeSetSlim('kp_deleted_renewals', deletedRenewals); } catch(_e) {}
-      try { _safeSetSlim('kp_deleted_classes', deletedClasses, 'key'); } catch(_e) {}
-      lazyLoaded.deleted = true;
-      if (typeof cleanupDeletedBuckets === 'function') cleanupDeletedBuckets();
-      if (typeof renderDeletedStudents === 'function') renderDeletedStudents();
-      if (typeof renderOtherDeletedItems === 'function') renderOtherDeletedItems();
-      if (typeof showSyncBadge === 'function') showSyncBadge('تم تحميل سلة المحذوفات');
-      return true;
-    } catch(e) {
-      console.warn('[KP lazy data test] deleted buckets load failed:', e && e.message ? e.message : e);
-      if (typeof showSyncBadge === 'function') showSyncBadge('تعذر تحميل سلة المحذوفات');
-      return false;
-    }
-  }
-
-  async function loadEvaluationsIfNeeded(){
-    if (lazyLoaded.evaluations || !baseUrl()) return true;
-    try {
-      var data = await fetchPath('evaluations').catch(function(){ return []; });
-      window.evaluations = sectionToArray(data);
-      try { evaluations = window.evaluations; } catch(_e) {}
-      try { localStorage.setItem('kp_evaluations', JSON.stringify(window.evaluations || [])); } catch(_e) {}
-      lazyLoaded.evaluations = true;
-      if (typeof kpEvalRenderManagerList === 'function') kpEvalRenderManagerList();
-      return true;
-    } catch(e) {
-      console.warn('[KP lazy data test] evaluations load failed:', e && e.message ? e.message : e);
-      return false;
-    }
-  }
-
-  async function loadRenewalAttachmentsIfNeeded(){
-    if (lazyLoaded.renewalAttachments || !baseUrl()) return true;
-    try {
-      var data = await fetchPath('renewalAttachments').catch(function(){ return null; });
-      if (data && typeof attachRenewalAttachmentsFromRemote === 'function') {
-        attachRenewalAttachmentsFromRemote({ renewalAttachments:data });
-      } else if (data && typeof applyRenewalAttachments === 'function') {
-        applyRenewalAttachments({ renewalAttachments:data });
-      }
-      lazyLoaded.renewalAttachments = true;
-      try { if (typeof renderRenewals === 'function') renderRenewals(); } catch(_e) {}
-      return true;
-    } catch(e) {
-      console.warn('[KP lazy data test] renewal attachments load failed:', e && e.message ? e.message : e);
-      return false;
-    }
-  }
-
-  function wrapLoad(){
+  function install(){
     var previousLoad = window.loadFromFirebase || (typeof loadFromFirebase === 'function' ? loadFromFirebase : null);
-    if (typeof previousLoad !== 'function' || previousLoad.__kpLazyDataLoadingTestWrapped) return;
+    if (typeof previousLoad !== 'function' || previousLoad.__kpSectionBySectionWrapped) return;
     var wrapped = async function(){
-      var result = await runWithLightRoot(previousLoad, this, arguments);
-      setTimeout(function(){
-        try { if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications(); } catch(_e) {}
-        try { if (typeof updateNotifications === 'function') updateNotifications(); } catch(_e) {}
-        try { if (typeof updateFormsNavBadge === 'function') updateFormsNavBadge(); } catch(_e) {}
-      }, 0);
-      setTimeout(function(){
-        try { if (typeof updateRegExpiryNotifications === 'function') updateRegExpiryNotifications(); } catch(_e) {}
-      }, 700);
-      return result;
+      return await runWithSectionRoot(previousLoad, this, arguments);
     };
-    wrapped.__kpLazyDataLoadingTestWrapped = true;
+    wrapped.__kpSectionBySectionWrapped = true;
     wrapped.__kpOriginal = previousLoad;
     window.loadFromFirebase = wrapped;
     try { loadFromFirebase = wrapped; } catch(_e) {}
   }
+  window.kpSectionLoaderStats = function(){ return Object.assign({}, stats); };
+  window.kpSectionLoaderClearCache = function(){ cache = null; cacheAt = 0; return true; };
 
-  function wrapGo(){
-    var previousGo = window.go;
-    if (typeof previousGo !== 'function' || previousGo.__kpLazyDataGoWrapped) return;
-    var wrapped = function(page){
-      var result = previousGo.apply(this, arguments);
-      if (page === 'otherdeleted' || page === 'deleted') {
-        setTimeout(function(){ loadDeletedBuckets(); }, 0);
-      }
-      if (page === 'eval') {
-        setTimeout(function(){ loadEvaluationsIfNeeded(); }, 0);
-      }
-      return result;
-    };
-    wrapped.__kpLazyDataGoWrapped = true;
-    window.go = wrapped;
-    try { go = wrapped; } catch(_e) {}
-  }
-
-  var previousPrintAttachment = window.printRenAttachmentById;
-  if (typeof previousPrintAttachment === 'function' && !previousPrintAttachment.__kpLazyDataAttachmentWrapped) {
-    window.printRenAttachmentById = async function(){
-      await loadRenewalAttachmentsIfNeeded();
-      return previousPrintAttachment.apply(this, arguments);
-    };
-    window.printRenAttachmentById.__kpLazyDataAttachmentWrapped = true;
-    try { printRenAttachmentById = window.printRenAttachmentById; } catch(_e) {}
-  }
-
-  window.kpLazyDataLoadingTestStatus = function(){
-    return {
-      enabled: true,
-      loaded: Object.assign({}, lazyLoaded),
-      lightRootCached: !!lightRootCache,
-      deferredSections: ['deleted buckets','renewal attachment blobs','evaluations'],
-      coreSectionsStillLoaded: ['students','payments','expenses','renewals','attLog','classes','settings','registrationRequests']
-    };
-  };
-
-  function install(){
-    wrapLoad();
-    wrapGo();
-  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
   else install();
 })();
 </script>
+
+
+
+
+
+
+
+<script id="kp-dashboard-summary-test-20260605">
+(function(){
+  if (window.kpDashboardSummaryTestInstalled) return;
+  window.kpDashboardSummaryTestInstalled = true;
+
+  var summaryCache = {};
+  var summaryRunningByYear = {};
+  var monthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+  var sectionNames = ['students','payments','expenses','attLog','CLASSES','renewals','registrationRequests'];
+
+  function txt(v){ return String(v == null ? '' : v); }
+  function baseUrl(){ try { return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); } catch(_e){ return ''; } }
+  function selectedYear(){ return parseInt((document.getElementById('dash-year-filter') || {}).value, 10) || new Date().getFullYear(); }
+  function setText(id, value){ var el = document.getElementById(id); if (el) el.textContent = value; }
+  function money(v){ return Number(v || 0).toLocaleString('ar-AE'); }
+  function compactMoney(v){
+    v = Number(v || 0);
+    if (Math.abs(v) >= 1000000) return (v / 1000000).toFixed(v % 1000000 ? 1 : 0) + 'M';
+    if (Math.abs(v) >= 1000) return (v / 1000).toFixed(v % 1000 ? 1 : 0) + 'K';
+    return String(Math.round(v));
+  }
+  function esc(v){ return txt(v).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function asArray(value){
+    if (Array.isArray(value)) return value.filter(Boolean);
+    if (value && typeof value === 'object') return Object.keys(value).map(function(k){ return value[k]; }).filter(Boolean);
+    return [];
+  }
+  function dateYear(value){
+    if (typeof getDateYear === 'function') return getDateYear(value);
+    var s = txt(value);
+    var m = s.match(/20\d{2}/);
+    return m ? parseInt(m[0], 10) : 0;
+  }
+  function dateMonth(value){
+    var s = txt(typeof normalizeDate === 'function' ? normalizeDate(value) : value);
+    var m = s.match(/^20\d{2}[-\/](\d{1,2})/);
+    return m ? String(parseInt(m[1], 10)).padStart(2, '0') : '';
+  }
+  function isActive(student){
+    if (typeof isActiveStudent === 'function') return isActiveStudent(student);
+    if (!student) return false;
+    var status = txt(student.studentStatus || student.enrollmentStatus || student.status || 'active').toLowerCase();
+    return !(student.left === true || student.isLeft === true || student.leftDate || status === 'left' || status === 'inactive' || status === 'withdrawn');
+  }
+  function receiptNo(x){
+    var raw = x && (x.id != null ? x.id : (x.receiptNo || x.receiptNumber || x.number || 0));
+    var n = parseInt(txt(raw).replace(/[^0-9]/g,''), 10);
+    return isNaN(n) ? 0 : n;
+  }
+  async function fetchJson(path, fallback){
+    var base = baseUrl();
+    if (!base) return fallback;
+    var clean = txt(path).replace(/^\/+/, '');
+    var res = await fetch(base + '/' + clean + '.json?ts=' + Date.now(), { cache:'no-store' });
+    if (!res.ok) throw new Error('Firebase read failed: ' + clean + ' (' + res.status + ')');
+    var data = await res.json();
+    return data == null ? fallback : data;
+  }
+  async function fetchSavedAt(){
+    try { return txt(await fetchJson('savedAt', '')); } catch(_e) { return ''; }
+  }
+  async function fetchDashboardSections(){
+    var pairs = await Promise.all(sectionNames.map(function(name){
+      return fetchJson(name, name === 'attLog' || name === 'CLASSES' || name === 'registrationRequests' ? {} : []).then(function(value){
+        return [name, value];
+      });
+    }));
+    var data = {};
+    pairs.forEach(function(pair){ data[pair[0]] = pair[1]; });
+    return data;
+  }
+  function pendingRegistrationCount(root){
+    if (!root) return 0;
+    if (Array.isArray(root)) {
+      return root.filter(function(r){ return !r || !r.status || txt(r.status).toLowerCase() === 'pending' || txt(r.status) === 'جديد'; }).length;
+    }
+    if (root.pending) return asArray(root.pending).length;
+    return asArray(root).filter(function(r){
+      var status = txt(r && r.status).toLowerCase();
+      return !status || status === 'pending' || status === 'new' || status === 'جديد';
+    }).length;
+  }
+  function renewalDueCount(list){
+    var today = new Date();
+    today = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return asArray(list).filter(function(r){
+      var dateValue = r && (r.date || r.expiryDate || r.renewalDate || r.endDate);
+      if (!dateValue) return false;
+      var d = new Date(txt(dateValue).slice(0,10) + 'T00:00:00');
+      if (isNaN(d.getTime())) return false;
+      var days = Math.round((d - today) / 86400000);
+      var hidden = r.hidden === true || r.dismissed === true || r.isHidden === true;
+      return !hidden && days <= 60;
+    }).length;
+  }
+  function buildSummaryFromFirebaseData(year, data, sourceSavedAt){
+    year = Number(year || selectedYear());
+    var studentsList = asArray(data.students);
+    var activeStudents = studentsList.filter(isActive);
+    var pays = asArray(data.payments);
+    var exps = asArray(data.expenses);
+    var classes = data.CLASSES && typeof data.CLASSES === 'object' ? data.CLASSES : {};
+    var log = data.attLog && typeof data.attLog === 'object' ? data.attLog : {};
+    var today = new Date().toISOString().slice(0,10);
+    var classCounts = {};
+    activeStudents.forEach(function(s){
+      var cls = s.cls || s.className || s.class || 'بدون فصل';
+      classCounts[cls] = (classCounts[cls] || 0) + 1;
+    });
+    var present = 0;
+    var absent = 0;
+    activeStudents.forEach(function(s){
+      var id = s.id || s.studentId || s.key || '';
+      var direct = log[today + '_' + id];
+      var nested = log[today] && (log[today][id] || log[today][txt(id)]);
+      var v = direct || nested || '';
+      if (v === 'present' || v === true || txt(v).toLowerCase() === 'present' || txt(v) === 'حاضر') present++;
+      if (v === 'absent' || txt(v).toLowerCase() === 'absent' || txt(v) === 'غائب') absent++;
+    });
+    var monthly = {};
+    for (var i=1; i<=12; i++) monthly[String(i).padStart(2,'0')] = { label: monthNames[i-1], inc:0, exp:0 };
+    var income = 0, incomeCount = 0, expense = 0, expenseCount = 0, recent = [];
+    pays.forEach(function(p){
+      if (!p || dateYear(p.date || p.paymentDate || p.createdAt) !== year) return;
+      var amt = Number(p.amt || p.amount || p.value || 0);
+      income += amt;
+      incomeCount++;
+      recent.push({ id:p.id || p.receiptNo || '', who:p.who || p.studentName || p.parentName || '', amt:amt, desc:p.desc || p.description || '', date:p.date || p.paymentDate || '' });
+      var m = dateMonth(p.date || p.paymentDate || p.createdAt);
+      if (monthly[m]) monthly[m].inc += amt;
+    });
+    exps.forEach(function(e){
+      var d = e && (e.exp_date || e.date || e.expenseDate || e.createdAt || '');
+      if (!e || dateYear(d) !== year) return;
+      var amt = Number(e.amt || e.amount || e.value || 0);
+      expense += amt;
+      expenseCount++;
+      var m = dateMonth(d);
+      if (monthly[m]) monthly[m].exp += amt;
+    });
+    recent.sort(function(a,b){ return receiptNo(b) - receiptNo(a) || txt(b.date).localeCompare(txt(a.date)); });
+    var classRows = Object.keys(classes).map(function(className){
+      var cls = classes[className] || {};
+      return { name: className, emoji: cls.emoji || '', teacher: cls.teacher || '—', count: classCounts[className] || 0 };
+    });
+    Object.keys(classCounts).forEach(function(className){
+      if (!classes[className]) classRows.push({ name: className, emoji: '', teacher: '—', count: classCounts[className] || 0 });
+    });
+    return {
+      version: 2,
+      year: year,
+      sourceSavedAt: txt(sourceSavedAt),
+      generatedAt: new Date().toISOString(),
+      activeStudents: activeStudents.length,
+      inactiveStudents: Math.max(0, studentsList.length - activeStudents.length),
+      presentToday: present,
+      absentToday: absent,
+      classCounts: classRows,
+      finance: { income: income, expense: expense, net: income - expense, incomeCount: incomeCount, expenseCount: expenseCount, monthly: monthly },
+      recentPayments: recent.slice(0, 10),
+      registrationPending: pendingRegistrationCount(data.registrationRequests),
+      renewalDue: renewalDueCount(data.renewals)
+    };
+  }
+  async function buildSummaryFromFreshFirebase(year, sourceSavedAt){
+    var data = await fetchDashboardSections();
+    return buildSummaryFromFirebaseData(year, data, sourceSavedAt);
+  }
+  function renderSummary(summary){
+    if (!summary) return false;
+    var f = summary.finance || {};
+    setText('s-total', summary.activeStudents);
+    setText('s-present', summary.presentToday || '—');
+    setText('s-absent', summary.absentToday || '—');
+    setText('s-income', money(f.income) + ' د.إ');
+    setText('s-expenses', money(f.expense) + ' د.إ');
+    setText('s-income-count', (f.incomeCount || 0) + ' سند');
+    setText('s-expenses-count', (f.expenseCount || 0) + ' مصروف');
+    var netEl = document.getElementById('s-net');
+    if (netEl) {
+      netEl.textContent = money(f.net) + ' د.إ';
+      netEl.style.color = Number(f.net || 0) >= 0 ? '#27ae60' : '#e74c3c';
+    }
+    setText('dash-year-total', 'سنة ' + summary.year + ' — ' + (f.incomeCount || 0) + ' سند، ' + (f.expenseCount || 0) + ' مصروف');
+    var clsTable = document.getElementById('cls-table');
+    if (clsTable) {
+      clsTable.innerHTML = (summary.classCounts || []).map(function(c){
+        return '<tr><td>' + (c.emoji || '') + ' ' + esc(c.name || '') + '</td><td><b>' + (c.count || 0) + '</b> طالب</td><td>' + esc(c.teacher || '—') + '</td></tr>';
+      }).join('');
+    }
+    var recentEl = document.getElementById('recent-pay');
+    if (recentEl) {
+      recentEl.innerHTML = (summary.recentPayments || []).map(function(p){
+        return '<tr><td><b>#' + esc(p.id || '') + '</b></td><td>' + esc(p.who || '') + '</td><td class="fin-pos">' + money(p.amt) + ' د.إ</td><td style="font-size:12px">' + esc(p.desc || '') + '</td><td>' + esc(p.date || '') + '</td></tr>';
+      }).join('') || '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">لا توجد بيانات في ' + summary.year + '</td></tr>';
+    }
+    renderSummaryChart(summary);
+    return true;
+  }
+  function renderSummaryChart(summary){
+    var f = summary.finance || {};
+    var monthly = f.monthly || {};
+    var keys = Object.keys(monthly).sort();
+    var title = document.getElementById('finance-chart-title');
+    if (title) title.textContent = '📊 الإيرادات والمصروفات الشهرية - سنة ' + summary.year;
+    var sum = document.getElementById('finance-chart-summary');
+    if (sum) {
+      sum.innerHTML = '<span>💰 الإيرادات: <span style="color:#27ae60">' + money(f.income) + ' د.إ</span></span>' +
+        '<span>🧾 المصروفات: <span style="color:#e67e22">' + money(f.expense) + ' د.إ</span></span>' +
+        '<span>📈 الصافي: <span style="color:' + (Number(f.net || 0) >= 0 ? '#27ae60' : '#e74c3c') + '">' + money(f.net) + ' د.إ</span></span>';
+    }
+    var chart = document.getElementById('finance-chart');
+    if (!chart) return;
+    if (!keys.length) {
+      chart.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);font-size:14px">📭 لا توجد بيانات مالية</div>';
+      return;
+    }
+
+    var W = Math.max(keys.length * 70, 600);
+    var H = 280;
+    var padTop = 20, padBottom = 50, padLeft = 60, padRight = 20;
+    var chartW = W - padLeft - padRight;
+    var chartH = H - padTop - padBottom;
+    var maxV = Math.max.apply(null, keys.map(function(k){ return Math.max(monthly[k].inc || 0, monthly[k].exp || 0); }).concat([1]));
+    var barGroupW = chartW / keys.length;
+    var barW = Math.min(28, barGroupW / 3);
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;direction:ltr;display:block" xmlns="http://www.w3.org/2000/svg">';
+    svg += '<defs><linearGradient id="incGradSummary" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2ecc71" /><stop offset="100%" stop-color="#27ae60" /></linearGradient><linearGradient id="expGradSummary" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f39c12" /><stop offset="100%" stop-color="#e67e22" /></linearGradient></defs>';
+
+    for (var i = 0; i <= 5; i++) {
+      var y = padTop + (chartH * i / 5);
+      var val = maxV * (1 - i/5);
+      svg += '<line x1="' + padLeft + '" y1="' + y + '" x2="' + (W-padRight) + '" y2="' + y + '" stroke="#e8e8e8" stroke-width="1" />';
+      svg += '<text x="' + (padLeft - 8) + '" y="' + (y + 4) + '" text-anchor="end" font-size="10" fill="#888" font-family="Tajawal">' + (val >= 1000 ? (val/1000).toFixed(0) + 'K' : val.toFixed(0)) + '</text>';
+    }
+
+    keys.forEach(function(k, i) {
+      var d = monthly[k] || {};
+      var groupX = padLeft + i * barGroupW + (barGroupW - barW*2 - 4) / 2;
+      var incH = d.inc > 0 ? Math.max(2, (d.inc / maxV) * chartH) : 0;
+      var expH = d.exp > 0 ? Math.max(2, (d.exp / maxV) * chartH) : 0;
+      var incY = padTop + chartH - incH;
+      var expY = padTop + chartH - expH;
+      var labelY = padTop + chartH + 18;
+      var net = (d.inc || 0) - (d.exp || 0);
+      svg += '<rect x="' + groupX + '" y="' + incY + '" width="' + barW + '" height="' + incH + '" rx="3" fill="url(#incGradSummary)"><title>' + esc(d.label) + ' - إيرادات: ' + money(d.inc) + ' د.إ</title></rect>';
+      svg += '<rect x="' + (groupX + barW + 4) + '" y="' + expY + '" width="' + barW + '" height="' + expH + '" rx="3" fill="url(#expGradSummary)"><title>' + esc(d.label) + ' - مصروفات: ' + money(d.exp) + ' د.إ</title></rect>';
+      if ((d.inc || 0) > 0 && incH >= 26) {
+        svg += '<text x="' + (groupX + barW / 2) + '" y="' + (incY + incH / 2) + '" text-anchor="middle" dominant-baseline="middle" font-size="8" font-weight="800" fill="#fff" font-family="Tajawal" transform="rotate(-90 ' + (groupX + barW / 2) + ' ' + (incY + incH / 2) + ')">' + compactMoney(d.inc) + '</text>';
+      }
+      if ((d.exp || 0) > 0 && expH >= 26) {
+        svg += '<text x="' + (groupX + barW + 4 + barW / 2) + '" y="' + (expY + expH / 2) + '" text-anchor="middle" dominant-baseline="middle" font-size="8" font-weight="800" fill="#fff" font-family="Tajawal" transform="rotate(-90 ' + (groupX + barW + 4 + barW / 2) + ' ' + (expY + expH / 2) + ')">' + compactMoney(d.exp) + '</text>';
+      }
+      svg += '<text x="' + (groupX + barW + 2) + '" y="' + labelY + '" text-anchor="middle" font-size="11" font-weight="600" fill="#1e6b3f" font-family="Tajawal">' + esc(d.label || k) + '</text>';
+      svg += '<text x="' + (groupX + barW + 2) + '" y="' + (labelY + 14) + '" text-anchor="middle" font-size="9" font-weight="700" fill="' + (net>=0?'#27ae60':'#e74c3c') + '" font-family="Tajawal">' + (net>=0?'+':'') + (net/1000).toFixed(0) + 'K</text>';
+    });
+
+    svg += '</svg>';
+    chart.innerHTML = '<div style="overflow-x:auto;width:100%">' + svg + '</div>';
+  }
+  async function fetchSummary(year, sourceSavedAt){
+    year = Number(year || selectedYear());
+    var cached = summaryCache[year];
+    if (cached && cached.sourceSavedAt === txt(sourceSavedAt)) return cached;
+    var base = baseUrl();
+    if (!base) return null;
+    try {
+      var res = await fetch(base + '/dashboardSummary/' + year + '.json?ts=' + Date.now(), { cache:'no-store' });
+      if (!res.ok) return null;
+      var data = await res.json();
+      if (data && data.version && data.sourceSavedAt && data.sourceSavedAt === txt(sourceSavedAt)) {
+        summaryCache[year] = data;
+        return data;
+      }
+    } catch(_e) {}
+    return null;
+  }
+  async function saveSummary(summary){
+    var base = baseUrl();
+    if (!base || !summary || !summary.year || !summary.sourceSavedAt) return false;
+    try {
+      await fetch(base + '/dashboardSummary/' + summary.year + '.json', {
+        method:'PUT',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify(summary)
+      });
+      summaryCache[summary.year] = summary;
+      return true;
+    } catch(_e) {
+      return false;
+    }
+  }
+  async function loadOrBuildSummary(year){
+    year = Number(year || selectedYear());
+    if (summaryRunningByYear[year]) return summaryRunningByYear[year];
+    summaryRunningByYear[year] = (async function(){
+      var sourceSavedAt = await fetchSavedAt();
+      var summary = await fetchSummary(year, sourceSavedAt);
+      if (summary) return summary;
+      var built = await buildSummaryFromFreshFirebase(year, sourceSavedAt);
+      await saveSummary(built);
+      return built;
+    })().finally(function(){ delete summaryRunningByYear[year]; });
+    return summaryRunningByYear[year];
+  }
+  function maskDashboardSummary(){
+    ['s-total','s-present','s-absent','s-income','s-expenses','s-net'].forEach(function(id){ setText(id, 'جاري التحميل'); });
+    setText('dash-year-total', 'تحميل ملخص الداشبورد...');
+    var clsTable = document.getElementById('cls-table');
+    if (clsTable) clsTable.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:18px;color:var(--muted);font-weight:900">جاري التحميل</td></tr>';
+    var chart = document.getElementById('finance-chart');
+    if (chart) chart.innerHTML = '<div style="text-align:center;padding:36px;color:var(--muted);font-weight:900">جاري تحميل ملخص الداشبورد...</div>';
+  }
+  function install(){
+    var previousRenderDash = window.renderDash || (typeof renderDash === 'function' ? renderDash : null);
+    if (typeof previousRenderDash === 'function' && !previousRenderDash.__kpDashboardSummaryWrapped) {
+      var wrapped = function(){
+        var year = selectedYear();
+        var cached = summaryCache[year];
+        if (cached) return renderSummary(cached);
+        maskDashboardSummary();
+        loadOrBuildSummary(year).then(function(summary){ renderSummary(summary); }).catch(function(error){
+          console.warn('[KP dashboard summary test] failed:', error && error.message ? error.message : error);
+          previousRenderDash.apply(this, arguments);
+        }.bind(this));
+      };
+      wrapped.__kpDashboardSummaryWrapped = true;
+      window.renderDash = wrapped;
+      try { renderDash = wrapped; } catch(_e) {}
+    }
+    var previousDashYearChanged = window.dashYearChanged || (typeof dashYearChanged === 'function' ? dashYearChanged : null);
+    if (typeof previousDashYearChanged === 'function' && !previousDashYearChanged.__kpDashboardSummaryWrapped) {
+      var yWrapped = function(val){
+        try { dashYear = val ? parseInt(val, 10) : 0; } catch(_e) {}
+        return window.renderDash();
+      };
+      yWrapped.__kpDashboardSummaryWrapped = true;
+      window.dashYearChanged = yWrapped;
+      try { dashYearChanged = yWrapped; } catch(_e) {}
+    }
+  }
+  window.kpBuildDashboardSummaryNow = async function(year){
+    year = Number(year || selectedYear());
+    var sourceSavedAt = await fetchSavedAt();
+    var summary = await buildSummaryFromFreshFirebase(year, sourceSavedAt);
+    await saveSummary(summary);
+    renderSummary(summary);
+    return summary;
+  };
+  window.kpDashboardSummaryCache = function(){ return Object.assign({}, summaryCache); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+  else install();
+})();
+</script>
+
+<script id="kp-firebase-traffic-guard-20260605">
+(function(){
+  if (window.kpFirebaseTrafficGuardInstalled) return;
+  window.kpFirebaseTrafficGuardInstalled = true;
+
+  var statsKey = 'kp_firebase_traffic_guard_stats';
+  var fullLoadPromise = null;
+  var fullLoadStartedAt = 0;
+
+  function txt(v){ return String(v == null ? '' : v); }
+  function baseUrl(){
+    try { return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); }
+    catch(_e) { return ''; }
+  }
+  function isRootRead(url, method){
+    var base = baseUrl();
+    if (!base || txt(method || 'GET').toUpperCase() !== 'GET') return false;
+    var u = txt(url).split('?')[0].replace(/\/+$/, '');
+    return u === base + '.json' || u === base;
+  }
+  function readStats(){
+    try { return JSON.parse(localStorage.getItem(statsKey) || '{}'); } catch(_e) { return {}; }
+  }
+  function writeStats(stats){
+    try { localStorage.setItem(statsKey, JSON.stringify(stats)); } catch(_e) {}
+  }
+  function recordRootRead(url){
+    var stats = readStats();
+    var day = new Date().toISOString().slice(0,10);
+    stats.day = stats.day === day ? stats.day : day;
+    if (!stats.byDay || stats.day !== day) stats.byDay = {};
+    stats.byDay[day] = (stats.byDay[day] || 0) + 1;
+    stats.lastRootReadAt = new Date().toISOString();
+    stats.lastRootReadUrl = txt(url).slice(0, 180);
+    writeStats(stats);
+    if (stats.byDay[day] > 6) {
+      console.warn('[KP traffic guard] Full Firebase root reads today:', stats.byDay[day]);
+    }
+  }
+
+  function installFetchObserver(){
+    if (window.fetch && !window.fetch.__kpTrafficGuardWrapped) {
+      var originalFetch = window.fetch;
+      var wrappedFetch = function(input, options){
+        var method = (options && options.method) || 'GET';
+        var url = typeof input === 'string' ? input : (input && input.url);
+        if (isRootRead(url, method)) recordRootRead(url);
+        return originalFetch.apply(this, arguments);
+      };
+      wrappedFetch.__kpTrafficGuardWrapped = true;
+      wrappedFetch.__kpOriginal = originalFetch;
+      window.fetch = wrappedFetch;
+    }
+  }
+
+  function asArray(value){
+    if (Array.isArray(value)) return value.filter(Boolean);
+    if (value && typeof value === 'object') return Object.keys(value).map(function(k){
+      var item = value[k];
+      if (item && typeof item === 'object' && item.id == null && /^k_?/.test(k)) item.id = String(k).replace(/^k_?/, '');
+      return item;
+    }).filter(Boolean);
+    return [];
+  }
+
+  async function fetchSection(path, fallback){
+    var base = baseUrl();
+    if (!base) return fallback;
+    try {
+      var res = await fetch(base + '/' + path + '.json?trafficGuard=' + Date.now(), { cache:'no-store' });
+      if (!res.ok) return fallback;
+      return await res.json();
+    } catch(_e) {
+      return fallback;
+    }
+  }
+
+  function numericIdsFrom(arr, keyField){
+    var ids = [];
+    asArray(arr).forEach(function(item){
+      var raw = item && typeof item === 'object' ? item[keyField || 'id'] : item;
+      var id = Number(raw);
+      if (Number.isFinite(id) && id > 0) ids.push(id);
+    });
+    return ids;
+  }
+
+  function addIds(set, arr, keyField){
+    numericIdsFrom(arr, keyField).forEach(function(id){ set.add(id); });
+  }
+
+  async function remoteIdsFor(activePath, deletedPath, tombstonePath, localActive, localDeleted, startAt){
+    var used = new Set();
+    addIds(used, localActive || [], 'id');
+    addIds(used, localDeleted || [], 'id');
+    var results = await Promise.all([
+      fetchSection(activePath, null),
+      fetchSection(deletedPath, null),
+      fetchSection(tombstonePath, null)
+    ]);
+    addIds(used, results[0], 'id');
+    addIds(used, results[1], 'id');
+    addIds(used, results[2], 'id');
+    var candidate = Number(startAt || 1);
+    used.forEach(function(id){ if (id >= candidate) candidate = id + 1; });
+    while (used.has(candidate)) candidate++;
+    return candidate;
+  }
+
+  function installIdOptimizers(){
+    window.getSafeNextReceiptIdRemoteAware = async function(){
+      return remoteIdsFor('payments', 'deletedPayments', 'tombstones/payments', window.payments || (typeof payments !== 'undefined' ? payments : []), window.deletedPayments || (typeof deletedPayments !== 'undefined' ? deletedPayments : []), 1);
+    };
+    try { getSafeNextReceiptIdRemoteAware = window.getSafeNextReceiptIdRemoteAware; } catch(_e) {}
+
+    window.getSafeNextStudentIdRemoteAware = async function(){
+      return remoteIdsFor('students', 'deletedStudents', 'tombstones/students', window.students || (typeof students !== 'undefined' ? students : []), window.deletedStudents || (typeof deletedStudents !== 'undefined' ? deletedStudents : []), 200);
+    };
+    try { getSafeNextStudentIdRemoteAware = window.getSafeNextStudentIdRemoteAware; } catch(_e) {}
+
+    window.getSafeNextRenewalIdRemoteAware = async function(){
+      return remoteIdsFor('renewals', 'deletedRenewals', 'tombstones/renewals', window.renewals || (typeof renewals !== 'undefined' ? renewals : []), window.deletedRenewals || (typeof deletedRenewals !== 'undefined' ? deletedRenewals : []), 51);
+    };
+    try { getSafeNextRenewalIdRemoteAware = window.getSafeNextRenewalIdRemoteAware; } catch(_e) {}
+
+    window.getSafeNextExpenseIdRemoteAware = async function(){
+      var used = new Set();
+      addIds(used, window.expenses || (typeof expenses !== 'undefined' ? expenses : []), 'id');
+      addIds(used, window.deletedExpenses || (typeof deletedExpenses !== 'undefined' ? deletedExpenses : []), 'id');
+      var results = await Promise.all([
+        fetchSection('expenses', null),
+        fetchSection('deletedExpenses', null),
+        fetchSection('tombstones/expenses', null)
+      ]);
+      addIds(used, results[0], 'id');
+      addIds(used, results[1], 'id');
+      addIds(used, results[2], 'id');
+      var candidate = 600;
+      used.forEach(function(id){ if (id >= candidate) candidate = id + 1; });
+      while (used.has(candidate)) candidate++;
+      return candidate;
+    };
+    try { getSafeNextExpenseIdRemoteAware = window.getSafeNextExpenseIdRemoteAware; } catch(_e) {}
+  }
+
+  function installLoadCoalescing(){
+    var previous = window.loadFromFirebase || (typeof loadFromFirebase === 'function' ? loadFromFirebase : null);
+    if (typeof previous !== 'function' || previous.__kpTrafficGuardCoalesced) return;
+    var wrapped = async function(){
+      var now = Date.now();
+      if (fullLoadPromise && now - fullLoadStartedAt < 20000) {
+        console.info('[KP traffic guard] Reusing in-flight Firebase full load.');
+        return fullLoadPromise;
+      }
+      fullLoadStartedAt = now;
+      fullLoadPromise = Promise.resolve(previous.apply(this, arguments));
+      try {
+        return await fullLoadPromise;
+      } finally {
+        fullLoadPromise = null;
+      }
+    };
+    wrapped.__kpTrafficGuardCoalesced = true;
+    wrapped.__kpOriginal = previous;
+    window.loadFromFirebase = wrapped;
+    try { loadFromFirebase = wrapped; } catch(_e) {}
+  }
+
+  window.kpFirebaseTrafficGuardStats = function(){
+    return readStats();
+  };
+  window.kpFirebaseTrafficGuardReset = function(){
+    localStorage.removeItem(statsKey);
+    return true;
+  };
+
+  function install(){
+    installFetchObserver();
+    installIdOptimizers();
+    installLoadCoalescing();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+  else install();
+})();
+</script>
+
 <script id="kp-ai-entry-assistant-test-20260605">
 (function(){
   if (window.kpAiEntryAssistantLoaded) return;
