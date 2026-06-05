@@ -27971,10 +27971,75 @@ document.addEventListener('DOMContentLoaded', function(){
     sectionReads: 0,
     estimatedBytes: 0,
     lastLoadedAt: '',
-    lastSections: []
+    lastSections: [],
+    currentSection: '',
+    currentPhase: 'idle'
   };
 
   function txt(v){ return String(v == null ? '' : v); }
+  function sectionLabel(path){
+    var labels = {
+      version:'الإصدار',
+      migrationVersion:'إصدار النقل',
+      savedAt:'علامة آخر تغيير',
+      migratedAt:'تاريخ النقل',
+      students:'الطلاب',
+      payments:'المدفوعات',
+      expenses:'المصاريف',
+      attLog:'الحضور',
+      attendanceLocks:'إقفال الحضور',
+      CLASSES:'الفصول',
+      nurserySettings:'الإعدادات',
+      renewals:'التجديدات',
+      kp_users:'المستخدمون',
+      deletedStudents:'سلة الطلاب',
+      deletedPayments:'سلة المدفوعات',
+      deletedExpenses:'سلة المصاريف',
+      deletedRenewals:'سلة التجديدات',
+      deletedClasses:'سلة الفصول',
+      tombstones:'علامات الحذف',
+      restoredKeys:'سجل الاستعادة',
+      registrationRequests:'طلبات التسجيل',
+      studentChangeRequests:'طلبات تعديل الطلاب',
+      renewalAttachments:'مرفقات التجديدات',
+      evaluations:'التقييمات',
+      branding:'الشعار'
+    };
+    return labels[path] || path;
+  }
+  function formatKb(bytes){
+    bytes = Number(bytes || 0);
+    return bytes >= 1024 ? Math.round(bytes / 1024) + ' KB' : bytes + ' B';
+  }
+  function ensureIndicator(){
+    if (document.getElementById('kp-section-loader-indicator')) return document.getElementById('kp-section-loader-indicator');
+    if (!document.body) return null;
+    var el = document.createElement('div');
+    el.id = 'kp-section-loader-indicator';
+    el.dir = 'rtl';
+    el.style.cssText = 'position:fixed;left:14px;bottom:14px;z-index:99999;background:#ffffff;border:1px solid #b7e4c7;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.12);padding:8px 10px;min-width:260px;max-width:360px;font-family:Tajawal,Arial,sans-serif;font-size:12px;color:#165b35;line-height:1.55;opacity:.96';
+    document.body.appendChild(el);
+    return el;
+  }
+  function updateIndicator(phase, path){
+    if (phase) stats.currentPhase = phase;
+    if (path) stats.currentSection = path;
+    var el = ensureIndicator();
+    if (!el) return;
+    var fullReads = 0;
+    try {
+      var guard = typeof window.kpFirebaseTrafficGuardStats === 'function' ? window.kpFirebaseTrafficGuardStats() : {};
+      var day = new Date().toISOString().slice(0,10);
+      fullReads = guard && guard.byDay ? Number(guard.byDay[day] || 0) : 0;
+    } catch(_e) {}
+    var phaseText = stats.currentPhase === 'loading' ? 'جاري تحميل قسم فقط' : 'تحميل الأقسام مكتمل';
+    var sectionText = stats.currentSection ? sectionLabel(stats.currentSection) : 'لا يوجد تحميل الآن';
+    el.innerHTML =
+      '<div style="font-weight:900;font-size:13px;margin-bottom:2px">🔎 مراقبة استهلاك Firebase</div>' +
+      '<div><b>' + phaseText + ':</b> ' + sectionText + '</div>' +
+      '<div>قراءات الأقسام: <b>' + (stats.sectionReads || 0) + '</b> | الحجم التقريبي: <b>' + formatKb(stats.estimatedBytes) + '</b></div>' +
+      '<div>تحميل كامل تم منعه: <b>' + (stats.rootReadsIntercepted || 0) + '</b> | تحميل كامل فعلي اليوم: <b>' + fullReads + '</b></div>';
+  }
   function baseUrl(){
     try { return txt(typeof FB_URL !== 'undefined' ? FB_URL : '').replace(/\/+$/, ''); }
     catch(_e){ return ''; }
@@ -27998,6 +28063,7 @@ document.addEventListener('DOMContentLoaded', function(){
     path = normalizeSectionName(path);
     if (!base || !path) return undefined;
     var url = base + '/' + path + '.json?sectionLoader=' + Date.now();
+    updateIndicator('loading', path);
     var res = await fetch(url, { cache:'no-store' });
     stats.sectionReads++;
     var text = await res.text();
@@ -28052,6 +28118,7 @@ document.addEventListener('DOMContentLoaded', function(){
     stats.sectionReads = 0;
     stats.estimatedBytes = 0;
     stats.lastSections = paths.slice();
+    updateIndicator('loading', 'savedAt');
     inFlight = Promise.all(paths.map(function(path){
       return fetchSection(path, { fallback: null })
         .then(function(value){ return { path:path, value:value }; })
@@ -28068,6 +28135,7 @@ document.addEventListener('DOMContentLoaded', function(){
       cache = root;
       cacheAt = Date.now();
       stats.lastLoadedAt = root.__kpSectionBySectionLoadedAt;
+      updateIndicator('done', '');
       try { localStorage.setItem('kp_section_loader_stats', JSON.stringify(stats)); } catch(_e) {}
       return root;
     }).finally(function(){ inFlight = null; });
@@ -28103,11 +28171,19 @@ document.addEventListener('DOMContentLoaded', function(){
   }
   window.kpSectionLoaderStats = function(){ return Object.assign({}, stats); };
   window.kpSectionLoaderClearCache = function(){ cache = null; cacheAt = 0; return true; };
+  window.kpSectionLoaderIndicator = function(show){
+    var el = ensureIndicator();
+    if (el) el.style.display = show === false ? 'none' : 'block';
+    updateIndicator(stats.currentPhase, stats.currentSection);
+    return true;
+  };
+  window.kpNotifyFirebaseSectionLoad = updateIndicator;
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
   else install();
 })();
 </script>
+
 
 
 
@@ -28168,9 +28244,11 @@ document.addEventListener('DOMContentLoaded', function(){
     var base = baseUrl();
     if (!base) return fallback;
     var clean = txt(path).replace(/^\/+/, '');
+    try { if (typeof window.kpNotifyFirebaseSectionLoad === 'function') window.kpNotifyFirebaseSectionLoad('loading', clean); } catch(_e) {}
     var res = await fetch(base + '/' + clean + '.json?ts=' + Date.now(), { cache:'no-store' });
     if (!res.ok) throw new Error('Firebase read failed: ' + clean + ' (' + res.status + ')');
     var data = await res.json();
+    try { if (typeof window.kpNotifyFirebaseSectionLoad === 'function') window.kpNotifyFirebaseSectionLoad('done', clean); } catch(_e) {}
     return data == null ? fallback : data;
   }
   async function fetchSavedAt(){
@@ -28469,6 +28547,7 @@ document.addEventListener('DOMContentLoaded', function(){
   else install();
 })();
 </script>
+
 
 <script id="kp-firebase-traffic-guard-20260605">
 (function(){
