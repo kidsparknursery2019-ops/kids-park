@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
@@ -28247,6 +28247,418 @@ document.addEventListener('DOMContentLoaded', function(){
   else install();
 })();
 </script>
+<script id="kp-ai-entry-assistant-test-20260605">
+(function(){
+  if (window.kpAiEntryAssistantLoaded) return;
+  window.kpAiEntryAssistantLoaded = true;
+
+  var PROXY_KEY = 'kp_ai_proxy_url';
+  var DEFAULT_PROXY_URL = 'https://us-central1-kids-park-nursery.cloudfunctions.net/parseNurseryCommand';
+  var currentDraft = null;
+  var recorder = null;
+  var audioChunks = [];
+
+  function onReady(fn){
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
+    else fn();
+  }
+
+  function esc(v){
+    return String(v == null ? '' : v).replace(/[&<>"]/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+    });
+  }
+
+  function normalizeDigits(text){
+    var ar = '٠١٢٣٤٥٦٧٨٩';
+    var fa = '۰۱۲۳۴۵۶۷۸۹';
+    return String(text || '').replace(/[٠-٩]/g, function(d){ return ar.indexOf(d); })
+      .replace(/[۰-۹]/g, function(d){ return fa.indexOf(d); });
+  }
+
+  function normalizeText(text){
+    return normalizeDigits(text).toLowerCase()
+      .replace(/[\u064b-\u065f\u0670ـ]/g, '')
+      .replace(/[أإآ]/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/ى/g, 'ي')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function pad(n){ return String(n).padStart(2, '0'); }
+  function dateToIso(d){ return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); }
+  function todayIso(){ return dateToIso(new Date()); }
+
+  function parseDate(text){
+    var n = normalizeText(text);
+    var d = new Date();
+    if (/\b(yesterday)\b|امس/.test(n)) { d.setDate(d.getDate()-1); return dateToIso(d); }
+    if (/\b(tomorrow)\b|غدا|بكره/.test(n)) { d.setDate(d.getDate()+1); return dateToIso(d); }
+    var iso = n.match(/(20\d{2})[-\/]([01]?\d)[-\/]([0-3]?\d)/);
+    if (iso) return iso[1] + '-' + pad(iso[2]) + '-' + pad(iso[3]);
+    var slash = n.match(/\b([0-3]?\d)[-\/]([01]?\d)[-\/](20\d{2})\b/);
+    if (slash) return slash[3] + '-' + pad(slash[2]) + '-' + pad(slash[1]);
+    return todayIso();
+  }
+
+  function extractAmount(text){
+    var n = normalizeDigits(text).replace(/,/g, '');
+    var match = n.match(/(?:درهم|د\.إ|aed|dh|amount|مبلغ)?\s*(\d+(?:\.\d+)?)/i);
+    return match ? parseFloat(match[1]) : 0;
+  }
+
+  function detectMethod(text){
+    var n = normalizeText(text);
+    if (/تحويل|بنك|bank|transfer|wire/.test(n)) return 'تحويل بنكي';
+    if (/شيك|cheque|check/.test(n)) return 'شيك';
+    if (/بطاقه|card|visa/.test(n)) return 'بطاقة';
+    return 'نقدي';
+  }
+
+  function detectPaymentType(text){
+    var n = normalizeText(text);
+    if (/تسجيل|registration|register/.test(n)) return 'تسجيل';
+    if (/مواصلات|باص|bus|transport/.test(n)) return 'مواصلات';
+    if (/زي|uniform|ملابس/.test(n)) return 'زي مدرسي';
+    if (/كتاب|books|كتب/.test(n)) return 'كتب';
+    if (/قسط|شهري|monthly|رسوم/.test(n)) return 'قسط شهري';
+    return 'قسط شهري';
+  }
+
+  function detectExpenseCategory(text){
+    var n = normalizeText(text);
+    if (/راتب|رواتب|salary|wage/.test(n)) return 'رواتب';
+    if (/كهرب|انترنت|internet|electric/.test(n)) return 'كهرباء وإنترنت';
+    if (/قرطاسيه|مستلزم|stationery|supplies/.test(n)) return 'قرطاسية ومستلزمات';
+    if (/صيان|maintenance|repair/.test(n)) return 'صيانة';
+    if (/ايجار|rent/.test(n)) return 'إيجار';
+    if (/تنظيف|clean/.test(n)) return 'تنظيف';
+    return 'أخرى';
+  }
+
+  function findStudent(text){
+    var list = Array.isArray(window.students) ? window.students : [];
+    var hay = normalizeText(text);
+    var best = null;
+    var bestLen = 0;
+    list.forEach(function(s){
+      if (!s) return;
+      var names = [s.name, s.childName, s.child_name, s.studentName, s.fullName, s.arName, s.englishName, s.name_en].filter(Boolean);
+      names.forEach(function(name){
+        var nn = normalizeText(name);
+        if (nn.length >= 3 && hay.indexOf(nn) !== -1 && nn.length > bestLen) {
+          best = s;
+          bestLen = nn.length;
+        }
+      });
+    });
+    return best;
+  }
+
+  function removeKnownWords(text){
+    return String(text || '')
+      .replace(/\d+(?:\.\d+)?/g, ' ')
+      .replace(/درهم|د\.إ|AED|aed|dh|دفعة|دفعه|سند|قبض|payment|receipt|مصروف|مصاريف|expense|اضف|أضف|اضيفي|سجلي|سجل|add|record|كاش|نقدي|cash|تحويل|بنكي|bank|transfer|اليوم|امس|أمس|غدا|بكره/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function parseCommandLocal(text){
+    var original = String(text || '').trim();
+    var n = normalizeText(original);
+    var amount = extractAmount(original);
+    var date = parseDate(original);
+    var method = detectMethod(original);
+    var isExpense = /مصروف|مصاريف|صرف|اشتريت|شراء|فاتوره|فاتورة|expense|spend|spent|buy|bought|paid for/.test(n);
+    var isPayment = /دفعه|دفع|سند|قبض|استلم|استلام|رسوم|قسط|payment|receipt|received|income/.test(n);
+
+    if (!original) return { error: 'اكتب أو قل العملية التي تريد تسجيلها.' };
+    if (!amount) return { error: 'لم أستطع معرفة المبلغ. مثال: دفعة 500 درهم أو مصروف 120 درهم.' };
+    if (isExpense && !isPayment) {
+      var expDesc = removeKnownWords(original) || detectExpenseCategory(original);
+      return { kind:'expense', amount:amount, date:date, method:method, desc:expDesc, cat:detectExpenseCategory(original), note:'أضيف بواسطة المساعد المحلي', source:'local' };
+    }
+
+    var st = findStudent(original);
+    var payType = detectPaymentType(original);
+    var who = st ? ('ولي أمر ' + (st.name || st.childName || st.studentName || 'الطالب')) : removeKnownWords(original);
+    if (!who || who.length < 2) who = 'ولي الأمر';
+    return { kind:'payment', amount:amount, date:date, method:method, type:payType, desc:payType, who:who, stuId: st ? (st.id || st.student_id || '') : '', studentName: st ? (st.name || st.childName || st.studentName || '') : '', note:'أضيف بواسطة المساعد المحلي', source:'local' };
+  }
+
+  function proxyUrl(){
+    return localStorage.getItem(PROXY_KEY) || DEFAULT_PROXY_URL;
+  }
+
+  function currentAiUser(){
+    var u = null;
+    try { u = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null; } catch(_e) {}
+    if (!u) {
+      try { u = JSON.parse(sessionStorage.getItem('kp_session') || 'null'); } catch(_e2) {}
+    }
+    return {
+      username: (u && (u.username || u.name)) || 'unknown',
+      name: (u && (u.name || u.username)) || 'unknown',
+      role: (u && u.role) || 'user'
+    };
+  }
+
+  function studentNameList(){
+    return (Array.isArray(window.students) ? window.students : []).slice(0, 220).map(function(s){
+      return s && (s.name || s.childName || s.studentName || s.fullName || s.name_en || '');
+    }).filter(Boolean);
+  }
+
+  async function callAiProxy(payload){
+    var res = await fetch(proxyUrl(), {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(Object.assign({ user: currentAiUser() }, payload))
+    });
+    var data = await res.json().catch(function(){ return {}; });
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || ('proxy_error_' + res.status));
+    }
+    return data;
+  }
+
+  function normalizeAiDraft(ai, originalText){
+    ai = ai || {};
+    if (ai.kind === 'unknown') return { error: ai.question || 'لم أستطع فهم العملية. جرّب كتابة تفاصيل أكثر.' };
+    if (!ai.amount || Number(ai.amount) <= 0) return { error:'لم أستطع معرفة المبلغ من الأمر.' };
+    var st = ai.studentName ? findStudent(ai.studentName) || findStudent(originalText) : findStudent(originalText);
+    if (ai.kind === 'expense') {
+      return { kind:'expense', amount:Number(ai.amount), date:ai.date || todayIso(), method:ai.method || detectMethod(originalText), desc:ai.desc || ai.category || 'مصروف', cat:ai.category || detectExpenseCategory(originalText), note:ai.note || 'أضيف بواسطة مساعد AI', source:'firebase-ai', confidence:ai.confidence };
+    }
+    return { kind:'payment', amount:Number(ai.amount), date:ai.date || todayIso(), method:ai.method || detectMethod(originalText), type:ai.paymentType || detectPaymentType(originalText), desc:ai.desc || ai.paymentType || 'دفعة', who:ai.who || (st ? 'ولي أمر ' + (st.name || st.childName || st.studentName || 'الطالب') : 'ولي الأمر'), stuId:st ? (st.id || st.student_id || '') : '', studentName:st ? (st.name || st.childName || st.studentName || '') : (ai.studentName || ''), note:ai.note || 'أضيف بواسطة مساعد AI', source:'firebase-ai', confidence:ai.confidence };
+  }
+
+  async function parseCommandAi(text){
+    var status = document.getElementById('kp-ai-status');
+    if (status) status.textContent = 'جاري التحليل بالذكاء الاصطناعي...';
+    var data = await callAiProxy({ mode:'parse', text:String(text || ''), students:studentNameList() });
+    return normalizeAiDraft(data.draft, text);
+  }
+
+  function setValue(id, value){
+    var el = document.getElementById(id);
+    if (!el) return false;
+    el.value = value == null ? '' : String(value);
+    el.dispatchEvent(new Event('input', { bubbles:true }));
+    el.dispatchEvent(new Event('change', { bubbles:true }));
+    return true;
+  }
+
+  function setSelect(id, value){
+    var el = document.getElementById(id);
+    if (!el) return false;
+    var wanted = normalizeText(value);
+    var found = false;
+    Array.prototype.forEach.call(el.options || [], function(opt){
+      var ov = normalizeText(opt.value || opt.textContent);
+      if (!found && (ov === wanted || ov.indexOf(wanted) !== -1 || wanted.indexOf(ov) !== -1)) {
+        el.value = opt.value;
+        found = true;
+      }
+    });
+    if (!found && value) el.value = value;
+    el.dispatchEvent(new Event('change', { bubbles:true }));
+    return true;
+  }
+
+  function fillPayment(draft){
+    if (typeof window.openAddPay === 'function') window.openAddPay();
+    setValue('np-who', draft.who);
+    setValue('np-amt', draft.amount);
+    setValue('np-date', draft.date);
+    setValue('np-desc', draft.desc);
+    setSelect('np-type', draft.type);
+    setSelect('np-method', draft.method);
+    setValue('np-note', draft.note || '');
+    if (draft.stuId) setValue('np-stuid', draft.stuId);
+    var info = document.getElementById('np-stuinfo');
+    if (info && draft.studentName) info.textContent = 'تم ربط الطالب: ' + draft.studentName;
+  }
+
+  function fillExpense(draft){
+    if (typeof window.openAddExp === 'function') window.openAddExp();
+    setValue('ne-desc', draft.desc);
+    setValue('ne-amt', draft.amount);
+    setValue('ne-date', draft.date);
+    setSelect('ne-cat', draft.cat);
+    setSelect('ne-method', draft.method);
+    setValue('ne-note', draft.note || '');
+  }
+
+  function saveDraft(draft){
+    if (!draft) return;
+    if (draft.kind === 'payment') {
+      fillPayment(draft);
+      if (typeof window.savePayment === 'function') window.savePayment();
+      return;
+    }
+    if (draft.kind === 'expense') {
+      fillExpense(draft);
+      if (typeof window.saveExpense === 'function') window.saveExpense();
+    }
+  }
+
+  function openFormForReview(draft){
+    if (!draft) return;
+    if (draft.kind === 'payment') fillPayment(draft);
+    if (draft.kind === 'expense') fillExpense(draft);
+    hidePanel();
+  }
+
+  function renderDraft(draft){
+    var box = document.getElementById('kp-ai-result');
+    var status = document.getElementById('kp-ai-status');
+    if (status && /^جاري/.test(status.textContent || '')) status.textContent = '';
+    if (!box) return;
+    if (draft.error) {
+      box.innerHTML = '<div class="kp-ai-error">' + esc(draft.error) + '</div>';
+      currentDraft = null;
+      return;
+    }
+    currentDraft = draft;
+    var title = draft.kind === 'payment' ? 'دفعة / وارد' : 'مصروف';
+    var rows = draft.kind === 'payment'
+      ? [ ['المصدر', draft.source === 'firebase-ai' ? 'Firebase AI' : 'محلي'], ['الثقة', draft.confidence != null ? Math.round(Number(draft.confidence)*100) + '%' : '-'], ['النوع', title], ['ولي الأمر', draft.who], ['الطالب المرتبط', draft.studentName || 'بدون ربط'], ['المبلغ', draft.amount + ' د.إ'], ['الوصف', draft.desc], ['طريقة الدفع', draft.method], ['التاريخ', draft.date] ]
+      : [ ['المصدر', draft.source === 'firebase-ai' ? 'Firebase AI' : 'محلي'], ['الثقة', draft.confidence != null ? Math.round(Number(draft.confidence)*100) + '%' : '-'], ['النوع', title], ['البيان', draft.desc], ['الفئة', draft.cat], ['المبلغ', draft.amount + ' د.إ'], ['طريقة الدفع', draft.method], ['التاريخ', draft.date] ];
+    box.innerHTML = '<div class="kp-ai-draft-title">راجع البيانات قبل الحفظ</div>' +
+      '<table class="kp-ai-draft"><tbody>' + rows.map(function(r){ return '<tr><th>' + esc(r[0]) + '</th><td>' + esc(r[1]) + '</td></tr>'; }).join('') + '</tbody></table>' +
+      '<div class="kp-ai-actions"><button type="button" id="kp-ai-save" class="kp-ai-primary">حفظ الآن</button><button type="button" id="kp-ai-review">فتح النموذج للمراجعة</button></div>';
+    document.getElementById('kp-ai-save').onclick = function(){ saveDraft(currentDraft); hidePanel(); };
+    document.getElementById('kp-ai-review').onclick = function(){ openFormForReview(currentDraft); };
+  }
+
+  function showPanel(){
+    var p = document.getElementById('kp-ai-panel');
+    if (p) p.style.display = 'block';
+    var t = document.getElementById('kp-ai-text');
+    if (t) setTimeout(function(){ t.focus(); }, 50);
+  }
+
+  function hidePanel(){
+    var p = document.getElementById('kp-ai-panel');
+    if (p) p.style.display = 'none';
+  }
+
+  function blobToBase64(blob){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(){ resolve(String(reader.result || '').split(',')[1] || ''); };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function startVoice(){
+    var status = document.getElementById('kp-ai-status');
+    if (recorder && recorder.state === 'recording') {
+      recorder.stop();
+      if (status) status.textContent = 'تم إيقاف التسجيل. جاري تحويل الصوت إلى نص...';
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+      if (status) status.textContent = 'الميكروفون غير مدعوم في هذا المتصفح. جرّب Chrome عبر HTTPS أو اكتب الأمر.';
+      return;
+    }
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      audioChunks = [];
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = function(e){ if (e.data && e.data.size) audioChunks.push(e.data); };
+      recorder.onstop = async function(){
+        stream.getTracks().forEach(function(track){ track.stop(); });
+        await transcribeVoice();
+      };
+      recorder.start();
+      if (status) status.textContent = 'جاري التسجيل... اضغط زر التسجيل مرة أخرى للإيقاف.';
+    } catch(e) {
+      if (status) status.textContent = 'تعذر تشغيل الميكروفون. تأكد من السماح للمتصفح باستخدامه.';
+    }
+  }
+
+  async function transcribeVoice(){
+    var status = document.getElementById('kp-ai-status');
+    try {
+      if (!audioChunks.length) throw new Error('no_audio');
+      var blob = new Blob(audioChunks, { type: audioChunks[0].type || 'audio/webm' });
+      var base64 = await blobToBase64(blob);
+      var data = await callAiProxy({ mode:'transcribe', audioBase64:base64, mimeType:blob.type || 'audio/webm' });
+      var input = document.getElementById('kp-ai-text');
+      if (input) input.value = data.text || '';
+      if (status) status.textContent = data.text ? 'تم تحويل الصوت إلى نص. اضغط تحليل AI للمراجعة.' : 'لم يتم التقاط نص واضح. جرّب مرة أخرى.';
+    } catch(e) {
+      if (status) status.textContent = 'تعذر تحويل الصوت إلى نص: ' + (e && e.message ? e.message : e);
+    } finally {
+      recorder = null;
+      audioChunks = [];
+    }
+  }
+
+  async function analyzeAi(){
+    var text = (document.getElementById('kp-ai-text') || {}).value || '';
+    var box = document.getElementById('kp-ai-result');
+    if (box) box.innerHTML = '';
+    try {
+      renderDraft(await parseCommandAi(text));
+    } catch(e) {
+      renderDraft({ error:'تعذر الاتصال بمساعد Firebase AI. تحقق من نشر Cloud Function والإنترنت. التفاصيل: ' + (e && e.message ? e.message : e) });
+    }
+  }
+
+  function analyzeLocal(){
+    var text = (document.getElementById('kp-ai-text') || {}).value || '';
+    renderDraft(parseCommandLocal(text));
+  }
+
+  function saveProxySetting(){
+    var value = (document.getElementById('kp-ai-proxy') || {}).value || '';
+    value = value.trim();
+    if (value) localStorage.setItem(PROXY_KEY, value);
+    else localStorage.removeItem(PROXY_KEY);
+    var status = document.getElementById('kp-ai-status');
+    if (status) status.textContent = 'تم حفظ رابط Firebase AI على هذا الجهاز.';
+  }
+
+  function addUi(){
+    if (document.getElementById('kp-ai-fab')) return;
+    var style = document.createElement('style');
+    style.textContent = '#kp-ai-fab{position:fixed;left:18px;bottom:18px;z-index:99999;border:2px solid #1f9d55;background:#2fb36d;color:#fff;border-radius:14px;padding:10px 14px;font-family:Tajawal,Arial,sans-serif;font-weight:900;box-shadow:0 8px 24px rgba(0,0,0,.18);cursor:pointer}#kp-ai-panel{position:fixed;left:18px;bottom:72px;width:min(470px,calc(100vw - 36px));max-height:calc(100vh - 95px);z-index:99999;background:#fff;border:2px solid #2fb36d;border-radius:16px;box-shadow:0 18px 45px rgba(0,0,0,.22);font-family:Tajawal,Arial,sans-serif;direction:rtl;display:none;overflow:auto}#kp-ai-panel header{background:#2f9b5f;color:#fff;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;font-weight:900}#kp-ai-close{border:0;background:rgba(255,255,255,.18);color:#fff;border-radius:8px;width:30px;height:30px;cursor:pointer;font-weight:900}#kp-ai-body{padding:12px;background:#f8fffb}#kp-ai-text{width:100%;min-height:90px;box-sizing:border-box;border:1.5px solid #bfe8cf;border-radius:12px;padding:10px;font-family:Tajawal,Arial,sans-serif;resize:vertical;outline:none}#kp-ai-controls,.kp-ai-settings-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}#kp-ai-controls button,.kp-ai-actions button,.kp-ai-settings-row button{border:1.5px solid #2fb36d;border-radius:10px;background:#fff;color:#126b3a;padding:8px 12px;font-family:Tajawal,Arial,sans-serif;font-weight:900;cursor:pointer}.kp-ai-primary,#kp-ai-analyze{background:#2fb36d!important;color:#fff!important}.kp-ai-blue{border-color:#3483eb!important;color:#125bb2!important}.kp-ai-muted{font-size:12px;color:#6b806f;margin-top:8px;line-height:1.6}.kp-ai-error{background:#fff3f3;border:1px solid #ffc4c4;color:#b42318;border-radius:10px;padding:9px;margin-top:10px;font-weight:800}.kp-ai-draft-title{font-weight:900;color:#126b3a;margin:12px 0 8px}.kp-ai-draft{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden}.kp-ai-draft th,.kp-ai-draft td{border:1px solid #e0eee5;padding:7px 8px;text-align:right;font-size:13px}.kp-ai-draft th{width:34%;background:#eefaf3;color:#126b3a}.kp-ai-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}.kp-ai-settings{border:1px solid #d5ebde;background:#fff;border-radius:12px;padding:10px;margin-top:10px}.kp-ai-settings summary{cursor:pointer;font-weight:900;color:#126b3a}.kp-ai-field{display:flex;flex-direction:column;gap:4px;margin-top:8px}.kp-ai-field label{font-size:12px;font-weight:800;color:#526b59}.kp-ai-field input{border:1.5px solid #cfe9d8;border-radius:10px;padding:8px;font-family:Tajawal,Arial,sans-serif}.kp-ai-warn{background:#eef8ff;border:1px solid #b7dcff;color:#174d78;border-radius:10px;padding:8px;margin-top:8px;font-size:12px;line-height:1.6}';
+    document.head.appendChild(style);
+
+    var btn = document.createElement('button');
+    btn.id = 'kp-ai-fab';
+    btn.type = 'button';
+    btn.textContent = '🎙️ مساعد الإدخال';
+    btn.onclick = showPanel;
+    document.body.appendChild(btn);
+
+    var panel = document.createElement('div');
+    panel.id = 'kp-ai-panel';
+    panel.innerHTML = '<header><span>🎙️ مساعد الإدخال الذكي</span><button type="button" id="kp-ai-close">×</button></header><div id="kp-ai-body"><textarea id="kp-ai-text" placeholder="مثال: سجلي دفعة 1500 درهم لولي أمر أحمد قسط شهر يونيو كاش\nمثال: أضيفي مصروف 250 درهم قرطاسية اليوم نقدي"></textarea><div id="kp-ai-controls"><button type="button" id="kp-ai-analyze">تحليل AI</button><button type="button" id="kp-ai-local" class="kp-ai-blue">تحليل محلي</button><button type="button" id="kp-ai-mic">تسجيل / إيقاف صوتي</button><button type="button" id="kp-ai-clear">مسح</button></div><details class="kp-ai-settings"><summary>إعدادات Firebase AI</summary><div class="kp-ai-field"><label>رابط Cloud Function</label><input id="kp-ai-proxy" type="text" value="' + esc(proxyUrl()) + '"></div><div class="kp-ai-settings-row"><button type="button" id="kp-ai-save-proxy">حفظ الرابط</button></div><div class="kp-ai-warn">لا يوجد API Key داخل هذا الملف. المفتاح محفوظ كسر داخل Firebase Cloud Functions، وهذا يسمح باستخدام المساعد من عدة أجهزة ومواقع.</div></details><div id="kp-ai-status" class="kp-ai-muted"></div><div class="kp-ai-muted">الحفظ لا يتم إلا بعد مراجعتك وتأكيدك. في حال تعذر الاتصال بالذكاء الاصطناعي يمكن استخدام التحليل المحلي.</div><div id="kp-ai-result"></div></div>';
+    document.body.appendChild(panel);
+
+    document.getElementById('kp-ai-close').onclick = hidePanel;
+    document.getElementById('kp-ai-analyze').onclick = analyzeAi;
+    document.getElementById('kp-ai-local').onclick = analyzeLocal;
+    document.getElementById('kp-ai-mic').onclick = startVoice;
+    document.getElementById('kp-ai-save-proxy').onclick = saveProxySetting;
+    document.getElementById('kp-ai-clear').onclick = function(){
+      document.getElementById('kp-ai-text').value = '';
+      document.getElementById('kp-ai-result').innerHTML = '';
+      document.getElementById('kp-ai-status').textContent = '';
+      currentDraft = null;
+    };
+  }
+
+  onReady(addUi);
+})();
+</script>
+
 </body>
 
 </html>
