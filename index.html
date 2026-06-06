@@ -23990,12 +23990,10 @@ document.addEventListener('DOMContentLoaded', function(){
       svg += '<rect x="' + groupX + '" y="' + incY + '" width="' + barW + '" height="' + incH + '" rx="3" fill="url(#incGradCloud)"><title>' + d.label + ' - إيرادات: ' + d.inc.toLocaleString() + ' د.إ</title></rect>';
       svg += '<rect x="' + (groupX + barW + 4) + '" y="' + expY + '" width="' + barW + '" height="' + expH + '" rx="3" fill="url(#expGradCloud)"><title>' + d.label + ' - مصروفات: ' + d.exp.toLocaleString() + ' د.إ</title></rect>';
       if (incLabel) {
-        if (incH >= 36) svg += '<text x="' + (groupX + barW / 2) + '" y="' + (incY + incH / 2) + '" text-anchor="middle" dominant-baseline="middle" font-size="9" font-weight="900" fill="#fff" font-family="Tajawal" transform="rotate(-90 ' + (groupX + barW / 2) + ' ' + (incY + incH / 2) + ')">' + incLabel + '</text>';
-        else svg += '<text x="' + (groupX + barW / 2) + '" y="' + Math.max(12, incY - 4) + '" text-anchor="middle" font-size="9" font-weight="900" fill="#27ae60" font-family="Tajawal">' + incLabel + '</text>';
+        svg += '<text data-kp-chart-value-label="1" x="' + (groupX + barW / 2) + '" y="' + Math.max(13, incY - 6) + '" text-anchor="middle" font-size="9" font-weight="900" fill="#16864a" stroke="#fff" stroke-width="3" paint-order="stroke" font-family="Tajawal">' + incLabel + '</text>';
       }
       if (expLabel) {
-        if (expH >= 36) svg += '<text x="' + (groupX + barW + 4 + barW / 2) + '" y="' + (expY + expH / 2) + '" text-anchor="middle" dominant-baseline="middle" font-size="9" font-weight="900" fill="#fff" font-family="Tajawal" transform="rotate(-90 ' + (groupX + barW + 4 + barW / 2) + ' ' + (expY + expH / 2) + ')">' + expLabel + '</text>';
-        else svg += '<text x="' + (groupX + barW + 4 + barW / 2) + '" y="' + Math.max(12, expY - 4) + '" text-anchor="middle" font-size="9" font-weight="900" fill="#e67e22" font-family="Tajawal">' + expLabel + '</text>';
+        svg += '<text data-kp-chart-value-label="1" x="' + (groupX + barW + 4 + barW / 2) + '" y="' + Math.max(13, expY - 6) + '" text-anchor="middle" font-size="9" font-weight="900" fill="#d66c00" stroke="#fff" stroke-width="3" paint-order="stroke" font-family="Tajawal">' + expLabel + '</text>';
       }
       svg += '<text x="' + (groupX + barW + 2) + '" y="' + labelY + '" text-anchor="middle" font-size="11" font-weight="600" fill="#1e6b3f" font-family="Tajawal">' + d.label + '</text>';
       svg += '<text x="' + (groupX + barW + 2) + '" y="' + (labelY + 14) + '" text-anchor="middle" font-size="9" font-weight="700" fill="' + (net >= 0 ? '#27ae60' : '#e74c3c') + '" font-family="Tajawal">' + (net >= 0 ? '+' : '') + (net / 1000).toFixed(0) + 'K</text>';
@@ -25657,11 +25655,11 @@ document.addEventListener('DOMContentLoaded', function(){
       var net = (d.inc || 0) - (d.exp || 0);
       svg += '<rect x="' + groupX + '" y="' + incY + '" width="' + barW + '" height="' + incH + '" rx="3" fill="url(#incGradSummary)"><title>' + esc(d.label) + ' - إيرادات: ' + money(d.inc) + ' د.إ</title></rect>';
       svg += '<rect x="' + (groupX + barW + 4) + '" y="' + expY + '" width="' + barW + '" height="' + expH + '" rx="3" fill="url(#expGradSummary)"><title>' + esc(d.label) + ' - مصروفات: ' + money(d.exp) + ' د.إ</title></rect>';
-      if ((d.inc || 0) > 0 && incH >= 26) {
-        svg += '<text x="' + (groupX + barW / 2) + '" y="' + (incY + incH / 2) + '" text-anchor="middle" dominant-baseline="middle" font-size="8" font-weight="800" fill="#fff" font-family="Tajawal" transform="rotate(-90 ' + (groupX + barW / 2) + ' ' + (incY + incH / 2) + ')">' + compactMoney(d.inc) + '</text>';
+      if ((d.inc || 0) > 0) {
+        svg += '<text data-kp-chart-value-label="1" x="' + (groupX + barW / 2) + '" y="' + Math.max(13, incY - 6) + '" text-anchor="middle" font-size="9" font-weight="900" fill="#16864a" stroke="#fff" stroke-width="3" paint-order="stroke" font-family="Tajawal">' + compactMoney(d.inc) + '</text>';
       }
-      if ((d.exp || 0) > 0 && expH >= 26) {
-        svg += '<text x="' + (groupX + barW + 4 + barW / 2) + '" y="' + (expY + expH / 2) + '" text-anchor="middle" dominant-baseline="middle" font-size="8" font-weight="800" fill="#fff" font-family="Tajawal" transform="rotate(-90 ' + (groupX + barW + 4 + barW / 2) + ' ' + (expY + expH / 2) + ')">' + compactMoney(d.exp) + '</text>';
+      if ((d.exp || 0) > 0) {
+        svg += '<text data-kp-chart-value-label="1" x="' + (groupX + barW + 4 + barW / 2) + '" y="' + Math.max(13, expY - 6) + '" text-anchor="middle" font-size="9" font-weight="900" fill="#d66c00" stroke="#fff" stroke-width="3" paint-order="stroke" font-family="Tajawal">' + compactMoney(d.exp) + '</text>';
       }
       svg += '<text x="' + (groupX + barW + 2) + '" y="' + labelY + '" text-anchor="middle" font-size="11" font-weight="600" fill="#1e6b3f" font-family="Tajawal">' + esc(d.label || k) + '</text>';
       svg += '<text x="' + (groupX + barW + 2) + '" y="' + (labelY + 14) + '" text-anchor="middle" font-size="9" font-weight="700" fill="' + (net>=0?'#27ae60':'#e74c3c') + '" font-family="Tajawal">' + (net>=0?'+':'') + (net/1000).toFixed(0) + 'K</text>';
@@ -26052,19 +26050,15 @@ document.addEventListener('DOMContentLoaded', function(){
       text.setAttribute('data-kp-chart-value-label', '1');
       text.setAttribute('x', String(x + w / 2));
       text.setAttribute('text-anchor', 'middle');
-      text.setAttribute('font-size', '8');
-      text.setAttribute('font-weight', '800');
+      text.setAttribute('font-size', '9');
+      text.setAttribute('font-weight', '900');
       text.setAttribute('font-family', 'Tajawal');
+      text.setAttribute('stroke', '#fff');
+      text.setAttribute('stroke-width', '3');
+      text.setAttribute('paint-order', 'stroke');
       text.textContent = compact(value);
-      if (h >= 28) {
-        text.setAttribute('y', String(y + h / 2));
-        text.setAttribute('dominant-baseline', 'middle');
-        text.setAttribute('fill', '#fff');
-        text.setAttribute('transform', 'rotate(-90 ' + (x + w / 2) + ' ' + (y + h / 2) + ')');
-      } else {
-        text.setAttribute('y', String(Math.max(12, y - 4)));
-        text.setAttribute('fill', isExpense ? '#e67e22' : '#27ae60');
-      }
+      text.setAttribute('y', String(Math.max(13, y - 6)));
+      text.setAttribute('fill', isExpense ? '#d66c00' : '#16864a');
       rect.parentNode.insertBefore(text, rect.nextSibling);
     });
   };
