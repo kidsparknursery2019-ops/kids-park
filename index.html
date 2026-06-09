@@ -2852,6 +2852,15 @@ function dateRangeKeys(fromDate, toDate){
   return out;
 }
 
+function escapeAttr(value){
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function renderAttendanceLockClassSelector(){
   var box = document.getElementById('att-lock-classes');
   if (!box) return;
@@ -6935,6 +6944,30 @@ function autoFillStudentEnglishName(){
 // ============================================================
 let currentClsTab = Object.keys(CLASSES)[0] || '';
 
+function attendanceClassToken(value){
+  return String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+}
+
+function attendanceStudentClass(student){
+  if (!student || typeof student !== 'object') return '';
+  return attendanceClassToken(student.cls || student.className || student.class || student.studentClass || student.class_name || '');
+}
+
+function attendanceAvailableClasses(){
+  var result = [];
+  function add(value){
+    value = attendanceClassToken(value);
+    if (value && result.indexOf(value) === -1) result.push(value);
+  }
+  Object.keys(CLASSES || {}).forEach(add);
+  (Array.isArray(students) ? students : []).filter(function(student){
+    return student && isActiveStudent(student);
+  }).forEach(function(student){
+    add(attendanceStudentClass(student));
+  });
+  return result;
+}
+
 function renderAtt(){
   sanitizeCoreData();
   const now = new Date();
@@ -6944,12 +6977,13 @@ function renderAtt(){
   const tabs = document.getElementById('cls-tabs');
   if (!tabs) return;
   tabs.innerHTML = '';
-  var allClassNames = Object.keys(CLASSES);
+  var allClassNames = attendanceAvailableClasses();
   // 🔒 Teacher: restrict class tabs to her assigned classes only
   var classNames = allClassNames;
   if (isTeacher()) {
     var allowed = teacherAllowedClasses() || [];
-    classNames = allClassNames.filter(function(c){ return allowed.indexOf(c) !== -1; });
+    var allowedTokens = allowed.map(attendanceClassToken);
+    classNames = allClassNames.filter(function(c){ return allowedTokens.indexOf(attendanceClassToken(c)) !== -1; });
     if (!classNames.length) {
       // No classes assigned — show clear message and bail out
       tabs.innerHTML = '<div style="color:var(--muted);font-weight:700;padding:8px 12px">لم يتم تعيين فصل لك. يرجى التواصل مع الإدارة.</div>';
@@ -6976,7 +7010,7 @@ function renderAtt(){
     classNames.forEach(function(c){
       const t = document.createElement('button');
       t.className = 'ftab' + (c === currentClsTab ? ' on' : '');
-      t.textContent = (CLASSES[c].emoji || '') + ' ' + c;
+      t.textContent = ((CLASSES[c] && CLASSES[c].emoji) || '') + ' ' + c;
       t.onclick = function(){
         currentClsTab = c;
         renderAttGrid();
@@ -6999,7 +7033,10 @@ function renderAttGrid(){
   const cls=currentClsTab;
   if (typeof renderAttendanceAdminLockControls === 'function') renderAttendanceAdminLockControls();
   if (!cls) { gridEl.innerHTML=''; return; }
-  const list=students.filter(function(s){ return s && s.cls===cls && isActiveStudent(s); });
+  const selectedClassToken = attendanceClassToken(cls);
+  const list=students.filter(function(s){
+    return s && attendanceStudentClass(s) === selectedClassToken && isActiveStudent(s);
+  });
   let p=0,a=0,l=0;
   var blocked = isAttendanceEditBlocked(cls, date);
   var lockInfo = getAttendanceLock(cls, date);
@@ -7022,6 +7059,13 @@ function renderAttGrid(){
       </div>
     </div>`;
   }).join('');
+  if (!list.length) {
+    gridEl.innerHTML = '<div style="grid-column:1/-1;padding:24px;text-align:center;color:var(--muted);font-weight:800">' +
+      ((Array.isArray(students) && students.length)
+        ? 'لا يوجد طلاب موجودون في الفصل المحدد'
+        : 'تعذر تحميل قائمة الطلاب من Firebase') +
+      '</div>';
+  }
   document.getElementById('att-summary').textContent=`${cls} — حاضر: ${p} | غائب: ${a} | متأخر: ${l} | إجمالي: ${list.length}`;
 
   // 🔒 Teacher submit / locked banner
@@ -7068,7 +7112,7 @@ function renderAttGrid(){
 async function setAtt(date,id,status){
   // 🔒 find the class for this student to evaluate the lock
   var stu = students.find(function(x){ return x.id === +id; });
-  var cls = stu ? stu.cls : '';
+  var cls = attendanceStudentClass(stu);
   if (isAttendanceEditBlocked(cls, date)) {
     alert('🔒 تم إرسال الحضور لهذا الفصل لهذا التاريخ. تواصل مع الإدارة للتعديل.');
     return;
@@ -7118,7 +7162,8 @@ async function markAll(status){
   }
   const entries = {};
   const previousEntries = {};
-  students.filter(function(s){ return s && s.cls===currentClsTab && isActiveStudent(s); }).forEach(function(s){
+  const selectedClassToken = attendanceClassToken(currentClsTab);
+  students.filter(function(s){ return s && attendanceStudentClass(s)===selectedClassToken && isActiveStudent(s); }).forEach(function(s){
     const key = date+'_'+s.id;
     previousEntries[key] = Object.prototype.hasOwnProperty.call(attLog, key) ? attLog[key] : undefined;
     attLog[key] = status;
@@ -7145,7 +7190,8 @@ async function submitAttendance(){
   if (!cls || !date) return alert('اختر الفصل والتاريخ أولاً.');
   if (isAttendanceLocked(cls, date)) return alert('🔒 تم إرسال الحضور مسبقاً لهذا الفصل لهذا التاريخ.');
   // require at least one mark to avoid empty submissions
-  var hasAny = students.some(function(s){ return s && s.cls===cls && attLog[date+'_'+s.id]; });
+  var selectedClassToken = attendanceClassToken(cls);
+  var hasAny = students.some(function(s){ return s && attendanceStudentClass(s)===selectedClassToken && attLog[date+'_'+s.id]; });
   if (!hasAny) return alert('يرجى تسجيل حضور طالب واحد على الأقل قبل الإرسال.');
   if (!(await window.kpConfirmAsync(null, null, 'بعد الإرسال لن تتمكني من تعديل حضور هذا الفصل لهذا التاريخ. متابعة؟'))) return;
   var lockData = {
@@ -7164,10 +7210,10 @@ function renderAttLog(){
   var rows = [...entries].slice(-200).reverse().map(([k,v])=>{
     const[date,idStr]=k.split('_');
     const s=students.find(x=>x.id===+idStr); if(!s)return'';
-    if (allowed && allowed.indexOf(s.cls) === -1) return '';
+    if (allowed && allowed.map(attendanceClassToken).indexOf(attendanceStudentClass(s)) === -1) return '';
     const badge=v==='present'?'bg':v==='absent'?'br':'by';
     const txt=v==='present'?'حاضر':v==='absent'?'غائب':'متأخر';
-    return`<tr><td>${date}</td><td>${s.cls}</td><td>${s.name}<div style="font-size:11px;color:#607060;direction:ltr;margin-top:2px">${getStudentEnglishDisplayName(s)}</div></td><td><span class="b ${badge}">${txt}</span></td></tr>`;
+    return`<tr><td>${date}</td><td>${attendanceStudentClass(s)}</td><td>${s.name}<div style="font-size:11px;color:#607060;direction:ltr;margin-top:2px">${getStudentEnglishDisplayName(s)}</div></td><td><span class="b ${badge}">${txt}</span></td></tr>`;
   }).filter(Boolean).slice(0, 40);
   if (!rows.length) {
     document.getElementById('att-log').innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:16px">لا يوجد تسجيل بعد</td></tr>';
@@ -24901,9 +24947,6 @@ document.addEventListener('DOMContentLoaded', function(){
 
   var pageByRender = {
     renderStudents: 'students',
-    renderAtt: 'att',
-    renderAttGrid: 'att',
-    renderAttLog: 'att',
     renderPayments: 'finreport',
     renderExpenses: 'finreport',
     renderFinReport: 'finreport',
@@ -24966,9 +25009,7 @@ document.addEventListener('DOMContentLoaded', function(){
   function renderOpenedPage(page){
     page = normalizePage(page || activePage());
     if (page === 'students') runOriginal('renderStudents');
-    else if (page === 'att') {
-      runOriginal('renderAtt');
-    } else if (page === 'finreport') {
+    else if (page === 'finreport') {
       if (typeof window.kpSetFinancialTab === 'function') {
         try { window.kpSetFinancialTab('report'); } catch(_e) {}
       } else {
@@ -25159,7 +25200,7 @@ document.addEventListener('DOMContentLoaded', function(){
     var base = baseUrl();
     path = normalizeSectionName(path);
     if (!base || !path) return undefined;
-    var url = base + '/' + path + '.json?sectionLoader=' + Date.now();
+    var url = base + '/' + path + '.json';
     updateIndicator('loading', path);
     var res = await fetch(url, { cache:'no-store' });
     stats.sectionReads++;
@@ -25264,6 +25305,22 @@ document.addEventListener('DOMContentLoaded', function(){
           return { path:path, value:undefined, failed:true };
         });
     }));
+    if (normalizePage(page) === 'att') {
+      var studentsResult = results.find(function(item){ return item.path === 'students'; });
+      if (!studentsResult || studentsResult.failed || !studentsResult.value) {
+        try {
+          var retriedStudents = await fetchSection('students', { fallback: null });
+          if (retriedStudents) {
+            if (studentsResult) {
+              studentsResult.value = retriedStudents;
+              studentsResult.failed = false;
+            } else {
+              results.push({ path:'students', value:retriedStudents });
+            }
+          }
+        } catch(_attendanceStudentRetryError) {}
+      }
+    }
     results.forEach(function(item){ applySection(item.path, item.value); });
     stats.lastLoadedAt = new Date().toISOString();
     updateIndicator('done', '');
@@ -25271,6 +25328,45 @@ document.addEventListener('DOMContentLoaded', function(){
     try { if (typeof sanitizeCoreData === 'function') sanitizeCoreData(); } catch(_e2) {}
     try { if (typeof populateClassDropdowns === 'function') populateClassDropdowns(); } catch(_e3) {}
     return true;
+  }
+  var attendanceLoadRunning = null;
+  async function loadAttendancePageAuthoritatively(){
+    if (attendanceLoadRunning) return attendanceLoadRunning;
+    var grid = document.getElementById('att-grid');
+    var summary = document.getElementById('att-summary');
+    if (grid) grid.innerHTML = '<div style="grid-column:1/-1;padding:24px;text-align:center;color:var(--muted);font-weight:900">جاري تحميل قائمة الطلاب من Firebase</div>';
+    if (summary) summary.textContent = 'جاري تحميل قائمة الطلاب من Firebase';
+    attendanceLoadRunning = Promise.all([
+      fetchSection('students', { fallback:null }),
+      fetchSection('CLASSES', { fallback:{} }),
+      fetchSection('attLog', { fallback:{} }),
+      fetchSection('attendanceLocks', { fallback:{} }),
+      fetchSection('nurserySettings', { fallback:{} })
+    ]).then(function(values){
+      var loadedStudents = asArray(values[0]);
+      if (!values[0] || !loadedStudents.length) {
+        throw new Error('Firebase returned an empty students section');
+      }
+      students = loadedStudents;
+      applySection('CLASSES', values[1]);
+      attLog = asObject(values[2]);
+      attendanceLocks = asObject(values[3]);
+      applySection('nurserySettings', values[4]);
+      sanitizeCoreData();
+      if (typeof populateClassDropdowns === 'function') populateClassDropdowns();
+      var renderer = window.renderAtt;
+      while (renderer && renderer.__kpOriginal) renderer = renderer.__kpOriginal;
+      if (typeof renderer === 'function') renderer();
+      return true;
+    }).catch(function(error){
+      console.error('[KP attendance] authoritative load failed:', error);
+      if (grid) grid.innerHTML = '<div style="grid-column:1/-1;padding:24px;text-align:center;color:#c62828;font-weight:900">تعذر تحميل قائمة الطلاب من Firebase. يرجى المحاولة مرة أخرى.</div>';
+      if (summary) summary.textContent = 'تعذر تحميل قائمة الطلاب من Firebase';
+      return false;
+    }).finally(function(){
+      attendanceLoadRunning = null;
+    });
+    return attendanceLoadRunning;
   }
   function originalFn(name){
     var fn = window[name] || (typeof window[name] === 'function' ? window[name] : null);
