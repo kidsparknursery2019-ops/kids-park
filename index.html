@@ -6937,7 +6937,8 @@ let currentClsTab = Object.keys(CLASSES)[0] || '';
 
 function renderAtt(){
   sanitizeCoreData();
-  const today = new Date().toISOString().slice(0,10);
+  const now = new Date();
+  const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
   const dateEl = document.getElementById('att-date');
   if (dateEl && !dateEl.value) dateEl.value = today;
   const tabs = document.getElementById('cls-tabs');
@@ -6991,15 +6992,18 @@ function renderAtt(){
 
 function renderAttGrid(){
   sanitizeCoreData();
-  const date=document.getElementById('att-date').value;
+  const dateEl=document.getElementById('att-date');
+  const gridEl=document.getElementById('att-grid');
+  if (!dateEl || !gridEl) return;
+  const date=dateEl.value;
   const cls=currentClsTab;
   if (typeof renderAttendanceAdminLockControls === 'function') renderAttendanceAdminLockControls();
-  if (!cls) { document.getElementById('att-grid').innerHTML=''; return; }
+  if (!cls) { gridEl.innerHTML=''; return; }
   const list=students.filter(function(s){ return s && s.cls===cls && isActiveStudent(s); });
   let p=0,a=0,l=0;
   var blocked = isAttendanceEditBlocked(cls, date);
   var lockInfo = getAttendanceLock(cls, date);
-  document.getElementById('att-grid').innerHTML=list.map(s=>{
+  gridEl.innerHTML=list.map(s=>{
     const st=attLog[date+'_'+s.id]||'';
     if(st==='present')p++;if(st==='absent')a++;if(st==='late')l++;
     var disabledAttr = blocked ? ' disabled style="opacity:.5;cursor:not-allowed"' : '';
@@ -7070,12 +7074,18 @@ async function setAtt(date,id,status){
     return;
   }
   const key = date+'_'+id;
+  const previousStatus = attLog[key];
   attLog[key]=status;
   // kp_attlog_data: skipped — load from Firebase
-  renderAttGrid();renderAttLog();renderDash();
+  renderAttGrid();renderAttLog();
   // ✅ حفظ فردي — PATCH على /attLog مباشرة
   const entries = {}; entries[key] = status;
-  await saveAttendanceEntriesRemoteAware(entries);
+  const saved = await saveAttendanceEntriesRemoteAware(entries);
+  if (!saved) {
+    if (previousStatus) attLog[key] = previousStatus;
+    else delete attLog[key];
+    renderAttGrid(); renderAttLog();
+  }
 }
 
 async function clearAttStatus(date,id){
@@ -7090,12 +7100,12 @@ async function clearAttStatus(date,id){
   var msg = 'إزالة حالة الحضور المحددة للطالب: ' + name + ' بتاريخ ' + date + '؟';
   if (window.kpConfirmAsync && !(await window.kpConfirmAsync('إزالة حالة الحضور', name, msg))) return;
   delete attLog[key];
-  renderAttGrid(); renderAttLog(); renderDash();
+  renderAttGrid(); renderAttLog();
   var entries = {}; entries[key] = null;
   var saved = await saveAttendanceEntriesRemoteAware(entries);
   if (!saved) {
     attLog[key] = oldStatus;
-    renderAttGrid(); renderAttLog(); renderDash();
+    renderAttGrid(); renderAttLog();
     alert('تعذر حذف حالة الحضور من Firebase، لذلك تم إرجاع الحالة كما كانت.');
   }
 }
@@ -7107,15 +7117,24 @@ async function markAll(status){
     return;
   }
   const entries = {};
-  students.filter(function(s){ return s && s.cls===currentClsTab; }).forEach(function(s){
+  const previousEntries = {};
+  students.filter(function(s){ return s && s.cls===currentClsTab && isActiveStudent(s); }).forEach(function(s){
     const key = date+'_'+s.id;
+    previousEntries[key] = Object.prototype.hasOwnProperty.call(attLog, key) ? attLog[key] : undefined;
     attLog[key] = status;
     entries[key] = status;
   });
   // kp_attlog_data: skipped — load from Firebase
-  renderAttGrid();renderAttLog();renderDash();
+  renderAttGrid();renderAttLog();
   // ✅ حفظ فردي بدفعة واحدة لكل الطلاب بنفس اليوم
-  await saveAttendanceEntriesRemoteAware(entries);
+  const saved = await saveAttendanceEntriesRemoteAware(entries);
+  if (!saved) {
+    Object.keys(previousEntries).forEach(function(key){
+      if (previousEntries[key] === undefined) delete attLog[key];
+      else attLog[key] = previousEntries[key];
+    });
+    renderAttGrid(); renderAttLog();
+  }
 }
 
 // 🔒 Teacher submits the day for the currently-selected class — locks (class,date)
@@ -17958,14 +17977,32 @@ document.addEventListener('click', function(e) {
     try { return JSON.parse(JSON.stringify(value == null ? null : value)); } catch(_e){ return value; }
   }
   async function fetchFirebaseRoot(){
+    if (typeof window.kpAllowFullFirebaseReadFor === 'function') {
+      window.kpAllowFullFirebaseReadFor(180000);
+    } else {
+      window.__kpAllowFullFirebaseReadUntil = Date.now() + 180000;
+    }
     try {
-      var res = await fetch(FB_URL + '.json?ts=' + Date.now(), { cache:'no-store' });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var res = await fetch(FB_URL + '.json?completeBackup=' + Date.now(), { cache:'no-store' });
+      if (!res.ok) throw new Error('Firebase full backup read failed: HTTP ' + res.status);
+      var blockedHeader = '';
+      try { blockedHeader = res.headers.get('X-KP-Full-Root-Blocked') || ''; } catch(_e) {}
       var data = await res.json();
-      return data && typeof data === 'object' ? data : {};
-    } catch(e) {
-      console.warn('[KP] complete backup Firebase read failed:', e && e.message);
-      return {};
+      if (blockedHeader === '1' || (data && data.__kpFullRootReadBlocked)) {
+        throw new Error('The Firebase traffic guard blocked the complete backup read.');
+      }
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new Error('Firebase returned an invalid or empty root snapshot.');
+      }
+      var meaningfulKeys = Object.keys(data).filter(function(key){
+        return key !== 'savedAt' && key !== 'version' && key !== 'dashboardSummary' && key !== 'backupMeta' && key !== 'activityLog';
+      });
+      if (!meaningfulKeys.length) {
+        throw new Error('Firebase returned metadata only. The complete backup was not created.');
+      }
+      return data;
+    } finally {
+      window.__kpAllowFullFirebaseReadUntil = 0;
     }
   }
   function localSnapshot(){
@@ -18017,12 +18054,23 @@ document.addEventListener('click', function(e) {
       if (typeof showSyncBadge === 'function') showSyncBadge('جاري تجهيز نسخة احتياطية كاملة...');
       var firebaseData = await fetchFirebaseRoot();
       var localData = localSnapshot();
+      var firebaseManifest = {};
+      Object.keys(firebaseData).forEach(function(key){
+        var value = firebaseData[key];
+        firebaseManifest[key] = {
+          type: Array.isArray(value) ? 'array' : (value && typeof value === 'object' ? 'object' : typeof value),
+          count: Array.isArray(value) ? value.filter(Boolean).length : (value && typeof value === 'object' ? Object.keys(value).length : (value == null ? 0 : 1))
+        };
+      });
       var backup = Object.assign({}, firebaseData, {
         backupDate: new Date().toISOString(),
         backupType: 'complete-firebase-and-local',
         version: firebaseData.version || 2,
         system: 'حضـانة حديقة الأطفال',
         __firebaseSnapshotIncluded: true,
+        __firebaseRootKeys: Object.keys(firebaseData),
+        __firebaseManifest: firebaseManifest,
+        __firebaseSavedAt: firebaseData.savedAt || '',
         __localFallbackIncluded: true,
         __localFallback: localData
       });
@@ -24311,17 +24359,15 @@ document.addEventListener('DOMContentLoaded', function(){
       fetchJson('students'),
       fetchJson('payments'),
       fetchJson('expenses'),
-      fetchJson('attLog'),
-      fetchJson('CLASSES'),
-      fetchJson('attendanceLocks').catch(function(){ return {}; })
+      fetchJson('CLASSES')
     ]).then(function(results){
       cloud = {
         students: sectionToArray(results[0]),
         payments: sectionToArray(results[1]),
         expenses: sectionToArray(results[2]),
-        attLog: results[3] && typeof results[3] === 'object' ? results[3] : {},
-        CLASSES: results[4] && typeof results[4] === 'object' ? results[4] : {},
-        attendanceLocks: results[5] && typeof results[5] === 'object' ? results[5] : {}
+        attLog: {},
+        CLASSES: results[3] && typeof results[3] === 'object' ? results[3] : {},
+        attendanceLocks: {}
       };
       window.__kpAttendanceFinanceCloudSnapshot = cloud;
       return cloud;
@@ -24432,9 +24478,8 @@ document.addEventListener('DOMContentLoaded', function(){
     } catch(_e) {}
   }
 
-  wrapRender('renderAtt', maskAttendance);
-  wrapRender('renderAttGrid', maskAttendance);
-  wrapRender('renderAttLog', maskAttendance);
+  // Attendance is owned by the section loader; using this second snapshot
+  // would make attendance edits render against a temporary data copy.
   wrapRender('renderPayments', maskPayments);
   wrapRender('renderExpenses', maskExpenses);
   wrapRender('renderFinance', maskFinanceReport);
@@ -24452,9 +24497,6 @@ document.addEventListener('DOMContentLoaded', function(){
         if (cloudPromise) {
           cloudPromise.then(function(){
             try {
-              if (document.getElementById('pg-att') && document.getElementById('pg-att').classList.contains('on')) {
-                if (typeof renderAtt === 'function') renderAtt();
-              }
               if (document.getElementById('pg-finreport') && document.getElementById('pg-finreport').classList.contains('on')) {
                 if (typeof renderFinReport === 'function') renderFinReport();
                 if (typeof renderPayments === 'function') renderPayments();
@@ -24926,8 +24968,6 @@ document.addEventListener('DOMContentLoaded', function(){
     if (page === 'students') runOriginal('renderStudents');
     else if (page === 'att') {
       runOriginal('renderAtt');
-      runOriginal('renderAttGrid');
-      runOriginal('renderAttLog');
     } else if (page === 'finreport') {
       if (typeof window.kpSetFinancialTab === 'function') {
         try { window.kpSetFinancialTab('report'); } catch(_e) {}
@@ -25240,7 +25280,7 @@ document.addEventListener('DOMContentLoaded', function(){
     page = normalizePage(page);
     function call(name){ var fn = originalFn(name); if (typeof fn === 'function') { try { fn(); } catch(e){ console.warn('[KP section loader test] render failed:', name, e && e.message ? e.message : e); } } }
     if (page === 'students') call('renderStudents');
-    else if (page === 'att') { call('renderAtt'); call('renderAttGrid'); call('renderAttLog'); }
+    else if (page === 'att') { call('renderAtt'); }
     else if (page === 'finreport') {
       if (typeof window.kpSetFinancialTab === 'function') { try { window.kpSetFinancialTab('report'); } catch(_e) {} }
       call('renderFinReport'); call('renderPayments'); call('renderExpenses'); call('renderReceipts');
