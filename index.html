@@ -1792,7 +1792,7 @@ body.kp-evaluator #pg-eval{display:block!important}
         <input type="text" id="exp-search" placeholder="🔍 ابحث..." oninput="renderExpenses()">
         <select id="exp-cat" onchange="renderExpenses()">
           <option value="">كل الفئات</option>
-          <option>رواتب</option><option>كهرباء وإنترنت</option><option>قرطاسية ومستلزمات</option><option>صيانة</option><option>مواصلات</option><option>فعاليات</option><option>أخرى</option>
+          <option>رواتب</option><option>كهرباء وإنترنت</option><option>قرطاسية ومستلزمات</option><option>صيانة</option><option>مواصلات</option><option>فعاليات</option><option>رسوم معاملات حكومية</option><option>أخرى</option>
         </select>
         <button class="btn btn-out btn-sm" onclick="openExport('expenses')">⬇ تصدير</button><button class="btn btn-out btn-sm" onclick="openFinanceDateReview()">Review dates</button><button class="btn btn-out btn-sm" onclick="openImport('expenses')" title="استيراد من Excel">⬆ استيراد</button><button class="btn btn-out btn-sm" onclick="kpExportElementToPdf(document.querySelector('#pg-expenses .card'), {title:'سجل المصاريف', orientation:'l'})" title="تصدير PDF">📄 PDF</button>
       </div>
@@ -2381,7 +2381,7 @@ body.kp-evaluator #pg-eval{display:block!important}
       <div class="fl"><label>المبلغ (درهم) *</label><input id="ne-amt" type="number" placeholder="0"></div>
       <div class="fl"><label>التاريخ</label><input id="ne-date" type="date"></div>
       <div class="fl"><label>الفئة</label>
-        <select id="ne-cat"><option>رواتب</option><option>كهرباء وإنترنت</option><option>قرطاسية ومستلزمات</option><option>صيانة</option><option>مواصلات</option><option>فعاليات</option><option>أخرى</option></select>
+        <select id="ne-cat"><option>رواتب</option><option>كهرباء وإنترنت</option><option>قرطاسية ومستلزمات</option><option>صيانة</option><option>مواصلات</option><option>فعاليات</option><option>رسوم معاملات حكومية</option><option>أخرى</option></select>
       </div>
       <div class="fl"><label>طريقة الدفع</label>
         <select id="ne-method"><option>نقدي</option><option>تحويل بنكي</option><option>شيك</option></select>
@@ -18810,7 +18810,7 @@ input,select,textarea,button{max-width:100%}
   function getCategorySelect(){
     var cat = document.getElementById('ne-cat');
     if (!cat) return null;
-    ['إيجار', 'مصاريف تشغيل'].forEach(function(label){
+    ['إيجار', 'مصاريف تشغيل', 'رسوم معاملات حكومية'].forEach(function(label){
       var exists = Array.prototype.some.call(cat.options, function(opt){ return opt.value === label || opt.textContent === label; });
       if (!exists) cat.appendChild(new Option(label, label));
     });
@@ -18825,6 +18825,7 @@ input,select,textarea,button{max-width:100%}
     {cat:'صيانة', words:['صيانه','تصليح','اصلاح','سباك','سباكه','كهربائي','مكيف','تكييف','فلتر','باب','حنفيه','maintenance','repair','fix','ac']},
     {cat:'مواصلات', words:['مواصلات','باص','حافله','سياره','تاكسي','تكسي','نقل','بنزين','بترول','سالك','transport','bus','taxi','fuel','petrol','salik']},
     {cat:'فعاليات', words:['فعاليه','فعاليات','احتفال','حفله','تخرج','عيد','رمضان','هدايا','بالون','بالونات','رحله','نشاط','activity','event','party','trip']},
+    {cat:'رسوم معاملات حكومية', words:['رسوم حكوميه','معامله حكوميه','معاملات حكوميه','اقامه','تجديد اقامه','تاشيره','فيزا','تصريح','رخصه','ترخيص','هويه','بطاقه صحيه','بطاقه عمل','تأمين عمل','ضريبه','مخالفه','حكومي','government','visa','permit','license']},
     {cat:'مصاريف تشغيل', words:['تشغيل','نظافه','تنظيف','مطبخ','ماء','مناديل','بامبرز','صيدليه','دواء','مطهر','اكل','طعام','سوبرماركت','رضوان','اللولو','لولو','كارفور','سيتي فارم','اسطنبول','داي توداي','الهدايا','الشموس','شموس','امازون','تيمو','توصيل','operating','cleaning','water','food','supermarket']}
   ];
 
@@ -27153,6 +27154,485 @@ document.addEventListener('DOMContentLoaded', function(){
 
 
 
+
+<script>
+/* ============================================================
+   KP CLEAN EXPENSE REPLACEMENT TOOL v20260613
+   Admin-only controlled replacement for the cleaned expense workbook.
+   ============================================================ */
+(function(){
+  'use strict';
+
+  var parsedCleanExpenses = null;
+  var parsedCleanSummary = null;
+
+  function t(value){ return String(value == null ? '' : value).trim(); }
+  function n(value){
+    if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+    var cleaned = t(value).replace(/,/g, '').replace(/[^\d.\-]/g, '');
+    return cleaned === '' ? NaN : Number(cleaned);
+  }
+  function key(value){ return t(value).replace(/^k_/, ''); }
+  function isAdmin(){
+    try {
+      return !!(currentUser && (
+        String(currentUser.role || '').toLowerCase() === 'admin' ||
+        String(currentUser.username || '').toLowerCase() === 'admin'
+      ));
+    } catch(_e) { return false; }
+  }
+  function money(value){
+    return (+value || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' \u062f.\u0625';
+  }
+  function escapeHtml(value){
+    return t(value).replace(/[&<>"']/g, function(ch){
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch];
+    });
+  }
+  function normalizeDateValue(value){
+    if (typeof value === 'number' && window.XLSX && XLSX.SSF && XLSX.SSF.parse_date_code) {
+      var d = XLSX.SSF.parse_date_code(value);
+      if (d) return String(d.y).padStart(4,'0') + '-' + String(d.m).padStart(2,'0') + '-' + String(d.d).padStart(2,'0');
+    }
+    var raw = t(value);
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0,10);
+    var parts = raw.split(/[\/.\-]/).map(function(x){ return t(x); });
+    if (parts.length === 3) {
+      if (parts[0].length === 4) return parts[0] + '-' + parts[1].padStart(2,'0') + '-' + parts[2].padStart(2,'0');
+      if (parts[2].length === 4) return parts[2] + '-' + parts[1].padStart(2,'0') + '-' + parts[0].padStart(2,'0');
+    }
+    return raw;
+  }
+  function signature(record){
+    return [
+      key(record && record.id),
+      t(record && record.desc),
+      String(+((record && record.amt) || 0)),
+      t(record && record.cat),
+      t(record && record.method),
+      normalizeDateValue(record && (record.exp_date || record.date)),
+      t(record && record.note)
+    ].join('\u001f');
+  }
+  function sum(records){
+    return (records || []).reduce(function(total, item){ return total + (+item.amt || 0); }, 0);
+  }
+  function arrayFromSection(section){
+    if (typeof kpArrayFromFirebaseSection === 'function') return kpArrayFromFirebaseSection(section);
+    if (Array.isArray(section)) return section.filter(Boolean);
+    return section && typeof section === 'object' ? Object.keys(section).map(function(k){ return section[k]; }).filter(Boolean) : [];
+  }
+  function mapFromRecords(records){
+    if (typeof kpMapFromArray === 'function') return kpMapFromArray(records, 'id');
+    var out = {};
+    (records || []).forEach(function(item){ out['k_' + key(item.id)] = item; });
+    return out;
+  }
+  async function readFirebase(path, timeoutMs){
+    if (!window.FB_URL && typeof FB_URL === 'undefined') throw new Error('Firebase URL is unavailable');
+    var base = typeof FB_URL !== 'undefined' ? FB_URL : window.FB_URL;
+    var url = base + (path ? '/' + path : '') + '.json';
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = setTimeout(function(){ if (controller) controller.abort(); }, Number(timeoutMs || 30000));
+    try {
+      var response = await fetch(url, {cache:'no-store', signal:controller ? controller.signal : undefined});
+      if (!response.ok) throw new Error('Firebase HTTP ' + response.status + ' while reading ' + (path || 'root'));
+      return await response.json();
+    } catch(error) {
+      if (error && error.name === 'AbortError') throw new Error('\u0627\u0646\u062a\u0647\u062a \u0645\u0647\u0644\u0629 \u0627\u0646\u062a\u0638\u0627\u0631 Firebase \u0623\u062b\u0646\u0627\u0621 \u0642\u0631\u0627\u0621\u0629 ' + path);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  function localExpenseState(){
+    return {
+      expenses: Array.isArray(expenses) ? expenses.slice() : [],
+      deletedExpenses: Array.isArray(deletedExpenses) ? deletedExpenses.slice() : [],
+      tombstones: tombstones && Array.isArray(tombstones.expenses) ? tombstones.expenses.slice() : [],
+      restoredKeys: restoredKeys && Array.isArray(restoredKeys.expenses) ? restoredKeys.expenses.slice() : []
+    };
+  }
+  async function readExpenseState(){
+    var values = await Promise.all([
+      readFirebase('expenses', 45000),
+      readFirebase('deletedExpenses', 45000),
+      readFirebase('tombstones/expenses', 45000),
+      readFirebase('restoredKeys/expenses', 45000)
+    ]);
+    return {
+      expenses: arrayFromSection(values[0]),
+      deletedExpenses: arrayFromSection(values[1]),
+      tombstones: Array.isArray(values[2]) ? values[2] : [],
+      restoredKeys: Array.isArray(values[3]) ? values[3] : []
+    };
+  }
+  function compareRecords(current, cleaned){
+    var currentMap = new Map((current || []).map(function(x){ return [key(x.id), x]; }));
+    var cleanMap = new Map((cleaned || []).map(function(x){ return [key(x.id), x]; }));
+    var added = [], removed = [], changed = [], unchanged = [];
+    cleanMap.forEach(function(item, id){
+      if (!currentMap.has(id)) added.push(item);
+      else if (signature(currentMap.get(id)) !== signature(item)) changed.push({before:currentMap.get(id), after:item});
+      else unchanged.push(item);
+    });
+    currentMap.forEach(function(item, id){ if (!cleanMap.has(id)) removed.push(item); });
+    return {added:added, removed:removed, changed:changed, unchanged:unchanged};
+  }
+  function downloadJson(filename, data){
+    var blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json;charset=utf-8'});
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(function(){ URL.revokeObjectURL(link.href); link.remove(); }, 1000);
+  }
+  function timestamp(){
+    var d = new Date();
+    return d.getFullYear() + String(d.getMonth()+1).padStart(2,'0') + String(d.getDate()).padStart(2,'0') + '_' +
+      String(d.getHours()).padStart(2,'0') + String(d.getMinutes()).padStart(2,'0') + String(d.getSeconds()).padStart(2,'0');
+  }
+  function ensureModal(){
+    if (document.getElementById('kp-clean-expense-modal')) return;
+    var modal = document.createElement('div');
+    modal.id = 'kp-clean-expense-modal';
+    modal.style.cssText = 'display:none;position:fixed;inset:0;z-index:100000;background:rgba(20,45,31,.55);padding:24px;overflow:auto;direction:rtl';
+    modal.innerHTML =
+      '<div style="max-width:920px;margin:20px auto;background:#fff;border:2px solid #2faa67;border-radius:10px;box-shadow:0 18px 55px rgba(0,0,0,.25);overflow:hidden">' +
+        '<div style="background:#238c54;color:#fff;padding:16px 20px;font-size:20px;font-weight:800">\u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641 \u0628\u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0645\u0646\u0638\u0641</div>' +
+        '<div id="kp-clean-expense-content" style="padding:20px"></div>' +
+        '<div style="display:flex;gap:10px;justify-content:flex-start;padding:0 20px 20px">' +
+          '<button type="button" class="btn btn-g" id="kp-clean-expense-confirm">\u062a\u0646\u0632\u064a\u0644 \u0646\u0633\u062e\u0629 \u0627\u0644\u0631\u062c\u0648\u0639 \u0648\u0627\u0644\u0627\u0633\u062a\u0628\u062f\u0627\u0644</button>' +
+          '<button type="button" class="btn btn-out" id="kp-clean-expense-cancel">\u0625\u0644\u063a\u0627\u0621</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(modal);
+    document.getElementById('kp-clean-expense-cancel').onclick = function(){ modal.style.display = 'none'; };
+    document.getElementById('kp-clean-expense-confirm').onclick = replaceCleanExpenses;
+  }
+  function showValidationError(error){
+    ensureModal();
+    var message = escapeHtml(error && error.message ? error.message : error).replace(/\n/g, '<br>');
+    document.getElementById('kp-clean-expense-content').innerHTML =
+      '<div style="background:#fff1f1;border:1px solid #ef7777;border-radius:8px;padding:14px;color:#8b2020;font-weight:800">' +
+        '<div style="font-size:18px;margin-bottom:8px">\u062a\u0639\u0630\u0631 \u0641\u062d\u0635 \u0645\u0644\u0641 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641</div>' +
+        '<div style="font-size:13px;line-height:1.8">' + message + '</div>' +
+      '</div>';
+    document.getElementById('kp-clean-expense-confirm').style.display = 'none';
+    document.getElementById('kp-clean-expense-modal').style.display = 'block';
+  }
+  function showReplacementProgress(stage, detail, percent){
+    ensureModal();
+    var safePercent = Math.max(0, Math.min(100, Number(percent || 0)));
+    document.getElementById('kp-clean-expense-content').innerHTML =
+      '<div style="padding:12px 4px;text-align:center">' +
+        '<div style="width:52px;height:52px;border:6px solid #dcefe4;border-top-color:#238c54;border-radius:50%;margin:4px auto 16px;animation:kpCleanExpenseSpin .8s linear infinite"></div>' +
+        '<div style="font-size:20px;font-weight:900;color:#174c30;margin-bottom:8px">' + escapeHtml(stage) + '</div>' +
+        '<div style="font-size:13px;color:#688071;margin-bottom:18px">' + escapeHtml(detail || '\u064a\u0631\u062c\u0649 \u0627\u0644\u0627\u0646\u062a\u0638\u0627\u0631 \u0648\u0639\u062f\u0645 \u0625\u063a\u0644\u0627\u0642 \u0627\u0644\u0635\u0641\u062d\u0629') + '</div>' +
+        '<div style="height:14px;background:#e3f1e8;border-radius:10px;overflow:hidden;max-width:650px;margin:auto">' +
+          '<div style="height:100%;width:' + safePercent + '%;background:#2faa67;transition:width .25s ease"></div>' +
+        '</div>' +
+        '<div style="font-size:13px;font-weight:900;color:#238c54;margin-top:8px">' + safePercent + '%</div>' +
+      '</div>';
+    if (!document.getElementById('kp-clean-expense-spin-style')) {
+      var style = document.createElement('style');
+      style.id = 'kp-clean-expense-spin-style';
+      style.textContent = '@keyframes kpCleanExpenseSpin{to{transform:rotate(360deg)}}';
+      document.head.appendChild(style);
+    }
+    document.getElementById('kp-clean-expense-confirm').style.display = 'none';
+    document.getElementById('kp-clean-expense-cancel').disabled = true;
+    document.getElementById('kp-clean-expense-cancel').textContent = '\u062c\u0627\u0631\u064a \u0627\u0644\u062a\u0646\u0641\u064a\u0630...';
+    document.getElementById('kp-clean-expense-modal').style.display = 'block';
+  }
+  function statCard(label, value, color){
+    return '<div style="border:1px solid #cfe8d8;border-top:4px solid ' + color + ';padding:12px;background:#fafffc;border-radius:8px">' +
+      '<div style="font-size:12px;color:#688071">' + label + '</div><div style="font-size:22px;font-weight:800;color:#174c30">' + value + '</div></div>';
+  }
+  function showPreview(cleaned, current, comparison, duplicateSignatures){
+    ensureModal();
+    document.getElementById('kp-clean-expense-confirm').style.display = '';
+    parsedCleanExpenses = cleaned;
+    parsedCleanSummary = {current:current, comparison:comparison};
+    var examples = comparison.changed.slice(0,8).map(function(change){
+      var fields = [];
+      ['desc','amt','cat','method','date','note'].forEach(function(field){
+        var before = field === 'date' ? normalizeDateValue(change.before.exp_date || change.before.date) : t(change.before[field]);
+        var after = field === 'date' ? normalizeDateValue(change.after.exp_date || change.after.date) : t(change.after[field]);
+        if (before !== after) fields.push(field);
+      });
+      return '<tr><td>#' + escapeHtml(change.after.id) + '</td><td>' + escapeHtml(change.after.desc) + '</td><td>' + escapeHtml(fields.join(', ')) + '</td></tr>';
+    }).join('');
+    var content =
+      '<div style="background:#fff8dc;border:1px solid #e7bb37;border-radius:8px;padding:12px;margin-bottom:14px;color:#6d5100;font-weight:700">' +
+        '\u0633\u064a\u062a\u0645 \u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0642\u0633\u0645 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641 \u0641\u0642\u0637. \u0633\u064a\u062a\u0645 \u062a\u0646\u0632\u064a\u0644 \u0646\u0633\u062e\u0629 \u0631\u062c\u0648\u0639 \u0642\u0628\u0644 \u0627\u0644\u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u062a\u0644\u0642\u0627\u0626\u064a\u0627\u064b.</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:10px;margin-bottom:14px">' +
+        statCard('\u0627\u0644\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u062d\u0627\u0644\u064a\u0629', current.length, '#5b83db') +
+        statCard('\u0627\u0644\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u0645\u0646\u0638\u0641\u0629', cleaned.length, '#25a963') +
+        statCard('\u0627\u0644\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u0645\u062d\u0630\u0648\u0641\u0629', comparison.removed.length, '#e64d4d') +
+        statCard('\u0627\u0644\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u062c\u062f\u064a\u062f\u0629', comparison.added.length, '#318bd5') +
+        statCard('\u0627\u0644\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u0645\u0639\u062f\u0644\u0629', comparison.changed.length, '#ee9218') +
+        statCard('\u0627\u0644\u062a\u0643\u0631\u0627\u0631\u0627\u062a \u0627\u0644\u0645\u062a\u0637\u0627\u0628\u0642\u0629 \u0641\u064a \u0627\u0644\u0645\u0644\u0641', duplicateSignatures, duplicateSignatures ? '#e64d4d' : '#25a963') +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">' +
+        statCard('\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641 \u0627\u0644\u062d\u0627\u0644\u064a\u0629', money(sum(current)), '#5b83db') +
+        statCard('\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641 \u0628\u0639\u062f \u0627\u0644\u0627\u0633\u062a\u0628\u062f\u0627\u0644', money(sum(cleaned)), '#25a963') +
+      '</div>' +
+      (examples ? '<div style="font-weight:800;margin:12px 0 6px">\u0639\u064a\u0646\u0629 \u0645\u0646 \u0627\u0644\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u0645\u0639\u062f\u0644\u0629</div><div style="overflow:auto;max-height:230px"><table style="width:100%"><thead><tr><th>#</th><th>\u0627\u0644\u0628\u064a\u0627\u0646</th><th>\u0627\u0644\u062d\u0642\u0648\u0644 \u0627\u0644\u0645\u062a\u063a\u064a\u0631\u0629</th></tr></thead><tbody>' + examples + '</tbody></table></div>' : '');
+    document.getElementById('kp-clean-expense-content').innerHTML = content;
+    document.getElementById('kp-clean-expense-modal').style.display = 'block';
+  }
+  function parseWorkbook(file){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onerror = function(){ reject(new Error('\u062a\u0639\u0630\u0631 \u0642\u0631\u0627\u0621\u0629 \u0627\u0644\u0645\u0644\u0641')); };
+      reader.onload = function(event){
+        try {
+          if (!window.XLSX) throw new Error('XLSX library is unavailable');
+          var workbook = XLSX.read(event.target.result, {type:'array', cellDates:false});
+          var sheet = workbook.Sheets[workbook.SheetNames[0]];
+          var rows = XLSX.utils.sheet_to_json(sheet, {header:1, raw:true, defval:''});
+          if (!rows.length) throw new Error('\u0627\u0644\u0645\u0644\u0641 \u0641\u0627\u0631\u063a');
+          var header = rows[0].map(t);
+          var expected = ['#','\u0627\u0644\u0628\u064a\u0627\u0646','\u0627\u0644\u0645\u0628\u0644\u063a (\u062f.\u0625)','\u0627\u0644\u0641\u0626\u0629','\u0637\u0631\u064a\u0642\u0629 \u0627\u0644\u062f\u0641\u0639','\u0627\u0644\u062a\u0627\u0631\u064a\u062e','\u0645\u0644\u0627\u062d\u0638\u0627\u062a'];
+          for (var h=0; h<expected.length; h++) {
+            if (header[h] !== expected[h]) throw new Error('\u062a\u0631\u062a\u064a\u0628 \u0623\u0639\u0645\u062f\u0629 \u0627\u0644\u0645\u0644\u0641 \u063a\u064a\u0631 \u0645\u0637\u0627\u0628\u0642. \u0627\u0644\u0639\u0645\u0648\u062f ' + (h+1) + ': ' + header[h]);
+          }
+          var records = [], errors = [], ids = new Set(), sigs = new Set(), duplicateSignatures = 0;
+          rows.slice(1).forEach(function(row, index){
+            if (!row.some(function(cell){ return t(cell) !== ''; })) return;
+            var rowNo = index + 2;
+            var idRaw = n(row[0]), amount = n(row[2]), desc = t(row[1]), date = normalizeDateValue(row[5]);
+            if (!Number.isInteger(idRaw) || idRaw <= 0) errors.push('\u0627\u0644\u0635\u0641 ' + rowNo + ': \u0631\u0642\u0645 \u0627\u0644\u0633\u062c\u0644 \u063a\u064a\u0631 \u0635\u062d\u064a\u062d');
+            else if (ids.has(String(idRaw))) errors.push('\u0627\u0644\u0635\u0641 ' + rowNo + ': \u0631\u0642\u0645 \u0627\u0644\u0633\u062c\u0644 \u0645\u0643\u0631\u0631 #' + idRaw);
+            if (!desc) errors.push('\u0627\u0644\u0635\u0641 ' + rowNo + ': \u0627\u0644\u0628\u064a\u0627\u0646 \u0641\u0627\u0631\u063a');
+            if (!Number.isFinite(amount)) errors.push('\u0627\u0644\u0635\u0641 ' + rowNo + ': \u0627\u0644\u0645\u0628\u0644\u063a \u063a\u064a\u0631 \u0635\u062d\u064a\u062d');
+            if (!Number.isInteger(idRaw) || idRaw <= 0 || !desc || !Number.isFinite(amount)) return;
+            ids.add(String(idRaw));
+            var record = {id:idRaw, desc:desc, amt:amount, cat:t(row[3]), method:t(row[4]), date:date, exp_date:date, note:t(row[6])};
+            var contentSig = [desc, String(amount), record.cat, record.method, date, record.note].join('\u001f');
+            if (sigs.has(contentSig)) duplicateSignatures++; else sigs.add(contentSig);
+            records.push(record);
+          });
+          if (errors.length) throw new Error(errors.slice(0,15).join('\n') + (errors.length > 15 ? '\n... +' + (errors.length-15) : ''));
+          if (!records.length) throw new Error('\u0644\u0627 \u062a\u0648\u062c\u062f \u0633\u062c\u0644\u0627\u062a \u0645\u0635\u0627\u0631\u064a\u0641 \u0635\u0627\u0644\u062d\u0629');
+          resolve({records:records, duplicateSignatures:duplicateSignatures});
+        } catch(error) { reject(error); }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+  async function chooseCleanExpenseFile(event){
+    var file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!isAdmin()) return alert('\u0647\u0630\u0647 \u0627\u0644\u0623\u062f\u0627\u0629 \u0644\u0644\u0645\u062f\u064a\u0631 \u0641\u0642\u0637');
+    try {
+      if (typeof showSyncBadge === 'function') showSyncBadge('\u062c\u0627\u0631\u064a \u0641\u062d\u0635 \u0645\u0644\u0641 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641...');
+      var parsed = await parseWorkbook(file);
+      var state = localExpenseState();
+      showPreview(parsed.records, state.expenses, compareRecords(state.expenses, parsed.records), parsed.duplicateSignatures);
+      if (typeof showSyncBadge === 'function') showSyncBadge('\u062a\u0645 \u0641\u062d\u0635 \u0627\u0644\u0645\u0644\u0641');
+    } catch(error) {
+      if (typeof showSyncBadge === 'function') showSyncBadge('\u062a\u0639\u0630\u0631 \u0641\u062d\u0635 \u0645\u0644\u0641 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641');
+      showValidationError(error);
+    }
+  }
+  async function replaceCleanExpenses(){
+    if (!isAdmin()) return alert('\u0647\u0630\u0647 \u0627\u0644\u0623\u062f\u0627\u0629 \u0644\u0644\u0645\u062f\u064a\u0631 \u0641\u0642\u0637');
+    if (!parsedCleanExpenses || !parsedCleanExpenses.length) return;
+    var button = document.getElementById('kp-clean-expense-confirm');
+    button.disabled = true;
+    button.textContent = '\u062c\u0627\u0631\u064a \u0627\u0644\u0627\u0633\u062a\u0628\u062f\u0627\u0644...';
+    try {
+      showReplacementProgress('\u0628\u062f\u0621 \u0627\u0644\u0627\u0633\u062a\u0628\u062f\u0627\u0644', '\u062c\u0627\u0631\u064a \u0627\u0644\u062a\u062d\u0636\u064a\u0631 \u0644\u0644\u0639\u0645\u0644\u064a\u0629...', 5);
+      if (typeof showSyncBadge === 'function') showSyncBadge('\u062c\u0627\u0631\u064a \u0642\u0631\u0627\u0621\u0629 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641 \u0627\u0644\u062d\u0627\u0644\u064a\u0629 \u0645\u0646 Firebase...');
+      showReplacementProgress('\u0642\u0631\u0627\u0621\u0629 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a \u0627\u0644\u062d\u0627\u0644\u064a\u0629', '\u062c\u0627\u0631\u064a \u062c\u0644\u0628 \u0642\u0633\u0645 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641 \u0645\u0646 Firebase...', 15);
+      var state = await readExpenseState();
+      var comparison = compareRecords(state.expenses, parsedCleanExpenses);
+      showReplacementProgress('\u062a\u0646\u0632\u064a\u0644 \u0646\u0633\u062e\u0629 \u0627\u0644\u0631\u062c\u0648\u0639', '\u064a\u062a\u0645 \u0627\u0644\u0622\u0646 \u062d\u0641\u0638 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641 \u0627\u0644\u062d\u0627\u0644\u064a\u0629 \u0642\u0628\u0644 \u0627\u0644\u0627\u0633\u062a\u0628\u062f\u0627\u0644.', 35);
+      downloadJson('kids_park_expenses_rollback_' + timestamp() + '.json', {
+        backupType:'expenses-replacement-rollback',
+        createdAt:new Date().toISOString(),
+        expenses:mapFromRecords(state.expenses),
+        deletedExpenses:mapFromRecords(state.deletedExpenses),
+        tombstones:{expenses:state.tombstones},
+        restoredKeys:{expenses:state.restoredKeys}
+      });
+      var cleanIds = new Set(parsedCleanExpenses.map(function(x){ return key(x.id); }));
+      var removedIds = comparison.removed.map(function(x){ return x.id; });
+      var newDeleted = state.deletedExpenses.filter(function(x){ return !cleanIds.has(key(x.id)); });
+      var newTombstones = state.tombstones.filter(function(id){ return !cleanIds.has(key(id)); });
+      removedIds.forEach(function(id){
+        if (!newTombstones.some(function(existing){ return key(existing) === key(id); })) newTombstones.push(id);
+      });
+      var affectedIds = new Set(parsedCleanExpenses.concat(comparison.removed).map(function(x){ return key(x.id); }));
+      var newRestored = state.restoredKeys.filter(function(id){ return !affectedIds.has(key(id)); });
+      var savedAt = new Date().toISOString();
+      var base = typeof FB_URL !== 'undefined' ? FB_URL : window.FB_URL;
+      if (typeof showSyncBadge === 'function') showSyncBadge('\u062c\u0627\u0631\u064a \u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641...');
+      showReplacementProgress('\u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641', '\u062c\u0627\u0631\u064a \u0631\u0641\u0639 ' + parsedCleanExpenses.length.toLocaleString('en-US') + ' \u0633\u062c\u0644 \u0645\u0646\u0638\u0641 \u0625\u0644\u0649 Firebase...', 55);
+      var response = await fetch(base + '.json', {
+        method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          expenses:mapFromRecords(parsedCleanExpenses),
+          deletedExpenses:mapFromRecords(newDeleted),
+          'tombstones/expenses':newTombstones,
+          'restoredKeys/expenses':newRestored,
+          savedAt:savedAt,
+          version:2
+        })
+      });
+      if (!response.ok) throw new Error('Firebase HTTP ' + response.status + ' during replacement');
+      if (typeof showSyncBadge === 'function') showSyncBadge('\u062c\u0627\u0631\u064a \u0627\u0644\u062a\u062d\u0642\u0642 \u0645\u0646 Firebase...');
+      showReplacementProgress('\u0627\u0644\u062a\u062d\u0642\u0642 \u0645\u0646 \u0627\u0644\u062d\u0641\u0638', '\u062c\u0627\u0631\u064a \u0642\u0631\u0627\u0621\u0629 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649 \u0644\u0644\u062a\u0623\u0643\u062f \u0645\u0646 \u0645\u0637\u0627\u0628\u0642\u062a\u0647\u0627.', 80);
+      var verified = arrayFromSection(await readFirebase('expenses'));
+      var expectedMap = new Map(parsedCleanExpenses.map(function(x){ return [key(x.id), signature(x)]; }));
+      var verifiedMap = new Map(verified.map(function(x){ return [key(x.id), signature(x)]; }));
+      var valid = expectedMap.size === verifiedMap.size;
+      if (valid) expectedMap.forEach(function(sig, id){ if (verifiedMap.get(id) !== sig) valid = false; });
+      if (!valid) throw new Error('\u0641\u0634\u0644 \u0627\u0644\u062a\u062d\u0642\u0642: \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a \u0627\u0644\u0645\u062d\u0641\u0648\u0638\u0629 \u0644\u0627 \u062a\u0637\u0627\u0628\u0642 \u0627\u0644\u0645\u0644\u0641');
+      expenses = verified;
+      deletedExpenses = newDeleted;
+      tombstones.expenses = newTombstones;
+      restoredKeys.expenses = newRestored;
+      nextExpId = typeof getSafeNextExpenseId === 'function' ? getSafeNextExpenseId() : nextExpId;
+      if (typeof persistCoreDataToLocalStorage === 'function') persistCoreDataToLocalStorage();
+      localStorage.setItem('kp_deleted_expenses', JSON.stringify(deletedExpenses));
+      localStorage.setItem('kp_tombstones', JSON.stringify(tombstones));
+      localStorage.setItem('kp_restored_keys', JSON.stringify(restoredKeys));
+      try { if (typeof kpRefreshSaveSnapshot === 'function') kpRefreshSaveSnapshot(); } catch(_e) {}
+      showReplacementProgress('\u062a\u062d\u062f\u064a\u062b \u0627\u0644\u0646\u0638\u0627\u0645', '\u062a\u0645 \u0627\u0644\u062a\u062d\u0642\u0642 \u0645\u0646 Firebase. \u062c\u0627\u0631\u064a \u062a\u062d\u062f\u064a\u062b \u0627\u0644\u0634\u0627\u0634\u0627\u062a...', 95);
+      if (typeof renderExpenses === 'function') renderExpenses();
+      if (typeof renderDash === 'function') renderDash();
+      if (typeof renderFinReport === 'function') renderFinReport();
+      document.getElementById('kp-clean-expense-modal').style.display = 'none';
+      parsedCleanExpenses = null;
+      parsedCleanSummary = null;
+      var success = '\u062a\u0645 \u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641 \u0648\u0627\u0644\u062a\u062d\u0642\u0642 \u0645\u0646 Firebase \u0628\u0646\u062c\u0627\u062d.\n' +
+        '\u0627\u0644\u0633\u062c\u0644\u0627\u062a: ' + verified.length + '\n' +
+        '\u0627\u0644\u0645\u062d\u0630\u0648\u0641\u0629: ' + comparison.removed.length + '\n' +
+        '\u0627\u0644\u0645\u0639\u062f\u0644\u0629: ' + comparison.changed.length + '\n' +
+        '\u0627\u0644\u062c\u062f\u064a\u062f\u0629: ' + comparison.added.length;
+      if (window.kpNotify) window.kpNotify(success); else alert(success);
+    } catch(error) {
+      if (typeof showSyncBadge === 'function') showSyncBadge('\u0644\u0645 \u064a\u0643\u062a\u0645\u0644 \u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641');
+      alert('\u0644\u0645 \u064a\u0643\u062a\u0645\u0644 \u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641.\n\u0627\u062d\u062a\u0641\u0638\u064a \u0628\u0645\u0644\u0641 \u0646\u0633\u062e\u0629 \u0627\u0644\u0631\u062c\u0648\u0639.\n\n' + (error.message || error));
+    } finally {
+      button.disabled = false;
+      button.textContent = '\u062a\u0646\u0632\u064a\u0644 \u0646\u0633\u062e\u0629 \u0627\u0644\u0631\u062c\u0648\u0639 \u0648\u0627\u0644\u0627\u0633\u062a\u0628\u062f\u0627\u0644';
+      var cancel = document.getElementById('kp-clean-expense-cancel');
+      if (cancel) {
+        cancel.disabled = false;
+        cancel.textContent = '\u0625\u0644\u063a\u0627\u0621';
+      }
+    }
+  }
+  function installButton(){
+    if (document.getElementById('kp-clean-expense-button')) return;
+    var normalImport = document.querySelector('#pg-expenses button[onclick*="openImport"]');
+    if (!normalImport) return;
+    var button = document.createElement('button');
+    button.id = 'kp-clean-expense-button';
+    button.type = 'button';
+    button.className = 'btn btn-r btn-sm';
+    button.textContent = '\u267b \u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0628\u0645\u0644\u0641 \u0645\u0646\u0638\u0641';
+    button.title = '\u0644\u0644\u0645\u062f\u064a\u0631 \u0641\u0642\u0637: \u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0643\u0644 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641 \u0628\u0645\u0644\u0641 Excel \u0645\u0646\u0638\u0641';
+    button.onclick = function(){
+      if (!isAdmin()) return alert('\u0647\u0630\u0647 \u0627\u0644\u0623\u062f\u0627\u0629 \u0644\u0644\u0645\u062f\u064a\u0631 \u0641\u0642\u0637');
+      document.getElementById('kp-clean-expense-file').click();
+    };
+    normalImport.insertAdjacentElement('afterend', button);
+    var input = document.createElement('input');
+    input.id = 'kp-clean-expense-file';
+    input.type = 'file';
+    input.accept = '.xlsx,.xls';
+    input.style.display = 'none';
+    input.onchange = chooseCleanExpenseFile;
+    document.body.appendChild(input);
+    setInterval(function(){ button.style.display = isAdmin() ? '' : 'none'; }, 1000);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installButton);
+  else installButton();
+})();
+</script>
+
+<script>
+/* KP CLEAN PAYMENT REPLACEMENT TOOL v20260613 */
+(function(){
+  'use strict';
+  var cleanPayments = null;
+  function s(v){ return String(v == null ? '' : v).trim(); }
+  function num(v){ if(typeof v === 'number') return Number.isFinite(v) ? v : NaN; var x=s(v).replace(/,/g,'').replace(/[^\d.\-]/g,''); return x===''?NaN:Number(x); }
+  function idKey(v){ return s(v).replace(/^k_/,''); }
+  function admin(){ try{return !!(currentUser&&(s(currentUser.role).toLowerCase()==='admin'||s(currentUser.username).toLowerCase()==='admin'));}catch(_e){return false;} }
+  function esc(v){ return s(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function date(v){
+    if(typeof v==='number'&&window.XLSX&&XLSX.SSF){var d=XLSX.SSF.parse_date_code(v);if(d)return d.y+'-'+String(d.m).padStart(2,'0')+'-'+String(d.d).padStart(2,'0');}
+    var x=s(v); if(/^\d{4}-\d{2}-\d{2}/.test(x))return x.slice(0,10);
+    var p=x.split(/[\/.\-]/); if(p.length===3&&p[2].length===4)return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
+    return x;
+  }
+  function visibleSig(p){ return [idKey(p.id),s(p.who),String(+p.amt||0),s(p.desc),s(p.type),s(p.method),date(p.date),s(p.rcvr),s(p.note)].join('\u001f'); }
+  function arr(v){ if(typeof kpArrayFromFirebaseSection==='function')return kpArrayFromFirebaseSection(v);if(Array.isArray(v))return v.filter(Boolean);return v&&typeof v==='object'?Object.keys(v).map(function(k){return v[k];}).filter(Boolean):[]; }
+  function map(v){ if(typeof kpMapFromArray==='function')return kpMapFromArray(v,'id');var o={};v.forEach(function(x){o['k_'+idKey(x.id)]=x;});return o; }
+  function total(v){ return v.reduce(function(a,x){return a+(+x.amt||0);},0); }
+  function money(v){ return (+v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+' \u062f.\u0625'; }
+  function stamp(){var d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'_'+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0');}
+  function download(name,data){var b=new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},1000);}
+  function compare(current,clean){
+    var a=new Map(current.map(function(x){return[idKey(x.id),x];})),b=new Map(clean.map(function(x){return[idKey(x.id),x];})),out={added:[],removed:[],changed:[],same:[]};
+    b.forEach(function(x,k){if(!a.has(k))out.added.push(x);else if(visibleSig(a.get(k))!==visibleSig(x))out.changed.push({before:a.get(k),after:x});else out.same.push(x);});
+    a.forEach(function(x,k){if(!b.has(k))out.removed.push(x);}); return out;
+  }
+  function mergeHidden(clean,current){
+    var byId=new Map(current.map(function(x){return[idKey(x.id),x];}));
+    return clean.map(function(x){var old=byId.get(idKey(x.id));return old?Object.assign({},old,x):Object.assign({},x);});
+  }
+  function modal(){
+    var m=document.getElementById('kp-clean-payment-modal');if(m)return m;
+    m=document.createElement('div');m.id='kp-clean-payment-modal';m.style.cssText='display:none;position:fixed;inset:0;z-index:100001;background:rgba(20,45,31,.55);padding:24px;overflow:auto;direction:rtl';
+    m.innerHTML='<div style="max-width:920px;margin:20px auto;background:#fff;border:2px solid #2faa67;border-radius:10px;box-shadow:0 18px 55px rgba(0,0,0,.25);overflow:hidden"><div style="background:#238c54;color:#fff;padding:16px 20px;font-size:20px;font-weight:800">\u0641\u062d\u0635 \u0648\u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0627\u0644\u0645\u062f\u0641\u0648\u0639\u0627\u062a</div><div id="kp-clean-payment-content" style="padding:20px"></div><div style="display:flex;gap:10px;padding:0 20px 20px"><button class="btn btn-g" id="kp-clean-payment-confirm">\u062a\u0646\u0632\u064a\u0644 \u0646\u0633\u062e\u0629 \u0627\u0644\u0631\u062c\u0648\u0639 \u0648\u0627\u0644\u0627\u0633\u062a\u0628\u062f\u0627\u0644</button><button class="btn btn-out" id="kp-clean-payment-cancel">\u0625\u0644\u063a\u0627\u0621</button></div></div>';
+    document.body.appendChild(m);document.getElementById('kp-clean-payment-cancel').onclick=function(){m.style.display='none';};document.getElementById('kp-clean-payment-confirm').onclick=replace;return m;
+  }
+  function card(label,value,color){return '<div style="border:1px solid #cfe8d8;border-top:4px solid '+color+';padding:12px;background:#fafffc;border-radius:8px"><div style="font-size:12px;color:#688071">'+label+'</div><div style="font-size:22px;font-weight:800;color:#174c30">'+value+'</div></div>';}
+  function progress(title,detail,pct){
+    modal();var p=Math.max(0,Math.min(100,+pct||0));document.getElementById('kp-clean-payment-content').innerHTML='<div style="padding:12px;text-align:center"><div style="width:52px;height:52px;border:6px solid #dcefe4;border-top-color:#238c54;border-radius:50%;margin:4px auto 16px;animation:kpCleanExpenseSpin .8s linear infinite"></div><div style="font-size:20px;font-weight:900;color:#174c30">'+esc(title)+'</div><div style="font-size:13px;color:#688071;margin:8px 0 18px">'+esc(detail)+'</div><div style="height:14px;background:#e3f1e8;border-radius:10px;overflow:hidden"><div style="height:100%;width:'+p+'%;background:#2faa67"></div></div><div style="font-weight:900;color:#238c54;margin-top:8px">'+p+'%</div></div>';
+    document.getElementById('kp-clean-payment-confirm').style.display='none';var c=document.getElementById('kp-clean-payment-cancel');c.disabled=true;c.textContent='\u062c\u0627\u0631\u064a \u0627\u0644\u062a\u0646\u0641\u064a\u0630...';
+  }
+  function preview(clean){
+    var current=Array.isArray(payments)?payments.slice():[],d=compare(current,clean);cleanPayments=clean;modal();
+    var samples=d.changed.slice(0,8).map(function(x){return '<tr><td>#'+esc(x.after.id)+'</td><td>'+esc(x.after.who)+'</td><td>'+esc(x.after.desc)+'</td></tr>';}).join('');
+    document.getElementById('kp-clean-payment-content').innerHTML='<div style="background:#fff8dc;border:1px solid #e7bb37;border-radius:8px;padding:12px;margin-bottom:14px;color:#6d5100;font-weight:700">\u0633\u064a\u062a\u0645 \u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0627\u0644\u0645\u062f\u0641\u0648\u0639\u0627\u062a \u0641\u0642\u0637. \u0633\u064a\u062a\u0645 \u0627\u0644\u0627\u062d\u062a\u0641\u0627\u0638 \u0628\u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u0637\u0644\u0627\u0628 \u0648\u0627\u0644\u0645\u0644\u0627\u062d\u0638\u0627\u062a \u0627\u0644\u062f\u0627\u062e\u0644\u064a\u0629 \u0648\u062d\u0642\u0648\u0644 \u0627\u0644\u0633\u0646\u062f \u0627\u0644\u0645\u062e\u0641\u064a\u0629.</div><div style="display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:10px;margin-bottom:14px">'+card('\u0627\u0644\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u062d\u0627\u0644\u064a\u0629',current.length,'#5b83db')+card('\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u0645\u0644\u0641',clean.length,'#25a963')+card('\u0627\u0644\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u0645\u062d\u0630\u0648\u0641\u0629',d.removed.length,'#e64d4d')+card('\u0627\u0644\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u062c\u062f\u064a\u062f\u0629',d.added.length,'#318bd5')+card('\u0627\u0644\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u0645\u0639\u062f\u0644\u0629',d.changed.length,'#ee9218')+card('\u0627\u0644\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u0645\u0637\u0627\u0628\u0642\u0629',d.same.length,'#25a963')+'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'+card('\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u062f\u062e\u0644 \u0627\u0644\u062d\u0627\u0644\u064a',money(total(current)),'#5b83db')+card('\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u062f\u062e\u0644 \u0628\u0639\u062f \u0627\u0644\u0627\u0633\u062a\u0628\u062f\u0627\u0644',money(total(clean)),'#25a963')+'</div>'+(samples?'<div style="font-weight:800;margin:12px 0 6px">\u0639\u064a\u0646\u0629 \u0645\u0646 \u0627\u0644\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u0645\u0639\u062f\u0644\u0629</div><table style="width:100%"><thead><tr><th>#</th><th>\u0648\u0644\u064a \u0627\u0644\u0623\u0645\u0631</th><th>\u0627\u0644\u0628\u064a\u0627\u0646</th></tr></thead><tbody>'+samples+'</tbody></table>':'');
+    var b=document.getElementById('kp-clean-payment-confirm'),c=document.getElementById('kp-clean-payment-cancel');b.style.display='';b.disabled=false;c.disabled=false;c.textContent='\u0625\u0644\u063a\u0627\u0621';modal().style.display='block';
+  }
+  function parse(file){
+    return new Promise(function(resolve,reject){var r=new FileReader();r.onerror=function(){reject(Error('\u062a\u0639\u0630\u0631 \u0642\u0631\u0627\u0621\u0629 \u0627\u0644\u0645\u0644\u0641'));};r.onload=function(e){try{
+      var wb=XLSX.read(e.target.result,{type:'array',cellDates:false}),rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:''});
+      var expected=['#\u0627\u0644\u0633\u0646\u062f','\u0648\u0644\u064a \u0627\u0644\u0623\u0645\u0631','\u0627\u0644\u0645\u0628\u0644\u063a (\u062f.\u0625)','\u0627\u0644\u0628\u064a\u0627\u0646','\u0627\u0644\u0646\u0648\u0639','\u0637\u0631\u064a\u0642\u0629 \u0627\u0644\u062f\u0641\u0639','\u0627\u0644\u062a\u0627\u0631\u064a\u062e','\u0627\u0644\u0645\u0633\u062a\u0644\u0645','\u0645\u0644\u0627\u062d\u0638\u0627\u062a'],h=rows[0].map(s);for(var i=0;i<expected.length;i++)if(h[i]!==expected[i])throw Error('\u062a\u0631\u062a\u064a\u0628 \u0623\u0639\u0645\u062f\u0629 \u0627\u0644\u0645\u0644\u0641 \u063a\u064a\u0631 \u0645\u0637\u0627\u0628\u0642 \u0639\u0646\u062f \u0627\u0644\u0639\u0645\u0648\u062f '+(i+1));
+      var out=[],ids=new Set(),errors=[];rows.slice(1).forEach(function(x,j){if(!x.some(function(v){return s(v)!=='';}))return;var id=num(x[0]),amt=num(x[2]);if(!Number.isInteger(id)||id<=0)errors.push('\u0627\u0644\u0635\u0641 '+(j+2)+': \u0631\u0642\u0645 \u0627\u0644\u0633\u0646\u062f \u063a\u064a\u0631 \u0635\u062d\u064a\u062d');else if(ids.has(String(id)))errors.push('\u0627\u0644\u0635\u0641 '+(j+2)+': \u0631\u0642\u0645 \u0627\u0644\u0633\u0646\u062f \u0645\u0643\u0631\u0631 #'+id);if(!s(x[1]))errors.push('\u0627\u0644\u0635\u0641 '+(j+2)+': \u0648\u0644\u064a \u0627\u0644\u0623\u0645\u0631 \u0641\u0627\u0631\u063a');if(!Number.isFinite(amt))errors.push('\u0627\u0644\u0635\u0641 '+(j+2)+': \u0627\u0644\u0645\u0628\u0644\u063a \u063a\u064a\u0631 \u0635\u062d\u064a\u062d');if(!Number.isInteger(id)||id<=0||!s(x[1])||!Number.isFinite(amt))return;ids.add(String(id));out.push({id:id,who:s(x[1]),amt:amt,desc:s(x[3]),type:s(x[4]),method:s(x[5]),date:date(x[6]),rcvr:s(x[7]),note:s(x[8])});});if(errors.length)throw Error(errors.slice(0,15).join('\n'));resolve(out);
+    }catch(err){reject(err);}};r.readAsArrayBuffer(file);});
+  }
+  async function read(path,timeout){var base=typeof FB_URL!=='undefined'?FB_URL:window.FB_URL,c=typeof AbortController!=='undefined'?new AbortController():null,t=setTimeout(function(){if(c)c.abort();},timeout||45000);try{var res=await fetch(base+'/'+path+'.json',{cache:'no-store',signal:c?c.signal:undefined});if(!res.ok)throw Error('Firebase HTTP '+res.status);return await res.json();}catch(e){if(e.name==='AbortError')throw Error('\u0627\u0646\u062a\u0647\u062a \u0645\u0647\u0644\u0629 \u0627\u0646\u062a\u0638\u0627\u0631 Firebase');throw e;}finally{clearTimeout(t);}}
+  async function remoteState(){var v=await Promise.all([read('payments'),read('deletedPayments'),read('tombstones/payments'),read('restoredKeys/payments')]);return{payments:arr(v[0]),deleted:arr(v[1]),tombs:Array.isArray(v[2])?v[2]:[],restored:Array.isArray(v[3])?v[3]:[]};}
+  async function replace(){
+    if(!cleanPayments||!cleanPayments.length)return;var btn=document.getElementById('kp-clean-payment-confirm');btn.disabled=true;
+    try{progress('\u0642\u0631\u0627\u0621\u0629 \u0627\u0644\u0645\u062f\u0641\u0648\u0639\u0627\u062a \u0627\u0644\u062d\u0627\u0644\u064a\u0629','\u062c\u0627\u0631\u064a \u062c\u0644\u0628 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a \u0645\u0646 Firebase...',15);var st=await remoteState(),merged=mergeHidden(cleanPayments,st.payments),d=compare(st.payments,merged);
+      progress('\u062a\u0646\u0632\u064a\u0644 \u0646\u0633\u062e\u0629 \u0627\u0644\u0631\u062c\u0648\u0639','\u062c\u0627\u0631\u064a \u062d\u0641\u0638 \u0627\u0644\u0645\u062f\u0641\u0648\u0639\u0627\u062a \u0627\u0644\u062d\u0627\u0644\u064a\u0629...',35);download('kids_park_payments_rollback_'+stamp()+'.json',{backupType:'payments-replacement-rollback',createdAt:new Date().toISOString(),payments:map(st.payments),deletedPayments:map(st.deleted),tombstones:{payments:st.tombs},restoredKeys:{payments:st.restored}});
+      var cleanIds=new Set(merged.map(function(x){return idKey(x.id);})),removed=d.removed.map(function(x){return x.id;}),del=st.deleted.filter(function(x){return!cleanIds.has(idKey(x.id));}),tombs=st.tombs.filter(function(x){return!cleanIds.has(idKey(x));});removed.forEach(function(x){if(!tombs.some(function(y){return idKey(y)===idKey(x);}))tombs.push(x);});var affected=new Set(merged.concat(d.removed).map(function(x){return idKey(x.id);})),restored=st.restored.filter(function(x){return!affected.has(idKey(x));});
+      progress('\u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0627\u0644\u0645\u062f\u0641\u0648\u0639\u0627\u062a','\u062c\u0627\u0631\u064a \u0631\u0641\u0639 '+merged.length.toLocaleString('en-US')+' \u0633\u0646\u062f...',55);var base=typeof FB_URL!=='undefined'?FB_URL:window.FB_URL,res=await fetch(base+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({payments:map(merged),deletedPayments:map(del),'tombstones/payments':tombs,'restoredKeys/payments':restored,savedAt:new Date().toISOString(),version:2})});if(!res.ok)throw Error('Firebase HTTP '+res.status);
+      progress('\u0627\u0644\u062a\u062d\u0642\u0642 \u0645\u0646 \u0627\u0644\u062d\u0641\u0638','\u062c\u0627\u0631\u064a \u0645\u0637\u0627\u0628\u0642\u0629 \u0627\u0644\u0633\u0646\u062f\u0627\u062a \u0627\u0644\u0645\u062d\u0641\u0648\u0638\u0629...',80);var verified=arr(await read('payments')),a=new Map(merged.map(function(x){return[idKey(x.id),visibleSig(x)];})),b=new Map(verified.map(function(x){return[idKey(x.id),visibleSig(x)];})),valid=a.size===b.size;a.forEach(function(x,k){if(b.get(k)!==x)valid=false;});if(!valid)throw Error('\u0627\u0644\u0645\u062f\u0641\u0648\u0639\u0627\u062a \u0627\u0644\u0645\u062d\u0641\u0648\u0638\u0629 \u0644\u0627 \u062a\u0637\u0627\u0628\u0642 \u0627\u0644\u0645\u0644\u0641');
+      payments=verified;deletedPayments=del;tombstones.payments=tombs;restoredKeys.payments=restored;if(typeof persistCoreDataToLocalStorage==='function')persistCoreDataToLocalStorage();localStorage.setItem('kp_deleted_payments',JSON.stringify(del));localStorage.setItem('kp_tombstones',JSON.stringify(tombstones));localStorage.setItem('kp_restored_keys',JSON.stringify(restoredKeys));if(typeof refreshNextIds==='function')refreshNextIds();if(typeof renderPayments==='function')renderPayments();if(typeof renderReceipts==='function')renderReceipts();if(typeof renderDash==='function')renderDash();modal().style.display='none';cleanPayments=null;if(window.kpNotify)window.kpNotify('\u062a\u0645 \u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0648\u0627\u0644\u062a\u062d\u0642\u0642 \u0645\u0646 '+verified.length+' \u0633\u0646\u062f \u0628\u0646\u062c\u0627\u062d');
+    }catch(e){if(typeof showSyncBadge==='function')showSyncBadge('\u0644\u0645 \u064a\u0643\u062a\u0645\u0644 \u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0627\u0644\u0645\u062f\u0641\u0648\u0639\u0627\u062a');alert('\u0644\u0645 \u064a\u0643\u062a\u0645\u0644 \u0627\u0644\u0627\u0633\u062a\u0628\u062f\u0627\u0644:\n'+(e.message||e));}finally{var c=document.getElementById('kp-clean-payment-cancel');if(c){c.disabled=false;c.textContent='\u0625\u0644\u063a\u0627\u0621';}btn.disabled=false;}
+  }
+  async function selected(e){var f=e.target.files&&e.target.files[0];e.target.value='';if(!f)return;try{if(typeof showSyncBadge==='function')showSyncBadge('\u062c\u0627\u0631\u064a \u0641\u062d\u0635 \u0645\u0644\u0641 \u0627\u0644\u0645\u062f\u0641\u0648\u0639\u0627\u062a...');preview(await parse(f));if(typeof showSyncBadge==='function')showSyncBadge('\u062a\u0645 \u0641\u062d\u0635 \u0645\u0644\u0641 \u0627\u0644\u0645\u062f\u0641\u0648\u0639\u0627\u062a');}catch(err){alert('\u062a\u0639\u0630\u0631 \u0641\u062d\u0635 \u0645\u0644\u0641 \u0627\u0644\u0645\u062f\u0641\u0648\u0639\u0627\u062a:\n'+(err.message||err));}}
+  function install(){if(document.getElementById('kp-clean-payment-button'))return;var normal=document.querySelector('#pg-payments button[onclick*="openImport"]');if(!normal)return;var b=document.createElement('button');b.id='kp-clean-payment-button';b.className='btn btn-b btn-sm';b.textContent='\u267b \u0641\u062d\u0635/\u0627\u0633\u062a\u0628\u062f\u0627\u0644 \u0627\u0644\u062f\u062e\u0644';b.onclick=function(){if(!admin())return alert('\u0644\u0644\u0645\u062f\u064a\u0631 \u0641\u0642\u0637');document.getElementById('kp-clean-payment-file').click();};normal.insertAdjacentElement('afterend',b);var i=document.createElement('input');i.id='kp-clean-payment-file';i.type='file';i.accept='.xlsx,.xls';i.style.display='none';i.onchange=selected;document.body.appendChild(i);setInterval(function(){b.style.display=admin()?'':'none';},1000);}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install);else install();
+})();
+</script>
 
 </body>
 
